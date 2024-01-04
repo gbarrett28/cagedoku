@@ -1,0 +1,91 @@
+from inp_image import *
+from sklearn.preprocessing import scale, normalize
+import re
+
+
+# import pytesseract
+
+# pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract'
+
+
+def plot_pca(pca, dim=32):
+	print(pca.explained_variance_ratio_[0:32])
+	print(np.cumsum(pca.explained_variance_ratio_[0:32]))
+	# print(pca.components_[0].shape)
+
+	for c in range(dim):
+		pmin = pca.components_[c].min()
+		pmax = pca.components_[c].max()
+		# gry_weights = np.reshape(np.uint8((pca.components_[c] - pmin) * 255 / (pmax - pmin)), (yn, xn))
+		gry_weights = np.uint8((pca.components_[c] - pmin) * 255 / (pmax - pmin))
+		col_weights = cv2.applyColorMap(gry_weights, cv2.COLORMAP_JET)
+
+		plt.subplot(4, 8, c + 1)
+		plt.imshow(col_weights)
+		plt.xticks([]), plt.yticks([])
+
+	plt.show()
+
+
+def find_moments(nums):
+	ret = []
+	for (c, _, ds) in nums:
+		cv2moms = cv2.moments(c)
+		moms = [v for (k, v) in cv2moms.items() if re.match(r"^nu", k)]
+		for rmoms in find_moments(ds):
+			moms += rmoms
+		ret.append(moms)
+	return ret
+
+
+globs = RAG.glob(r"*.jpg")
+maxmoms = 35
+allmoms = []
+# allpix = []
+allcs = []
+for f in itertools.islice(globs, None):
+	print(f"Processing {f}...")
+	inp = InpImage(f)
+	for X in range(9):
+		# XS = X * InpImage.SUBRES
+		# XE = XS + InpImage.SUBRES // 2
+		for Y in range(9):
+			if inp.info['sums'][X][Y] is None:
+				continue
+			# YS = Y * InpImage.SUBRES
+			# YE = YS + InpImage.SUBRES // 2
+			allcs += inp.info['sums'][X][Y]
+			for ml in find_moments(inp.info['sums'][X][Y]):
+				# print(ml)
+				momsv = np.zeros(maxmoms, dtype=np.float64)
+				momsv[:len(ml)] = np.array(ml)
+				allmoms.append(momsv)
+
+print(len(allmoms))
+num_pca = PCA()
+num_var = num_pca.fit_transform(normalize(allmoms))
+print(num_pca.explained_variance_ratio_[0:32])
+print(np.cumsum(num_pca.explained_variance_ratio_[0:32]))
+
+kmeans = KMeans(n_clusters=16, n_init=16)
+labels = kmeans.fit_predict(num_var)
+
+clusters = dict()
+for (c, l) in zip(allcs, labels):
+	if l not in clusters:
+		clusters[l] = []
+	clusters[l].append(c)
+print(len(clusters))
+
+for (i, k) in enumerate(clusters.keys()):
+	for (j, c) in enumerate(clusters[k][:10]):
+		plt.subplot(len(clusters.keys()), 10, 1 + j + (10 * i))
+		number = np.zeros((InpImage.RESOLUTION, InpImage.RESOLUTION))
+		paint_mask(number, [c])
+		(_, (x, y, w, h), _) = c
+		plt.imshow(number[y:y + h, x:x + w], 'gray')
+		plt.xticks([]), plt.yticks([])
+plt.show()
+
+plt.scatter([v[0] for v in num_var], [v[1] for v in num_var], c=labels)
+plt.show()
