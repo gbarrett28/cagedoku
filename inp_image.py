@@ -5,7 +5,6 @@ import pickle as pk
 import itertools
 
 import cv2
-import numpy
 import numpy as np
 from matplotlib import pyplot as plt
 from sklearn import linear_model
@@ -14,10 +13,12 @@ from sklearn.decomposition import PCA
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--rag', choices=["observer", "guardian"], required=True)
+parser.add_argument('--binarise', choices=["static", "adaptive"], default="static")
 parser.add_argument('--rework', default=False)
 args = parser.parse_args()
 RAG = pathlib.Path(args.rag)
 REWORK = args.rework
+binarise = args.binarise
 
 GNOTO = str(RAG) == r"guardian"
 ONOTG = str(RAG) == r"observer"
@@ -53,13 +54,9 @@ def draw_hough(img, lines):
 			if b and 0 <= x < xn and 0 <= y < yn:
 				pts.append((int(round(x)), int(round(y))))
 		# print(f"len(pts)={len(pts)}")
-		if len(pts) == 2:
-			[pt1, pt2] = pts
-			cv2.line(img, pt1, pt2, (0, 0, 255), 1, cv2.LINE_AA)
-		else:
-			print(pts)
-			print(ints)
-			print(l)
+		assert len(pts) == 2
+		[pt1, pt2] = pts
+		cv2.line(img, pt1, pt2, (0, 0, 255), 1, cv2.LINE_AA)
 
 
 def process_sample(s, isblack):
@@ -169,7 +166,7 @@ def paint_mask(msk, ch, fill=255):
 
 class InpImage:
 	do_print = False
-	RHO = 2  # 5
+	RHO = 2
 	THETA = math.pi / 16
 	HTHRESH = 3 * 379
 
@@ -215,9 +212,13 @@ class InpImage:
 				kmeans.fit(blk_detect)
 				labs = kmeans.predict(np.reshape(range(256), (-1, 1)))
 				isblack = list(labs).count(labs[0])
-
-			blk = cv2.inRange(gry, 0, isblack)
 			self.info['isblack'] = isblack
+
+			if binarise == r"static":
+				blk = cv2.inRange(gry, 0, isblack)
+			else:
+				blk = ~cv2.adaptiveThreshold(gry, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
+				                             cv2.THRESH_BINARY, 31, 1)
 
 			lines_rt = cv2.HoughLines(blk, InpImage.RHO, InpImage.THETA, InpImage.HTHRESH)
 			if lines_rt is None:
@@ -254,7 +255,7 @@ class InpImage:
 					if m % 3 == 0 and n % 3 == 0:
 						reg_X.append((n, m))
 						reg_y.append(p)
-				# cv2.circle(img, (round(x), round(y)), 1, (0, 0, 255), -1)
+				# cv2.circle(gry, (round(x), round(y)), 1, (0, 0, 255), -1)
 				regr = linear_model.LinearRegression()
 				regr.fit(reg_X, reg_y)
 				rect = np.zeros((4, 2), dtype="float32")

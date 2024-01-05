@@ -1,10 +1,7 @@
 import re
 
-import cv2
-import numpy
-from matplotlib import pyplot
-
 from sklearn.preprocessing import Normalizer
+
 from inp_image import *
 from inp_image import number_img
 
@@ -15,11 +12,7 @@ class NumberRecogniser:
 		self.pca = PCA()
 		self.kmeans = KMeans(n_clusters=16, n_init=16)
 
-		allmoms = []
-		for ml in find_moments(allcs):
-			momsv = np.zeros(35, dtype=np.float64)
-			momsv[:len(ml)] = np.array(ml)
-			allmoms.append(momsv)
+		allmoms = get_moments_v(allcs)
 		num_var = self.pca.fit_transform(self.norm.fit_transform(allmoms))
 		labels = self.kmeans.fit_predict(num_var)
 
@@ -34,13 +27,18 @@ class NumberRecogniser:
 		plt.show()
 
 	def get_clusters(self, sums):
-		allmoms = []
-		for ml in find_moments(sums):
-			momsv = np.zeros(35, dtype=np.float64)
-			momsv[:len(ml)] = np.array(ml)
-			allmoms.append(momsv)
+		allmoms = get_moments_v(sums)
 
 		return self.kmeans.predict(self.pca.transform(self.norm.transform(allmoms)))
+
+
+def get_moments_v(sums):
+	allmoms = []
+	for ml in get_moments(sums):
+		momsv = np.zeros(35, dtype=np.float64)
+		momsv[:len(ml)] = np.array(ml)[:min(35, len(ml))]
+		allmoms.append(momsv)
+	return allmoms
 
 
 def show_clusters(labels, allcs):
@@ -51,7 +49,7 @@ def show_clusters(labels, allcs):
 		clusters[l].append(c)
 	print(f"Number of clusters is {len(clusters)}")
 
-	for (i, k) in enumerate(clusters.keys()):
+	for (i, k) in enumerate(sorted(clusters.keys())):
 		for (j, c1) in enumerate(clusters[k][:10], 1):
 			numb = number_img(c1)
 
@@ -61,12 +59,12 @@ def show_clusters(labels, allcs):
 	plt.show()
 
 
-def find_moments(nums):
+def get_moments(nums):
 	ret = []
 	for (c, _, ds) in nums:
 		cv2moms = cv2.moments(c)
 		moms = [v for (k, v) in cv2moms.items() if re.match(r"^nu", k)]
-		for rmoms in find_moments(ds):
+		for rmoms in get_moments(ds):
 			moms += rmoms
 		ret.append(moms)
 	return ret
@@ -89,3 +87,26 @@ def plot_pca(pca, dim=32):
 		plt.xticks([]), plt.yticks([])
 
 	plt.show()
+
+def numrec_initialiser():
+	num_rec_pkl = RAG / r"numrec.pkl"
+	if num_rec_pkl.exists():
+		num_rec = pk.load(open(num_rec_pkl, "rb"))
+	else:
+		allcs = []
+		for f in itertools.islice(RAG.glob(r"*.jpg"), None):
+			print(f"Processing {f}...")
+			inp = InpImage(f)
+
+			for X in range(9):
+				for Y in range(9):
+					sums = inp.info['sums'][Y, X]
+					if sums is not None:
+						allcs += sums
+
+		num_rec = NumberRecogniser(allcs)
+		pk.dump(num_rec, open(num_rec_pkl, "wb"))
+
+	return num_rec
+
+NUM_REC = numrec_initialiser()

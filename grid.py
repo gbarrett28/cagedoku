@@ -71,7 +71,7 @@ class Grid:
 				cvr -= line[rb]
 				sm -= 45
 				assert sm >= 0
-				assert (sm == 0) == (cvr == set())
+				assert (sm == 0) == (cvr == set()), f"sm={sm}, cvr={cvr}"
 				rb += 1
 			rf = max(rf, rb)
 			if sm != 0:
@@ -140,7 +140,6 @@ class Grid:
 		if (self.region == 0).any():
 			raise ProcessingError("unassigned region", self.region, brdrs)
 
-		return cszs
 		# Set up the CGES and VALS for each cage.
 		self.CGES = [set() for _ in np.unique(self.region)]
 		self.VALS = [0 for _ in np.unique(self.region)]
