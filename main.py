@@ -1,11 +1,21 @@
-from inp_image import *
-from sklearn.preprocessing import scale, normalize
-import re
+from num_rec import *
+from grid import Grid, ProcessingError
+from constraint import Problem, ExactSumConstraint, Domain
+
+num_rec_pkl = RAG / r"numrec.pkl"
+num_rec: NumberRecogniser = pk.load(open(num_rec_pkl, "rb"))
+
+ONEVAR = Domain(range(10))
+TWOVAR = Domain(range(10, 46))
+numrec_prob = Problem()
+numrec_prob.addVariables([f"v{n}" for n in range(num_rec.kmeans.n_clusters)], ONEVAR)
 
 
-# import pytesseract
-
-# pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract'
+def cl_to_num(lo, hi, cs):
+	ret = 0
+	for c in cs:
+		ret = (10 * ret) + c
+	return lo <= ret <= hi
 
 
 def plot_pca(pca, dim=32):
@@ -27,65 +37,84 @@ def plot_pca(pca, dim=32):
 	plt.show()
 
 
-def find_moments(nums):
-	ret = []
-	for (c, _, ds) in nums:
-		cv2moms = cv2.moments(c)
-		moms = [v for (k, v) in cv2moms.items() if re.match(r"^nu", k)]
-		for rmoms in find_moments(ds):
-			moms += rmoms
-		ret.append(moms)
-	return ret
-
-
 globs = RAG.glob(r"*.jpg")
-maxmoms = 35
-allmoms = []
-# allpix = []
-allcs = []
-for f in itertools.islice(globs, None):
+# allmoms = []
+# allcs = []
+allbrdrs = set()
+twovars = set()
+for f in itertools.islice(globs, 2):
 	print(f"Processing {f}...")
 	inp = InpImage(f)
+	grid = Grid()
+
+	cszs = []
+	vals = np.zeros(shape=(9, 9), dtype=object)
+	brdrs = np.full((9, 9, 4), fill_value=True, dtype=bool)
+	prd_per_sq = np.zeros((9, 9), dtype=int)
+	numbers = np.zeros((InpImage.RESOLUTION, InpImage.RESOLUTION), dtype=np.uint8)
 	for X in range(9):
-		# XS = X * InpImage.SUBRES
-		# XE = XS + InpImage.SUBRES // 2
 		for Y in range(9):
-			if inp.info['sums'][X][Y] is None:
+			if Y < 8:
+				for i in range(4):
+					isbh = process_sample(inp.info['brdrsh'][X, Y], inp.info['isblack'] + 16)
+					allbrdrs.add(isbh)
+					brdrs[Y + 0, X][1] = isbh > 2
+					brdrs[Y + 1, X][3] = isbh > 2
+					isbv = process_sample(inp.info['brdrsv'][Y, X], inp.info['isblack'] + 16)
+					allbrdrs.add(isbv)
+					brdrs[X, Y + 0][2] = isbv > 2
+					brdrs[X, Y + 1][0] = isbv > 2
+			sums = inp.info['sums'][Y, X]
+			if sums is None:
 				continue
-			# YS = Y * InpImage.SUBRES
-			# YE = YS + InpImage.SUBRES // 2
-			allcs += inp.info['sums'][X][Y]
-			for ml in find_moments(inp.info['sums'][X][Y]):
-				# print(ml)
-				momsv = np.zeros(maxmoms, dtype=np.float64)
-				momsv[:len(ml)] = np.array(ml)
-				allmoms.append(momsv)
+			# allcs += sums
+			paint_mask(numbers, sums)
+			vs = num_rec.get_clusters(sums)
+			for n in vs:
+				prd_per_sq[X, Y] = (17 * prd_per_sq[X, Y]) + n + 1
+			if prd_per_sq[X, Y] != 0:
+				grid.sol_img.draw_sum(X, Y, prd_per_sq[X, Y])
+			vals[X, Y] = vs
+	try:
+		cszs = grid.set_up(prd_per_sq, brdrs)
+	except ProcessingError as err:
+		print(err.msg)
+		continue
 
-print(len(allmoms))
-num_pca = PCA()
-num_var = num_pca.fit_transform(normalize(allmoms))
-print(num_pca.explained_variance_ratio_[0:32])
-print(np.cumsum(num_pca.explained_variance_ratio_[0:32]))
+	sum405 = []
+	for X in range(9):
+		for Y in range(9):
+			csz = cszs[X, Y]
+			if csz != 0:
+				vs = [f"v{n}" for n in vals[X, Y]]
+				assert len(vs) in [1, 2]
+				if len(vs) == 2:
+					[v1, v2] = vs
+					v12 = v2 + v1
+					if v12 not in twovars:
+						twovars.add(v12)
+						numrec_prob.addVariable(v12, TWOVAR)
+						print(f"Add {v12}")
+						print(numrec_prob.getSolution())
+						numrec_prob.addConstraint(lambda v12, v1, v2: v12 == ((10 * v2) + v1), [v12, v1, v2])
+						print(f"{v12} == ((10 * {v2}) + {v1})")
+						print(numrec_prob.getSolution())
+					vs = [v12]
+				lo = (csz * (csz + 1)) // 2
+				hi = (csz * (19 - csz)) // 2
+				# Need to capture the current values of lo and hi otherwise lambda is evaluated with the wrong values.
+				numrec_prob.addConstraint(lambda v, l=lo, h=hi: l <= v <= h, vs)
+				print(f"{lo} <= {vs[0]} <= {hi}")
+				print(numrec_prob.getSolution())
+				sum405 += vs
+	numrec_prob.addConstraint(ExactSumConstraint(405), sum405)
+	print(f"Sum 405 {sum405}")
+	print(numrec_prob.getSolution())
 
-kmeans = KMeans(n_clusters=16, n_init=16)
-labels = kmeans.fit_predict(num_var)
-
-clusters = dict()
-for (c, l) in zip(allcs, labels):
-	if l not in clusters:
-		clusters[l] = []
-	clusters[l].append(c)
-print(len(clusters))
-
-for (i, k) in enumerate(clusters.keys()):
-	for (j, c) in enumerate(clusters[k][:10]):
-		plt.subplot(len(clusters.keys()), 10, 1 + j + (10 * i))
-		number = np.zeros((InpImage.RESOLUTION, InpImage.RESOLUTION))
-		paint_mask(number, [c])
-		(_, (x, y, w, h), _) = c
-		plt.imshow(number[y:y + h, x:x + w], 'gray')
-		plt.xticks([]), plt.yticks([])
-plt.show()
-
-plt.scatter([v[0] for v in num_var], [v[1] for v in num_var], c=labels)
-plt.show()
+print(numrec_prob.getSolution())
+# sln = SolImage()
+# sln.draw_borders(brdrs)
+# plt.imshow(sln.sol_img, 'gray')
+# plt.xticks([]), plt.yticks([])
+# plt.show()
+# exit(0)

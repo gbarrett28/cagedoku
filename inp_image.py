@@ -66,9 +66,8 @@ def process_sample(s, isblack):
 		sbw = s < isblack
 		sl = sbw[1:]
 		sr = sbw[:-1]
-		su = sl & ~sr
-		sd = ~sl & sr
-		return su.sum(), sd.sum()
+		se = sl & ~sr
+		return se.sum()
 	else:
 		return s
 
@@ -302,6 +301,7 @@ class InpImage:
 				self.info['sums'] = np.empty((9, 9), dtype=object)
 				warped_blk = cv2.warpPerspective(blk, m, (InpImage.RESOLUTION, InpImage.RESOLUTION),
 				                                 flags=cv2.INTER_AREA)
+
 				# Blank out the grid lines so that they don't join up all the numbers.
 				for x in reversed(range(1, warped_blk.shape[0])):
 					if np.mean(warped_blk[:, x - 1]) > 200:
@@ -309,18 +309,6 @@ class InpImage:
 				for y in reversed(range(1, warped_blk.shape[1])):
 					if np.mean(warped_blk[y - 1, :]) > 200:
 						warped_blk[y, :] = 0
-
-				# erosion_size = 2
-				# element = cv2.getStructuringElement(cv2.MORPH_CROSS, (2 * erosion_size + 1, 2 * erosion_size + 1),
-				#                                    (erosion_size, erosion_size))
-				# warped_blk = cv2.erode(warped_blk, element)
-				# warped_blk = cv2.dilate(warped_blk, element)
-				# warped_blk = cv2.erode(warped_blk, element)
-				# warped_blk = cv2.dilate(warped_blk, element)
-				# warped_blk = cv2.erode(warped_blk, element)
-				# warped_blk = cv2.dilate(warped_blk, element)
-				# warped_blk = cv2.erode(warped_blk, element)
-				# warped_blk = cv2.dilate(warped_blk, element)
 
 				contours, hiers = cv2.findContours(warped_blk, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 				if hiers is not None:
