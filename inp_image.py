@@ -5,6 +5,7 @@ import pickle as pk
 import itertools
 
 import cv2
+import numpy
 import numpy as np
 from matplotlib import pyplot as plt
 from sklearn import linear_model
@@ -148,12 +149,6 @@ def contour_is_number(br):
 		InpImage.SUBRES // 8 <= h < InpImage.SUBRES // 2
 
 
-# return InpImage.SUBRES // 16 <= w
-# return w < InpImage.SUBRES // 2
-# return InpImage.SUBRES // 8 <= h
-# return h < InpImage.SUBRES // 2
-# return True
-
 def get_num_contours(chier):
 	ret = []
 
@@ -194,21 +189,8 @@ class InpImage:
 		if not rework and jpk.exists():
 			self.info = pk.load(open(jpk, "rb"))
 		else:
-			# Read the image file.
-			imga = cv2.imread(str(f))
+			gry, img = get_gry_img(f)
 
-			# Sometimes we have a low resolution image in a big white square so don't do this before grid
-			# recognition.
-			# Scale up until input image is the same order as the cage detection requires.
-			while imga.shape[0] < InpImage.RESOLUTION or imga.shape[1] < InpImage.RESOLUTION:
-				imga = cv2.pyrUp(imga)
-
-			# Add a bounding black box to help with the grid detection.
-			img = cv2.bitwise_not(np.zeros((imga.shape[0] + 6, imga.shape[1] + 6, 3), np.uint8))
-			img[3:3 + imga.shape[0], 3:imga.shape[1] + 3] = imga
-
-			# Find grey distribution and eliminate to get the black bits.
-			gry = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 			# blur = cv2.GaussianBlur(gry, (5, 5), 0)
 			# gry = cv2.addWeighted(gry, 1.5, blur, -0.5, 0)
 			blk_detect = np.reshape(np.ravel(gry), (-1, 1))
@@ -240,7 +222,7 @@ class InpImage:
 			lines_rt = cv2.HoughLines(blk, InpImage.RHO, InpImage.THETA, InpImage.HTHRESH)
 			if lines_rt is None:
 				print(f"Lines not found for {f}")
-				self.show_stuff(bins, blk, counts, img, isblack, [], [])
+				show_stuff(bins, blk, counts, img, isblack, [], [])
 				return
 
 			lines = [(r, math.sin(t), math.cos(t)) for [[r, t]] in lines_rt]
@@ -256,7 +238,7 @@ class InpImage:
 			num_chiers = []
 			if len(usects) < 4:
 				print(f"Intersections not found for {f}")
-				self.show_stuff(bins, blk, counts, img, isblack, [], [])
+				show_stuff(bins, blk, counts, img, isblack, [], [])
 				return
 			else:
 				y0 = min([y for y, _ in usects])
@@ -324,28 +306,57 @@ class InpImage:
 							self.info['sums'][X, Y] = list()
 						self.info['sums'][X, Y].append((c, br, ds))
 
-			self.show_stuff(bins, warped_blk, counts, img, isblack, rect, num_chiers)
+			show_stuff(bins, warped_blk, counts, img, isblack, rect, num_chiers)
 
 			pk.dump(self.info, open(jpk, "wb"))
 
-	@staticmethod
-	def show_stuff(bins, blk, counts, img, isblack, rect, num_chiers):
-		if InpImage.do_print:
-			for pt in rect:
-				cv2.circle(img, tuple([int(round(i)) for i in pt]), 5, (0, 255, 0), -1)
-			plt.subplot(1, 3, 1)
-			plt.imshow(img)
-			plt.xticks([]), plt.yticks([])
-			plt.subplot(1, 3, 2)
-			plt.imshow(blk, 'gray')
-			plt.xticks([]), plt.yticks([])
-			plt.subplot(1, 3, 3)
-			plt.title(f"{isblack}")
-			plt.stairs(counts, bins)
-			# plt.xticks([]), plt.yticks([])
-			plt.show()
-			numbers = np.zeros(blk.shape, np.uint8)
-			paint_mask(numbers, num_chiers)
-			plt.imshow(numbers, 'gray')
-			plt.show()
-			exit(0)
+
+def show_stuff(bins, blk, counts, img, isblack, rect, num_chiers):
+	if InpImage.do_print:
+		for pt in rect:
+			cv2.circle(img, tuple([int(round(i)) for i in pt]), 5, (0, 255, 0), -1)
+		plt.subplot(1, 3, 1)
+		plt.imshow(img)
+		plt.xticks([]), plt.yticks([])
+		plt.subplot(1, 3, 2)
+		plt.imshow(blk, 'gray')
+		plt.xticks([]), plt.yticks([])
+		plt.subplot(1, 3, 3)
+		plt.title(f"{isblack}")
+		plt.stairs(counts, bins)
+		# plt.xticks([]), plt.yticks([])
+		plt.show()
+		numbers = np.zeros(blk.shape, np.uint8)
+		paint_mask(numbers, num_chiers)
+		plt.imshow(numbers, 'gray')
+		plt.show()
+		exit(0)
+
+
+def get_gry_img(f):
+	# Read the image file.
+	imga = cv2.imread(str(f))
+	# Sometimes we have a low resolution image in a big white square so don't do this before grid
+	# recognition.
+	# Scale up until input image is the same order as the cage detection requires.
+	while imga.shape[0] < InpImage.RESOLUTION or imga.shape[1] < InpImage.RESOLUTION:
+		imga = cv2.pyrUp(imga)
+	# Add a bounding black box to help with the grid detection.
+	img = cv2.bitwise_not(np.zeros((imga.shape[0] + 6, imga.shape[1] + 6, 3), np.uint8))
+	img[3:3 + imga.shape[0], 3:imga.shape[1] + 3] = imga
+	# Find grey distribution and eliminate to get the black bits.
+	gry = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+	return gry, img
+
+
+def number_img(c, shape=None):
+	number = np.zeros((InpImage.RESOLUTION, InpImage.RESOLUTION))
+	paint_mask(number, [c])
+
+	(_, (x, y, w, h), _) = c
+	if shape is not None:
+		ret = np.zeros(shape)
+		ret[:h, :w] = number[y:y + h, x:x + w]
+	else:
+		ret = number[y:y + h, x:x + w]
+	return ret

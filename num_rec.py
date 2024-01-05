@@ -1,9 +1,8 @@
 import re
 
-import cv2
 from sklearn.preprocessing import Normalizer
 from inp_image import *
-from inp_image import InpImage, paint_mask
+from inp_image import number_img
 
 
 class NumberRecogniser:
@@ -46,12 +45,10 @@ def show_clusters(labels, allcs):
 
 	for (i, k) in enumerate(clusters.keys()):
 		for (j, c1) in enumerate(clusters[k][:10], 1):
-			number = np.zeros((InpImage.RESOLUTION, InpImage.RESOLUTION))
-			paint_mask(number, [c1])
+			numb = number_img(c1)
 
 			plt.subplot(len(clusters.keys()), 10, j + (10 * i))
-			(_, (x, y, w, h), _) = c1
-			plt.imshow(number[y:y + h, x:x + w], 'gray')
+			plt.imshow(numb, 'gray')
 			plt.xticks([]), plt.yticks([])
 	plt.show()
 
