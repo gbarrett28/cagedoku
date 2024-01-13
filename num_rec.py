@@ -6,11 +6,11 @@ from inp_image import *
 from inp_image import number_img
 
 
-class NumberRecogniser:
-	def __init__(self, allcs):
+class NumberRecogniserA:
+	def __init__(self, allcs, n_clusters):
 		self.norm = Normalizer()
 		self.pca = PCA()
-		self.kmeans = KMeans(n_clusters=16, n_init=16)
+		self.kmeans = KMeans(n_clusters=n_clusters, n_init=16)
 
 		allmoms = get_moments_v(allcs)
 		num_var = self.pca.fit_transform(self.norm.fit_transform(allmoms))
@@ -32,6 +32,28 @@ class NumberRecogniser:
 		return self.kmeans.predict(self.pca.transform(self.norm.transform(allmoms)))
 
 
+class NumberRecogniserB:
+	def __init__(self, allcs, n_clusters):
+		self.pca = PCA()
+		self.kmeans = KMeans(n_clusters=n_clusters, n_init=16)
+
+		num_var = self.pca.fit_transform([n.flatten() for n in allcs])
+		labels = self.kmeans.fit_predict(num_var)
+
+		show_clusters(labels, allcs)
+		self.show_scatter(labels, num_var)
+
+	def show_scatter(self, labels, num_var):
+		print(self.pca.explained_variance_ratio_)
+		print(np.cumsum(self.pca.explained_variance_ratio_))
+
+		plt.scatter([v[0] for v in num_var], [v[1] for v in num_var], c=labels)
+		plt.show()
+
+	def get_clusters(self, sums):
+		return self.kmeans.predict(self.pca.transform([s.flatten() for s in sums]))
+
+
 def get_moments_v(sums):
 	allmoms = []
 	for ml in get_moments(sums):
@@ -51,7 +73,8 @@ def show_clusters(labels, allcs):
 
 	for (i, k) in enumerate(sorted(clusters.keys())):
 		for (j, c1) in enumerate(clusters[k][:10], 1):
-			numb = number_img(c1)
+			# numb = number_img(c1)
+			numb = c1
 
 			plt.subplot(len(clusters.keys()), 10, j + (10 * i))
 			plt.imshow(numb, 'gray')
@@ -88,10 +111,10 @@ def plot_pca(pca, dim=32):
 
 	plt.show()
 
-def numrec_initialiser():
+def numrec_initialiser(n_clusters: int, rework=False) -> NumberRecogniserB:
 	num_rec_pkl = RAG / r"numrec.pkl"
-	if num_rec_pkl.exists():
-		num_rec = pk.load(open(num_rec_pkl, "rb"))
+	if not rework and num_rec_pkl.exists():
+		num_rec: NumberRecogniserB = pk.load(open(num_rec_pkl, "rb"))
 	else:
 		allcs = []
 		for f in itertools.islice(RAG.glob(r"*.jpg"), None):
@@ -104,9 +127,7 @@ def numrec_initialiser():
 					if sums is not None:
 						allcs += sums
 
-		num_rec = NumberRecogniser(allcs)
+		num_rec = NumberRecogniserB(allcs, n_clusters)
 		pk.dump(num_rec, open(num_rec_pkl, "wb"))
 
 	return num_rec
-
-NUM_REC = numrec_initialiser()

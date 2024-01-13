@@ -7,18 +7,18 @@ import itertools
 import cv2
 import numpy as np
 from matplotlib import pyplot as plt
+# from matplotlib.widgets import Button, Slider
 from sklearn import linear_model
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
+from scipy.signal import find_peaks
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--rag', choices=["observer", "guardian"], required=True)
-parser.add_argument('--binarise', choices=["static", "adaptive"], default="static")
-parser.add_argument('--rework', default=False)
+parser.add_argument('--rework', default=False, action='store_true')
 args = parser.parse_args()
 RAG = pathlib.Path(args.rag)
 REWORK = args.rework
-binarise = args.binarise
 
 GNOTO = str(RAG) == r"guardian"
 ONOTG = str(RAG) == r"observer"
@@ -54,20 +54,16 @@ def draw_hough(img, lines):
 			if b and 0 <= x < xn and 0 <= y < yn:
 				pts.append((int(round(x)), int(round(y))))
 		# print(f"len(pts)={len(pts)}")
-		assert len(pts) == 2
-		[pt1, pt2] = pts
-		cv2.line(img, pt1, pt2, (0, 0, 255), 1, cv2.LINE_AA)
+		if len(pts) == 2:
+			[pt1, pt2] = pts
+			cv2.line(img, pt1, pt2, (0, 0, 255), 1, cv2.LINE_AA)
 
 
-def process_sample(s, isblack):
-	if GNOTO:
-		sbw = s < isblack
-		sl = sbw[1:]
-		sr = sbw[:-1]
-		se = sl & ~sr
-		return se.sum()
-	else:
-		return s
+def process_sample(s):
+	sl = s[1:]
+	sr = s[:-1]
+	se = sl & ~sr
+	return np.count_nonzero(se)
 
 
 class BorderDecode:
@@ -141,8 +137,11 @@ def contour_hier(chs, seen, i=0):
 
 
 def contour_is_number(br):
-	_, _, w, h = br
-	return InpImage.SUBRES // 16 <= w < InpImage.SUBRES // 2 and \
+	x, y, w, h = br
+	XX = (2 * x) // InpImage.SUBRES
+	YY = (2 * y) // InpImage.SUBRES
+	return XX % 2 == 0 and YY % 2 == 0 and \
+		InpImage.SUBRES // 16 <= w < InpImage.SUBRES // 2 and \
 		InpImage.SUBRES // 8 <= h < InpImage.SUBRES // 2
 
 
@@ -162,6 +161,69 @@ def paint_mask(msk, ch, fill=255):
 	for (c, _, ds) in ch:
 		cv2.drawContours(image=msk, contours=[c], contourIdx=0, color=fill, thickness=-1)
 		paint_mask(msk, ds, fill=(255 - fill))
+
+
+def split_num_a(br, c, ds, warped_blk):
+	x, y, w, h = br
+	ys = np.argmax(warped_blk[y:y + h, x:x + w], axis=0)
+	peaks, _ = find_peaks(ys, height=3)
+	num_chiers = []
+	if len(peaks) == 0:
+		assert w < h
+		# plt.imshow(warped_blk[y:y + h, x:x + w], 'gray')
+		# plt.xticks([]), plt.yticks([])
+		# plt.show()
+		num_chiers.append((c, br, ds))
+	else:
+		sp = peaks[-1]
+		num1 = np.zeros((InpImage.RESOLUTION, InpImage.RESOLUTION), dtype=np.uint8)
+		num2 = np.zeros((InpImage.RESOLUTION, InpImage.RESOLUTION), dtype=np.uint8)
+		num1[y:y + h, x:x + sp] = warped_blk[y:y + h, x:x + sp]
+		num2[y:y + h, x + sp:x + w] = warped_blk[y:y + h, x + sp:x + w]
+		for num in [num1, num2]:
+			cnum, [hnum] = cv2.findContours(num, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+			num_chiers += get_num_contours(contour_hier(list(zip(cnum, hnum)), set()))
+	# plt.subplot(1, 3, 1)
+	# plt.imshow(warped_blk[y:y + h, x:x + w], 'gray')
+	# plt.xticks([]), plt.yticks([])
+	# plt.subplot(1, 3, 2)
+	# plt.imshow(num1[y:y + h, x:x + w], 'gray')
+	# plt.xticks([]), plt.yticks([])
+	# plt.subplot(1, 3, 3)
+	# plt.imshow(num2[y:y + h, x:x + w], 'gray')
+	# plt.xticks([]), plt.yticks([])
+	# plt.show()
+	#
+	# exit(0)
+	return num_chiers, x, y
+
+
+def split_num_b(br, warped_blk):
+	x, y, w, h = br
+	ys = np.argmax(warped_blk[y:y + h, x:x + w], axis=0)
+	peaks, _ = find_peaks(ys, height=4)
+
+	rects = []
+	if len(peaks) == 0:
+		if w >= h:
+			plt_images([warped_blk[y:y+h, x:x+w]])
+			exit(0)
+		rects.append((y, y + h, x, x + w))
+	else:
+		sp = peaks[-1]
+		if sp >= h or (w - sp) >= h:
+			print(peaks)
+			plt_images([warped_blk[y:y+h, x:x+w], warped_blk[y:y+h, x:x+sp], warped_blk[y:y+h, x+sp:x+w]], ticks=True)
+			exit(0)
+		rects.append((y, y + h, x, x + sp))
+		rects.append((y, y + h, x + sp, x + w))
+
+	ret = []
+	for (yt, yb, xl, xr) in rects:
+
+		ret.append(get_warp_from_rect(np.array([[xl, yt], [xr, yt], [xr, yb], [xl, yb]], dtype=np.float32), warped_blk))
+
+	return ret, x, y
 
 
 class InpImage:
@@ -196,7 +258,7 @@ class InpImage:
 			# print(counts, bins)
 
 			# print(f"GNOTO={GNOTO}, RAG={RAG}")
-			if GNOTO:
+			if GNOTO or True:
 				cm = np.sum(counts)
 				isblack = 256
 				for (c, b) in reversed(list(zip(counts, bins))):
@@ -214,11 +276,7 @@ class InpImage:
 				isblack = list(labs).count(labs[0])
 			self.info['isblack'] = isblack
 
-			if binarise == r"static":
-				blk = cv2.inRange(gry, 0, isblack)
-			else:
-				blk = ~cv2.adaptiveThreshold(gry, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
-				                             cv2.THRESH_BINARY, 31, 1)
+			blk = cv2.inRange(gry, 0, isblack)
 
 			lines_rt = cv2.HoughLines(blk, InpImage.RHO, InpImage.THETA, InpImage.HTHRESH)
 			if lines_rt is None:
@@ -236,7 +294,7 @@ class InpImage:
 						isects.append((y, x))
 			usects = sorted(set(isects))
 
-			num_chiers = []
+			raw_nums = []
 			if len(usects) < 4:
 				print(f"Intersections not found for {f}")
 				show_stuff(bins, blk, counts, img, isblack, [], [])
@@ -268,8 +326,10 @@ class InpImage:
 				warped_gry = cv2.warpPerspective(gry, m, (InpImage.RESOLUTION, InpImage.RESOLUTION),
 				                                 flags=cv2.INTER_LINEAR)
 
-				self.info['brdrsh'] = np.zeros((9, 8, InpImage.SUBRES // 2), np.uint8)
-				self.info['brdrsv'] = np.zeros((8, 9, InpImage.SUBRES // 2), np.uint8)
+				brd_view = cv2.adaptiveThreshold(warped_gry, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
+				                                   cv2.THRESH_BINARY, 31, 0)
+				self.info['brdrsh'] = np.zeros((9, 8), int)
+				self.info['brdrsv'] = np.zeros((8, 9), int)
 				for X in range(9):
 					XM = (((2 * X + 1) * InpImage.SUBRES) // 2)
 					XT = XM + (InpImage.SUBRES // 4) - (InpImage.SUBRES // 16)
@@ -278,36 +338,73 @@ class InpImage:
 						# Take a square centred on the boundary that is a quarter the area of a cell
 						YL = (Y * InpImage.SUBRES) - (InpImage.SUBRES // 4)
 						YR = (Y * InpImage.SUBRES) + (InpImage.SUBRES // 4)
-						self.info['brdrsh'][X, Y - 1] = np.min(warped_gry[XB:XT, YL:YR], axis=0)
-						self.info['brdrsv'][Y - 1, X] = np.min(warped_gry[YL:YR, XB:XT], axis=1)
+						self.info['brdrsh'][X, Y - 1] = process_sample(np.min(brd_view[XB:XT, YL:YR], axis=0))
+						self.info['brdrsv'][Y - 1, X] = process_sample(np.min(brd_view[YL:YR, XB:XT], axis=1))
 
 				self.info['sums'] = np.empty((9, 9), dtype=object)
 				warped_blk = cv2.warpPerspective(blk, m, (InpImage.RESOLUTION, InpImage.RESOLUTION),
-				                                 flags=cv2.INTER_AREA)
+				                                 flags=cv2.INTER_LINEAR)
 
-				# Blank out the grid lines so that they don't join up all the numbers.
-				for x in reversed(range(1, warped_blk.shape[0])):
-					if np.mean(warped_blk[:, x - 1]) > 200:
-						warped_blk[:, x] = 0
-				for y in reversed(range(1, warped_blk.shape[1])):
-					if np.mean(warped_blk[y - 1, :]) > 200:
-						warped_blk[y, :] = 0
+				# fig, (axg, axb, sl) = plt.subplots(1, 3)
+				# def update(warped_blr, v):
+				# 	k = 2*int(v)+1
+				# 	warped_blk = cv2.adaptiveThreshold(warped_blr, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
+				# 	                                   cv2.THRESH_BINARY, k, 0)
+				# 	axb.imshow(warped_blk, 'gray')
+				#
+				# at_slider = Slider(
+				# 	ax=sl,
+				# 	label="val",
+				# 	valmin=1,
+				# 	valmax=18,
+				# 	valinit=3,
+				# 	orientation="vertical"
+				# )
+				# at_slider.on_changed(lambda v, wb=warped_blr: update(wb, v))
+				# # plt.subplot(1, 2, 1)
+				# axg.imshow(warped_blr, 'gray')
+				# axg.set_xticks([]), axg.set_yticks([])
+				# # plt.subplot(1, 2, 2)
+				# axb.imshow(warped_blk, 'gray')
+				# axb.set_xticks([]), axb.set_yticks([])
+				# plt.show()
+				# exit(0)
+
+				# # Blank out the grid lines so that they don't join up all the numbers.
+				# for x in reversed(range(1, warped_blk.shape[0])):
+				# 	if np.mean(warped_blk[:, x - 1]) > 200:
+				# 		warped_blk[:, x] = 0
+				# for y in reversed(range(1, warped_blk.shape[1])):
+				# 	if np.mean(warped_blk[y - 1, :]) > 200:
+				# 		warped_blk[y, :] = 0
 
 				contours, hiers = cv2.findContours(warped_blk, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 				if hiers is not None:
 					[hier] = hiers
 					chiers = contour_hier(list(zip(contours, hier)), set())
-					num_chiers = get_num_contours(chiers)
-					InpImage.do_print = len(num_chiers) <= 9
-					for (c, br, ds) in num_chiers:
-						x, y, _, _ = br
+					raw_nums = get_num_contours(chiers)
+					InpImage.do_print = len(raw_nums) <= 9
+					for (c, br, ds) in sorted(raw_nums, key=lambda n: n[1][0]):
+						num_chiers, x, y = split_num_b(br, warped_blk)
 						X = x // InpImage.SUBRES
 						Y = y // InpImage.SUBRES
 						if self.info['sums'][X, Y] is None:
 							self.info['sums'][X, Y] = list()
-						self.info['sums'][X, Y].append((c, br, ds))
+						self.info['sums'][X, Y] += num_chiers
+					# allconts = np.zeros((InpImage.RESOLUTION, InpImage.RESOLUTION), dtype=np.uint8)
+					# paint_mask(allconts, chiers)
+					# plt.subplot(1, 2, 1)
+					# plt.imshow(allconts, 'gray')
+					# plt.xticks([]), plt.yticks([])
+					# numbers = np.zeros((InpImage.RESOLUTION, InpImage.RESOLUTION), dtype=np.uint8)
+					# paint_mask(numbers, raw_nums)
+					# plt.subplot(1, 2, 2)
+					# plt.imshow(numbers, 'gray')
+					# plt.xticks([]), plt.yticks([])
+					# plt.show()
+					# exit(0)
 
-			show_stuff(bins, warped_blk, counts, img, isblack, rect, num_chiers)
+			show_stuff(bins, warped_blk, counts, img, isblack, rect, raw_nums)
 
 			pk.dump(self.info, open(jpk, "wb"))
 
@@ -331,7 +428,7 @@ def show_stuff(bins, blk, counts, img, isblack, rect, num_chiers):
 		paint_mask(numbers, num_chiers)
 		plt.imshow(numbers, 'gray')
 		plt.show()
-		exit(0)
+		# exit(0)
 
 
 def get_gry_img(f):
@@ -361,3 +458,22 @@ def number_img(c, shape=None):
 	else:
 		ret = number[y:y + h, x:x + w]
 	return ret
+
+def get_warp_from_rect(rect, gry, res=(InpImage.SUBRES // 2, InpImage.SUBRES // 2)):
+	resy, resx = res
+	dst = np.array([
+		[0, 0],
+		[resy - 1, 0],
+		[resy - 1, resx - 1],
+		[0, resx - 1]], dtype="float32")
+	m = cv2.getPerspectiveTransform(rect, dst)
+	return cv2.warpPerspective(gry, m, res, flags=cv2.INTER_LINEAR)
+
+
+def plt_images(imgs, ticks=False):
+	for (i, img) in enumerate(imgs, 1):
+		plt.subplot(1, len(imgs), i)
+		plt.imshow(img, 'gray')
+		if not ticks:
+			plt.xticks([]), plt.yticks([])
+	plt.show()
