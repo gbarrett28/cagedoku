@@ -278,42 +278,9 @@ class InpImage:
 						brdrs[X, Y + 1][0] = isbv
 				self.info['brdrs'] = brdrs.copy()
 
-				self.info['sums'] = np.empty((9, 9), dtype=object)
+				num_pixels = np.empty((9, 9), dtype=object)
 				warped_blk = cv2.warpPerspective(blk, m, (InpImage.RESOLUTION, InpImage.RESOLUTION),
 				                                 flags=cv2.INTER_LINEAR)
-
-				# fig, (axg, axb, sl) = plt.subplots(1, 3)
-				# def update(warped_blr, v):
-				# 	k = 2*int(v)+1
-				# 	warped_blk = cv2.adaptiveThreshold(warped_blr, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
-				# 	                                   cv2.THRESH_BINARY, k, 0)
-				# 	axb.imshow(warped_blk, 'gray')
-				#
-				# at_slider = Slider(
-				# 	ax=sl,
-				# 	label="val",
-				# 	valmin=1,
-				# 	valmax=18,
-				# 	valinit=3,
-				# 	orientation="vertical"
-				# )
-				# at_slider.on_changed(lambda v, wb=warped_blr: update(wb, v))
-				# # plt.subplot(1, 2, 1)
-				# axg.imshow(warped_blr, 'gray')
-				# axg.set_xticks([]), axg.set_yticks([])
-				# # plt.subplot(1, 2, 2)
-				# axb.imshow(warped_blk, 'gray')
-				# axb.set_xticks([]), axb.set_yticks([])
-				# plt.show()
-				# exit(0)
-
-				# # Blank out the grid lines so that they don't join up all the numbers.
-				# for x in reversed(range(1, warped_blk.shape[0])):
-				# 	if np.mean(warped_blk[:, x - 1]) > 200:
-				# 		warped_blk[:, x] = 0
-				# for y in reversed(range(1, warped_blk.shape[1])):
-				# 	if np.mean(warped_blk[y - 1, :]) > 200:
-				# 		warped_blk[y, :] = 0
 
 				contours, hiers = cv2.findContours(warped_blk, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 				if hiers is not None:
@@ -325,21 +292,22 @@ class InpImage:
 						num_chiers, x, y = split_num(br, warped_blk)
 						X = x // InpImage.SUBRES
 						Y = y // InpImage.SUBRES
-						if self.info['sums'][X, Y] is None:
-							self.info['sums'][X, Y] = list()
-						self.info['sums'][X, Y] += num_chiers
-				# allconts = np.zeros((InpImage.RESOLUTION, InpImage.RESOLUTION), dtype=np.uint8)
-				# paint_mask(allconts, chiers)
-				# plt.subplot(1, 2, 1)
-				# plt.imshow(allconts, 'gray')
-				# plt.xticks([]), plt.yticks([])
-				# numbers = np.zeros((InpImage.RESOLUTION, InpImage.RESOLUTION), dtype=np.uint8)
-				# paint_mask(numbers, raw_nums)
-				# plt.subplot(1, 2, 2)
-				# plt.imshow(numbers, 'gray')
-				# plt.xticks([]), plt.yticks([])
-				# plt.show()
-				# exit(0)
+						if num_pixels[X, Y] is None:
+							num_pixels[X, Y] = list()
+						num_pixels[X, Y] += num_chiers
+
+				prd_per_sq = np.zeros(shape=(9, 9), dtype=int)
+				for X in range(9):
+					for Y in range(9):
+						sums = num_pixels[Y, X]
+						if sums is not None:
+							ntrs = NUM_REC.get_sums(sums)
+							if len(ntrs) > 4:
+								print(ntrs)
+								exit(0)
+							for v in [v for v in ntrs if v >= 0]:
+								prd_per_sq[X, Y] = (10 * prd_per_sq[X, Y]) + v
+				self.info['cagevals'] = prd_per_sq
 
 			show_stuff(bins, warped_blk, counts, img, isblack, rect, raw_nums)
 
@@ -587,3 +555,28 @@ cl_nums_g = list([3, 1, 2, 0, 1, 8, 7, 9, 6, 1, 4, 0, 2, 5, 3, 7])
 cl_nums_o = list([2, 1, 6, 4, 0, 7, 8, 3, 1, 2, 1, 9, 5, 1, 2, 5])
 cl_nums: list[int] = cl_nums_g if GNOTO else cl_nums_o
 NUM_REC = numrec_initialiser(16)
+
+# fig, (axg, axb, sl) = plt.subplots(1, 3)
+# def update(warped_blr, v):
+# 	k = 2*int(v)+1
+# 	warped_blk = cv2.adaptiveThreshold(warped_blr, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
+# 	                                   cv2.THRESH_BINARY, k, 0)
+# 	axb.imshow(warped_blk, 'gray')
+#
+# at_slider = Slider(
+# 	ax=sl,
+# 	label="val",
+# 	valmin=1,
+# 	valmax=18,
+# 	valinit=3,
+# 	orientation="vertical"
+# )
+# at_slider.on_changed(lambda v, wb=warped_blr: update(wb, v))
+# # plt.subplot(1, 2, 1)
+# axg.imshow(warped_blr, 'gray')
+# axg.set_xticks([]), axg.set_yticks([])
+# # plt.subplot(1, 2, 2)
+# axb.imshow(warped_blk, 'gray')
+# axb.set_xticks([]), axb.set_yticks([])
+# plt.show()
+# exit(0)

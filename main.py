@@ -21,28 +21,13 @@ def plot_pca(pca, dim=32):
 	plt.show()
 
 
-for f in itertools.islice(RAG.glob(r"*.jpg"), 1):
+for f in itertools.islice(RAG.glob(r"*.jpg"), None):
 	print(f"Processing {f}...")
-	inp = InpImage(f)
+	inp = InpImage(f, rework=True)
 	grd = Grid()
 
-	grd.sol_img.draw_borders(inp.info['brdrs'])
-
-	prd_per_sq = np.zeros(shape=(9, 9), dtype=int)
-	for X in range(9):
-		for Y in range(9):
-			sums = inp.info['sums'][Y, X]
-			if sums is not None:
-				ntrs = NUM_REC.get_sums(sums)
-				if len(ntrs) > 4:
-					print(ntrs)
-					exit(0)
-				for v in [v for v in ntrs if v >= 0]:
-					prd_per_sq[X, Y] = (10 * prd_per_sq[X, Y]) + v
-				grd.sol_img.draw_sum(X, Y, prd_per_sq[X, Y])
-
 	try:
-		grd.set_up(prd_per_sq, inp.info['brdrs'])
+		grd.set_up(inp.info['cagevals'], inp.info['brdrs'])
 
 		alts_sum, solns_sum = grd.solve()
 		if alts_sum != 81:
@@ -51,11 +36,11 @@ for f in itertools.islice(RAG.glob(r"*.jpg"), 1):
 	except ProcessingError as e:
 		print("... failed with ProcessingError: ", e.msg)
 		plt_images([inp.gry, grd.sol_img.sol_img])
-	# exit(0)
+		# exit(0)
 	except AssertionError as e:
 		print("... failed with AssertionError: ", e)
-	# plt_images([inp.gry, grd.sol_img.sol_img])
-	# exit(0)
+		# plt_images([inp.gry, grd.sol_img.sol_img])
+		# exit(0)
 	except ValueError:
 		print("... failed with ValueError")
 		plt_images([inp.gry, grd.sol_img.sol_img])

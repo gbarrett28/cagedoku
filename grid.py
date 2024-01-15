@@ -129,12 +129,15 @@ class Grid:
 		self.region = np.zeros((9, 9), np.uint)
 
 	def set_up(self, prd_per_sq, brdrs):
+		self.sol_img.draw_borders(brdrs)
+
 		cszs = np.zeros((9, 9), dtype=int)
 		# Mark all the regions.
 		reg = 0
 		for i in range(9):
 			for j in range(9):
 				if prd_per_sq[i][j] != 0:
+					self.sol_img.draw_sum(i, j, prd_per_sq[i][j])
 					reg += 1
 					cszs[i, j] = self.mark_region(i, j, reg, brdrs)
 		if (self.region == 0).any():
