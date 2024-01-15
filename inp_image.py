@@ -471,13 +471,13 @@ class NumberRecogniser:
 		return [cl_nums[c] for c in cls]
 
 
-def get_moments_v(sums):
-	allmoms = []
-	for ml in get_moments(sums):
-		momsv = np.zeros(35, dtype=np.float64)
-		momsv[:len(ml)] = np.array(ml)[:min(35, len(ml))]
-		allmoms.append(momsv)
-	return allmoms
+# def get_moments_v(sums):
+# 	allmoms = []
+# 	for ml in get_moments(sums):
+# 		momsv = np.zeros(35, dtype=np.float64)
+# 		momsv[:len(ml)] = np.array(ml)[:min(35, len(ml))]
+# 		allmoms.append(momsv)
+# 	return allmoms
 
 
 def show_clusters(labels, allcs):
@@ -499,15 +499,15 @@ def show_clusters(labels, allcs):
 	plt.show()
 
 
-def get_moments(nums):
-	ret = []
-	for (c, _, ds) in nums:
-		cv2moms = cv2.moments(c)
-		moms = [v for (k, v) in cv2moms.items() if re.match(r"^nu", k)]
-		for rmoms in get_moments(ds):
-			moms += rmoms
-		ret.append(moms)
-	return ret
+# def get_moments(nums):
+# 	ret = []
+# 	for (c, _, ds) in nums:
+# 		cv2moms = cv2.moments(c)
+# 		moms = [v for (k, v) in cv2moms.items() if re.match(r"^nu", k)]
+# 		for rmoms in get_moments(ds):
+# 			moms += rmoms
+# 		ret.append(moms)
+# 	return ret
 
 
 def plot_pca(pca, dim=32):
