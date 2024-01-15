@@ -3,33 +3,6 @@ import re
 from sklearn.preprocessing import Normalizer
 
 from inp_image import *
-from inp_image import number_img
-
-
-class NumberRecogniserA:
-	def __init__(self, allcs, n_clusters):
-		self.norm = Normalizer()
-		self.pca = PCA()
-		self.kmeans = KMeans(n_clusters=n_clusters, n_init=16)
-
-		allmoms = get_moments_v(allcs)
-		num_var = self.pca.fit_transform(self.norm.fit_transform(allmoms))
-		labels = self.kmeans.fit_predict(num_var)
-
-		show_clusters(labels, allcs)
-		self.show_scatter(labels, num_var)
-
-	def show_scatter(self, labels, num_var):
-		print(self.pca.explained_variance_ratio_)
-		print(np.cumsum(self.pca.explained_variance_ratio_))
-
-		plt.scatter([v[0] for v in num_var], [v[1] for v in num_var], c=labels)
-		plt.show()
-
-	def get_clusters(self, sums):
-		allmoms = get_moments_v(sums)
-
-		return self.kmeans.predict(self.pca.transform(self.norm.transform(allmoms)))
 
 
 class NumberRecogniserB:
@@ -52,6 +25,10 @@ class NumberRecogniserB:
 
 	def get_clusters(self, sums):
 		return self.kmeans.predict(self.pca.transform([s.flatten() for s in sums]))
+	
+	def get_sums(self, sums):
+		cls = self.get_clusters(sums)
+		return [cl_nums[c] for c in cls]
 
 
 def get_moments_v(sums):
@@ -111,7 +88,7 @@ def plot_pca(pca, dim=32):
 
 	plt.show()
 
-def numrec_initialiser(n_clusters: int, rework=False) -> NumberRecogniserB:
+def numrec_initialiser(n_clusters: int, rework: bool = False) -> NumberRecogniserB:
 	num_rec_pkl = RAG / r"numrec.pkl"
 	if not rework and num_rec_pkl.exists():
 		num_rec: NumberRecogniserB = pk.load(open(num_rec_pkl, "rb"))
@@ -131,3 +108,9 @@ def numrec_initialiser(n_clusters: int, rework=False) -> NumberRecogniserB:
 		pk.dump(num_rec, open(num_rec_pkl, "wb"))
 
 	return num_rec
+
+
+cl_nums_g = list([9, 1, 7, 2, 8, 2, 3, 4, 0, 6, 1, 6, 3, 7, 5, 0])
+cl_nums_o = list([3, 1, 7, 2, 0, 4, 6, 5, 9, 8, 1, 2, 2, 1, 1, 5])
+cl_nums: list[int] = cl_nums_g if GNOTO else cl_nums_o
+NUM_REC = numrec_initialiser(16)

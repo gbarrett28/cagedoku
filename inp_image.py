@@ -60,66 +60,15 @@ def draw_hough(img, lines):
 
 
 def process_sample(s):
+	if GNOTO:
+		peaks, _ = find_peaks(~s, height=32)
+		return len(peaks)
 	sl = s[1:]
 	sr = s[:-1]
 	se = sl & ~sr
 	return np.count_nonzero(se)
 
 
-class BorderDecode:
-	def __init__(self, pca, kmeans, isbrdr):
-		self.pca = pca
-		self.kmeans = kmeans
-		self.isbrdr = isbrdr
-
-
-def observer_border_gen(rework=REWORK):
-	samples = []
-	hasnums = []
-	globs = RAG.glob(r"*.jpg")
-	for f in itertools.islice(globs, None):
-		print(f"Processing {f}...")
-		inp = InpImage(f, rework)
-		for X in range(9):
-			for Y in range(9):
-				cbd = len(inp.info['sums'][X, Y][0]) != 0
-				if X > 0:
-					hasnums.append(cbd)
-					samples.append(inp.info['brdrsh'][Y, X - 1])
-				if Y > 0:
-					hasnums.append(cbd)
-					samples.append(inp.info['brdrsv'][Y - 1, X])
-
-	brdr_path = RAG / r"brdr.pkl"
-	if not rework and brdr_path.exists():
-		brdr: BorderDecode = pk.load(open(brdr_path, "rb"))
-	else:
-		pca: PCA = PCA()
-		brdrs = pca.fit_transform(samples)
-
-		kmeans: KMeans = KMeans(n_clusters=4, n_init=16)
-		labels = kmeans.fit_predict(brdrs)
-		clusters = np.unique(labels)
-		cl_brdr = dict([(c, 0) for c in clusters])
-		cl_size = dict([(c, 0) for c in clusters])
-		for (c, b) in zip(labels, hasnums):
-			cl_size[c] += 1
-			if b:
-				cl_brdr[c] += 1
-		# print(cl_brdr)
-		# print(cl_size)
-		cl_is_brdr = dict()
-		for c in clusters:
-			cl_is_brdr[c] = cl_size[c] < 10 * cl_brdr[c]
-		# print(cl_is_brdr)
-
-		brdr = BorderDecode(pca, kmeans, cl_is_brdr)
-		pk.dump(brdr, open(brdr_path, "wb"))
-
-	return brdr
-
-
-# OBRDR = observer_border_gen() if ONOTG else None
 
 def contour_hier(chs, seen, i=0):
 	if not chs:
@@ -163,45 +112,11 @@ def paint_mask(msk, ch, fill=255):
 		paint_mask(msk, ds, fill=(255 - fill))
 
 
-def split_num_a(br, c, ds, warped_blk):
-	x, y, w, h = br
-	ys = np.argmax(warped_blk[y:y + h, x:x + w], axis=0)
-	peaks, _ = find_peaks(ys, height=3)
-	num_chiers = []
-	if len(peaks) == 0:
-		assert w < h
-		# plt.imshow(warped_blk[y:y + h, x:x + w], 'gray')
-		# plt.xticks([]), plt.yticks([])
-		# plt.show()
-		num_chiers.append((c, br, ds))
-	else:
-		sp = peaks[-1]
-		num1 = np.zeros((InpImage.RESOLUTION, InpImage.RESOLUTION), dtype=np.uint8)
-		num2 = np.zeros((InpImage.RESOLUTION, InpImage.RESOLUTION), dtype=np.uint8)
-		num1[y:y + h, x:x + sp] = warped_blk[y:y + h, x:x + sp]
-		num2[y:y + h, x + sp:x + w] = warped_blk[y:y + h, x + sp:x + w]
-		for num in [num1, num2]:
-			cnum, [hnum] = cv2.findContours(num, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-			num_chiers += get_num_contours(contour_hier(list(zip(cnum, hnum)), set()))
-	# plt.subplot(1, 3, 1)
-	# plt.imshow(warped_blk[y:y + h, x:x + w], 'gray')
-	# plt.xticks([]), plt.yticks([])
-	# plt.subplot(1, 3, 2)
-	# plt.imshow(num1[y:y + h, x:x + w], 'gray')
-	# plt.xticks([]), plt.yticks([])
-	# plt.subplot(1, 3, 3)
-	# plt.imshow(num2[y:y + h, x:x + w], 'gray')
-	# plt.xticks([]), plt.yticks([])
-	# plt.show()
-	#
-	# exit(0)
-	return num_chiers, x, y
-
-
-def split_num_b(br, warped_blk):
+def split_num(br, warped_blk):
 	x, y, w, h = br
 	ys = np.argmax(warped_blk[y:y + h, x:x + w], axis=0)
 	peaks, _ = find_peaks(ys, height=4)
+	peaks = [p for p in peaks if contour_is_number((x, y, p, h)) and contour_is_number(((x, y, w - p, h)))]
 
 	rects = []
 	if len(peaks) == 0:
@@ -244,12 +159,13 @@ class InpImage:
 	def __init__(self, f, rework=REWORK):
 		self.info = dict()
 
+		gry, img = get_gry_img(f)
+		self.gry = gry
+
 		jpk = f.with_suffix(r".jpk")
 		if not rework and jpk.exists():
 			self.info = pk.load(open(jpk, "rb"))
 		else:
-			gry, img = get_gry_img(f)
-
 			# blur = cv2.GaussianBlur(gry, (5, 5), 0)
 			# gry = cv2.addWeighted(gry, 1.5, blur, -0.5, 0)
 			blk_detect = np.reshape(np.ravel(gry), (-1, 1))
@@ -330,6 +246,8 @@ class InpImage:
 				                                   cv2.THRESH_BINARY, 31, 0)
 				self.info['brdrsh'] = np.zeros((9, 8), int)
 				self.info['brdrsv'] = np.zeros((8, 9), int)
+				self.info['brdrph'] = np.zeros((9, 8, InpImage.SUBRES // 2), np.int8)
+				self.info['brdrpv'] = np.zeros((8, 9, InpImage.SUBRES // 2), np.int8)
 				for X in range(9):
 					XM = (((2 * X + 1) * InpImage.SUBRES) // 2)
 					XT = XM + (InpImage.SUBRES // 4) - (InpImage.SUBRES // 16)
@@ -338,6 +256,8 @@ class InpImage:
 						# Take a square centred on the boundary that is a quarter the area of a cell
 						YL = (Y * InpImage.SUBRES) - (InpImage.SUBRES // 4)
 						YR = (Y * InpImage.SUBRES) + (InpImage.SUBRES // 4)
+						self.info['brdrph'][X, Y - 1] = np.min(warped_gry[XB:XT, YL:YR], axis=0)
+						self.info['brdrpv'][Y - 1, X] = np.min(warped_gry[YL:YR, XB:XT], axis=1)
 						self.info['brdrsh'][X, Y - 1] = process_sample(np.min(brd_view[XB:XT, YL:YR], axis=0))
 						self.info['brdrsv'][Y - 1, X] = process_sample(np.min(brd_view[YL:YR, XB:XT], axis=1))
 
@@ -385,7 +305,7 @@ class InpImage:
 					raw_nums = get_num_contours(chiers)
 					InpImage.do_print = len(raw_nums) <= 9
 					for (c, br, ds) in sorted(raw_nums, key=lambda n: n[1][0]):
-						num_chiers, x, y = split_num_b(br, warped_blk)
+						num_chiers, x, y = split_num(br, warped_blk)
 						X = x // InpImage.SUBRES
 						Y = y // InpImage.SUBRES
 						if self.info['sums'][X, Y] is None:
@@ -477,3 +397,62 @@ def plt_images(imgs, ticks=False):
 		if not ticks:
 			plt.xticks([]), plt.yticks([])
 	plt.show()
+
+class BorderDecode:
+	def __init__(self, pca, kmeans, isbrdr):
+		self.pca: PCA = pca
+		self.kmeans: KMeans = kmeans
+		self.isbrdr = isbrdr
+
+	def tr_brdrs(self, brdrs):
+		cls = self.kmeans.predict(self.pca.transform(brdrs))
+		return [self.isbrdr[c] for c in cls]
+
+
+def observer_border_gen(rework=REWORK):
+	brdr_path = RAG / r"brdr.pkl"
+	if not rework and brdr_path.exists():
+		brdr: BorderDecode = pk.load(open(brdr_path, "rb"))
+	else:
+		samples = []
+		hasnums = []
+		globs = RAG.glob(r"*.jpg")
+		for f in itertools.islice(globs, None):
+			print(f"Processing {f}...")
+			inp = InpImage(f, rework=rework)
+			for X in range(9):
+				for Y in range(9):
+					cbd = inp.info['sums'][X, Y] != None
+					if X > 0:
+						hasnums.append(cbd)
+						samples.append(inp.info['brdrph'][Y, X - 1])
+					if Y > 0:
+						hasnums.append(cbd)
+						samples.append(inp.info['brdrpv'][Y - 1, X])
+
+		pca: PCA = PCA()
+		brdrs = pca.fit_transform(samples)
+
+		kmeans: KMeans = KMeans(n_clusters=4, n_init=16)
+		labels = kmeans.fit_predict(brdrs)
+		clusters = np.unique(labels)
+		cl_brdr = dict([(c, 0) for c in clusters])
+		cl_size = dict([(c, 0) for c in clusters])
+		for (c, b) in zip(labels, hasnums):
+			cl_size[c] += 1
+			if b:
+				cl_brdr[c] += 1
+		# print(cl_brdr)
+		# print(cl_size)
+		cl_is_brdr = dict()
+		for c in clusters:
+			cl_is_brdr[c] = cl_size[c] < 10 * cl_brdr[c]
+		# print(cl_is_brdr)
+
+		brdr = BorderDecode(pca, kmeans, cl_is_brdr)
+		pk.dump(brdr, open(brdr_path, "wb"))
+
+	return brdr
+
+
+OBRDR = observer_border_gen(rework=REWORK) if ONOTG else None

@@ -1,20 +1,6 @@
-from typing import List, Any
-
 from num_rec import *
 from grid import Grid, ProcessingError
 # from constraint import Problem, ExactSumConstraint, Domain
-
-NUM_REC = numrec_initialiser(16 if GNOTO else 16, REWORK)
-
-cl_nums_g = list([1, 2, 0, 8, 4, 7, 5, 9, 1, 1, 6, 3, 2, 3, 7, 0]) # list([1, 6, 8, 2, 0, 7, 4, 1, 0, 9, 5, 4, 3, 9, 1, 7])
-cl_nums_o = list([3, 1, 7, 2, 0, 4, 6, 5, 9, 8, 1, 2, 2, 1, 1, 5]) # list([1, 6, 5, 8, 4, 7, 0, 9, 2, 3, 4, 8, 9, 8, 1, 5, 1, 7, 8, 8, 0, 9, 4, 6, 9, 1, 3, 2, 2, 8, 2, 2])
-cl_nums: list[int] = cl_nums_g if GNOTO else cl_nums_o
-
-def cl_to_num(lo, hi, cs):
-	ret = 0
-	for c in cs:
-		ret = (10 * ret) + c
-	return lo <= ret <= hi
 
 
 def plot_pca(pca, dim=32):
@@ -35,8 +21,6 @@ def plot_pca(pca, dim=32):
 
 	plt.show()
 
-
-allcs = []
 for f in itertools.islice(RAG.glob(r"*.jpg"), None):
 	print(f"Processing {f}...")
 	inp = InpImage(f)
@@ -44,25 +28,28 @@ for f in itertools.islice(RAG.glob(r"*.jpg"), None):
 
 	brdrs = np.full(shape=(9, 9, 4), fill_value=True)
 	for X in range(9):
-		for Y in range(9):
-			if Y < 8:
-				for i in range(4):
-					isbh = inp.info['brdrsh'][X, Y]
-					brdrs[Y + 0, X][1] = isbh > 2
-					brdrs[Y + 1, X][3] = isbh > 2
-					isbv = inp.info['brdrsv'][Y, X]
-					brdrs[X, Y + 0][2] = isbv > 2
-					brdrs[X, Y + 1][0] = isbv > 2
-	grd.sol_img.draw_borders(brdrs)
+		for Y in range(8):
+			if ONOTG:
+				[osbh, osbv] = OBRDR.tr_brdrs([inp.info['brdrph'][X, Y], inp.info['brdrpv'][Y, X]])
+				brdrs[Y + 0, X][1] = osbh
+				brdrs[Y + 1, X][3] = osbh
+				brdrs[X, Y + 0][2] = osbv
+				brdrs[X, Y + 1][0] = osbv
+			else:
+				isbh = inp.info['brdrsh'][X, Y]
+				brdrs[Y + 0, X][1] = isbh > 2
+				brdrs[Y + 1, X][3] = isbh > 2
+				isbv = inp.info['brdrsv'][Y, X]
+				brdrs[X, Y + 0][2] = isbv > 2
+				brdrs[X, Y + 1][0] = isbv > 2
+			grd.sol_img.draw_borders(brdrs)
 
 	prd_per_sq = np.zeros(shape=(9, 9), dtype=int)
 	for X in range(9):
 		for Y in range(9):
 			sums = inp.info['sums'][Y, X]
 			if sums is not None:
-				allcs += sums
-				dcds = NUM_REC.get_clusters(sums)
-				ntrs = [cl_nums[s] for s in dcds]
+				ntrs = NUM_REC.get_sums(sums)
 				if len(ntrs) > 4:
 					print(ntrs)
 					exit(0)
@@ -77,67 +64,16 @@ for f in itertools.islice(RAG.glob(r"*.jpg"), None):
 		if alts_sum != 81:
 			print("... cheating")
 			grd.cheat_solve()
-	except ProcessingError:
-		print("... failed with ProcessingError")
-		plt.imshow(grd.sol_img.sol_img)
-		plt.show()
-		exit(0)
-	except AssertionError:
-		print("... failed with AssertionError")
-		plt.imshow(grd.sol_img.sol_img)
-		plt.show()
-		exit(0)
+	except ProcessingError as e:
+		print("... failed with ProcessingError: ", e.msg)
+		plt_images([inp.gry, grd.sol_img.sol_img])
+		# exit(0)
+	except AssertionError as e:
+		print("... failed with AssertionError: ", e)
+		# plt_images([inp.gry, grd.sol_img.sol_img])
+		# exit(0)
 	except ValueError:
 		print("... failed with ValueError")
-		plt.imshow(grd.sol_img.sol_img)
-		plt.show()
+		plt_images([inp.gry, grd.sol_img.sol_img])
 		exit(0)
 
-
-	# plt.imshow(grd.sol_img.sol_img)
-	# plt.show()
-	# exit(0)
-
-labels = NUM_REC.get_clusters(allcs)
-show_clusters(labels, allcs)
-exit(0)
-clusters = dict()
-for (k, v) in zip(labels, allcs):
-	if k not in clusters:
-		clusters[k] = []
-	clusters[k].append(v)
-
-num_clusters = len(clusters.keys())
-centroids = dict()
-for (k, vs) in clusters.items():
-	shape = (np.max([h for (_, (_, _, w, h), _) in vs]), np.max([w for (_, (_, _, w, h), _) in vs]))
-	numbs = [number_img(v, shape=shape) for v in vs]
-	centroids[k] = ~np.uint8(np.mean(np.array(numbs), axis=0))
-	plt.subplot(1, num_clusters, k+1)
-	plt.imshow(centroids[k], 'gray')
-	plt.xticks([]), plt.yticks([])
-plt.show()
-
-# # sln = SolImage()
-# # sln.draw_borders(brdrs)
-# # plt.imshow(sln.sol_img, 'gray')
-# # plt.xticks([]), plt.yticks([])
-# # plt.show()
-# # exit(0)
-#
-# threshold = 0.85
-# for f in itertools.islice(RAG.glob(r"*.jpg"), None):
-# 	print(f"Processing {f}...")
-# 	gry, _ = get_gry_img(f)
-# 	for (k, t) in centroids.items():
-# 		w, h = t.shape
-# 		res = cv2.matchTemplate(gry, t, cv2.TM_CCORR_NORMED)
-# 		plt.hist(res)
-# 		plt.show()
-# 		# loc = np.where(res >= threshold)
-# 		# for pt in zip(*loc[::-1]):
-# 		# 	cv2.rectangle(gry, pt, (pt[0] + w, pt[1] + h), 128, -1)
-# 	plt.imshow(gry, 'gray')
-# 	plt.xticks([]), plt.yticks([])
-# 	plt.show()
-# 	exit(0)
