@@ -3,6 +3,7 @@ import math
 import pathlib
 import pickle as pk
 import itertools
+import re
 
 import cv2
 import numpy as np
@@ -69,7 +70,6 @@ def process_sample(s):
 	return np.count_nonzero(se)
 
 
-
 def contour_hier(chs, seen, i=0):
 	if not chs:
 		return []
@@ -116,26 +116,26 @@ def split_num(br, warped_blk):
 	x, y, w, h = br
 	ys = np.argmax(warped_blk[y:y + h, x:x + w], axis=0)
 	peaks, _ = find_peaks(ys, height=4)
-	peaks = [p for p in peaks if contour_is_number((x, y, p, h)) and contour_is_number(((x, y, w - p, h)))]
+	peaks = [p for p in peaks if contour_is_number((x, y, p, h)) and contour_is_number((x, y, w - p, h))]
 
 	rects = []
 	if len(peaks) == 0:
 		if w >= h:
-			plt_images([warped_blk[y:y+h, x:x+w]])
+			plt_images([warped_blk[y:y + h, x:x + w]])
 			exit(0)
 		rects.append((y, y + h, x, x + w))
 	else:
 		sp = peaks[-1]
 		if sp >= h or (w - sp) >= h:
 			print(peaks)
-			plt_images([warped_blk[y:y+h, x:x+w], warped_blk[y:y+h, x:x+sp], warped_blk[y:y+h, x+sp:x+w]], ticks=True)
+			plt_images([warped_blk[y:y + h, x:x + w], warped_blk[y:y + h, x:x + sp], warped_blk[y:y + h, x + sp:x + w]],
+			           ticks=True)
 			exit(0)
 		rects.append((y, y + h, x, x + sp))
 		rects.append((y, y + h, x + sp, x + w))
 
 	ret = []
 	for (yt, yb, xl, xr) in rects:
-
 		ret.append(get_warp_from_rect(np.array([[xl, yt], [xr, yt], [xr, yb], [xl, yb]], dtype=np.float32), warped_blk))
 
 	return ret, x, y
@@ -243,11 +243,13 @@ class InpImage:
 				                                 flags=cv2.INTER_LINEAR)
 
 				brd_view = cv2.adaptiveThreshold(warped_gry, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
-				                                   cv2.THRESH_BINARY, 31, 0)
-				self.info['brdrsh'] = np.zeros((9, 8), int)
-				self.info['brdrsv'] = np.zeros((8, 9), int)
-				self.info['brdrph'] = np.zeros((9, 8, InpImage.SUBRES // 2), np.int8)
-				self.info['brdrpv'] = np.zeros((8, 9, InpImage.SUBRES // 2), np.int8)
+				                                 cv2.THRESH_BINARY, 31, 0)
+				brdrs = np.full(shape=(9, 9, 4), fill_value=True)
+
+				brdrsh = np.zeros((9, 8), int)
+				brdrsv = np.zeros((8, 9), int)
+				brdrph = np.zeros((9, 8, InpImage.SUBRES // 2), np.int8)
+				brdrpv = np.zeros((8, 9, InpImage.SUBRES // 2), np.int8)
 				for X in range(9):
 					XM = (((2 * X + 1) * InpImage.SUBRES) // 2)
 					XT = XM + (InpImage.SUBRES // 4) - (InpImage.SUBRES // 16)
@@ -256,10 +258,25 @@ class InpImage:
 						# Take a square centred on the boundary that is a quarter the area of a cell
 						YL = (Y * InpImage.SUBRES) - (InpImage.SUBRES // 4)
 						YR = (Y * InpImage.SUBRES) + (InpImage.SUBRES // 4)
-						self.info['brdrph'][X, Y - 1] = np.min(warped_gry[XB:XT, YL:YR], axis=0)
-						self.info['brdrpv'][Y - 1, X] = np.min(warped_gry[YL:YR, XB:XT], axis=1)
-						self.info['brdrsh'][X, Y - 1] = process_sample(np.min(brd_view[XB:XT, YL:YR], axis=0))
-						self.info['brdrsv'][Y - 1, X] = process_sample(np.min(brd_view[YL:YR, XB:XT], axis=1))
+						if ONOTG:
+							brdrph[X, Y - 1] = np.min(warped_gry[XB:XT, YL:YR], axis=0)
+							brdrpv[Y - 1, X] = np.min(warped_gry[YL:YR, XB:XT], axis=1)
+						else:
+							brdrsh[X, Y - 1] = process_sample(np.min(brd_view[XB:XT, YL:YR], axis=0)) > 2
+							brdrsv[Y - 1, X] = process_sample(np.min(brd_view[YL:YR, XB:XT], axis=1)) > 2
+
+				for X in range(9):
+					for Y in range(8):
+						if ONOTG:
+							[isbh, isbv] = OBRDR.tr_brdrs([brdrph[X, Y], brdrpv[Y, X]])
+						else:
+							isbh = brdrsh[X, Y]
+							isbv = brdrsv[Y, X]
+						brdrs[Y + 0, X][1] = isbh
+						brdrs[Y + 1, X][3] = isbh
+						brdrs[X, Y + 0][2] = isbv
+						brdrs[X, Y + 1][0] = isbv
+				self.info['brdrs'] = brdrs.copy()
 
 				self.info['sums'] = np.empty((9, 9), dtype=object)
 				warped_blk = cv2.warpPerspective(blk, m, (InpImage.RESOLUTION, InpImage.RESOLUTION),
@@ -311,18 +328,18 @@ class InpImage:
 						if self.info['sums'][X, Y] is None:
 							self.info['sums'][X, Y] = list()
 						self.info['sums'][X, Y] += num_chiers
-					# allconts = np.zeros((InpImage.RESOLUTION, InpImage.RESOLUTION), dtype=np.uint8)
-					# paint_mask(allconts, chiers)
-					# plt.subplot(1, 2, 1)
-					# plt.imshow(allconts, 'gray')
-					# plt.xticks([]), plt.yticks([])
-					# numbers = np.zeros((InpImage.RESOLUTION, InpImage.RESOLUTION), dtype=np.uint8)
-					# paint_mask(numbers, raw_nums)
-					# plt.subplot(1, 2, 2)
-					# plt.imshow(numbers, 'gray')
-					# plt.xticks([]), plt.yticks([])
-					# plt.show()
-					# exit(0)
+				# allconts = np.zeros((InpImage.RESOLUTION, InpImage.RESOLUTION), dtype=np.uint8)
+				# paint_mask(allconts, chiers)
+				# plt.subplot(1, 2, 1)
+				# plt.imshow(allconts, 'gray')
+				# plt.xticks([]), plt.yticks([])
+				# numbers = np.zeros((InpImage.RESOLUTION, InpImage.RESOLUTION), dtype=np.uint8)
+				# paint_mask(numbers, raw_nums)
+				# plt.subplot(1, 2, 2)
+				# plt.imshow(numbers, 'gray')
+				# plt.xticks([]), plt.yticks([])
+				# plt.show()
+				# exit(0)
 
 			show_stuff(bins, warped_blk, counts, img, isblack, rect, raw_nums)
 
@@ -348,7 +365,7 @@ def show_stuff(bins, blk, counts, img, isblack, rect, num_chiers):
 		paint_mask(numbers, num_chiers)
 		plt.imshow(numbers, 'gray')
 		plt.show()
-		# exit(0)
+	# exit(0)
 
 
 def get_gry_img(f):
@@ -379,6 +396,7 @@ def number_img(c, shape=None):
 		ret = number[y:y + h, x:x + w]
 	return ret
 
+
 def get_warp_from_rect(rect, gry, res=(InpImage.SUBRES // 2, InpImage.SUBRES // 2)):
 	resy, resx = res
 	dst = np.array([
@@ -397,6 +415,7 @@ def plt_images(imgs, ticks=False):
 		if not ticks:
 			plt.xticks([]), plt.yticks([])
 	plt.show()
+
 
 class BorderDecode:
 	def __init__(self, pca, kmeans, isbrdr):
@@ -422,7 +441,7 @@ def observer_border_gen(rework=REWORK):
 			inp = InpImage(f, rework=rework)
 			for X in range(9):
 				for Y in range(9):
-					cbd = inp.info['sums'][X, Y] != None
+					cbd = inp.info['sums'][X, Y] is not None
 					if X > 0:
 						hasnums.append(cbd)
 						samples.append(inp.info['brdrph'][Y, X - 1])
@@ -456,3 +475,115 @@ def observer_border_gen(rework=REWORK):
 
 
 OBRDR = observer_border_gen(rework=REWORK) if ONOTG else None
+
+
+class NumberRecogniser:
+	def __init__(self, allcs, n_clusters):
+		self.pca = PCA()
+		self.kmeans = KMeans(n_clusters=n_clusters, n_init=16)
+
+		num_var = self.pca.fit_transform([n.flatten() for n in allcs])
+		labels = self.kmeans.fit_predict(num_var)
+
+		show_clusters(labels, allcs)
+		self.show_scatter(labels, num_var)
+
+	def show_scatter(self, labels, num_var):
+		print(self.pca.explained_variance_ratio_)
+		print(np.cumsum(self.pca.explained_variance_ratio_))
+
+		plt.scatter([v[0] for v in num_var], [v[1] for v in num_var], c=labels)
+		plt.show()
+
+	def get_clusters(self, sums):
+		return self.kmeans.predict(self.pca.transform([s.flatten() for s in sums]))
+
+	def get_sums(self, sums):
+		cls = self.get_clusters(sums)
+		return [cl_nums[c] for c in cls]
+
+
+def get_moments_v(sums):
+	allmoms = []
+	for ml in get_moments(sums):
+		momsv = np.zeros(35, dtype=np.float64)
+		momsv[:len(ml)] = np.array(ml)[:min(35, len(ml))]
+		allmoms.append(momsv)
+	return allmoms
+
+
+def show_clusters(labels, allcs):
+	clusters = dict()
+	for (c, l) in zip(allcs, labels):
+		if l not in clusters:
+			clusters[l] = []
+		clusters[l].append(c)
+	print(f"Number of clusters is {len(clusters)}")
+
+	for (i, k) in enumerate(sorted(clusters.keys())):
+		for (j, c1) in enumerate(clusters[k][:10], 1):
+			# numb = number_img(c1)
+			numb = c1
+
+			plt.subplot(len(clusters.keys()), 10, j + (10 * i))
+			plt.imshow(numb, 'gray')
+			plt.xticks([]), plt.yticks([])
+	plt.show()
+
+
+def get_moments(nums):
+	ret = []
+	for (c, _, ds) in nums:
+		cv2moms = cv2.moments(c)
+		moms = [v for (k, v) in cv2moms.items() if re.match(r"^nu", k)]
+		for rmoms in get_moments(ds):
+			moms += rmoms
+		ret.append(moms)
+	return ret
+
+
+def plot_pca(pca, dim=32):
+	print(pca.explained_variance_ratio_[0:32])
+	print(np.cumsum(pca.explained_variance_ratio_[0:32]))
+	# print(pca.components_[0].shape)
+
+	for c in range(dim):
+		pmin = pca.components_[c].min()
+		pmax = pca.components_[c].max()
+		# gry_weights = np.reshape(np.uint8((pca.components_[c] - pmin) * 255 / (pmax - pmin)), (yn, xn))
+		gry_weights = np.uint8((pca.components_[c] - pmin) * 255 / (pmax - pmin))
+		col_weights = cv2.applyColorMap(gry_weights, cv2.COLORMAP_JET)
+
+		plt.subplot(4, 8, c + 1)
+		plt.imshow(col_weights)
+		plt.xticks([]), plt.yticks([])
+
+	plt.show()
+
+
+def numrec_initialiser(n_clusters: int, rework: bool = False) -> NumberRecogniser:
+	num_rec_pkl = RAG / r"numrec.pkl"
+	if not rework and num_rec_pkl.exists():
+		num_rec = pk.load(open(num_rec_pkl, "rb"))
+	else:
+		allcs = []
+		for f in itertools.islice(RAG.glob(r"*.jpg"), None):
+			print(f"Processing {f}...")
+			inp = InpImage(f)
+
+			for X in range(9):
+				for Y in range(9):
+					sums = inp.info['sums'][Y, X]
+					if sums is not None:
+						allcs += sums
+
+		num_rec = NumberRecogniser(allcs, n_clusters)
+		pk.dump(num_rec, open(num_rec_pkl, "wb"))
+
+	return num_rec
+
+
+cl_nums_g = list([3, 1, 2, 0, 1, 8, 7, 9, 6, 1, 4, 0, 2, 5, 3, 7])
+cl_nums_o = list([2, 1, 6, 4, 0, 7, 8, 3, 1, 2, 1, 9, 5, 1, 2, 5])
+cl_nums: list[int] = cl_nums_g if GNOTO else cl_nums_o
+NUM_REC = numrec_initialiser(16)
