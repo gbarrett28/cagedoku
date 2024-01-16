@@ -248,8 +248,9 @@ class InpImage:
 
 				brdrsh = np.zeros((9, 8), int)
 				brdrsv = np.zeros((8, 9), int)
-				brdrph = np.zeros((9, 8, InpImage.SUBRES // 2), np.int8)
-				brdrpv = np.zeros((8, 9, InpImage.SUBRES // 2), np.int8)
+				self.brdrph = np.zeros((9, 8, InpImage.SUBRES // 2), np.int8)
+				self.brdrpv = np.zeros((8, 9, InpImage.SUBRES // 2), np.int8)
+				brdrs_01 = []
 				for X in range(9):
 					XM = (((2 * X + 1) * InpImage.SUBRES) // 2)
 					XT = XM + (InpImage.SUBRES // 4) - (InpImage.SUBRES // 16)
@@ -259,8 +260,8 @@ class InpImage:
 						YL = (Y * InpImage.SUBRES) - (InpImage.SUBRES // 4)
 						YR = (Y * InpImage.SUBRES) + (InpImage.SUBRES // 4)
 						if ONOTG:
-							brdrph[X, Y - 1] = np.min(warped_gry[XB:XT, YL:YR], axis=0)
-							brdrpv[Y - 1, X] = np.min(warped_gry[YL:YR, XB:XT], axis=1)
+							self.brdrph[X, Y - 1] = np.min(warped_gry[XB:XT, YL:YR], axis=0)
+							self.brdrpv[Y - 1, X] = np.min(warped_gry[YL:YR, XB:XT], axis=1)
 						else:
 							brdrsh[X, Y - 1] = process_sample(np.min(brd_view[XB:XT, YL:YR], axis=0)) > 2
 							brdrsv[Y - 1, X] = process_sample(np.min(brd_view[YL:YR, XB:XT], axis=1)) > 2
@@ -268,7 +269,9 @@ class InpImage:
 				for X in range(9):
 					for Y in range(8):
 						if ONOTG:
-							[isbh, isbv] = OBRDR.tr_brdrs([brdrph[X, Y], brdrpv[Y, X]])
+							[isbh, isbv] = OBRDR.tr_brdrs([self.brdrph[X, Y], self.brdrpv[Y, X]])
+							brdrs_01.append((self.brdrph[X, Y], isbh))
+							brdrs_01.append((self.brdrpv[Y, X], isbv))
 						else:
 							isbh = brdrsh[X, Y]
 							isbv = brdrsv[Y, X]
@@ -277,6 +280,7 @@ class InpImage:
 						brdrs[X, Y + 0][2] = isbv
 						brdrs[X, Y + 1][0] = isbv
 				self.info['brdrs'] = brdrs.copy()
+				self.info['brdrs_01'] = brdrs_01.copy()
 
 				num_pixels = np.empty((9, 9), dtype=object)
 				warped_blk = cv2.warpPerspective(blk, m, (InpImage.RESOLUTION, InpImage.RESOLUTION),
@@ -412,10 +416,10 @@ def observer_border_gen(rework=REWORK):
 					cbd = inp.info['sums'][X, Y] is not None
 					if X > 0:
 						hasnums.append(cbd)
-						samples.append(inp.info['brdrph'][Y, X - 1])
+						samples.append(inp.info['self.brdrph'][Y, X - 1])
 					if Y > 0:
 						hasnums.append(cbd)
-						samples.append(inp.info['brdrpv'][Y - 1, X])
+						samples.append(inp.info['self.brdrpv'][Y - 1, X])
 
 		pca: PCA = PCA()
 		brdrs = pca.fit_transform(samples)

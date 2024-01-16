@@ -8,52 +8,167 @@ if status_path.exists():
 else:
 	status = dict()
 
-solved = 0
-cheated = 0
-perror = 0
-aerror = 0
-total = 0
-for f in itertools.islice(RAG.glob(r"*.jpg"), None):
-	print(f"Processing {f}...")
-	total += 1
-	inp = InpImage(f)
-	grd = Grid()
 
-	try:
-		grd.set_up(inp.info['cagevals'], inp.info['brdrs'])
+def collect_status():
+	solved = 0
+	cheated = 0
+	perror = 0
+	aerror = 0
+	total = 0
+	for f in itertools.islice(RAG.glob(r"*.jpg"), None):
+		print(f"Processing {f}...")
+		total += 1
+		inp = InpImage(f)
+		grd = Grid()
 
-		alts_sum, solns_sum = grd.solve()
-		if alts_sum != 81:
-			print("... cheating")
-			grd.cheat_solve()
-			status[f] = 'CHEAT'
-			cheated += 1
-		else:
-			status[f] = 'SOLVED'
-			solved += 1
-	except ProcessingError as e:
-		print("... failed with ProcessingError: ", e.msg)
-		status[f] = f"ProcessingError: {e.msg}"
-		perror += 1
+		try:
+			grd.set_up(inp.info['cagevals'], inp.info['brdrs'])
+
+			alts_sum, solns_sum = grd.solve()
+			if alts_sum != 81:
+				print("... cheating")
+				grd.cheat_solve()
+				status[f] = 'CHEAT'
+				cheated += 1
+			else:
+				status[f] = 'SOLVED'
+				solved += 1
+		except ProcessingError as e:
+			print("... failed with ProcessingError: ", e.msg)
+			status[f] = f"ProcessingError: {e.msg}"
+			perror += 1
 		# plt_images([inp.gry, grd.sol_img.sol_img])
 		# exit(0)
-	except AssertionError as e:
-		print("... failed with AssertionError: ", e)
-		status[f] = f"AssertionError: {e}"
-		aerror += 1
+		except AssertionError as e:
+			print("... failed with AssertionError: ", e)
+			status[f] = f"AssertionError: {e}"
+			aerror += 1
 		# plt_images([inp.gry, grd.sol_img.sol_img])
 		# exit(0)
-	except ValueError:
-		print("... failed with ValueError")
-		plt_images([inp.gry, grd.sol_img.sol_img])
-		exit(0)
+		except ValueError:
+			print("... failed with ValueError")
+			plt_images([inp.gry, grd.sol_img.sol_img])
+			exit(0)
+	pk.dump(status, open(status_path, "wb"))
+	print(f"SOLVED          {solved:3d}")
+	print(f"CHEATED         {cheated:3d}")
+	print(f"ProcessingError {perror:3d}")
+	print(f"AssertionError  {aerror:3d}")
+	print(f"TOTAL           {total:3d}")
 
-pk.dump(status, open(status_path, "wb"))
-print(f"SOLVED          {solved:3d}")
-print(f"CHEATED         {cheated:3d}")
-print(f"ProcessingError {perror:3d}")
-print(f"AssertionError  {aerror:3d}")
-print(f"TOTAL           {total:3d}")
+class MeanDiffBorder:
+	def __init__(self, mean, diff):
+		self.mean = mean
+		self.diff = diff
+
+	def mean_diff_border(self, brdph):
+		return np.inner(brdph - self.mean, self.diff) < 0
+
+
+def observer_mean_diff_borders(rework=False):
+	mdb_path = RAG / r"mean_diff_border.pkl"
+	if not rework and mdb_path.exists():
+		mdb = pk.load(open(mdb_path, "rb"))
+	else:
+		brdrs_0, brdrs_1 = observer_collect_passing_borders(rework)
+		mean_0 = np.mean(brdrs_0, axis=0)
+		mean_1 = np.mean(brdrs_1, axis=0)
+		mean = (mean_0+mean_1)/2
+		diff = (mean_0-mean_1)/2
+		mdb = MeanDiffBorder(mean, diff)
+		pk.dump(mdb, open(mdb_path, "wb"))
+
+		plt.subplot(1, 2, 1)
+		plt.plot(range(mean_0.shape[0]), mean)
+		plt.subplot(1, 2, 1)
+		plt.plot(range(mean_1.shape[0]), diff)
+		plt.show()
+
+	status_pat = re.compile(r"^SOLVED")
+	is_border = lambda p: mdb.mean_diff_border(p)
+	aerror, cheated, perror, solved, total = test_border_fun(is_border, status_pat)
+	# pk.dump(status, open(status_path, "wb"))
+	print(f"SOLVED          {solved:3d}")
+	print(f"CHEATED         {cheated:3d}")
+	print(f"ProcessingError {perror:3d}")
+	print(f"AssertionError  {aerror:3d}")
+	print(f"TOTAL           {total:3d}")
+
+
+def test_border_fun(is_border, status_pat):
+	solved = 0
+	cheated = 0
+	perror = 0
+	aerror = 0
+	total = 0
+	for f in itertools.islice(RAG.glob(r"*.jpg"), None):
+		if re.match(status_pat, status[f]):
+			print(f"Processing {f}...")
+			total += 1
+			inp = InpImage(f, rework=True)
+			grd = Grid()
+
+			brdrs = np.full(shape=(9, 9, 4), fill_value=True)
+			for X in range(9):
+				for Y in range(8):
+					isbh = is_border(inp.brdrph[X, Y])
+					isbv = is_border(inp.brdrpv[Y, X])
+					brdrs[Y + 0, X][1] = isbh
+					brdrs[Y + 1, X][3] = isbh
+					brdrs[X, Y + 0][2] = isbv
+					brdrs[X, Y + 1][0] = isbv
+
+			try:
+				grd.set_up(inp.info['cagevals'], brdrs)
+
+				alts_sum, solns_sum = grd.solve()
+				if alts_sum != 81:
+					print("... cheating")
+					grd.cheat_solve()
+					status[f] = 'CHEAT'
+					cheated += 1
+				else:
+					status[f] = 'SOLVED'
+					solved += 1
+			except ProcessingError as e:
+				print("... failed with ProcessingError: ", e.msg)
+				status[f] = f"ProcessingError: {e.msg}"
+				perror += 1
+			except AssertionError as e:
+				print("... failed with AssertionError: ", e)
+				status[f] = f"AssertionError: {e}"
+				aerror += 1
+			# plt_images([inp.gry, grd.sol_img.sol_img])
+			# exit(0)
+			except ValueError:
+				print("... failed with ValueError")
+				plt_images([inp.gry, grd.sol_img.sol_img])
+				exit(0)
+	return aerror, cheated, perror, solved, total
+
+
+def mean_diff_border(brdph, diff, mean):
+	isbh = np.inner(brdph - mean, diff) < 0
+	return isbh
+
+
+def observer_collect_passing_borders(rework=False):
+	brdrs_0 = []
+	brdrs_1 = []
+	for f in itertools.islice(RAG.glob(r"*.jpg"), None):
+		if status[f] == r"SOLVED":
+			print(f"Processing {f}...")
+			inp = InpImage(f, rework=rework)
+			for (p, b) in inp.info['brdrs_01']:
+				if b:
+					brdrs_1.append(p)
+				else:
+					brdrs_0.append(p)
+	return brdrs_0, brdrs_1
+
+
+# collect_status()
+observer_mean_diff_borders()
 
 # GUARDIAN
 # SOLVED          458
