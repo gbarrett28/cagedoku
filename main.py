@@ -61,7 +61,7 @@ class MeanDiffBorder:
 		self.mean = mean
 		self.diff = diff
 
-	def mean_diff_border(self, brdph):
+	def is_border(self, brdph):
 		return np.inner(brdph - self.mean, self.diff) < 0
 
 
@@ -85,7 +85,36 @@ def observer_mean_diff_borders(rework=False):
 		plt.show()
 
 	status_pat = re.compile(r"^SOLVED")
-	is_border = lambda p: mdb.mean_diff_border(p)
+	is_border = lambda p: mdb.is_border(p)
+	aerror, cheated, perror, solved, total = test_border_fun(is_border, status_pat)
+	# pk.dump(status, open(status_path, "wb"))
+	print(f"SOLVED          {solved:3d}")
+	print(f"CHEATED         {cheated:3d}")
+	print(f"ProcessingError {perror:3d}")
+	print(f"AssertionError  {aerror:3d}")
+	print(f"TOTAL           {total:3d}")
+
+class BorderPCA1D:
+	def __init__(self, pca):
+		self.pca = pca
+
+	def is_border(self, brdps):
+		return [v > -100 for v in self.pca.transform(brdps)]
+
+def observer_pca_1d_borders(rework=False):
+	mdb_path = RAG / r"pca_fancy_border.pkl"
+	if not rework and mdb_path.exists():
+		mdb = pk.load(open(mdb_path, "rb"))
+	else:
+		brdrs_0, brdrs_1 = observer_collect_passing_borders(rework)
+		pca: PCA = PCA(n_components=1)
+		pca.fit(brdrs_0+brdrs_1)
+
+		mdb = BorderPCA1D(pca)
+		pk.dump(mdb, open(mdb_path, "wb"))
+
+	status_pat = re.compile(r"^ProcessingError")
+	is_border = lambda p: mdb.is_border([p])[0]
 	aerror, cheated, perror, solved, total = test_border_fun(is_border, status_pat)
 	# pk.dump(status, open(status_path, "wb"))
 	print(f"SOLVED          {solved:3d}")
@@ -168,7 +197,8 @@ def observer_collect_passing_borders(rework=False):
 
 
 # collect_status()
-observer_mean_diff_borders()
+# observer_mean_diff_borders()
+observer_pca_1d_borders()
 
 # GUARDIAN
 # SOLVED          458
