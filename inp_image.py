@@ -145,7 +145,7 @@ class InpImage:
 	do_print = False
 	RHO = 2
 	THETA = math.pi / 16
-	HTHRESH = 3 * 379
+	HTHRESH = 1792
 
 	# Size of the regions used for detecting borders.
 	SUBRES = 128
@@ -161,6 +161,7 @@ class InpImage:
 
 		gry, img = get_gry_img(f)
 		self.gry = gry
+		self.img = img
 
 		jpk = f.with_suffix(r".jpk")
 		if not rework and jpk.exists():
@@ -193,6 +194,7 @@ class InpImage:
 			self.info['isblack'] = isblack
 
 			blk = cv2.inRange(gry, 0, isblack)
+			self.blk = blk
 
 			lines_rt = cv2.HoughLines(blk, InpImage.RHO, InpImage.THETA, InpImage.HTHRESH)
 			if lines_rt is None:

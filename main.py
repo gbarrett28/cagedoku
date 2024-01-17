@@ -18,7 +18,7 @@ def collect_status():
 	for f in itertools.islice(RAG.glob(r"*.jpg"), None):
 		print(f"Processing {f}...")
 		total += 1
-		inp = InpImage(f)
+		inp = InpImage(f, rework=True)
 		grd = Grid()
 
 		try:
@@ -37,14 +37,10 @@ def collect_status():
 			print("... failed with ProcessingError: ", e.msg)
 			status[f] = f"ProcessingError: {e.msg}"
 			perror += 1
-		# plt_images([inp.gry, grd.sol_img.sol_img])
-		# exit(0)
 		except AssertionError as e:
 			print("... failed with AssertionError: ", e)
 			status[f] = f"AssertionError: {e}"
 			aerror += 1
-		# plt_images([inp.gry, grd.sol_img.sol_img])
-		# exit(0)
 		except ValueError:
 			print("... failed with ValueError")
 			plt_images([inp.gry, grd.sol_img.sol_img])
@@ -163,12 +159,12 @@ def test_border_fun(is_border, status_pat):
 				print("... failed with ProcessingError: ", e.msg)
 				status[f] = f"ProcessingError: {e.msg}"
 				perror += 1
+				plt_images([inp.img, inp.blk, grd.sol_img.sol_img])
+				exit(0)
 			except AssertionError as e:
 				print("... failed with AssertionError: ", e)
 				status[f] = f"AssertionError: {e}"
 				aerror += 1
-			# plt_images([inp.gry, grd.sol_img.sol_img])
-			# exit(0)
 			except ValueError:
 				print("... failed with ValueError")
 				plt_images([inp.gry, grd.sol_img.sol_img])
@@ -196,20 +192,20 @@ def observer_collect_passing_borders(rework=False):
 	return brdrs_0, brdrs_1
 
 
-# collect_status()
+collect_status()
 # observer_mean_diff_borders()
-observer_pca_1d_borders()
+# observer_pca_1d_borders()
 
 # GUARDIAN
-# SOLVED          458
+# SOLVED          459
 # CHEATED           2
-# ProcessingError   3
+# ProcessingError   2
 # AssertionError    2
 # TOTAL           465
 
 # OBSERVER
-# SOLVED          382
+# SOLVED          412
 # CHEATED          10
-# ProcessingError  32
-# AssertionError    0
+# ProcessingError   0
+# AssertionError    2
 # TOTAL           424
