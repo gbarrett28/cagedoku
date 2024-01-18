@@ -61,28 +61,34 @@ class MeanDiffBorder:
 		return np.inner(brdph - self.mean, self.diff) < 0
 
 
-def observer_mean_diff_borders(rework=False):
+def smooth_mean(m):
+	# m = m + (np.flip(m)) / 2
+	# m = np.convolve(m, [.25, .5, .25], mode='same')
+	return m
+
+
+def observer_mean_diff_borders(rework=False, rework_all=False):
 	mdb_path = RAG / r"mean_diff_border.pkl"
 	if not rework and mdb_path.exists():
 		mdb = pk.load(open(mdb_path, "rb"))
 	else:
-		brdrs_0, brdrs_1 = observer_collect_passing_borders(rework)
-		mean_0 = np.mean(brdrs_0, axis=0)
-		mean_1 = np.mean(brdrs_1, axis=0)
+		brdrs_0, brdrs_1 = observer_collect_passing_borders(rework=rework_all)
+		mean_0 = smooth_mean(np.mean(brdrs_0, axis=0))
+		mean_1 = smooth_mean(np.mean(brdrs_1, axis=0))
 		mean = (mean_0+mean_1)/2
 		diff = (mean_0-mean_1)/2
 		mdb = MeanDiffBorder(mean, diff)
 		pk.dump(mdb, open(mdb_path, "wb"))
 
 		plt.subplot(1, 2, 1)
-		plt.plot(range(mean_0.shape[0]), mean)
+		plt.plot(range(mean_0.shape[0]), mean_0)
 		plt.subplot(1, 2, 1)
-		plt.plot(range(mean_1.shape[0]), diff)
+		plt.plot(range(mean_1.shape[0]), mean_1)
 		plt.show()
 
 	status_pat = re.compile(r"^SOLVED")
 	is_border = lambda p: mdb.is_border(p)
-	aerror, cheated, perror, solved, total = test_border_fun(is_border, status_pat)
+	aerror, cheated, perror, solved, total = test_border_fun(status_pat, is_border)
 	# pk.dump(status, open(status_path, "wb"))
 	print(f"SOLVED          {solved:3d}")
 	print(f"CHEATED         {cheated:3d}")
@@ -111,7 +117,7 @@ def observer_pca_1d_borders(rework=False):
 
 	status_pat = re.compile(r"^ProcessingError")
 	is_border = lambda p: mdb.is_border([p])[0]
-	aerror, cheated, perror, solved, total = test_border_fun(is_border, status_pat)
+	aerror, cheated, perror, solved, total = test_border_fun(status_pat, is_border)
 	# pk.dump(status, open(status_path, "wb"))
 	print(f"SOLVED          {solved:3d}")
 	print(f"CHEATED         {cheated:3d}")
@@ -120,7 +126,7 @@ def observer_pca_1d_borders(rework=False):
 	print(f"TOTAL           {total:3d}")
 
 
-def test_border_fun(is_border, status_pat):
+def test_border_fun(status_pat, is_border=None):
 	solved = 0
 	cheated = 0
 	perror = 0
@@ -133,15 +139,18 @@ def test_border_fun(is_border, status_pat):
 			inp = InpImage(f, rework=True)
 			grd = Grid()
 
-			brdrs = np.full(shape=(9, 9, 4), fill_value=True)
-			for X in range(9):
-				for Y in range(8):
-					isbh = is_border(inp.brdrph[X, Y])
-					isbv = is_border(inp.brdrpv[Y, X])
-					brdrs[Y + 0, X][1] = isbh
-					brdrs[Y + 1, X][3] = isbh
-					brdrs[X, Y + 0][2] = isbv
-					brdrs[X, Y + 1][0] = isbv
+			if is_border is None:
+				brdrs = inp.info['brdrs']
+			else:
+				brdrs = np.full(shape=(9, 9, 4), fill_value=True)
+				for X in range(9):
+					for Y in range(8):
+						isbh = is_border(inp.brdrph[X, Y])
+						isbv = is_border(inp.brdrpv[Y, X])
+						brdrs[Y + 0, X][1] = isbh
+						brdrs[Y + 1, X][3] = isbh
+						brdrs[X, Y + 0][2] = isbv
+						brdrs[X, Y + 1][0] = isbv
 
 			try:
 				grd.set_up(inp.info['cagevals'], brdrs)
@@ -196,6 +205,11 @@ collect_status()
 # observer_mean_diff_borders()
 # observer_pca_1d_borders()
 
+# status_pat = re.compile(r"^ProcessingError")
+# aerror, cheated, perror, solved, total = test_border_fun(status_pat)
+
+# observer_mean_diff_borders(rework=True)
+
 # GUARDIAN
 # SOLVED          459
 # CHEATED           2
@@ -204,8 +218,8 @@ collect_status()
 # TOTAL           465
 
 # OBSERVER
-# SOLVED          412
+# SOLVED          404
 # CHEATED          10
-# ProcessingError   0
+# ProcessingError   8
 # AssertionError    2
 # TOTAL           424

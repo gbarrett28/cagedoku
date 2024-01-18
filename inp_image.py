@@ -156,7 +156,7 @@ class InpImage:
 		[RESOLUTION - 1, RESOLUTION - 1],
 		[0, RESOLUTION - 1]], dtype="float32")
 
-	def __init__(self, f, rework=REWORK):
+	def __init__(self, f, rework=REWORK, rework_brdr=False):
 		self.info = dict()
 
 		gry, img = get_gry_img(f)
@@ -250,8 +250,8 @@ class InpImage:
 
 				brdrsh = np.zeros((9, 8), int)
 				brdrsv = np.zeros((8, 9), int)
-				self.brdrph = np.zeros((9, 8, InpImage.SUBRES // 2), np.int8)
-				self.brdrpv = np.zeros((8, 9, InpImage.SUBRES // 2), np.int8)
+				self.brdrph = np.zeros((9, 8, InpImage.SUBRES // 2), np.uint8)
+				self.brdrpv = np.zeros((8, 9, InpImage.SUBRES // 2), np.uint8)
 				brdrs_01 = []
 				for X in range(9):
 					XM = (((2 * X + 1) * InpImage.SUBRES) // 2)
@@ -268,21 +268,25 @@ class InpImage:
 							brdrsh[X, Y - 1] = process_sample(np.min(brd_view[XB:XT, YL:YR], axis=0)) > 2
 							brdrsv[Y - 1, X] = process_sample(np.min(brd_view[YL:YR, XB:XT], axis=1)) > 2
 
-				for X in range(9):
-					for Y in range(8):
-						if ONOTG:
-							[isbh, isbv] = OBRDR.tr_brdrs([self.brdrph[X, Y], self.brdrpv[Y, X]])
-							brdrs_01.append((self.brdrph[X, Y], isbh))
-							brdrs_01.append((self.brdrpv[Y, X], isbv))
-						else:
-							isbh = brdrsh[X, Y]
-							isbv = brdrsv[Y, X]
-						brdrs[Y + 0, X][1] = isbh
-						brdrs[Y + 1, X][3] = isbh
-						brdrs[X, Y + 0][2] = isbv
-						brdrs[X, Y + 1][0] = isbv
-				self.info['brdrs'] = brdrs.copy()
-				self.info['brdrs_01'] = brdrs_01.copy()
+				if rework_brdr:
+					self.info['brdrph'] = self.brdrph
+					self.info['brdrpv'] = self.brdrpv
+				else:
+					for X in range(9):
+						for Y in range(8):
+							if ONOTG:
+								[isbh, isbv] = OBRDR.tr_brdrs([self.brdrph[X, Y], self.brdrpv[Y, X]])
+								brdrs_01.append((self.brdrph[X, Y], isbh))
+								brdrs_01.append((self.brdrpv[Y, X], isbv))
+							else:
+								isbh = brdrsh[X, Y]
+								isbv = brdrsv[Y, X]
+							brdrs[Y + 0, X][1] = isbh
+							brdrs[Y + 1, X][3] = isbh
+							brdrs[X, Y + 0][2] = isbv
+							brdrs[X, Y + 1][0] = isbv
+					self.info['brdrs'] = brdrs.copy()
+					self.info['brdrs_01'] = brdrs_01.copy()
 
 				num_pixels = np.empty((9, 9), dtype=object)
 				warped_blk = cv2.warpPerspective(blk, m, (InpImage.RESOLUTION, InpImage.RESOLUTION),
@@ -302,22 +306,27 @@ class InpImage:
 							num_pixels[X, Y] = list()
 						num_pixels[X, Y] += num_chiers
 
-				prd_per_sq = np.zeros(shape=(9, 9), dtype=int)
-				for X in range(9):
-					for Y in range(9):
-						sums = num_pixels[Y, X]
-						if sums is not None:
-							ntrs = NUM_REC.get_sums(sums)
-							if len(ntrs) > 4:
-								print(ntrs)
-								exit(0)
-							for v in [v for v in ntrs if v >= 0]:
-								prd_per_sq[X, Y] = (10 * prd_per_sq[X, Y]) + v
-				self.info['cagevals'] = prd_per_sq
+				if rework_brdr:
+					self.info['sums'] = num_pixels
+				else:
+					prd_per_sq = np.zeros(shape=(9, 9), dtype=int)
+					for X in range(9):
+						for Y in range(9):
+							sums = num_pixels[Y, X]
+							if sums is not None:
+								ntrs = NUM_REC.get_sums(sums)
+								if len(ntrs) > 4:
+									print(ntrs)
+									exit(0)
+								for v in [v for v in ntrs if v >= 0]:
+									prd_per_sq[X, Y] = (10 * prd_per_sq[X, Y]) + v
+					self.info['cagevals'] = prd_per_sq
 
-			show_stuff(bins, warped_blk, counts, img, isblack, rect, raw_nums)
-
-			pk.dump(self.info, open(jpk, "wb"))
+			if rework_brdr:
+				if jpk.exists():
+					jpk.unlink()
+			else:
+				pk.dump(self.info, open(jpk, "wb"))
 
 
 def show_stuff(bins, blk, counts, img, isblack, rect, num_chiers):
@@ -412,16 +421,16 @@ def observer_border_gen(rework=REWORK):
 		globs = RAG.glob(r"*.jpg")
 		for f in itertools.islice(globs, None):
 			print(f"Processing {f}...")
-			inp = InpImage(f, rework=rework)
+			inp = InpImage(f, rework=rework, rework_brdr=True)
 			for X in range(9):
 				for Y in range(9):
 					cbd = inp.info['sums'][X, Y] is not None
 					if X > 0:
 						hasnums.append(cbd)
-						samples.append(inp.info['self.brdrph'][Y, X - 1])
+						samples.append(inp.info['brdrph'][Y, X - 1])
 					if Y > 0:
 						hasnums.append(cbd)
-						samples.append(inp.info['self.brdrpv'][Y - 1, X])
+						samples.append(inp.info['brdrpv'][Y - 1, X])
 
 		pca: PCA = PCA()
 		brdrs = pca.fit_transform(samples)
