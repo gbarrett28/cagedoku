@@ -420,7 +420,7 @@ def observer_border_gen(rework=REWORK):
 		hasnums = []
 		globs = RAG.glob(r"*.jpg")
 		for f in itertools.islice(globs, None):
-			print(f"Processing {f}...")
+			print(f"Processing (observer_border_gen) {f}...")
 			inp = InpImage(f, rework=rework, rework_brdr=True)
 			for X in range(9):
 				for Y in range(9):
@@ -551,7 +551,7 @@ def numrec_initialiser(n_clusters: int, rework: bool = False) -> NumberRecognise
 	else:
 		allcs = []
 		for f in itertools.islice(RAG.glob(r"*.jpg"), None):
-			print(f"Processing {f}...")
+			print(f"Processing (numrec_initialiser) {f}...")
 			inp = InpImage(f)
 
 			for X in range(9):
