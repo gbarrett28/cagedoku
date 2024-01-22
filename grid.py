@@ -140,6 +140,8 @@ class Grid:
 					self.sol_img.draw_sum(i, j, prd_per_sq[i][j])
 					reg += 1
 					cszs[i, j] = self.mark_region(i, j, reg, brdrs)
+					n = cszs[i, j]
+					assert (n * (n+1)) // 2 <= prd_per_sq[i][j] <= (n * (19-n)) // 2, f"cagesize={n}, total={prd_per_sq[i][j]}"
 		if (self.region == 0).any():
 			raise ProcessingError("unassigned region", self.region, brdrs)
 

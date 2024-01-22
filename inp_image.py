@@ -13,6 +13,9 @@ from sklearn import linear_model
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from scipy.signal import find_peaks
+from sklearn.neighbors import KNeighborsClassifier
+
+from grid import Grid, ProcessingError
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--rag', choices=["observer", "guardian"], required=True)
@@ -23,6 +26,12 @@ REWORK = args.rework
 
 GNOTO = str(RAG) == r"guardian"
 ONOTG = str(RAG) == r"observer"
+
+status_path = RAG / "status.pkl"
+if status_path.exists():
+	status = pk.load(open(status_path, "rb"))
+else:
+	status = dict()
 
 
 def intersect(l1, l2):
@@ -156,7 +165,7 @@ class InpImage:
 		[RESOLUTION - 1, RESOLUTION - 1],
 		[0, RESOLUTION - 1]], dtype="float32")
 
-	def __init__(self, f, rework=REWORK, rework_brdr=False):
+	def __init__(self, f, rework=REWORK, rework_brdr=False, rework_sums=False):
 		self.info = dict()
 
 		gry, img = get_gry_img(f)
@@ -212,7 +221,6 @@ class InpImage:
 						isects.append((y, x))
 			usects = sorted(set(isects))
 
-			raw_nums = []
 			if len(usects) < 4:
 				print(f"Intersections not found for {f}")
 				show_stuff(bins, blk, counts, img, isblack, [], [])
@@ -275,7 +283,7 @@ class InpImage:
 					for X in range(9):
 						for Y in range(8):
 							if ONOTG:
-								[isbh, isbv] = OBRDR.tr_brdrs([self.brdrph[X, Y], self.brdrpv[Y, X]])
+								[isbh, isbv] = O1DBR.is_border([self.brdrph[X, Y], self.brdrpv[Y, X]])
 								brdrs_01.append((self.brdrph[X, Y], isbh))
 								brdrs_01.append((self.brdrpv[Y, X], isbv))
 							else:
@@ -298,7 +306,7 @@ class InpImage:
 					chiers = contour_hier(list(zip(contours, hier)), set())
 					raw_nums = get_num_contours(chiers)
 					InpImage.do_print = len(raw_nums) <= 9
-					for (c, br, ds) in sorted(raw_nums, key=lambda n: n[1][0]):
+					for (c, br, ds) in sorted(raw_nums, key=lambda ch: ch[1][0]):
 						num_chiers, x, y = split_num(br, warped_blk)
 						X = x // InpImage.SUBRES
 						Y = y // InpImage.SUBRES
@@ -306,8 +314,9 @@ class InpImage:
 							num_pixels[X, Y] = list()
 						num_pixels[X, Y] += num_chiers
 
-				if rework_brdr:
+				if rework_sums:
 					self.info['sums'] = num_pixels
+					return
 				else:
 					prd_per_sq = np.zeros(shape=(9, 9), dtype=int)
 					for X in range(9):
@@ -348,7 +357,9 @@ def show_stuff(bins, blk, counts, img, isblack, rect, num_chiers):
 		paint_mask(numbers, num_chiers)
 		plt.imshow(numbers, 'gray')
 		plt.show()
-	# exit(0)
+
+
+# exit(0)
 
 
 def get_gry_img(f):
@@ -406,7 +417,7 @@ class BorderDecode:
 		self.kmeans: KMeans = kmeans
 		self.isbrdr = isbrdr
 
-	def tr_brdrs(self, brdrs):
+	def is_border(self, brdrs):
 		cls = self.kmeans.predict(self.pca.transform(brdrs))
 		return [self.isbrdr[c] for c in cls]
 
@@ -457,7 +468,102 @@ def observer_border_gen(rework=REWORK):
 	return brdr
 
 
+def observer_collect_passing_borders(rework=False):
+	brdrs_0 = []
+	brdrs_1 = []
+	for f in itertools.islice(RAG.glob(r"*.jpg"), None):
+		if status[f] == r"SOLVED":
+			print(f"Processing (observer_collect_passing_borders) {f}...")
+			inp = InpImage(f, rework=rework)
+			for (p, b) in inp.info['brdrs_01']:
+				if b:
+					brdrs_1.append(p)
+				else:
+					brdrs_0.append(p)
+	print(f"Number of borders True={len(brdrs_1)}, False={len(brdrs_0)}, TOTAL={len(brdrs_1) + len(brdrs_0)}")
+	return brdrs_0, brdrs_1
+
+
+def collect_passing_numerals(rework=False):
+	numerals = []
+	for f in itertools.islice(RAG.glob(r"*.jpg"), None):
+		if status[f] == r"SOLVED":
+			print(f"Processing (collect_passing_numerals) {f}...")
+			inp = InpImage(f, rework=rework, rework_sums=True)
+
+			for X in range(9):
+				for Y in range(9):
+					sums = inp.info['sums'][Y, X]
+					if sums is not None:
+						numerals += zip(NUM_REC.get_sums(sums), sums)
+
+	print(f"Number of numerals {len(numerals)}")
+	return numerals
+
+
+class BorderPCA1D:
+	def __init__(self, PP, MM, cmp):
+		self.vec = PP
+		self.bp = MM
+		self.cmp = cmp
+
+	def project(self, brdps):
+		return [np.matmul(self.vec, b) - self.bp for b in brdps]
+
+	def is_border(self, brdps):
+		return [(b > 0) != self.cmp for b in self.project(brdps)]
+
+
+def observer_1d_pca_border_gen(rework=True, rework_all=False):
+	mdb_path = RAG / r"pca_1d_border.pkl"
+	if not rework and mdb_path.exists():
+		mdb = pk.load(open(mdb_path, "rb"))
+	else:
+		brdrs_raw_0, brdrs_raw_1 = observer_collect_passing_borders(rework_all)
+		len0 = len(brdrs_raw_0)
+
+		pca_raw = PCA()
+		brdrs_0 = pca_raw.fit_transform(brdrs_raw_0)
+		brdrs_1 = pca_raw.transform(brdrs_raw_1)
+		cumsum = np.cumsum(pca_raw.explained_variance_ratio_)
+		dims = np.argmax(cumsum > 0.99)
+		print(f"dims={dims}")
+
+		pca = PCA(n_components=2)
+		brdrs = pca.fit_transform([b[dims:] for b in (list(brdrs_0) + list(brdrs_1))])
+
+		coeffs = [b[0] for b in brdrs]
+		m0 = np.mean(coeffs[:len0])
+		m1 = np.mean(coeffs[len0:])
+		cmp = m0 >= m1
+		p = .25
+		if not cmp:
+			bp = ((p * np.max(coeffs[:len0])) + ((1 - p) * np.min(coeffs[len0:])))
+		else:
+			bp = (((1 - p) * np.min(coeffs[:len0])) + (p * np.max(coeffs[len0:])))
+
+		# Collapse the PCA transforms to a single inner product and subtraction
+		# P2*((P1*(V-M1)-M2) = P2*P1*V - (P2*P1*M1 + P2*M2)
+		P1 = pca_raw.components_[dims:, :]
+		M1 = pca_raw.mean_
+		P2 = pca.components_[:1, :]
+		M2 = pca.mean_
+		PP = np.matmul(P2, P1)
+		MM = np.matmul(P2, np.matmul(P1, M1)) + np.matmul(P2, M2)
+
+		print(f"breakpoint={bp}, swapped={cmp}")
+		plt.scatter([v[0] for v in brdrs], [v[1] for v in brdrs],
+		            c=['red' if i < len0 else 'green' for i in range(len(brdrs))])
+		plt.show()
+
+		mdb = BorderPCA1D(PP, MM + bp, cmp)
+		pk.dump(mdb, open(mdb_path, "wb"))
+
+	return mdb
+
+
 OBRDR = observer_border_gen(rework=REWORK) if ONOTG else None
+O1DBR = observer_1d_pca_border_gen(rework=REWORK) if ONOTG else None
 
 
 class NumberRecogniser:
@@ -566,10 +672,33 @@ def numrec_initialiser(n_clusters: int, rework: bool = False) -> NumberRecognise
 	return num_rec
 
 
+def show_scatter(vecs, vals, n=3):
+	for i in range(n):
+		plt.subplot(n, 1, i + 1)
+		plt.scatter([v[i] for v in vecs], [v[(i + 1) % n] for v in vecs], c=vals)
+	plt.show()
+
+
+class CayenneNumber:
+	def __init__(self, pca, dims, neighbs):
+		self.pca = pca
+		self.dims = dims
+		self.neighbs = neighbs
+
+	def get_sums(self, nums):
+		nums_pca = self.pca.transform([n.flatten() for n in nums])
+		labels = self.neighbs.predict([v[:self.dims] for v in nums_pca])
+		return labels
+
+
+nums_pca_s_path = RAG / r"nums_pca_s.pkl"
+num_pca_s = pk.load(open(nums_pca_s_path, "rb"))
+
 cl_nums_g = list([3, 1, 2, 0, 1, 8, 7, 9, 6, 1, 4, 0, 2, 5, 3, 7])
 cl_nums_o = list([2, 1, 6, 4, 0, 7, 8, 3, 1, 2, 1, 9, 5, 1, 2, 5])
 cl_nums: list[int] = cl_nums_g if GNOTO else cl_nums_o
-NUM_REC = numrec_initialiser(16)
+NUM_REC = num_pca_s  # numrec_initialiser(16)
+
 
 # fig, (axg, axb, sl) = plt.subplots(1, 3)
 # def update(warped_blr, v):
@@ -595,3 +724,71 @@ NUM_REC = numrec_initialiser(16)
 # axb.set_xticks([]), axb.set_yticks([])
 # plt.show()
 # exit(0)
+def collect_status():
+	local_status = dict()
+	solved = 0
+	cheated = 0
+	perror = 0
+	aerror = 0
+	total = 0
+	for f in itertools.islice(RAG.glob(r"*.jpg"), None):
+		print(f"Processing (collect_status) {f}...")
+		total += 1
+		inp = InpImage(f, rework=True)
+		grd = Grid()
+
+		try:
+			grd.set_up(inp.info['cagevals'], inp.info['brdrs'])
+
+			alts_sum, solns_sum = grd.solve()
+			if alts_sum != 81:
+				print("... cheating")
+				grd.cheat_solve()
+				local_status[f] = 'CHEAT'
+				cheated += 1
+			else:
+				local_status[f] = 'SOLVED'
+				solved += 1
+		except ProcessingError as e:
+			print("... failed with ProcessingError: ", e.msg)
+			local_status[f] = f"ProcessingError: {e.msg}"
+			perror += 1
+		except AssertionError as e:
+			print("... failed with AssertionError: ", e)
+			local_status[f] = f"AssertionError: {e}"
+			aerror += 1
+		except ValueError:
+			print("... failed with ValueError")
+			plt_images([inp.gry, grd.sol_img.sol_img])
+			exit(0)
+	pk.dump(local_status, open(status_path, "wb"))
+	print(f"SOLVED          {solved:3d}")
+	print(f"CHEATED         {cheated:3d}")
+	print(f"ProcessingError {perror:3d}")
+	print(f"AssertionError  {aerror:3d}")
+	print(f"TOTAL           {total:3d}")
+
+
+def rework_cayenne(rework_all=False):
+	val_nums = collect_passing_numerals(rework=rework_all)
+	cls = dict()
+	for (n, p) in val_nums:
+		if n not in cls:
+			cls[n] = list()
+		cls[n].append(p)
+	means = [np.mean(cls[i], axis=0) for i in range(10)]
+	plt_images(means)
+	plt.show()
+	pca = PCA()
+	pca.fit([n.flatten() for n in means])
+	dims = np.argmax(np.cumsum(pca.explained_variance_ratio_) > 0.99)
+	print(dims)
+	nums_pca = pca.transform([p.flatten() for (_, p) in val_nums])
+	vals = [n for (n, _) in val_nums]
+	num_neighbs = KNeighborsClassifier()
+	num_neighbs.fit([v[:dims] for v in nums_pca], vals)
+	ret = CayenneNumber(pca, dims, num_neighbs)
+	show_scatter(nums_pca, vals)
+	pk.dump(ret, open(nums_pca_s_path, "wb"))
+
+	return ret
