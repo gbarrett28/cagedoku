@@ -46,9 +46,15 @@ def test_border_fun(status_pat, is_border=None):
 				alts_sum, solns_sum = grd.solve()
 				if alts_sum != 81:
 					print("... cheating")
+					sol_aux = grd.sol_img.sol_img.copy()
+					grd.sol_img.draw_dots(grd.sq_poss)
+					sol_mine = grd.sol_img.sol_img.copy()
+					grd.sol_img.sol_img = sol_aux
 					grd.cheat_solve()
 					status[f] = 'CHEAT'
 					cheated += 1
+					plt_images([sol_mine, grd.sol_img.sol_img])
+					exit(0)
 				else:
 					status[f] = 'SOLVED'
 					solved += 1
@@ -58,18 +64,19 @@ def test_border_fun(status_pat, is_border=None):
 				perror += 1
 				plt_images([inp.img, inp.blk, grd.sol_img.sol_img])
 				# exit(0)
-			except AssertionError as e:
-				print("... failed with AssertionError: ", e)
-				status[f] = f"AssertionError: {e}"
-				aerror += 1
-			except ValueError:
-				print("... failed with ValueError")
-				plt_images([inp.gry, grd.sol_img.sol_img])
-				exit(0)
+			# except AssertionError as e:
+			# 	print("... failed with AssertionError: ", e)
+			# 	status[f] = f"AssertionError: {e}"
+			# 	aerror += 1
+			# except ValueError:
+			# 	print("... failed with ValueError")
+			# 	plt_images([inp.gry, grd.sol_img.sol_img])
+			# 	exit(0)
 	return aerror, cheated, perror, solved, total
 
 
 collect_status()
+# test_border_fun(re.compile(r"CHEAT"))
 # observer_pca_1d_borders(rework=True)
 
 # status_pat = re.compile(r"^AssertionError")

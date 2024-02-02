@@ -14,24 +14,55 @@ class ProcessingError(Exception):
 		self.brdrs = brdrs
 
 
+COLLS = 'abcdefghi'
+ROWLS = '123456789'
+
+# Sets of coordinates for rows/columns/boxes.
+ROWS = [set([(i, j) for j in range(9)]) for i in range(9)]
+COLS = [set([(j, i) for j in range(9)]) for i in range(9)]
+BOXS = [set([((3 * (i // 3)) + (j // 3), (3 * (i % 3)) + (j % 3)) for j in range(9)]) for i in range(9)]
+
+
+def all_boxes_a(i, s):
+	s.add(i)
+	x = i // 3
+	y = i % 3
+	ret = [[]]
+	if y < 2 and i + 1 not in s:
+		ret += [[BOXS[i]] + s for s in all_boxes_a(i + 1, s.copy())]
+	if y > 0 and i - 1 not in s:
+		ret += [[BOXS[i]] + s for s in all_boxes_a(i - 1, s.copy())]
+	if x < 2 and i + 3 not in s:
+		ret += [[BOXS[i]] + s for s in all_boxes_a(i + 3, s.copy())]
+	if x > 0 and i - 3 not in s:
+		ret += [[BOXS[i]] + s for s in all_boxes_a(i - 3, s.copy())]
+	return [l for l in ret if len(l) + len(s) == 9]
+
+
+def all_boxes():
+	ret = []
+	for i in range(len(BOXS)):
+		ret += all_boxes_a(i, set())
+	return ret
+
+
+BOX_SEQS = all_boxes()
+
+# Strings for the variables used in each box and collections for rows/columns/boxes.
+# These are used by the constraint solver.
+VARNS = [c + r for r in ROWLS for c in COLLS]
+COLNS = [[c + r for r in ROWLS] for c in COLLS]
+ROWNS = [[c + r for c in COLLS] for r in ROWLS]
+BOXNS = [[c + r for c in COLLS[i:i + 3] for r in ROWLS[j:j + 3]] for i in range(0, 9, 3) for j in
+         range(0, 9, 3)]
+
+# Offset of up/right/down/left.
+BRDR_MV = [[0, -1], [1, 0], [0, 1], [-1, 0]]
+
+
 class Grid:
-	# Sets of coordinates for rows/columns/boxes.
-	ROWS = [set([(i, j) for j in range(9)]) for i in range(9)]
-	COLS = [set([(j, i) for j in range(9)]) for i in range(9)]
-	BOXS = [set([((3 * (i // 3)) + (j // 3), (3 * (i % 3)) + (j % 3)) for j in range(9)]) for i in range(9)]
-
-	# Strings for the variables used in each box and collections for rows/columns/boxes.
-	# These are used by the constraint solver.
-	COLLS = 'abcdefghi'
-	ROWLS = '123456789'
-	VARNS = [c + r for r in ROWLS for c in 'abcdefghi']
-	COLNS = [[c + r for r in '123456789'] for c in COLLS]
-	ROWNS = [[c + r for c in 'abcdefghi'] for r in ROWLS]
-	BOXNS = [[c + r for c in 'abcdefghi'[i:i + 3] for r in '123456789'[j:j + 3]] for i in range(0, 9, 3) for j in
-	         range(0, 9, 3)]
-
-	# Offset of up/right/down/left.
-	BRDR_MV = [[0, -1], [1, 0], [0, 1], [-1, 0]]
+	# region: ndarray[(9, 9), dtype[np.uint]]
+	# sq_poss: ndarray[(9, 9), dtype[set[np.uint8]]]
 
 	# Find all the points in a cage starting at the square containing the total.
 	def mark_region(self, i, j, reg, brdrs):
@@ -39,7 +70,7 @@ class Grid:
 		if self.region[i][j] == 0:
 			self.region[i][j] = reg
 			marked = 1
-			for b, mv in zip(brdrs[j][i], Grid.BRDR_MV):
+			for b, mv in zip(brdrs[j][i], BRDR_MV):
 				if not b:
 					marked += self.mark_region(i + mv[1], j + mv[0], reg, brdrs)
 		elif self.region[i][j] != reg:
@@ -47,7 +78,6 @@ class Grid:
 
 		return marked
 
-	# Add equations and diffs from the rows or columns.
 	def add_equns(self, line):
 		equns = []
 		rf = 0
@@ -62,9 +92,9 @@ class Grid:
 				self.DFFS.add((lmc.copy().pop(), cml.copy().pop(), sm - 45))
 			for i, j in lmc:
 				if (i, j) not in cvr:
-					idx = self.region[i][j] - 1
-					cvr |= self.CGES[idx]
-					sm += self.VALS[idx]
+					c, v = self.get_cge_val(i, j)
+					cvr |= c
+					sm += v
 			assert sm >= 45
 			rf += 1
 			while rb < len(line) and line[rb] <= cvr:
@@ -76,11 +106,31 @@ class Grid:
 			rf = max(rf, rb)
 			if sm != 0:
 				i, j = cvr.copy().pop()
-				if cvr <= Grid.ROWS[i] or cvr <= Grid.COLS[j] or \
-						cvr <= Grid.BOXS[(3 * (i // 3)) + (j // 3)] or cvr <= self.CGES[self.region[i][j] - 1]:
+				if self.is_burb(cvr, i, j):
 					equns.append(Equation(cvr, sm, self))
 
 		return equns
+
+	def is_burb(self, cvr, i, j):
+		return cvr <= self.get_row(i, j) or cvr <= self.get_col(i, j) or \
+				cvr <= self.get_box(i, j) or cvr <= self.get_cge(i, j)
+
+	def get_row(self, i, j):
+		return ROWS[i]
+
+	def get_col(self, i, j):
+		return COLS[j]
+
+	def get_box(self, i, j):
+		return BOXS[(3 * (i // 3)) + (j // 3)]
+
+	def get_cge(self, i, j):
+		return self.CAGES[self.region[i][j] - 1]
+
+	def get_cge_val(self, i, j):
+		idx = self.region[i][j] - 1
+		return self.CAGES[idx], self.VALS[idx]
+
 
 	# Add equations from the boxes.
 	def add_equns_r(self, box, cvr, sm=0, seen=None):
@@ -88,26 +138,25 @@ class Grid:
 			seen = set()
 
 		equns = []
-		for i, j in Grid.BOXS[box]:
+		for i, j in BOXS[box]:
 			if (i, j) not in cvr:
-				idx = self.region[i][j] - 1
-				cvr |= self.CGES[idx]
-				sm += self.VALS[idx]
+				c, v = self.get_cge_val(i, j)
+				cvr |= c
+				sm += v
 		# remove completely covered boxes
-		for b in set(range(len(Grid.BOXS))) - seen:
-			if Grid.BOXS[b] <= cvr:
+		for b in set(range(len(BOXS))) - seen:
+			if BOXS[b] <= cvr:
 				assert sm >= 45, \
 					f"sum={sm} box={b} cover={cvr}"
 				seen.add(b)
 				sm -= 45
-				cvr -= Grid.BOXS[b]
+				cvr -= BOXS[b]
 		# add an equation if possible
 		if sm != 0:
 			assert cvr != set(), \
 				f"sum={sm}"
 			i, j = cvr.copy().pop()
-			if cvr <= Grid.ROWS[i] or cvr <= Grid.COLS[j] or \
-					cvr <= Grid.BOXS[(3 * (i // 3)) + (j // 3)] or cvr <= self.CGES[self.region[i][j] - 1]:
+			if self.is_burb(cvr, i, j):
 				equns.append(Equation(cvr, sm, self))
 		# find where to go next
 		bi, bj = box // 3, box % 3
@@ -115,7 +164,7 @@ class Grid:
 			ni, nj = (bi + di, bj + dj)
 			nb = (3 * ni) + nj
 			if 0 <= ni < 3 and 0 <= nj < 3:
-				if (ni, nj) not in seen and not Grid.BOXS[nb].isdisjoint(cvr):
+				if (ni, nj) not in seen and not BOXS[nb].isdisjoint(cvr):
 					equns += self.add_equns_r(box=nb, cvr=cvr.copy(), sm=sm, seen=seen.copy())
 
 		return equns
@@ -124,7 +173,8 @@ class Grid:
 		self.sol_img = SolImage()
 
 		self.sq_poss = np.array([[set(range(1, 10)) for _ in range(9)] for _ in range(9)])
-		self.REGNS = []
+		# self.sq_poss = np.full((9, 9), set(range(1, 10)))
+		self.CAGES = []
 		self.VALS = []
 		self.region = np.zeros((9, 9), np.uint)
 
@@ -141,28 +191,29 @@ class Grid:
 					reg += 1
 					cszs[i, j] = self.mark_region(i, j, reg, brdrs)
 					n = cszs[i, j]
-					assert (n * (n+1)) // 2 <= prd_per_sq[i][j] <= (n * (19-n)) // 2, f"cagesize={n}, total={prd_per_sq[i][j]}"
+					assert (n * (n + 1)) // 2 <= prd_per_sq[i][j] <= (
+							n * (19 - n)) // 2, f"cagesize={n}, total={prd_per_sq[i][j]}"
 		if (self.region == 0).any():
 			raise ProcessingError("unassigned region", self.region, brdrs)
 
-		# Set up the CGES and VALS for each cage.
-		self.CGES = [set() for _ in np.unique(self.region)]
+		# Set up the CAGES and VALS for each cage.
+		self.CAGES = [set() for _ in np.unique(self.region)]
 		self.VALS = [0 for _ in np.unique(self.region)]
 		for i in range(9):
 			for j in range(9):
 				idx = self.region[i][j] - 1
-				self.CGES[idx].add((i, j))
+				self.CAGES[idx].add((i, j))
 				self.VALS[idx] = max(self.VALS[idx], prd_per_sq[i][j])
 
 		# Initialise the equations.
-		self.equns = [Equation(s, 45, self) for s in Grid.ROWS + Grid.COLS + Grid.BOXS]
-		self.equns += [Equation(s, v, self) for s, v in zip(self.CGES, self.VALS)]
+		self.equns = [Equation(s, 45, self) for s in ROWS + COLS + BOXS]
+		self.equns += [Equation(s, v, self) for s, v in zip(self.CAGES, self.VALS)]
 		self.DFFS = set()
-		self.equns += self.add_equns(Grid.ROWS)
-		self.equns += self.add_equns(Grid.COLS)
-		self.equns += self.add_equns(Grid.ROWS[::-1])
-		self.equns += self.add_equns(Grid.COLS[::-1])
-		for b in range(len(Grid.BOXS)):
+		self.equns += self.add_equns(ROWS)
+		self.equns += self.add_equns(COLS)
+		self.equns += self.add_equns(ROWS[::-1])
+		self.equns += self.add_equns(COLS[::-1])
+		for b in range(len(BOXS)):
 			self.equns += self.add_equns_r(box=b, cvr=set())
 
 	# Remove a value from all other rows/columns/boxes/cages
@@ -182,7 +233,7 @@ class Grid:
 			if i != x or j != y:
 				reduced |= n in self.sq_poss[x][y]
 				self.sq_poss[x][y].discard(n)
-		rgn = self.CGES[self.region[i][j] - 1]
+		rgn = self.get_cge(i, j)
 		for x, y in rgn:
 			if (i, j) != (x, y):
 				reduced |= n in self.sq_poss[x][y]
@@ -195,8 +246,8 @@ class Grid:
 		reduced = False
 		univ = set(range(1, 10))
 		loads = [(e.s, e.must) for e in self.equns] + \
-		        [(s, univ) for s in Grid.COLS + Grid.ROWS + Grid.BOXS] + \
-		        [(s, set()) for s in self.CGES]
+		        [(s, univ) for s in COLS + ROWS + BOXS] + \
+		        [(s, set()) for s in self.CAGES]
 		for i in range(len(loads)):
 			si, mi = loads[i]
 			for j in range(len(loads)):
@@ -307,7 +358,7 @@ class Grid:
 
 			# Look for single numbers that only appear in one place in a row/col/box
 			# or pairs of numbers that only appear in two places.
-			for u in Grid.ROWS + Grid.COLS + Grid.BOXS:
+			for u in ROWS + COLS + BOXS:
 				lu = np.array(list(u))
 				grid = np.array([[num in self.sq_poss[i][j] for i, j in lu] for num in range(1, 10)])
 				for num in range(9):
@@ -354,20 +405,24 @@ class Grid:
 
 	# Use a generic constraint solver to solve the problem.
 	def cheat_solve(self):
+		CAGNS = [make_vars(vs) for vs in self.CAGES]
 		ks = Problem()
 
 		# Add the variables but use the constraints on squares that we have already deduced.
-		for i in range(9):
-			for j in range(9):
-				ks.addVariable(Grid.COLNS[i][j], list(self.sq_poss[i][j]))
+		for v in VARNS:
+			ks.addVariable(v, range(1, 10))
 
 		# Add the standard sudoku constraints.
-		for vs in Grid.COLNS + Grid.ROWNS + Grid.BOXNS + self.REGNS:
+		for vs in COLNS + ROWNS + BOXNS + CAGNS:
 			ks.addConstraint(AllDifferentConstraint(), vs)
 
 		# Add the cage total constraints.
-		for v, vs in zip(self.VALS, self.REGNS):
+		for v, vs in zip(self.VALS, CAGNS):
 			ks.addConstraint(ExactSumConstraint(v), vs)
+
+		# Help it a little with corollary of all-different constraint.
+		for vs in COLNS + ROWNS + BOXNS:
+			ks.addConstraint(ExactSumConstraint(45), vs)
 
 		# Solve.
 		s = ks.getSolution()
@@ -375,5 +430,11 @@ class Grid:
 		# Add the solution back into the custom framework.
 		for i in range(9):
 			for j in range(9):
-				self.sq_poss[i][j] = {s[Grid.COLNS[i][j]]}
-				self.sol_img.draw_number(s[Grid.COLNS[i][j]], i, j)
+				self.sq_poss[i][j] = {s[COLNS[i][j]]}
+				self.sol_img.draw_number(s[COLNS[i][j]], i, j)
+
+def make_vars(vs):
+	ret = set()
+	for (i, j) in vs:
+		ret.add(COLLS[i] + ROWLS[j])
+	return ret

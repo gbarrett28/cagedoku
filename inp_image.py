@@ -739,6 +739,9 @@ def collect_status():
 
 		try:
 			grd.set_up(inp.info['cagevals'], inp.info['brdrs'])
+			# grd.cheat_solve()
+			# local_status[f] = 'SOLVED'
+			# solved += 1
 
 			alts_sum, solns_sum = grd.solve()
 			if alts_sum != 81:

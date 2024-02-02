@@ -77,9 +77,10 @@ class SolImage:
 		for i in range(9):
 			bi = sq_coord(i) + 64
 			for j in range(9):
-				bj = sq_coord(j) + 32
-				for num in range(1, 10):
-					gr = 255 if num in sq_poss[i][j] else 0
-					px = bi + (fr * ((num - 1) // 3))
-					py = bj + (fr * ((num - 1) % 3))
-					cv2.circle(self.sol_img, (py, px), 6, (0, gr, 0), thickness=-1)
+				if len(sq_poss[i][j]) > 1:
+					bj = sq_coord(j) + 32
+					for num in range(1, 10):
+						gr = 255 if num in sq_poss[i][j] else 0
+						px = bi + (fr * ((num - 1) // 3))
+						py = bj + (fr * ((num - 1) % 3))
+						cv2.circle(self.sol_img, (py, px), 6, (0, gr, 0), thickness=-1)
