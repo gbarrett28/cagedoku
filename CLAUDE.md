@@ -1,3 +1,46 @@
+# Current State & Next Steps
+
+## What This Project Is
+
+A killer sudoku solver that reads newspaper puzzle images (Guardian or Observer),
+uses OpenCV + PCA to locate the grid, detect cage borders, and read cage totals,
+then solves the puzzle using a constraint-based engine with a generic CSP fallback.
+
+Run with: `python inp_image.py --rag guardian|observer [--rework]`
+
+## Predecessor Project
+
+`../kill_sudoku` is an older, unpackaged predecessor with no git history. It contains
+code that was **not** carried over into this rewrite and should be reviewed before
+being discarded. Do not delete `kill_sudoku` until that review is complete.
+
+## Current State (as of 2026-03-16)
+
+The codebase has not yet been restructured into the target package layout.
+Current files at the project root:
+
+| File | Target location | Notes |
+|---|---|---|
+| `inp_image.py` | `killer_sudoku/image/inp_image.py` | Monolithic — split as it grows |
+| `grid.py` | `killer_sudoku/solver/grid.py` | |
+| `equation.py` | `killer_sudoku/solver/equation.py` | |
+| `sol_image.py` | `killer_sudoku/output/sol_image.py` | |
+| `main.py` | `killer_sudoku/main.py` or entry point | Orchestration + test harness |
+| `archive.py` | **Excluded from quality gates** | Dead/experimental code, pending review against `kill_sudoku` |
+| `no_gutter.py` | **Excluded from quality gates** | Unrelated one-off script (Taylor Swift PDF), not part of the solver |
+
+## Immediate Next Steps
+
+1. Create `pyproject.toml` with dependencies and ruff/mypy configuration
+2. Create the `killer_sudoku/` package tree with `image/`, `solver/`, `output/` subpackages
+3. Move source files to their target locations and update all imports to use `killer_sudoku.` prefix
+4. Eliminate all star imports (`from inp_image import *` etc.)
+5. Move module-level side effects into explicit entry points / factory functions
+6. Create `tests/` and establish a baseline test suite
+7. Verify bronze gate passes end-to-end
+
+---
+
 # Import Patterns and Project Structure
 
 ## Directory Structure
