@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "killer-sudoku"
+version = "0.1.0"
+description = "Killer sudoku solver for Guardian/Observer newspaper puzzles"
+requires-python = ">=3.12"
+dependencies = [
+    "opencv-python-headless",
+    "numpy",
+    "scikit-learn",
+    "scipy",
+    "matplotlib",
+    "python-constraint",
+    "joblib",
+]
+
+[project.optional-dependencies]
+scraper = ["requests", "beautifulsoup4"]
+dev = ["ruff", "mypy", "pytest", "pytest-cov"]
+
+[project.scripts]
+killer-sudoku = "killer_sudoku.main:main"
+ks-collect-numerals = "killer_sudoku.training.collect_numerals:main"
+ks-train-numbers = "killer_sudoku.training.train_number_recogniser:main"
+ks-train-borders = "killer_sudoku.training.train_border_detector:main"
+ks-scrape = "killer_sudoku.training.scrape_puzzles:main"
+ks-evaluate = "killer_sudoku.training.evaluate:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["killer_sudoku*"]
+
+[tool.ruff]
+exclude = ["archive.py", "no_gutter.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "PLC", "PLW"]
+ignore = ["PLR0912", "PLR0915", "C901"]
+
+[tool.mypy]
+strict = true
+exclude = ["archive\\.py", "no_gutter\\.py"]

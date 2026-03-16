@@ -1,2 +1,11 @@
 /guardian/
 /observer/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.coverage
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
