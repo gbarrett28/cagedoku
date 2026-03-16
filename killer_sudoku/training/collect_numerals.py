@@ -101,7 +101,11 @@ def extract_raw_numerals_from_image(
         )
         raw_nums = get_num_contours(chiers, subres)
         for _c, br, _ds in sorted(raw_nums, key=lambda ch: ch[1][0]):
-            num_chiers, x, y = split_num(br, warped_blk, subres)
+            try:
+                num_chiers, x, y = split_num(br, warped_blk, subres)
+            except ValueError:
+                _log.debug("Skipping contour with ambiguous geometry: %s", br)
+                continue
             col = x // subres
             row = y // subres
             if num_pixels[col, row] is None:
