@@ -15,17 +15,17 @@ def build_brdrs(
     border_x: npt.NDArray[np.bool_],
     border_y: npt.NDArray[np.bool_],
 ) -> npt.NDArray[np.bool_]:
-    """Expand compact border arrays to per-cell (9,9,4) form.
+    """Expand compact border arrays to per-cell (9,9,4) form for rendering.
 
     border_x[col, row] = True means a cage wall between rows row and row+1 in
     column col (shape 9×8). border_y[row, col] = True means a cage wall between
     columns col and col+1 in row row (shape 8×9). Outer grid edges are always
     True (walled).
 
-    The returned (9,9,4) array is indexed as [cell_a, cell_b, direction] where
-    direction is [up=0, right=1, down=2, left=3], consistent with BRDR_MV in
-    grid.py. Each physical border is stored in two adjacent cells (redundant but
-    convenient for flood-fill and rendering).
+    Note: the loop variable named ``col`` plays the role of *row-index* in the
+    result array for the isbv lines, and vice-versa.  This is an artefact of the
+    loop sharing variables across two different border orientations; see the
+    inline comments.
 
     Args:
         border_x: (9, 8) bool array of horizontal cage-wall flags.
@@ -39,8 +39,12 @@ def build_brdrs(
         for row in range(8):
             isbh = bool(border_x[col, row])
             isbv = bool(border_y[row, col])
+            # isbh: horizontal wall in column col, between rows row and row+1.
             result[row + 0, col][1] = isbh
             result[row + 1, col][3] = isbh
+            # isbv: vertical wall in row row, between cols col and col+1.
+            # Here `col` is the first index into result (acting as a row index)
+            # and `row` is the second index (acting as a col index).
             result[col, row + 0][2] = isbv
             result[col, row + 1][0] = isbv
     return result

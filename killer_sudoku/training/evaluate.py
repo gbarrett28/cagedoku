@@ -416,11 +416,11 @@ def test_border_fun(
                         isbv = is_border_fn(np.zeros(half, dtype=np.float64))
                         brdrs[row + 0, col][1] = isbh
                         brdrs[row + 1, col][3] = isbh
-                        brdrs[col, row + 0][2] = isbv
-                        brdrs[col, row + 1][0] = isbv
+                        brdrs[row, col + 0][2] = isbv
+                        brdrs[row, col + 1][0] = isbv
                 # Reverse-expand to compact canonical forms.
                 border_x = np.asarray(brdrs[:8, :, 1].T, dtype=bool)
-                border_y = np.asarray(brdrs[:, :8, 2].T, dtype=bool)
+                border_y = np.asarray(brdrs[:8, :, 2], dtype=bool)
                 spec = validate_cage_layout(inp.info.cage_totals, border_x, border_y)
 
             grd.set_up(spec)
