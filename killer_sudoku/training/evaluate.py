@@ -251,9 +251,10 @@ def collect_status(
         for f in files
     )
 
-    slow_threshold_s = 30.0
+    timings: list[tuple[str, float]] = []
     for name, stat, elapsed in results:
         total += 1
+        timings.append((name, elapsed))
         f = config.puzzle_dir / name
         status[f] = stat
         if stat == "SOLVED":
@@ -267,9 +268,6 @@ def collect_status(
         else:
             verror += 1
 
-        if elapsed > slow_threshold_s:
-            _log.warning("SLOW %s took %.1fs (%s)", name, elapsed, stat)
-
         if total % 10 == 0 or total == n_total:
             _log.info(
                 "[%d/%d] SOLVED=%d CHEAT=%d PE=%d AE=%d VE=%d",
@@ -281,6 +279,27 @@ def collect_status(
                 aerror,
                 verror,
             )
+
+    # Timing summary: percentiles and slowest images.
+    # "Slow" is defined relative to the run distribution (>= P95) so the
+    # threshold adapts automatically to whatever the pipeline actually costs.
+    elapsed_sorted = sorted(e for _, e in timings)
+    n = len(elapsed_sorted)
+    if n:
+        p50 = elapsed_sorted[int(0.50 * n)]
+        p90 = elapsed_sorted[int(0.90 * n)]
+        p95 = elapsed_sorted[min(int(0.95 * n), n - 1)]
+        p99 = elapsed_sorted[min(int(0.99 * n), n - 1)]
+        _log.info(
+            "Timing P50=%.1fs P90=%.1fs P95=%.1fs P99=%.1fs max=%.1fs",
+            p50, p90, p95, p99, elapsed_sorted[-1],
+        )
+        slow = sorted(
+            [(nm, el) for nm, el in timings if el >= p95], key=lambda x: -x[1]
+        )
+        _log.info("Slowest images (>= P95 = %.1fs):", p95)
+        for nm, el in slow[:10]:
+            _log.info("  %.1fs  %s", el, nm)
 
     status.save()
     _log.info("SOLVED          %3d", solved)
