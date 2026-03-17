@@ -170,8 +170,9 @@ class InpImage:
             raw_nums = get_num_contours(chiers, subres)
             for _c, br, _ds in sorted(raw_nums, key=lambda ch: ch[1][0]):
                 num_chiers, x, y = split_num(br, warped_blk, subres)
-                col = x // subres
-                row = y // subres
+                bx, by, bw, bh = br
+                col = (bx + bw // 2) // subres
+                row = (by + bh // 2) // subres
                 if num_pixels[col, row] is None:
                     num_pixels[col, row] = []
                 num_pixels[col, row] += num_chiers

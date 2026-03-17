@@ -81,9 +81,15 @@ def contour_hier(
 def contour_is_number(br: tuple[int, int, int, int], subres: int) -> bool:
     """Decide whether a bounding rectangle could be a digit in a cage total.
 
-    A valid digit bounding rect must start in an even-numbered half-cell
-    (to avoid cage separators) and have dimensions consistent with a digit
-    character occupying roughly 1/8 to 1/2 of a cell.
+    A valid digit bounding rect must have its bottom-right corner in an
+    even-numbered half-cell (to avoid cage separators) and have dimensions
+    consistent with a digit character occupying roughly 1/8 to 1/2 of a cell.
+
+    The bottom-right corner (x+w, y+h) is used for the position check rather
+    than the top-left (x, y), because perspective warp can place a digit's
+    top-left edge 1-2 pixels outside the cell boundary while the digit body
+    remains firmly inside.  Since w < subres//2, the bottom-right is always
+    within the cell's first half regardless of any boundary slop.
 
     Args:
         br: Bounding rect as (x, y, w, h).
@@ -93,8 +99,8 @@ def contour_is_number(br: tuple[int, int, int, int], subres: int) -> bool:
         True if the rect is plausibly a digit bounding box.
     """
     x, y, w, h = br
-    xx = (2 * x) // subres
-    yy = (2 * y) // subres
+    xx = (2 * (x + w)) // subres
+    yy = (2 * (y + h)) // subres
     return (
         xx % 2 == 0
         and yy % 2 == 0
