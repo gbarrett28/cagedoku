@@ -25,6 +25,7 @@ import itertools
 import json
 import logging
 import re
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -172,12 +173,13 @@ def _process_one_image(
     config: ImagePipelineConfig,
     border_detector: BorderPCA1D | None,
     num_recogniser: CayenneNumber,
-) -> tuple[str, str]:
-    """Process one puzzle image and return (filename, status_string).
+) -> tuple[str, str, float]:
+    """Process one puzzle image and return (filename, status_string, elapsed_s).
 
     Designed to run in a joblib worker process.  Returns plain strings (not
     Path objects or exceptions) so the caller can update StatusStore without
-    any shared mutable state between workers.
+    any shared mutable state between workers.  elapsed_s lets the main process
+    detect images that are taking unexpectedly long.
 
     Args:
         f: Path to the puzzle .jpg image.
@@ -186,25 +188,27 @@ def _process_one_image(
         num_recogniser: Trained digit classifier.
 
     Returns:
-        (f.name, status_string) where status_string is one of 'SOLVED',
-        'CHEAT', 'ProcessingError: ...', 'AssertionError: ...', or
+        (f.name, status_string, elapsed_seconds) where status_string is one of
+        'SOLVED', 'CHEAT', 'ProcessingError: ...', 'AssertionError: ...', or
         'ValueError: ...'.
     """
+    t0 = time.perf_counter()
     try:
         inp = InpImage(f, config, border_detector, num_recogniser)
         grd = Grid()
         grd.set_up(inp.info.cage_totals, inp.info.brdrs)
         alts_sum, _solns_sum = grd.solve()
+        elapsed = time.perf_counter() - t0
         if alts_sum != 81:
             grd.cheat_solve()
-            return f.name, "CHEAT"
-        return f.name, "SOLVED"
+            return f.name, "CHEAT", elapsed
+        return f.name, "SOLVED", elapsed
     except ProcessingError as e:
-        return f.name, f"ProcessingError: {e.msg}"
+        return f.name, f"ProcessingError: {e.msg}", time.perf_counter() - t0
     except AssertionError as e:
-        return f.name, f"AssertionError: {e}"
+        return f.name, f"AssertionError: {e}", time.perf_counter() - t0
     except ValueError as e:
-        return f.name, f"ValueError: {e}"
+        return f.name, f"ValueError: {e}", time.perf_counter() - t0
 
 
 def collect_status(
@@ -247,7 +251,8 @@ def collect_status(
         for f in files
     )
 
-    for name, stat in results:
+    slow_threshold_s = 30.0
+    for name, stat, elapsed in results:
         total += 1
         f = config.puzzle_dir / name
         status[f] = stat
@@ -261,6 +266,9 @@ def collect_status(
             aerror += 1
         else:
             verror += 1
+
+        if elapsed > slow_threshold_s:
+            _log.warning("SLOW %s took %.1fs (%s)", name, elapsed, stat)
 
         if total % 10 == 0 or total == n_total:
             _log.info(
