@@ -39,9 +39,14 @@ class GridLocationConfig:
 
 @dataclasses.dataclass(frozen=True)
 class BorderDetectionConfig:
-    """Parameters for cage border detection."""
+    """Parameters for cage border detection.
 
-    adaptive_block_size: int = 31
+    adaptive_block_size is not stored here; it is derived from subres
+    as (subres // 4) | 1 and exposed via ImagePipelineConfig.adaptive_block_size.
+    This ensures the value stays odd (required by cv2.adaptiveThreshold) and
+    automatically tracks any change to the grid resolution.
+    """
+
     adaptive_c: int = 0
     sample_fraction: int = 4
     sample_margin: int = 16
@@ -137,6 +142,16 @@ class ImagePipelineConfig:
     def resolution(self) -> int:
         """Full grid resolution in pixels (9 * subres)."""
         return 9 * self.subres
+
+    @property
+    def adaptive_block_size(self) -> int:
+        """Adaptive threshold block size derived from subres.
+
+        Computed as (subres // 4) | 1 to ensure the value is always odd,
+        as required by cv2.adaptiveThreshold. For the default subres=128
+        this gives 33, replacing the former magic constant 31.
+        """
+        return (self.subres // 4) | 1
 
     @property
     def status_path(self) -> Path:

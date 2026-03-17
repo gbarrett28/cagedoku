@@ -267,7 +267,7 @@ class InpImage:
                 255,
                 cv2.ADAPTIVE_THRESH_MEAN_C,
                 cv2.THRESH_BINARY,
-                bd.adaptive_block_size,
+                config.adaptive_block_size,
                 bd.adaptive_c,
             ),
             dtype=np.uint8,
