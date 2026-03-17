@@ -34,7 +34,7 @@ from killer_sudoku.image.border_detection import BorderDecode, BorderPCA1D
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.grid_location import get_gry_img, locate_grid
 from killer_sudoku.image.inp_image import InpImage
-from killer_sudoku.training.status import StatusStore
+from killer_sudoku.training.status import TRAINING_STATUSES, StatusStore
 
 _log = logging.getLogger(__name__)
 
@@ -187,14 +187,14 @@ def collect_passing_border_samples(
     Returns:
         (brdrs_0, brdrs_1) -- pixel strip lists for non-border and border positions.
     """
-    status = StatusStore(config.status_path)
+    status = StatusStore(config.status_path, config.puzzle_dir)
     border_detector = InpImage.make_border_detector(config)
     num_recogniser = InpImage.make_num_recogniser(config)
     brdrs_0: list[npt.NDArray[np.float64]] = []
     brdrs_1: list[npt.NDArray[np.float64]] = []
 
     for f in itertools.islice(config.puzzle_dir.glob("*.jpg"), None):
-        if status[f] == "SOLVED":
+        if status[f] in TRAINING_STATUSES:
             _log.info("Processing (collect_passing_border_samples) %s...", f)
             inp = InpImage(f, config, border_detector, num_recogniser)
             resolution = config.resolution

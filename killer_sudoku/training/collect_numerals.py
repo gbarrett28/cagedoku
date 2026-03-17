@@ -31,7 +31,7 @@ from killer_sudoku.image.number_recognition import (
     get_num_contours,
     split_num,
 )
-from killer_sudoku.training.status import StatusStore
+from killer_sudoku.training.status import TRAINING_STATUSES, StatusStore
 
 _log = logging.getLogger(__name__)
 
@@ -144,11 +144,11 @@ def collect_numerals(
     Returns:
         List of (digit_label, warped_pixel_image) pairs across all solved puzzles.
     """
-    status = StatusStore(config.status_path)
+    status = StatusStore(config.status_path, config.puzzle_dir)
     numerals: list[tuple[int, npt.NDArray[np.uint8]]] = []
 
     for f in itertools.islice(config.puzzle_dir.glob("*.jpg"), None):
-        if status[f] == "SOLVED":
+        if status[f] in TRAINING_STATUSES:
             _log.info("Processing (collect_numerals) %s...", f)
             pairs = extract_raw_numerals_from_image(
                 f, config, border_detector, num_recogniser

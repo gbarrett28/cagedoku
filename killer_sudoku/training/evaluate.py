@@ -22,9 +22,11 @@ Usage:
 
 import argparse
 import itertools
+import json
 import logging
 import re
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -38,6 +40,129 @@ from killer_sudoku.training.status import StatusStore
 from killer_sudoku.training.train_border_detector import train_border_pca1d
 
 _log = logging.getLogger(__name__)
+
+
+def write_eval_report(
+    puzzle_dir: Path,
+    newspaper: str,
+    status: StatusStore,
+    solved: int,
+    cheated: int,
+    perror: int,
+    aerror: int,
+    verror: int,
+    total: int,
+) -> Path:
+    """Write a structured JSON evaluation report to {puzzle_dir}/eval_report.json.
+
+    Captures aggregate solve/error rates and a per-image status record so that
+    regressions at the individual puzzle level can be detected by --compare.
+
+    Args:
+        puzzle_dir: Directory containing puzzle images.
+        newspaper: Newspaper identifier string ('guardian' or 'observer').
+        status: StatusStore with current puzzle outcomes.
+        solved: Count of SOLVED puzzles.
+        cheated: Count of CHEAT puzzles.
+        perror: Count of ProcessingError puzzles.
+        aerror: Count of AssertionError puzzles.
+        verror: Count of ValueError puzzles.
+        total: Total puzzles processed.
+
+    Returns:
+        Path to the written report file.
+    """
+    solve_rate = solved / total if total else 0.0
+    cheat_rate = cheated / total if total else 0.0
+    error_rate = (perror + aerror + verror) / total if total else 0.0
+
+    per_image = dict(status.items())
+
+    report = {
+        "timestamp": datetime.now(tz=UTC).isoformat(),
+        "newspaper": newspaper,
+        "total": total,
+        "solved": solved,
+        "cheat": cheated,
+        "processing_error": perror,
+        "assertion_error": aerror,
+        "value_error": verror,
+        "solve_rate": round(solve_rate, 6),
+        "cheat_rate": round(cheat_rate, 6),
+        "error_rate": round(error_rate, 6),
+        "per_image": per_image,
+    }
+
+    out_path = puzzle_dir / "eval_report.json"
+    with open(out_path, "w", encoding="utf-8") as fh:
+        json.dump(report, fh, indent=2)
+    _log.info("Wrote eval report to %s", out_path)
+    return out_path
+
+
+def compare_reports(baseline_path: Path, current_path: Path) -> bool:
+    """Compare two evaluation reports and print a diff table.
+
+    Loads both JSON reports and prints a table of Metric / Baseline / Current /
+    Delta for solve_rate, cheat_rate, and error_rate.  Any metric that regresses
+    by more than 0.01 (1%) is flagged as a failure.
+
+    Also detects per-image regressions: puzzles that moved from SOLVED/CHEAT to
+    an error status.
+
+    Args:
+        baseline_path: Path to the baseline eval_report.json.
+        current_path: Path to the current eval_report.json.
+
+    Returns:
+        True if no regressions detected, False if any metric regressed > 1%.
+    """
+    with open(baseline_path, encoding="utf-8") as fh:
+        baseline = json.load(fh)
+    with open(current_path, encoding="utf-8") as fh:
+        current = json.load(fh)
+
+    metrics = ["solve_rate", "cheat_rate", "error_rate"]
+    # For solve_rate: higher is better (regression = decrease).
+    # For cheat_rate/error_rate: lower is better (regression = increase).
+    higher_is_better = {"solve_rate": True, "cheat_rate": False, "error_rate": False}
+
+    print(f"\n{'Metric':<20} {'Baseline':>10} {'Current':>10} {'Delta':>10}")
+    print("-" * 55)
+
+    any_regression = False
+    for m in metrics:
+        base_val = float(baseline.get(m, 0.0))
+        curr_val = float(current.get(m, 0.0))
+        delta = curr_val - base_val
+        sign = "+" if delta >= 0 else ""
+        good = higher_is_better[m]
+        is_regression = (good and delta < -0.01) or (not good and delta > 0.01)
+        flag = "  ✗ REGRESSION" if is_regression else "  ✓"
+        if is_regression:
+            any_regression = True
+        print(f"{m:<20} {base_val:>10.4f} {curr_val:>10.4f} {sign}{delta:>9.4f}{flag}")
+
+    # Per-image regression detection.
+    base_per = baseline.get("per_image", {})
+    curr_per = current.get("per_image", {})
+    regressions: list[str] = []
+    for name, base_status in base_per.items():
+        curr_status = curr_per.get(name, "")
+        was_good = base_status in {"SOLVED", "CHEAT"}
+        now_bad = curr_status not in {"SOLVED", "CHEAT"} and curr_status != ""
+        if was_good and now_bad:
+            regressions.append(f"  {name}: {base_status} -> {curr_status}")
+
+    if regressions:
+        any_regression = True
+        print(f"\nPer-image regressions ({len(regressions)}):")
+        for r in regressions:
+            print(r)
+    else:
+        print("\nNo per-image regressions.")
+
+    return not any_regression
 
 
 def collect_status(
@@ -65,7 +190,7 @@ def collect_status(
         StatusStore with updated results (already saved to disk).
     """
     num_recogniser = InpImage.make_num_recogniser(config)
-    status = StatusStore(config.status_path)
+    status = StatusStore(config.status_path, config.puzzle_dir)
     solved = 0
     cheated = 0
     perror = 0
@@ -110,6 +235,17 @@ def collect_status(
     _log.info("AssertionError  %3d", aerror)
     _log.info("ValueError      %3d", verror)
     _log.info("TOTAL           %3d", total)
+    write_eval_report(
+        config.puzzle_dir,
+        config.newspaper,
+        status,
+        solved,
+        cheated,
+        perror,
+        aerror,
+        verror,
+        total,
+    )
     return status
 
 
@@ -251,6 +387,18 @@ def main() -> None:
         default="status",
         help="Evaluation mode: status=collect_status, pca1d=observer_pca_1d_borders",
     )
+    parser.add_argument(
+        "--report-only",
+        action="store_true",
+        default=False,
+        help="Read status.pkl and write eval_report.json without reprocessing images",
+    )
+    parser.add_argument(
+        "--compare",
+        metavar="BASELINE_JSON",
+        default=None,
+        help="Compare current eval_report.json to a baseline; prints diff table",
+    )
     args = parser.parse_args()
 
     config = ImagePipelineConfig(
@@ -258,13 +406,62 @@ def main() -> None:
         newspaper=args.rag,
         rework=args.rework,
     )
+
+    if args.report_only:
+        # Regenerate the report from existing status.pkl without re-running pipeline.
+        status = StatusStore(config.status_path, config.puzzle_dir)
+        counts: dict[str, int] = {
+            "solved": 0,
+            "cheat": 0,
+            "perror": 0,
+            "aerror": 0,
+            "verror": 0,
+            "total": 0,
+        }
+        for _name, stat in status.items():
+            counts["total"] += 1
+            if stat == "SOLVED":
+                counts["solved"] += 1
+            elif stat == "CHEAT":
+                counts["cheat"] += 1
+            elif stat.startswith("ProcessingError"):
+                counts["perror"] += 1
+            elif stat.startswith("AssertionError"):
+                counts["aerror"] += 1
+            elif stat.startswith("ValueError"):
+                counts["verror"] += 1
+        write_eval_report(
+            config.puzzle_dir,
+            config.newspaper,
+            status,
+            counts["solved"],
+            counts["cheat"],
+            counts["perror"],
+            counts["aerror"],
+            counts["verror"],
+            counts["total"],
+        )
+        if args.compare:
+            report_path = config.puzzle_dir / "eval_report.json"
+            ok = compare_reports(Path(args.compare), report_path)
+            if not ok:
+                raise SystemExit(1)
+        return
+
+    if args.compare:
+        # Compare the existing eval_report.json to a baseline without re-running.
+        ok = compare_reports(Path(args.compare), config.puzzle_dir / "eval_report.json")
+        if not ok:
+            raise SystemExit(1)
+        return
+
     border_detector = InpImage.make_border_detector(config)
 
     if args.mode == "pca1d":
         if args.rag == "guardian":
             _log.info("pca1d mode is only applicable to Observer puzzles.")
             return
-        status = StatusStore(config.status_path)
+        status = StatusStore(config.status_path, config.puzzle_dir)
         observer_pca_1d_borders(config, status, rework=args.rework)
     else:
         collect_status(config, border_detector)
