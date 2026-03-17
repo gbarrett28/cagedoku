@@ -21,13 +21,13 @@ flowchart LR
     D --> E[Solver]
     E --> F[Solution image]
 
-    G[(status.pkl)] -. solved puzzles .-> T1
-    D -. cage_totals .-> T1[Collect Numerals]
+    G[(status.pkl)] -.->|solved puzzles| T1[Collect Numerals]
+    D -.->|cage_totals| T1
     T1 --> T2[Train Number Recogniser]
-    T2 -. nums_pca_s.pkl .-> D
+    T2 -.->|nums_pca_s.pkl| D
 
-    C -. border_x/y .-> T3[Train Border Detector]
-    T3 -. pca_1d_border.pkl .-> C
+    C -.->|border_x/y| T3[Train Border Detector]
+    T3 -.->|pca_1d_border.pkl| C
 ```
 
 The feedback loop — training the recogniser on its own predictions from solved puzzles —
@@ -40,9 +40,9 @@ training set, which improves the model, which improves solves.
 ## Stage 1: Image Acquisition and Status Tracking
 
 Puzzle images are downloaded manually (or via `scrape_puzzles`) and stored as `.jpg`
-files in `guardian/` or `observer/`. A companion `status.pkl` file maps each image path
+files in `guardian/` or `observer/`. A companion `status.pkl` file maps each image path  # [gb] move pkl to something more robust - represent the path in an os-indpendent way?
 to a string status label: `"SOLVED"`, `"CHEATED"` (CSP fallback used), `"ProcessingError"`,
-or `"AssertionError"`. Only `"SOLVED"` puzzles are used as training data.
+or `"AssertionError"`. Only `"SOLVED"` puzzles are used as training data.  # [gb] could use "CHEATED" puzzles for training as well
 
 `get_gry_img` reads a `.jpg`, upscales it with `cv2.pyrUp` until both dimensions exceed
 the target resolution (1152 px by default), then adds a 3-pixel black border. The border
