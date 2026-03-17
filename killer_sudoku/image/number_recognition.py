@@ -9,7 +9,7 @@ image painting, digit splitting, and perspective warping.
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import cv2
 import joblib  # type: ignore[import-untyped]
@@ -18,10 +18,22 @@ import numpy.typing as npt
 from scipy.signal import find_peaks
 from sklearn.cluster import KMeans  # type: ignore[import-untyped]
 from sklearn.decomposition import PCA  # type: ignore[import-untyped]
-from sklearn.neighbors import KNeighborsClassifier  # type: ignore[import-untyped]
 
 # A contour entry: (contour array, bounding rect, list of child ContourInfo).
 ContourInfo = tuple[npt.NDArray[np.int32], tuple[int, int, int, int], list[Any]]
+
+
+class _Classifier(Protocol):
+    """Protocol for sklearn-compatible digit classifiers.
+
+    Any object implementing predict() over a sequence of feature vectors
+    satisfies this Protocol, enabling SVC, KNN, or any future classifier to
+    be used interchangeably inside CayenneNumber.
+    """
+
+    def predict(self, x: npt.NDArray[np.float64]) -> npt.NDArray[np.intp]:
+        """Return predicted digit labels for each row of x."""
+        ...
 
 
 def contour_hier(
@@ -315,28 +327,45 @@ class NumberRecogniser:
 
 
 class CayenneNumber:
-    """PCA + KNN digit classifier used during inference.
+    """PCA + SVM digit classifier with optional template-matching fast path.
 
-    Projects digit images into PCA space then uses a K-nearest-neighbours
-    classifier trained on labelled examples. The dims attribute specifies
-    how many PCA dimensions to use (determined during training).
+    Two-stage inference:
+      1. Template matching (fast path): compare each digit image to stored mean
+         templates using cv2.TM_CCOEFF_NORMED.  If the best match score exceeds
+         template_threshold, return that digit directly.
+      2. SVM (slow path): project into PCA space and classify with an SVC trained
+         on the full labelled dataset.  Used only when template matching is uncertain.
+
+    If templates is None (backward-compatible load of an older model), all images
+    go directly to the classifier.
+
+    Attributes:
+        pca: Fitted PCA for dimensionality reduction.
+        dims: Number of PCA dimensions to use (chosen at training time).
+        classifier: Fitted sklearn-compatible classifier (SVC or legacy KNN).
+        templates: Per-digit mean images (float32) for template matching, or None.
+        template_threshold: Minimum TM_CCOEFF_NORMED score for the fast path.
     """
 
     def __init__(
         self,
         pca: PCA,
         dims: int,
-        neighbs: KNeighborsClassifier,
+        classifier: _Classifier,
+        templates: dict[int, npt.NDArray[np.float32]] | None = None,
+        template_threshold: float = 0.85,
     ) -> None:
         self.pca: PCA = pca
         self.dims: int = dims
-        self.neighbs: KNeighborsClassifier = neighbs
+        self.classifier: _Classifier = classifier
+        self.templates: dict[int, npt.NDArray[np.float32]] | None = templates
+        self.template_threshold: float = template_threshold
 
-    def get_sums(self, nums: list[npt.NDArray[np.uint8]]) -> npt.NDArray[np.intp]:
-        """Classify a list of digit images, returning digit label predictions.
+    def _classify(self, nums: list[npt.NDArray[np.uint8]]) -> npt.NDArray[np.intp]:
+        """Project nums into PCA space and classify with the SVM/KNN.
 
         Args:
-            nums: List of digit image arrays (each warped to canonical size).
+            nums: Digit image arrays to classify.
 
         Returns:
             Array of predicted digit labels.
@@ -344,14 +373,64 @@ class CayenneNumber:
         nums_pca: npt.NDArray[np.float64] = self.pca.transform(
             [n.flatten() for n in nums]
         )
-        labels: npt.NDArray[np.intp] = self.neighbs.predict(
-            [v[: self.dims] for v in nums_pca]
+        labels: npt.NDArray[np.intp] = self.classifier.predict(
+            np.array([v[: self.dims] for v in nums_pca])
         )
         return labels
+
+    def get_sums(self, nums: list[npt.NDArray[np.uint8]]) -> npt.NDArray[np.intp]:
+        """Classify a list of digit images, returning digit label predictions.
+
+        Uses template matching as a fast path when templates are available.
+        Images that score below template_threshold fall through to the SVM.
+
+        Args:
+            nums: List of digit image arrays (each warped to canonical size).
+
+        Returns:
+            Array of predicted digit labels.
+        """
+        if not self.templates:
+            return self._classify(nums)
+
+        labels: list[int] = []
+        fallback_indices: list[int] = []
+        fallback_imgs: list[npt.NDArray[np.uint8]] = []
+
+        for idx, img in enumerate(nums):
+            img_f = img.astype(np.float32)
+            best_score = -2.0
+            best_digit = 0
+            for digit, tmpl in self.templates.items():
+                result: npt.NDArray[np.float32] = np.asarray(
+                    cv2.matchTemplate(img_f, tmpl, cv2.TM_CCOEFF_NORMED),
+                    dtype=np.float32,
+                )
+                score = float(np.max(result))
+                if score > best_score:
+                    best_score = score
+                    best_digit = digit
+            if best_score >= self.template_threshold:
+                labels.append(best_digit)
+            else:
+                labels.append(-1)  # placeholder; filled below
+                fallback_indices.append(idx)
+                fallback_imgs.append(img)
+
+        if fallback_imgs:
+            fallback_labels = self._classify(fallback_imgs)
+            for i, lbl in zip(fallback_indices, fallback_labels.tolist(), strict=True):
+                labels[i] = int(lbl)
+
+        return np.array(labels, dtype=np.intp)
 
 
 def load_number_recogniser(model_path: Path) -> CayenneNumber:
     """Load a trained CayenneNumber model from disk using joblib.
+
+    Handles migration of older models that stored a KNN under the attribute
+    name 'neighbs' (pre-SVM refactor).  Those models are upgraded in-memory
+    to the current CayenneNumber layout (classifier, no templates).
 
     Args:
         model_path: Path to the serialised CayenneNumber model file.
@@ -361,5 +440,11 @@ def load_number_recogniser(model_path: Path) -> CayenneNumber:
     """
     if not model_path.exists():
         raise FileNotFoundError(f"Number recogniser model not found: {model_path}")
-    result: CayenneNumber = joblib.load(model_path)
+    raw = joblib.load(model_path)
+    if hasattr(raw, "neighbs") and not hasattr(raw, "classifier"):
+        # Migrate: old model stored KNN as 'neighbs'; wrap it under 'classifier'.
+        raw.classifier = raw.neighbs
+        raw.templates = None
+        raw.template_threshold = 0.85
+    result: CayenneNumber = raw
     return result

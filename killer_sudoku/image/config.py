@@ -35,6 +35,10 @@ class NumberRecognitionConfig:
 
     cluster_labels_guardian and cluster_labels_observer are empirically derived
     cluster-to-digit mappings determined by visual inspection of training data.
+
+    The SVM and template-matching hyperparameters control the two-stage
+    classifier used during inference: template matching (fast path) runs first;
+    if the best match score is below template_threshold, the SVM fallback runs.
     """
 
     cluster_labels_guardian: tuple[int, ...] = (
@@ -74,6 +78,9 @@ class NumberRecognitionConfig:
         5,
     )
     subres: int = 128
+    svm_c: float = 5.0
+    svm_gamma: str = "scale"
+    template_threshold: float = 0.85
 
 
 @dataclasses.dataclass(frozen=True)

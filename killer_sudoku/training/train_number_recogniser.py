@@ -1,19 +1,20 @@
-"""Step 2 of the digit training pipeline: train PCA + KNN digit recogniser.
+"""Step 2 of the digit training pipeline: train PCA + SVM digit recogniser.
 
 Reads the labelled digit images produced by collect_numerals, fits a PCA
-dimensionality reduction followed by a KNeighborsClassifier, and saves the
+dimensionality reduction followed by a Support Vector Classifier, and saves the
 trained CayenneNumber model via joblib.
 
 The training strategy:
   1. Group digit images by their label (0-9).
-  2. Compute the per-label mean image.
+  2. Compute the per-label mean image (used as templates for the fast path).
   3. Fit PCA on the 10 mean images to capture inter-digit variation.
   4. Determine the minimum number of PCA dims explaining 99% of variance.
-  5. Transform all digit images and train a KNN on the reduced space.
+  5. Transform all digit images and train an SVC on the reduced space.
 
 Usage:
     python -m killer_sudoku.training.train_number_recogniser --rag guardian
     python -m killer_sudoku.training.train_number_recogniser --rag observer
+    python -m killer_sudoku.training.train_number_recogniser --rag guardian --bootstrap
 """
 
 import argparse
@@ -25,7 +26,7 @@ import joblib  # type: ignore[import-untyped]
 import numpy as np
 import numpy.typing as npt
 from sklearn.decomposition import PCA  # type: ignore[import-untyped]
-from sklearn.neighbors import KNeighborsClassifier  # type: ignore[import-untyped]
+from sklearn.svm import SVC  # type: ignore[import-untyped]
 
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.number_recognition import CayenneNumber
@@ -86,6 +87,11 @@ def train_number_recogniser(
         np.mean(cls[i], axis=0) if i in cls else zero_img for i in range(10)
     ]
 
+    # Build template dict: mean image per digit as float32 for cv2.matchTemplate.
+    templates: dict[int, npt.NDArray[np.float32]] = {
+        i: np.asarray(means[i], dtype=np.float32) for i in range(10)
+    }
+
     # Fit PCA on mean images to capture inter-digit structure.
     pca: PCA = PCA()
     pca.fit([m.flatten() for m in means])
@@ -95,15 +101,26 @@ def train_number_recogniser(
     dims = int(np.argmax(cumsum > 0.99))
     _log.info("PCA dims for 99%% variance: %d", dims)
 
-    # Project all labelled images into PCA space and train KNN.
+    # Project all labelled images into PCA space and train SVM.
     nums_pca: npt.NDArray[np.float64] = pca.transform(
         [p.flatten() for _, p in val_nums]
     )
     vals: list[int] = [n for n, _ in val_nums]
-    num_neighbs: KNeighborsClassifier = KNeighborsClassifier()
-    num_neighbs.fit([v[:dims] for v in nums_pca], vals)
+    svm_c = config.number_recognition.svm_c
+    svm_gamma = config.number_recognition.svm_gamma
+    svc: SVC = SVC(kernel="rbf", C=svm_c, gamma=svm_gamma)
+    svc.fit([v[:dims] for v in nums_pca], vals)
+    _log.info(
+        "Trained SVC (C=%.1f, gamma=%s) on %d samples", svm_c, svm_gamma, len(vals)
+    )
 
-    model = CayenneNumber(pca, dims, num_neighbs)
+    model = CayenneNumber(
+        pca,
+        dims,
+        svc,
+        templates=templates,
+        template_threshold=config.number_recognition.template_threshold,
+    )
     joblib.dump(model, config.num_recogniser_path)
     _log.info("Saved number recogniser to %s", config.num_recogniser_path)
 
