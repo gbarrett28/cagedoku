@@ -109,45 +109,92 @@ def get_gry_img(
     return gry, img
 
 
+def _contour_quad(
+    blk: npt.NDArray[np.uint8],
+    min_aspect: float = 0.5,
+) -> npt.NDArray[np.float32] | None:
+    """Find the grid rectangle via contour detection.
+
+    Finds all external contours in the binary image, then scans the largest
+    ones for a quadrilateral with approximately square aspect ratio.  The
+    outer border of the grid is a thick continuous rectangle and is typically
+    the largest connected dark region in the image.
+
+    Corner ordering follows cv2.getPerspectiveTransform convention:
+    rect[0]=TL, rect[1]=TR, rect[2]=BR, rect[3]=BL.  Corners are sorted by
+    the sum (x+y) and difference (y-x) of their coordinates:
+    TL has the smallest sum, BR the largest, TR the smallest difference,
+    and BL the largest difference.
+
+    Returns None when no suitable quadrilateral is found (e.g. the outer
+    border has gaps, or a large non-grid dark region dominates the image),
+    allowing the caller to fall back to Hough-line detection.
+
+    Args:
+        blk: Binary image (255 = dark/candidate pixels, 0 = background).
+        min_aspect: Minimum short-side / long-side ratio to accept as valid.
+
+    Returns:
+        (4, 2) float32 corner array [TL, TR, BR, BL], or None if not found.
+    """
+    contours_raw: Any
+    contours_raw, _ = cv2.findContours(blk, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours: list[Any] = sorted(contours_raw, key=cv2.contourArea, reverse=True)
+    for c in contours[:10]:
+        peri = cv2.arcLength(c, True)
+        approx: Any = cv2.approxPolyDP(c, 0.02 * peri, True)
+        if len(approx) != 4:
+            continue
+        pts: npt.NDArray[np.float32] = np.asarray(approx, dtype=np.float32).reshape(
+            4, 2
+        )
+        s = pts.sum(axis=1)
+        d = np.diff(pts, axis=1).ravel()  # y - x per point
+        rect = np.zeros((4, 2), dtype=np.float32)
+        rect[0] = pts[int(np.argmin(s))]  # TL: smallest x+y
+        rect[1] = pts[int(np.argmin(d))]  # TR: smallest y-x (= largest x-y)
+        rect[2] = pts[int(np.argmax(s))]  # BR: largest x+y
+        rect[3] = pts[int(np.argmax(d))]  # BL: largest y-x
+        w = float(np.linalg.norm(rect[1] - rect[0]))
+        h = float(np.linalg.norm(rect[3] - rect[0]))
+        if max(w, h) > 0 and min(w, h) / max(w, h) >= min_aspect:
+            return rect
+    return None
+
+
 def locate_grid(
     gry: npt.NDArray[np.uint8],
     img: npt.NDArray[np.uint8],
     config: GridLocationConfig,
 ) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.float32]]:
-    """Locate the sudoku grid in a grayscale image using Hough line detection.
+    """Locate the sudoku grid in a grayscale image.
 
-    Thresholds the image to isolate the black grid lines, applies a Hough
-    transform, finds pairwise line intersections, and fits a linear model
-    to the major (3-cell) grid intersections to recover the four corner points.
+    Primary strategy — contour detection:
+        Thresholds the image and finds the largest quadrilateral contour.
+        The outer border of the grid is a thick continuous rectangle and is
+        reliably the largest connected dark region in the image, even when
+        the grid occupies only a portion of the frame (e.g. portrait images
+        where the puzzle sits in the upper half of the newspaper page).
 
-    Two detection strategies are available, controlled by config.use_hough_p:
+    Fallback strategy — Hough-line regression:
+        Applied when the contour strategy fails (no suitable quadrilateral
+        found).  Applies a Hough transform, finds pairwise line intersections,
+        filters out near-parallel outliers (whose intersection lies outside the
+        image boundary), and fits a linear model to the major (3-cell) grid
+        intersections to recover the four corner points.  Two Hough modes are
+        available, controlled by config.use_hough_p.
 
-    HoughLinesP (use_hough_p=True): probabilistic line segments.
-        Segment endpoints (x1, y1, x2, y2) are converted to the
-        (rho, sin_theta, cos_theta) normal form expected by intersect()
-        using the 2D Hesse line equation derived from the endpoint direction.
-        minLineLength is derived geometrically as a fraction of the image size.
-
-    HoughLines (use_hough_p=False): classical accumulator with adaptive threshold.
-        Binary search descends from hough_threshold_max, halving until lines
-        are found, then validates with the downstream intersection check.
-
-    Intersections are filtered to within one image-size margin around the image
-    boundary to discard near-parallel line pairs whose intersection lies at
-    astronomically large coordinates (a near-singular matrix result).
-
-    Returns (blk, rect) where blk is the thresholded binary image used for
-    detection and rect is a (4, 2) float32 array of the four corner coordinates
-    in the source image (top-left, top-right, bottom-right, bottom-left order
-    for use with cv2.getPerspectiveTransform).
+    Returns (blk, rect) where blk is the thresholded binary image and rect is
+    a (4, 2) float32 array of corner coordinates in the source image ordered
+    [TL, TR, BR, BL] for use with cv2.getPerspectiveTransform.
 
     Args:
         gry: Grayscale source image.
-        img: BGR source image (draw_hough modifies it for debug).
+        img: BGR source image (draw_hough annotates it for debug).
         config: Grid location parameters.
 
     Raises:
-        AssertionError: if Hough lines or intersections cannot be found.
+        AssertionError: if neither strategy can locate the grid.
     """
     blk_detect = np.reshape(np.ravel(gry), (-1, 1))
     counts: npt.NDArray[np.intp]
@@ -170,6 +217,14 @@ def locate_grid(
         cv2.inRange(np.asarray(gry), np.array([0]), np.array([isblack])), dtype=np.uint8
     )
 
+    # --- Primary: contour detection -------------------------------------------
+    rect = _contour_quad(blk)
+    if rect is not None:
+        _log.debug("locate_grid: contour strategy succeeded")
+        return blk, rect
+
+    # --- Fallback: Hough-line regression --------------------------------------
+    _log.debug("locate_grid: contour strategy failed, falling back to Hough lines")
     image_size = max(gry.shape[0], gry.shape[1])
     lines: list[tuple[float, float, float]]
 
@@ -209,14 +264,18 @@ def locate_grid(
             lines.append((rho, sin_t, cos_t))
     else:
         # HoughLines: classical accumulator with adaptive threshold via binary search.
-        # Start from hough_threshold_max and halve until lines are found.
+        # Halve threshold until at least hough_lines_min_count lines are found.
         theta_c = math.pi / config.hough_lines_theta_divisor
         threshold = config.hough_threshold_max
         lines_rt_raw: Any = None
-        while lines_rt_raw is None and threshold >= 1:
-            lines_rt_raw = cv2.HoughLines(blk, config.rho, theta_c, threshold)
-            if lines_rt_raw is None:
-                threshold //= 2
+        while threshold >= 1:
+            candidate: Any = cv2.HoughLines(blk, config.rho, theta_c, threshold)
+            if candidate is not None and len(candidate) >= config.hough_lines_min_count:
+                lines_rt_raw = candidate
+                break
+            if candidate is not None:
+                lines_rt_raw = candidate  # keep as fallback
+            threshold //= 2
         assert lines_rt_raw is not None, "HoughLines found no lines even at threshold=1"
         lines_rt: npt.NDArray[np.float32] = np.asarray(lines_rt_raw, dtype=np.float32)
         _log.debug("HoughLines found %d lines (threshold=%d)", len(lines_rt), threshold)
@@ -227,11 +286,10 @@ def locate_grid(
 
     draw_hough(img, lines)
 
-    # Compute all pairwise intersections, then discard any point that lies more
-    # than one image-width outside the image boundary.  Near-parallel line pairs
-    # produce near-singular matrices whose inverses yield astronomically large
-    # (but finite) coordinates; those outliers corrupt the y0/yn range used in
-    # the grid-position binning step that follows.
+    # Compute all pairwise intersections, discarding points that lie more than
+    # one image-width outside the boundary.  Near-parallel line pairs produce
+    # near-singular matrix inverses with astronomically large coordinates; those
+    # outliers corrupt the y0/yn range used in the grid-position binning below.
     isects: list[tuple[float, float]] = []
     margin = float(image_size)
     h, w = float(gry.shape[0]), float(gry.shape[1])
@@ -263,10 +321,12 @@ def locate_grid(
     intercept: Any = regr.intercept_
     coef: Any = regr.coef_
 
-    rect = np.zeros((4, 2), dtype=np.float32)
-    rect[3] = list(reversed(np.asarray(intercept + 9 * coef[0]).tolist()))
-    rect[2] = list(reversed(np.asarray(intercept + 9 * coef[0] + 9 * coef[1]).tolist()))
-    rect[1] = list(reversed(np.asarray(intercept + 9 * coef[1]).tolist()))
-    rect[0] = list(reversed(np.asarray(intercept).tolist()))
+    rect_hough = np.zeros((4, 2), dtype=np.float32)
+    rect_hough[3] = list(reversed(np.asarray(intercept + 9 * coef[0]).tolist()))
+    rect_hough[2] = list(
+        reversed(np.asarray(intercept + 9 * coef[0] + 9 * coef[1]).tolist())
+    )
+    rect_hough[1] = list(reversed(np.asarray(intercept + 9 * coef[1]).tolist()))
+    rect_hough[0] = list(reversed(np.asarray(intercept).tolist()))
 
-    return blk, rect
+    return blk, rect_hough

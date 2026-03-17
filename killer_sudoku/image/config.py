@@ -17,7 +17,8 @@ class GridLocationConfig:
 
     HoughLines (use_hough_p=False, default): classical accumulator with adaptive
     threshold.
-        Binary search descends from hough_threshold_max until lines are found.
+        Binary search descends from hough_threshold_max until at least
+        hough_lines_min_count lines are found.
         hough_lines_theta_divisor controls angular resolution (16 ≈ 11°).
         This is the reliable production strategy for both Guardian and Observer.
 
@@ -36,6 +37,14 @@ class GridLocationConfig:
     hough_p_threshold: int = 80
     hough_lines_theta_divisor: int = 16
     hough_threshold_max: int = 2048
+    hough_lines_min_count: int = 20
+    """Minimum line count for the HoughLines binary search.
+
+    The binary search halves the threshold until this many lines are found
+    (or threshold drops below 1).  Images where the grid spans only part of
+    the frame accumulate fewer votes per line, so the search must descend
+    further than a single-image-filling grid would require.
+    """
     isblack_offset: int = 56
     use_hough_p: bool = False
 
