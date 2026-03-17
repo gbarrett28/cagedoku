@@ -4,6 +4,7 @@ Uses Hough line detection and linear regression to locate the 9x9 sudoku grid
 in a photograph, returning the four corner points for perspective transform.
 """
 
+import logging
 import math
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,8 @@ import numpy.typing as npt
 from sklearn import linear_model  # type: ignore[import-untyped]
 
 from killer_sudoku.image.config import GridLocationConfig
+
+_log = logging.getLogger(__name__)
 
 
 def intersect(
@@ -113,9 +116,21 @@ def locate_grid(
 ) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.float32]]:
     """Locate the sudoku grid in a grayscale image using Hough line detection.
 
-    Thresholds the image to isolate the black grid lines, applies Hough
+    Thresholds the image to isolate the black grid lines, applies a Hough
     transform, finds pairwise line intersections, and fits a linear model
     to the major (3-cell) grid intersections to recover the four corner points.
+
+    Two detection strategies are available, controlled by config.use_hough_p:
+
+    HoughLinesP (use_hough_p=True): probabilistic line segments.
+        Segment endpoints (x1, y1, x2, y2) are converted to the
+        (rho, sin_theta, cos_theta) normal form expected by intersect()
+        using the 2D Hesse line equation derived from the endpoint direction.
+        minLineLength is derived geometrically as a fraction of the image size.
+
+    HoughLines (use_hough_p=False): classical accumulator with adaptive threshold.
+        Binary search descends from hough_threshold_max, halving until lines
+        are found, then validates with the downstream intersection check.
 
     Returns (blk, rect) where blk is the thresholded binary image used for
     detection and rect is a (4, 2) float32 array of the four corner coordinates
@@ -151,14 +166,61 @@ def locate_grid(
         cv2.inRange(np.asarray(gry), np.array([0]), np.array([isblack])), dtype=np.uint8
     )
 
-    theta = math.pi / config.theta_divisor
-    lines_rt_raw: Any = cv2.HoughLines(blk, config.rho, theta, config.hough_threshold)
-    assert lines_rt_raw is not None
-    lines_rt: npt.NDArray[np.float32] = np.asarray(lines_rt_raw, dtype=np.float32)
+    image_size = max(gry.shape[0], gry.shape[1])
+    lines: list[tuple[float, float, float]]
 
-    lines: list[tuple[float, float, float]] = [
-        (float(r), math.sin(float(t)), math.cos(float(t))) for [[r, t]] in lines_rt
-    ]
+    if config.use_hough_p:
+        # HoughLinesP: probabilistic segments with geometric length filter.
+        # minLineLength is derived from the image size: a valid grid line must
+        # span at least one full 3-box row (image_size * min_line_length_fraction).
+        theta_p = math.pi / config.hough_theta_divisor
+        min_length = int(image_size * config.min_line_length_fraction)
+        segments_raw: Any = cv2.HoughLinesP(
+            blk,
+            config.rho,
+            theta_p,
+            config.hough_p_threshold,
+            minLineLength=min_length,
+            maxLineGap=config.max_line_gap,
+        )
+        assert segments_raw is not None, "HoughLinesP found no line segments"
+        segments: npt.NDArray[np.float32] = np.asarray(segments_raw, dtype=np.float32)
+        _log.debug("HoughLinesP found %d segments", len(segments))
+
+        # Convert segment endpoints (x1, y1, x2, y2) to normal form
+        # (rho, sin_theta, cos_theta) for use with intersect().
+        # From the endpoint direction vector (dx, dy):
+        #   cos_theta = -dy / L,  sin_theta = dx / L
+        #   rho = x1 * cos_theta + y1 * sin_theta
+        lines = []
+        for [[x1, y1, x2, y2]] in segments.tolist():
+            dx = x2 - x1
+            dy = y2 - y1
+            length = math.sqrt(dx * dx + dy * dy)
+            if length == 0.0:
+                continue
+            cos_t = -dy / length
+            sin_t = dx / length
+            rho = x1 * cos_t + y1 * sin_t
+            lines.append((rho, sin_t, cos_t))
+    else:
+        # HoughLines: classical accumulator with adaptive threshold via binary search.
+        # Start from hough_threshold_max and halve until lines are found.
+        theta_c = math.pi / config.hough_lines_theta_divisor
+        threshold = config.hough_threshold_max
+        lines_rt_raw: Any = None
+        while lines_rt_raw is None and threshold >= 1:
+            lines_rt_raw = cv2.HoughLines(blk, config.rho, theta_c, threshold)
+            if lines_rt_raw is None:
+                threshold //= 2
+        assert lines_rt_raw is not None, "HoughLines found no lines even at threshold=1"
+        lines_rt: npt.NDArray[np.float32] = np.asarray(lines_rt_raw, dtype=np.float32)
+        _log.debug("HoughLines found %d lines (threshold=%d)", len(lines_rt), threshold)
+
+        lines = [
+            (float(r), math.sin(float(t)), math.cos(float(t))) for [[r, t]] in lines_rt
+        ]
+
     draw_hough(img, lines)
 
     isects: list[tuple[float, float]] = []

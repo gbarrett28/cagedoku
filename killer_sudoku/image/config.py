@@ -11,12 +11,30 @@ from typing import Literal
 
 @dataclasses.dataclass(frozen=True)
 class GridLocationConfig:
-    """Parameters for Hough-line grid detection."""
+    """Parameters for Hough-line grid detection.
+
+    Two detection strategies are available, selected by use_hough_p:
+
+    HoughLinesP (use_hough_p=True): probabilistic line segments.
+        hough_theta_divisor controls angular resolution (180 = 1°).
+        min_line_length_fraction * resolution sets the minimum segment length:
+        a valid grid line must span at least one 3-box row (resolution / 3).
+        max_line_gap bridges small discontinuities in ink.
+
+    HoughLines (use_hough_p=False): classical accumulator with adaptive threshold.
+        hough_lines_theta_divisor controls angular resolution (16 ≈ 11°).
+        Binary search descends from hough_threshold_max until lines are found.
+    """
 
     rho: int = 2
-    theta_divisor: int = 16
-    hough_threshold: int = 1792
+    hough_theta_divisor: int = 180
+    min_line_length_fraction: float = 0.3
+    max_line_gap: int = 20
+    hough_p_threshold: int = 80
+    hough_lines_theta_divisor: int = 16
+    hough_threshold_max: int = 2048
     isblack_offset: int = 56
+    use_hough_p: bool = True
 
 
 @dataclasses.dataclass(frozen=True)
