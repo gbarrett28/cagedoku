@@ -144,7 +144,7 @@ def detect_borders_peak_count(
 
     for col in range(9):
         xm = ((2 * col + 1) * subres) // 2
-        xb = xm - sample_half + sample_margin_px
+        xb = xm + sample_margin_px
         xt = xm + sample_half - sample_margin_px
         for row in range(1, 9):
             yl = (row * subres) - sample_half

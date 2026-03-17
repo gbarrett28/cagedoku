@@ -15,15 +15,18 @@ class GridLocationConfig:
 
     Two detection strategies are available, selected by use_hough_p:
 
+    HoughLines (use_hough_p=False, default): classical accumulator with adaptive
+    threshold.
+        Binary search descends from hough_threshold_max until lines are found.
+        hough_lines_theta_divisor controls angular resolution (16 ≈ 11°).
+        This is the reliable production strategy for both Guardian and Observer.
+
     HoughLinesP (use_hough_p=True): probabilistic line segments.
         hough_theta_divisor controls angular resolution (180 = 1°).
         min_line_length_fraction * resolution sets the minimum segment length:
         a valid grid line must span at least one 3-box row (resolution / 3).
         max_line_gap bridges small discontinuities in ink.
-
-    HoughLines (use_hough_p=False): classical accumulator with adaptive threshold.
-        hough_lines_theta_divisor controls angular resolution (16 ≈ 11°).
-        Binary search descends from hough_threshold_max until lines are found.
+        Note: known to underperform on Observer puzzles (24/424 grid failures).
     """
 
     rho: int = 2
@@ -34,7 +37,7 @@ class GridLocationConfig:
     hough_lines_theta_divisor: int = 16
     hough_threshold_max: int = 2048
     isblack_offset: int = 56
-    use_hough_p: bool = True
+    use_hough_p: bool = False
 
 
 @dataclasses.dataclass(frozen=True)

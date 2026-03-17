@@ -92,7 +92,7 @@ def extract_border_samples_from_image(
 
     for col in range(9):
         xm = ((2 * col + 1) * subres) // 2
-        xb = xm - sample_half + sample_margin
+        xb = xm + sample_margin
         xt = xm + sample_half - sample_margin
         for row in range(1, 9):
             yl = (row * subres) - sample_half
@@ -345,53 +345,34 @@ def train_border_pca1d(
     brdrs_raw_0, brdrs_raw_1 = collect_passing_border_samples(config, rework=rework_all)
     len0 = len(brdrs_raw_0)
 
-    pca_raw: PCA = PCA()
-    brdrs_0_pca: npt.NDArray[np.float64] = pca_raw.fit_transform(brdrs_raw_0)
-    brdrs_1_pca: npt.NDArray[np.float64] = pca_raw.transform(brdrs_raw_1)
-    cumsum: npt.NDArray[np.float64] = np.cumsum(
-        np.asarray(pca_raw.explained_variance_ratio_, dtype=np.float64)
+    # Single-stage PCA on the combined data finds the axis that separates the two
+    # classes directly. The first principal component captures the mean shift
+    # between border and non-border strips, giving the highest Fisher separation.
+    pca_all: PCA = PCA(n_components=1)
+    all_data: npt.NDArray[np.float64] = np.asarray(
+        brdrs_raw_0 + brdrs_raw_1, dtype=np.float64
     )
-    dims = int(np.argmax(cumsum > 0.99))
-    _log.info("dims=%d", dims)
+    coeffs_all: npt.NDArray[np.float64] = np.asarray(
+        pca_all.fit_transform(all_data)[:, 0], dtype=np.float64
+    )
 
-    all_high: list[npt.NDArray[np.float64]] = [b[dims:] for b in brdrs_0_pca] + [
-        b[dims:] for b in brdrs_1_pca
-    ]
-    pca: PCA = PCA(n_components=2)
-    brdrs_2d: npt.NDArray[np.float64] = pca.fit_transform(all_high)
-
-    coeffs: list[float] = [float(b[0]) for b in brdrs_2d]
-    m0 = float(np.mean(coeffs[:len0]))
-    m1 = float(np.mean(coeffs[len0:]))
+    coeffs_0 = coeffs_all[:len0]
+    coeffs_1 = coeffs_all[len0:]
+    m0 = float(np.mean(coeffs_0))
+    m1 = float(np.mean(coeffs_1))
     cmp = m0 >= m1
-    p = 0.25
-    bp: float
-    if not cmp:
-        bp = (p * float(np.max(coeffs[:len0]))) + (
-            (1 - p) * float(np.min(coeffs[len0:]))
-        )
-    else:
-        bp = ((1 - p) * float(np.min(coeffs[:len0]))) + (
-            p * float(np.max(coeffs[len0:]))
-        )
+    bp: float = 0.5 * (m0 + m1)
 
-    # Collapse two-stage PCA to single inner-product + scalar offset.
-    # p2 * ((p1 * (v - m1)) - m2) = p2*p1*v - (p2*p1*m1 + p2*m2)
-    p1: npt.NDArray[np.float64] = np.asarray(
-        pca_raw.components_[dims:, :], dtype=np.float64
+    _log.info("breakpoint=%s, swapped=%s m0=%.2f m1=%.2f", bp, cmp, m0, m1)
+
+    pc1: npt.NDArray[np.float64] = np.asarray(
+        pca_all.components_[:1, :], dtype=np.float64
     )
-    m1_mean: npt.NDArray[np.float64] = np.asarray(pca_raw.mean_, dtype=np.float64)
-    p2: npt.NDArray[np.float64] = np.asarray(pca.components_[:1, :], dtype=np.float64)
-    m2_mean: npt.NDArray[np.float64] = np.asarray(pca.mean_, dtype=np.float64)
-    proj_vec: npt.NDArray[np.float64] = np.asarray(np.matmul(p2, p1), dtype=np.float64)
     proj_bias: npt.NDArray[np.float64] = np.asarray(
-        np.matmul(p2, np.matmul(p1, m1_mean)) + np.matmul(p2, m2_mean),
-        dtype=np.float64,
+        np.matmul(pc1, pca_all.mean_), dtype=np.float64
     )
 
-    _log.info("breakpoint=%s, swapped=%s", bp, cmp)
-
-    model = BorderPCA1D(proj_vec, proj_bias + bp, cmp)
+    model = BorderPCA1D(pc1, proj_bias + bp, cmp)
     joblib.dump(model, config.border_pca1d_model_path)
     _log.info("Saved BorderPCA1D model to %s", config.border_pca1d_model_path)
     return model

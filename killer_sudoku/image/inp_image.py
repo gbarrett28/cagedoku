@@ -103,8 +103,7 @@ class InpImage:
 
         jpk = filepath.with_suffix(".jpk")
         if not config.rework and jpk.exists():
-            with open(jpk, "rb") as fh:
-                self.info: PicInfo = pk.load(fh)
+            self.info: PicInfo = InpImage.load_cached(jpk)
             return
 
         self.info = PicInfo()
@@ -191,6 +190,17 @@ class InpImage:
                             )
         self.info.cage_totals = cage_totals
 
+        # Every cell belongs to exactly one cage, so cage totals must sum to 405
+        # (9 rows × (1+2+…+9) = 9 × 45). A sum outside [360, 450] (±10%) almost
+        # always means the number recogniser read a cell incorrectly.
+        total_sum = int(cage_totals.sum())
+        if total_sum < 360 or total_sum > 450:
+            raise ProcessingError(
+                f"Cage totals sum to {total_sum}, expected 405",
+                cage_totals,
+                self.info.brdrs,
+            )
+
         with open(jpk, "wb") as fh:
             pk.dump(self.info, fh)
 
@@ -253,7 +263,7 @@ class InpImage:
 
         for col in range(9):
             xm = ((2 * col + 1) * subres) // 2
-            xb = xm - sample_half + sample_margin_px
+            xb = xm + sample_margin_px
             xt = xm + sample_half - sample_margin_px
             for row in range(1, 9):
                 yl = (row * subres) - sample_half
@@ -301,6 +311,12 @@ class InpImage:
     def load_cached(jpk_path: Path) -> "PicInfo":
         """Load a cached PicInfo from a .jpk file.
 
+        Handles two formats:
+          - New format: a PicInfo dataclass instance (written by current code).
+          - Old format: a plain dict with keys 'cagevals', 'brdrs', etc.
+            Migrated on load: cage_totals set from cagevals, border_x/border_y
+            derived from the 4-direction brdrs array.
+
         Provides a clean interface for training code to read cached puzzle
         data (border layout, cage totals) without knowing the serialisation
         format or the pickle import alias used inside this module.
@@ -317,5 +333,20 @@ class InpImage:
         if not jpk_path.exists():
             raise FileNotFoundError(f"Cache file not found: {jpk_path}")
         with open(jpk_path, "rb") as fh:
-            result: PicInfo = pk.load(fh)
-        return result
+            raw = pk.load(fh)
+
+        if isinstance(raw, PicInfo):
+            return raw
+
+        # Old format: plain dict. Migrate to PicInfo.
+        info = PicInfo()
+        if "cagevals" in raw:
+            info.cage_totals = np.asarray(raw["cagevals"], dtype=np.intp)
+        if "brdrs" in raw:
+            old_brdrs: npt.NDArray[np.bool_] = np.asarray(raw["brdrs"], dtype=bool)
+            info.brdrs = old_brdrs
+            # Derive border_x[col, row] = old_brdrs[row, col][1] (right flag)
+            # Derive border_y[row, col] = old_brdrs[col, row][2] (down flag)
+            info.border_x = np.asarray(old_brdrs[:8, :, 1].T, dtype=bool)
+            info.border_y = np.asarray(old_brdrs[:, :8, 2].T, dtype=bool)
+        return info
