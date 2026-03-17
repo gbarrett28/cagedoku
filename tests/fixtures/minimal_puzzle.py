@@ -10,6 +10,9 @@ No image files, model files, or external resources are required.
 import numpy as np
 import numpy.typing as npt
 
+from killer_sudoku.image.validation import validate_cage_layout
+from killer_sudoku.solver.puzzle_spec import PuzzleSpec
+
 # A known valid sudoku solution used as the basis for the trivial puzzle.
 KNOWN_SOLUTION: list[list[int]] = [
     [5, 3, 4, 6, 7, 8, 9, 1, 2],
@@ -32,9 +35,28 @@ def make_trivial_cage_totals() -> npt.NDArray[np.intp]:
     return np.array(KNOWN_SOLUTION, dtype=np.intp)
 
 
-def make_trivial_borders() -> npt.NDArray[np.bool_]:
-    """Return a (9, 9, 4) array where every inter-cell edge is a cage border.
+def make_trivial_border_x() -> npt.NDArray[np.bool_]:
+    """Return a (9, 8) border_x array where every inter-cell edge is a cage wall.
 
-    Every cell is its own cage, so all borders are True.
+    Every cell is its own cage, so all horizontal borders are True (wall present).
+    border_x[col, row] = True means a wall between rows row and row+1 in column col.
     """
-    return np.ones((9, 9, 4), dtype=bool)
+    return np.ones((9, 8), dtype=bool)
+
+
+def make_trivial_border_y() -> npt.NDArray[np.bool_]:
+    """Return a (8, 9) border_y array where every inter-cell edge is a cage wall.
+
+    Every cell is its own cage, so all vertical borders are True (wall present).
+    border_y[row, col] = True means a wall between columns col and col+1 in row row.
+    """
+    return np.ones((8, 9), dtype=bool)
+
+
+def make_trivial_spec() -> PuzzleSpec:
+    """Return a fully-validated PuzzleSpec for the trivial single-cell-cage puzzle."""
+    return validate_cage_layout(
+        make_trivial_cage_totals(),
+        make_trivial_border_x(),
+        make_trivial_border_y(),
+    )

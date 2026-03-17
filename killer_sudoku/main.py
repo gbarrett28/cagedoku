@@ -64,16 +64,12 @@ def main() -> None:
 
         try:
             inp = InpImage(filepath, config, border_detector, num_recogniser)
-        except (AssertionError, ValueError) as exc:
+        except (AssertionError, ValueError, ProcessingError) as exc:
             _log.error("  Skipping %s: image pipeline failed -- %s", filepath, exc)
             continue
 
         grd = Grid()
-        try:
-            grd.set_up(inp.info.cage_totals, inp.info.brdrs)
-        except ProcessingError as exc:
-            _log.error("  Skipping %s: cage setup failed -- %s", filepath, exc.msg)
-            continue
+        grd.set_up(inp.spec)
 
         try:
             alts_sum, _solns_sum = grd.solve()

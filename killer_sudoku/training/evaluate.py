@@ -39,6 +39,7 @@ from killer_sudoku.image.border_detection import BorderPCA1D
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.inp_image import InpImage
 from killer_sudoku.image.number_recognition import CayenneNumber
+from killer_sudoku.image.validation import validate_cage_layout
 from killer_sudoku.solver.grid import Grid, ProcessingError
 from killer_sudoku.training.status import StatusStore
 from killer_sudoku.training.train_border_detector import train_border_pca1d
@@ -193,15 +194,15 @@ def _process_one_image(
 
     Returns:
         (f.name, status_string, elapsed_seconds) where status_string is one of
-        'SOLVED', 'CHEAT', 'ProcessingError: ...', 'AssertionError: ...', or
-        'ValueError: ...'.
+        'SOLVED', 'CHEAT', 'CheatTimeout', 'ProcessingError: ...',
+        'AssertionError: ...', or 'ValueError: ...'.
     """
     cheat_timeout_s = 30.0
     t0 = time.perf_counter()
     try:
         inp = InpImage(f, config, border_detector, num_recogniser)
         grd = Grid()
-        grd.set_up(inp.info.cage_totals, inp.info.brdrs)
+        grd.set_up(inp.spec)
         alts_sum, _solns_sum = grd.solve()
         if alts_sum != 81:
             # cheat_solve() can run indefinitely on contradictory cage layouts.
@@ -321,7 +322,11 @@ def collect_status(
         p99 = elapsed_sorted[min(int(0.99 * n), n - 1)]
         _log.info(
             "Timing P50=%.1fs P90=%.1fs P95=%.1fs P99=%.1fs max=%.1fs",
-            p50, p90, p95, p99, elapsed_sorted[-1],
+            p50,
+            p90,
+            p95,
+            p99,
+            elapsed_sorted[-1],
         )
         slow = sorted(
             [(nm, el) for nm, el in timings if el >= p95], key=lambda x: -x[1]
@@ -363,8 +368,8 @@ def test_border_fun(
     """Evaluate a custom border detection function against matching puzzles.
 
     Processes all puzzles whose recorded status matches status_pattern. If
-    is_border_fn is provided, uses it to rebuild the brdrs array from the raw
-    border pixel strips; otherwise uses the brdrs stored in inp.info.
+    is_border_fn is provided, uses it to rebuild the borders from the raw
+    border pixel strips; otherwise uses the validated spec from InpImage directly.
 
     Args:
         config: Pipeline configuration.
@@ -372,7 +377,7 @@ def test_border_fun(
         status_pattern: Only process puzzles whose status matches this pattern.
         border_detector: Observer border model or None for Guardian.
         is_border_fn: Optional function (pixel_strip -> bool) to test. If None,
-            uses the brdrs from InpImage directly.
+            uses the pre-validated spec from InpImage directly.
 
     Returns:
         (aerror, cheated, perror, solved, total) counts.
@@ -396,14 +401,14 @@ def test_border_fun(
             inp = InpImage(f, config, border_detector, num_recogniser)
             grd = Grid()
 
-            brdrs: npt.NDArray[np.bool_]
             if is_border_fn is None:
-                brdrs = inp.info.brdrs
+                spec = inp.spec
             else:
-                brdrs = np.full(shape=(9, 9, 4), fill_value=True, dtype=bool)
-                # Re-extract raw border strips from the warped grayscale image.
-                # We reuse the border_x/border_y arrays as a proxy; in a full
-                # reimplementation these would be re-extracted from warped_gry.
+                # Experimental border detection — build a custom brdrs array,
+                # then derive the compact border_x/border_y and re-validate.
+                brdrs: npt.NDArray[np.bool_] = np.full(
+                    shape=(9, 9, 4), fill_value=True, dtype=bool
+                )
                 half = config.subres // 2
                 for col in range(9):
                     for row in range(8):
@@ -413,8 +418,12 @@ def test_border_fun(
                         brdrs[row + 1, col][3] = isbh
                         brdrs[col, row + 0][2] = isbv
                         brdrs[col, row + 1][0] = isbv
+                # Reverse-expand to compact canonical forms.
+                border_x = np.asarray(brdrs[:8, :, 1].T, dtype=bool)
+                border_y = np.asarray(brdrs[:, :8, 2].T, dtype=bool)
+                spec = validate_cage_layout(inp.info.cage_totals, border_x, border_y)
 
-            grd.set_up(inp.info.cage_totals, brdrs)
+            grd.set_up(spec)
             alts_sum, _solns_sum = grd.solve()
             if alts_sum != 81:
                 _log.info("... cheating")

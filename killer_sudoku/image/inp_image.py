@@ -28,7 +28,9 @@ from killer_sudoku.image.number_recognition import (
     load_number_recogniser,
     split_num,
 )
+from killer_sudoku.image.validation import validate_cage_layout
 from killer_sudoku.solver.grid import ProcessingError
+from killer_sudoku.solver.puzzle_spec import PuzzleSpec
 
 
 @dataclasses.dataclass
@@ -104,6 +106,9 @@ class InpImage:
         jpk = filepath.with_suffix(".jpk")
         if not config.rework and jpk.exists():
             self.info: PicInfo = InpImage.load_cached(jpk)
+            self.spec: PuzzleSpec = validate_cage_layout(
+                self.info.cage_totals, self.info.border_x, self.info.border_y
+            )
             return
 
         self.info = PicInfo()
@@ -203,6 +208,10 @@ class InpImage:
 
         with open(jpk, "wb") as fh:
             pk.dump(self.info, fh)
+
+        self.spec = validate_cage_layout(
+            self.info.cage_totals, self.info.border_x, self.info.border_y
+        )
 
     def _identify_borders(
         self,

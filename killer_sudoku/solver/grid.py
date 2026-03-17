@@ -27,6 +27,7 @@ from constraint import (  # type: ignore[import-untyped]
 
 from killer_sudoku.output.sol_image import SolImage
 from killer_sudoku.solver.equation import Equation, NoSolnError
+from killer_sudoku.solver.puzzle_spec import PuzzleSpec
 
 
 class ProcessingError(Exception):
@@ -196,44 +197,8 @@ class Grid:
         self.region: npt.NDArray[np.intp] = np.zeros((9, 9), dtype=np.intp)
 
     # ------------------------------------------------------------------
-    # Region / cage helpers
+    # Row / col / box / cage access helpers
     # ------------------------------------------------------------------
-
-    def mark_region(
-        self,
-        i: int,
-        j: int,
-        reg: int,
-        brdrs: npt.NDArray[np.bool_],
-    ) -> int:
-        """Flood-fill from cell (i, j), marking it and connected cells as cage reg.
-
-        Follows open borders (brdrs entry == False) into neighbouring cells.
-        Returns the count of newly-marked cells.
-
-        Args:
-            i: Row index of the starting cell.
-            j: Column index of the starting cell.
-            reg: Cage index to assign (1-based).
-            brdrs: Boolean array of shape (9, 9, 4); True means a border wall.
-
-        Returns:
-            Number of cells marked during this call (including the starting cell).
-
-        Raises:
-            ProcessingError: If a cell is reached that was already assigned to a
-                             different cage, indicating an inconsistent border map.
-        """
-        marked = 0
-        if self.region[i][j] == 0:
-            self.region[i][j] = reg
-            marked = 1
-            for b, mv in zip(brdrs[j][i], BRDR_MV, strict=False):
-                if not b:
-                    marked += self.mark_region(i + mv[1], j + mv[0], reg, brdrs)
-        elif self.region[i][j] != reg:
-            raise ProcessingError("region reassigned", self.region, brdrs)
-        return marked
 
     def get_row(self, i: int, j: int) -> set[tuple[int, int]]:
         """Return the set of cells in the same row as (i, j)."""
@@ -382,55 +347,31 @@ class Grid:
     # Grid setup
     # ------------------------------------------------------------------
 
-    def set_up(
-        self,
-        prd_per_sq: npt.NDArray[np.intp],
-        brdrs: npt.NDArray[np.bool_],
-    ) -> None:
-        """Populate cage structure and equations from image-processing data.
+    def set_up(self, spec: PuzzleSpec) -> None:
+        """Populate cage structure and equations from a validated PuzzleSpec.
 
-        Iterates over all cells: wherever a non-zero cage total is found
-        (prd_per_sq[i][j] != 0), flood-fills the cage region and records
-        the total.  After all regions are assigned, builds the full equation
-        list.
+        Takes the pre-validated PuzzleSpec produced by validate_cage_layout:
+        cage regions have already been flood-filled and all consistency checks
+        have been applied. This method renders the borders and cage totals onto
+        the solution image, then builds the equation list for solving.
 
         Args:
-            prd_per_sq: (9, 9) array of cage totals; non-zero at the
-                        top-left cell of each cage.
-            brdrs: Boolean border array passed to mark_region.
-
-        Raises:
-            ProcessingError: If any cell is left unassigned after scanning
-                             all cage totals.
-            ValueError: If a cage total is inconsistent with the cage size
-                        (too small or too large to be achievable).
+            spec: Validated puzzle specification from validate_cage_layout.
         """
+        brdrs = spec.brdrs
         self.sol_img.draw_borders(brdrs)
-        cszs: npt.NDArray[np.intp] = np.zeros((9, 9), dtype=np.intp)
-        reg = 0
+        self.region = spec.regions.copy()
         for i in range(9):
             for j in range(9):
-                if prd_per_sq[i][j] != 0:
-                    self.sol_img.draw_sum(i, j, int(prd_per_sq[i][j]))
-                    reg += 1
-                    cszs[i, j] = self.mark_region(i, j, reg, brdrs)
-                    n = int(cszs[i, j])
-                    lo = (n * (n + 1)) // 2
-                    hi = (n * (19 - n)) // 2
-                    if not (lo <= prd_per_sq[i][j] <= hi):
-                        raise ValueError(
-                            f"cagesize={n}, total={prd_per_sq[i][j]}: "
-                            f"total must be in [{lo}, {hi}]"
-                        )
-        if (self.region == 0).any():
-            raise ProcessingError("unassigned region", self.region, brdrs)
+                if spec.cage_totals[i][j] != 0:
+                    self.sol_img.draw_sum(i, j, int(spec.cage_totals[i][j]))
         self.CAGES = [set() for _ in np.unique(self.region)]
         self.VALS = [0 for _ in np.unique(self.region)]
         for i in range(9):
             for j in range(9):
                 idx = int(self.region[i][j]) - 1
                 self.CAGES[idx].add((i, j))
-                self.VALS[idx] = max(self.VALS[idx], int(prd_per_sq[i][j]))
+                self.VALS[idx] = max(self.VALS[idx], int(spec.cage_totals[i][j]))
         self.equns = [Equation(s, 45, self) for s in ROWS + COLS + BOXS]
         self.equns += [
             Equation(s, v, self) for s, v in zip(self.CAGES, self.VALS, strict=False)
