@@ -132,6 +132,10 @@ def locate_grid(
         Binary search descends from hough_threshold_max, halving until lines
         are found, then validates with the downstream intersection check.
 
+    Intersections are filtered to within one image-size margin around the image
+    boundary to discard near-parallel line pairs whose intersection lies at
+    astronomically large coordinates (a near-singular matrix result).
+
     Returns (blk, rect) where blk is the thresholded binary image used for
     detection and rect is a (4, 2) float32 array of the four corner coordinates
     in the source image (top-left, top-right, bottom-right, bottom-left order
@@ -223,11 +227,18 @@ def locate_grid(
 
     draw_hough(img, lines)
 
+    # Compute all pairwise intersections, then discard any point that lies more
+    # than one image-width outside the image boundary.  Near-parallel line pairs
+    # produce near-singular matrices whose inverses yield astronomically large
+    # (but finite) coordinates; those outliers corrupt the y0/yn range used in
+    # the grid-position binning step that follows.
     isects: list[tuple[float, float]] = []
+    margin = float(image_size)
+    h, w = float(gry.shape[0]), float(gry.shape[1])
     for i, li in enumerate(lines):
         for lj in lines[:i]:
             b, y, x = intersect(li, lj)
-            if b:
+            if b and -margin <= y <= h + margin and -margin <= x <= w + margin:
                 isects.append((y, x))
     usects = sorted(set(isects))
     assert len(usects) >= 4
