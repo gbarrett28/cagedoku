@@ -126,6 +126,13 @@ class ImagePipelineConfig:
         default_factory=NumberRecognitionConfig
     )
 
+    n_jobs: int = -1
+    """Number of parallel worker processes for batch operations.
+
+    Passed directly to joblib.Parallel(n_jobs=...).  -1 means use all
+    available CPUs; 1 disables parallelism (useful for debugging).
+    """
+
     @property
     def is_guardian(self) -> bool:
         """True if the newspaper is Guardian."""

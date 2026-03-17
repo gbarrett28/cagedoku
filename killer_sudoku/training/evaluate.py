@@ -29,12 +29,14 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
+import joblib  # type: ignore[import-untyped]
 import numpy as np
 import numpy.typing as npt
 
 from killer_sudoku.image.border_detection import BorderPCA1D
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.inp_image import InpImage
+from killer_sudoku.image.number_recognition import CayenneNumber
 from killer_sudoku.solver.grid import Grid, ProcessingError
 from killer_sudoku.training.status import StatusStore
 from killer_sudoku.training.train_border_detector import train_border_pca1d
@@ -165,6 +167,46 @@ def compare_reports(baseline_path: Path, current_path: Path) -> bool:
     return not any_regression
 
 
+def _process_one_image(
+    f: Path,
+    config: ImagePipelineConfig,
+    border_detector: BorderPCA1D | None,
+    num_recogniser: CayenneNumber,
+) -> tuple[str, str]:
+    """Process one puzzle image and return (filename, status_string).
+
+    Designed to run in a joblib worker process.  Returns plain strings (not
+    Path objects or exceptions) so the caller can update StatusStore without
+    any shared mutable state between workers.
+
+    Args:
+        f: Path to the puzzle .jpg image.
+        config: Pipeline configuration.
+        border_detector: Observer border model or None for Guardian.
+        num_recogniser: Trained digit classifier.
+
+    Returns:
+        (f.name, status_string) where status_string is one of 'SOLVED',
+        'CHEAT', 'ProcessingError: ...', 'AssertionError: ...', or
+        'ValueError: ...'.
+    """
+    try:
+        inp = InpImage(f, config, border_detector, num_recogniser)
+        grd = Grid()
+        grd.set_up(inp.info.cage_totals, inp.info.brdrs)
+        alts_sum, _solns_sum = grd.solve()
+        if alts_sum != 81:
+            grd.cheat_solve()
+            return f.name, "CHEAT"
+        return f.name, "SOLVED"
+    except ProcessingError as e:
+        return f.name, f"ProcessingError: {e.msg}"
+    except AssertionError as e:
+        return f.name, f"AssertionError: {e}"
+    except ValueError as e:
+        return f.name, f"ValueError: {e}"
+
+
 def collect_status(
     config: ImagePipelineConfig,
     border_detector: BorderPCA1D | None,
@@ -191,42 +233,46 @@ def collect_status(
     """
     num_recogniser = InpImage.make_num_recogniser(config)
     status = StatusStore(config.status_path, config.puzzle_dir)
-    solved = 0
-    cheated = 0
-    perror = 0
-    aerror = 0
-    verror = 0
-    total = 0
+    solved = cheated = perror = aerror = verror = total = 0
 
-    for f in itertools.islice(config.puzzle_dir.glob("*.jpg"), None):
-        _log.info("Processing (collect_status) %s...", f)
+    files = list(config.puzzle_dir.glob("*.jpg"))
+    n_total = len(files)
+    _log.info("Processing %d images with n_jobs=%d ...", n_total, config.n_jobs)
+
+    # Dispatch all images to worker processes; results stream back as each
+    # completes (unordered).  StatusStore is updated only in the main process
+    # so workers never share mutable state.
+    results = joblib.Parallel(n_jobs=config.n_jobs, return_as="generator_unordered")(
+        joblib.delayed(_process_one_image)(f, config, border_detector, num_recogniser)
+        for f in files
+    )
+
+    for name, stat in results:
         total += 1
-
-        try:
-            inp = InpImage(f, config, border_detector, num_recogniser)
-            grd = Grid()
-            grd.set_up(inp.info.cage_totals, inp.info.brdrs)
-            alts_sum, _solns_sum = grd.solve()
-            if alts_sum != 81:
-                _log.info("... cheating")
-                grd.cheat_solve()
-                status[f] = "CHEAT"
-                cheated += 1
-            else:
-                status[f] = "SOLVED"
-                solved += 1
-        except ProcessingError as e:
-            _log.error("... failed with ProcessingError: %s", e.msg)
-            status[f] = f"ProcessingError: {e.msg}"
+        f = config.puzzle_dir / name
+        status[f] = stat
+        if stat == "SOLVED":
+            solved += 1
+        elif stat == "CHEAT":
+            cheated += 1
+        elif stat.startswith("ProcessingError"):
             perror += 1
-        except AssertionError as e:
-            _log.error("... failed with AssertionError: %s", e)
-            status[f] = f"AssertionError: {e}"
+        elif stat.startswith("AssertionError"):
             aerror += 1
-        except ValueError as e:
-            _log.error("... failed with ValueError: %s", e)
-            status[f] = f"ValueError: {e}"
+        else:
             verror += 1
+
+        if total % 10 == 0 or total == n_total:
+            _log.info(
+                "[%d/%d] SOLVED=%d CHEAT=%d PE=%d AE=%d VE=%d",
+                total,
+                n_total,
+                solved,
+                cheated,
+                perror,
+                aerror,
+                verror,
+            )
 
     status.save()
     _log.info("SOLVED          %3d", solved)
