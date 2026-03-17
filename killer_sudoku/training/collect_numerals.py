@@ -27,6 +27,7 @@ from killer_sudoku.image.inp_image import InpImage, PicInfo  # noqa: F401
 from killer_sudoku.image.number_recognition import (
     CayenneNumber,
     ContourInfo,
+    NumberRecogniser,
     contour_hier,
     get_num_contours,
     split_num,
@@ -156,19 +157,82 @@ def extract_raw_numerals_from_image(
     return pairs
 
 
+def kmeans_bootstrap_numerals(
+    config: ImagePipelineConfig,
+) -> list[tuple[int, npt.NDArray[np.uint8]]]:
+    """Bootstrap digit labels using KMeans clustering — no cache files required.
+
+    Extracts all digit contours from every puzzle image, fits KMeans with
+    n_clusters matching the empirically-derived cluster_labels mapping in
+    config.number_recognition, then maps cluster indices to digit values.
+
+    This is the fully self-contained bootstrap: only .jpg images are needed.
+    Quality is lower than the .jpk-based bootstrap (depends on KMeans cluster
+    quality and the pre-set cluster_labels mapping), but it produces enough
+    correctly-labelled samples to train an initial CayenneNumber model.
+
+    Args:
+        config: Pipeline configuration (supplies puzzle_dir, newspaper, etc.).
+
+    Returns:
+        List of (digit_label, warped_pixel_image) pairs.
+
+    Raises:
+        ValueError: if no digit contours could be extracted from any image.
+    """
+    cluster_labels = (
+        list(config.number_recognition.cluster_labels_guardian)
+        if config.is_guardian
+        else list(config.number_recognition.cluster_labels_observer)
+    )
+    n_clusters = len(cluster_labels)
+
+    all_imgs: list[npt.NDArray[np.uint8]] = []
+
+    for f in itertools.islice(config.puzzle_dir.glob("*.jpg"), None):
+        try:
+            cell_contours = _extract_cell_contours(f, config)
+        except (AssertionError, ValueError) as exc:
+            _log.debug("Skipping %s in kmeans bootstrap: %s", f, exc)
+            continue
+        for imgs in cell_contours.values():
+            all_imgs.extend(imgs)
+
+    if not all_imgs:
+        raise ValueError("No digit contours found in any image in puzzle_dir")
+
+    _log.info("KMeans bootstrap: fitting on %d contour images...", len(all_imgs))
+    recogniser = NumberRecogniser(all_imgs, n_clusters=n_clusters)
+    labels = recogniser.labels_
+
+    result = [
+        (cluster_labels[int(lbl)], img)
+        for lbl, img in zip(labels.tolist(), all_imgs, strict=True)
+    ]
+    _log.info("KMeans bootstrap: produced %d labelled numerals", len(result))
+    return result
+
+
 def bootstrap_numerals(
     config: ImagePipelineConfig,
 ) -> list[tuple[int, npt.NDArray[np.uint8]]]:
     """Bootstrap digit labels from ground-truth cage totals in solved puzzles.
 
     Unlike collect_numerals, this function requires no digit recogniser.
-    The cage_totals in each .jpk cache file provide ground-truth labels.
-    For each TRAINING_STATUS puzzle with a .jpk file, contours are re-extracted
-    from the .jpg and matched positionally to the cage total string.
+    Uses two approaches in order of preference:
 
-    Labelling rule: if the number of contours in cell (col, row) exactly
-    equals the number of digits in cage_totals[col, row], the contours are
-    paired left-to-right with the digit characters.  Mismatches are skipped.
+    1. .jpk-based bootstrap (preferred): reads cage_totals from the cached
+       PicInfo for each TRAINING_STATUS puzzle. Contours re-extracted from the
+       .jpg are matched left-to-right to the cage total's digit string.
+       Mismatches (contour count != digit count) are skipped.
+
+    2. KMeans fallback (no cache files): if no .jpk files are found, calls
+       kmeans_bootstrap_numerals, which uses unsupervised clustering with the
+       empirically-derived cluster_labels mapping from config.
+
+    Labelling rule for .jpk path: if the number of contours in cell (col, row)
+    exactly equals the number of digits in cage_totals[col, row], the contours
+    are paired left-to-right with the digit characters.
 
     Args:
         config: Pipeline configuration (supplies puzzle_dir, status_path, etc.).
@@ -184,13 +248,12 @@ def bootstrap_numerals(
             continue
         jpk = f.with_suffix(".jpk")
         if not jpk.exists():
-            _log.debug("No .jpk cache for %s; skipping bootstrap", f)
+            _log.debug("No .jpk cache for %s; skipping", f)
             continue
 
         _log.info("Processing (bootstrap_numerals) %s...", f)
         try:
-            with open(jpk, "rb") as fh:
-                pic_info: PicInfo = pickle.load(fh)
+            pic_info = InpImage.load_cached(jpk)
             cell_contours = _extract_cell_contours(f, config)
         except (AssertionError, ValueError) as exc:
             _log.warning("Skipping %s in bootstrap: %s", f, exc)
@@ -207,6 +270,10 @@ def bootstrap_numerals(
                     continue
                 for digit_char, img_arr in zip(total_str, contour_imgs, strict=True):
                     numerals.append((int(digit_char), img_arr))
+
+    if not numerals:
+        _log.info("No .jpk files found; falling back to KMeans bootstrap.")
+        return kmeans_bootstrap_numerals(config)
 
     _log.info("Bootstrapped %d numerals", len(numerals))
     return numerals

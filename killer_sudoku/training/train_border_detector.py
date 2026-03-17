@@ -30,7 +30,11 @@ import numpy.typing as npt
 from sklearn.cluster import KMeans  # type: ignore[import-untyped]
 from sklearn.decomposition import PCA  # type: ignore[import-untyped]
 
-from killer_sudoku.image.border_detection import BorderDecode, BorderPCA1D
+from killer_sudoku.image.border_detection import (
+    BorderDecode,
+    BorderPCA1D,
+    detect_borders_peak_count,
+)
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.grid_location import get_gry_img, locate_grid
 from killer_sudoku.image.inp_image import InpImage
@@ -171,80 +175,137 @@ def train_border_decode(
     return model
 
 
+def _detect_borders_from_image(
+    filepath: Path,
+    config: ImagePipelineConfig,
+) -> tuple[npt.NDArray[np.bool_], npt.NDArray[np.bool_]]:
+    """Derive border layout from a raw image with no pre-trained model.
+
+    Runs grid detection, perspective warp, adaptive thresholding, and
+    Guardian peak-counting to produce an initial border_x/border_y estimate.
+    Reliable for Guardian puzzles; used as a bootstrap approximation for Observer.
+
+    Args:
+        filepath: Path to the puzzle .jpg image.
+        config: Pipeline configuration.
+
+    Returns:
+        (border_x, border_y) — (9, 8) and (8, 9) bool arrays.
+
+    Raises:
+        AssertionError: if grid lines or intersections cannot be found.
+    """
+    resolution = config.resolution
+    subres = config.subres
+    bd = config.border_detection
+
+    gry, img = get_gry_img(filepath, resolution)
+    _blk, grid = locate_grid(gry, img, config.grid_location)
+
+    dst_size = np.array(
+        [
+            [0, 0],
+            [resolution - 1, 0],
+            [resolution - 1, resolution - 1],
+            [0, resolution - 1],
+        ],
+        dtype=np.float32,
+    )
+    m: npt.NDArray[np.float64] = np.asarray(
+        cv2.getPerspectiveTransform(grid, dst_size), dtype=np.float64
+    )
+    warped_gry: npt.NDArray[np.uint8] = np.asarray(
+        cv2.warpPerspective(gry, m, (resolution, resolution), flags=cv2.INTER_LINEAR),
+        dtype=np.uint8,
+    )
+    brd_view: npt.NDArray[np.uint8] = np.asarray(
+        cv2.adaptiveThreshold(
+            warped_gry,
+            255,
+            cv2.ADAPTIVE_THRESH_MEAN_C,
+            cv2.THRESH_BINARY,
+            config.adaptive_block_size,
+            bd.adaptive_c,
+        ),
+        dtype=np.uint8,
+    )
+    return detect_borders_peak_count(
+        brd_view, subres, bd.sample_fraction, bd.sample_margin
+    )
+
+
 def collect_passing_border_samples(
     config: ImagePipelineConfig,
     rework: bool = False,
 ) -> tuple[list[npt.NDArray[np.float64]], list[npt.NDArray[np.float64]]]:
     """Collect border pixel strips from SOLVED puzzles, split by true label.
 
-    Uses the border_x/border_y arrays from each solved InpImage to determine
-    the true border/no-border label for each strip position.
+    Uses the border_x/border_y ground truth from each solved image to label
+    pixel strips as cage-border (brdrs_1) or non-border (brdrs_0).
+
+    Two sources of ground truth are used in priority order:
+      1. .jpk cache file: loaded directly via InpImage.load_cached — no model
+         files required. Any model that was previously correct produced this.
+      2. Raw image fallback: grid detection + adaptive thresholding +
+         peak counting (the Guardian algorithm). Used when no .jpk exists.
+         Reliable for Guardian; used as a bootstrap approximation for Observer.
+
+    This function never loads the trained border model file, so it can be run
+    before any border model has been trained.
 
     Args:
         config: Pipeline configuration.
-        rework: If True, bypass the .jpk cache and reprocess images.
+        rework: If True, bypass the .jpk cache and derive borders from raw images.
 
     Returns:
         (brdrs_0, brdrs_1) -- pixel strip lists for non-border and border positions.
     """
     status = StatusStore(config.status_path, config.puzzle_dir)
-    border_detector = InpImage.make_border_detector(config)
-    num_recogniser = InpImage.make_num_recogniser(config)
     brdrs_0: list[npt.NDArray[np.float64]] = []
     brdrs_1: list[npt.NDArray[np.float64]] = []
 
     for f in itertools.islice(config.puzzle_dir.glob("*.jpg"), None):
-        if status[f] in TRAINING_STATUSES:
-            _log.info("Processing (collect_passing_border_samples) %s...", f)
-            inp = InpImage(f, config, border_detector, num_recogniser)
-            resolution = config.resolution
-            subres = config.subres
-            bd = config.border_detection
-            gry, img = get_gry_img(f, resolution)
-            _blk, grid = locate_grid(gry, img, config.grid_location)
-            dst_size = np.array(
-                [
-                    [0, 0],
-                    [resolution - 1, 0],
-                    [resolution - 1, resolution - 1],
-                    [0, resolution - 1],
-                ],
-                dtype=np.float32,
-            )
-            m: npt.NDArray[np.float64] = np.asarray(
-                cv2.getPerspectiveTransform(grid, dst_size), dtype=np.float64
-            )
-            warped_gry: npt.NDArray[np.uint8] = np.asarray(
-                cv2.warpPerspective(
-                    gry, m, (resolution, resolution), flags=cv2.INTER_LINEAR
-                ),
-                dtype=np.uint8,
-            )
-            sample_half = subres // bd.sample_fraction
-            sample_margin = subres // bd.sample_margin
-            for col in range(9):
-                xm = ((2 * col + 1) * subres) // 2
-                xb = xm - sample_half + sample_margin
-                xt = xm + sample_half - sample_margin
-                for row in range(1, 9):
-                    yl = (row * subres) - sample_half
-                    yr = (row * subres) + sample_half
-                    brdrph: npt.NDArray[np.float64] = np.asarray(
-                        np.min(warped_gry[xb:xt, yl:yr], axis=0), dtype=np.float64
-                    )
-                    brdrpv: npt.NDArray[np.float64] = np.asarray(
-                        np.min(warped_gry[yl:yr, xb:xt], axis=1), dtype=np.float64
-                    )
-                    is_h_border = bool(inp.info.border_x[col, row - 1])
-                    is_v_border = bool(inp.info.border_y[row - 1, col])
-                    if is_h_border:
-                        brdrs_1.append(brdrph)
-                    else:
-                        brdrs_0.append(brdrph)
-                    if is_v_border:
-                        brdrs_1.append(brdrpv)
-                    else:
-                        brdrs_0.append(brdrpv)
+        if status[f] not in TRAINING_STATUSES:
+            continue
+        _log.info("Processing (collect_passing_border_samples) %s...", f)
+
+        # --- Ground-truth border layout ---
+        jpk = f.with_suffix(".jpk")
+        border_x: npt.NDArray[np.bool_]
+        border_y: npt.NDArray[np.bool_]
+        if not rework and jpk.exists():
+            try:
+                pic_info = InpImage.load_cached(jpk)
+                border_x = pic_info.border_x
+                border_y = pic_info.border_y
+            except Exception as exc:  # noqa: BLE001
+                _log.warning("Skipping %s: failed to load cache: %s", f, exc)
+                continue
+        else:
+            try:
+                border_x, border_y = _detect_borders_from_image(f, config)
+            except (AssertionError, ValueError) as exc:
+                _log.warning("Skipping %s: border detection failed: %s", f, exc)
+                continue
+
+        # --- Raw grayscale strips for training ---
+        try:
+            brdrph_list, brdrpv_list = extract_border_samples_from_image(f, config)
+        except (AssertionError, ValueError) as exc:
+            _log.warning("Skipping %s: strip extraction failed: %s", f, exc)
+            continue
+
+        for col in range(9):
+            for row in range(1, 9):
+                idx = col * 8 + (row - 1)
+                if bool(border_x[col, row - 1]):
+                    brdrs_1.append(brdrph_list[idx])
+                else:
+                    brdrs_0.append(brdrph_list[idx])
+                if bool(border_y[row - 1, col]):
+                    brdrs_1.append(brdrpv_list[idx])
+                else:
+                    brdrs_0.append(brdrpv_list[idx])
 
     _log.info(
         "Number of borders True=%d, False=%d, TOTAL=%d",

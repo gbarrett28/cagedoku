@@ -99,6 +99,8 @@ flowchart TD
 
 **Parameters and derivation:**
 
+[gb] the threshold for the Hough line detection seems to be particularly fragile.  How can we improve this part of the detection process?
+
 | Parameter | Value | Derivation |
 |-----------|-------|------------|
 | `rho` | 2 px | Line position resolution. Coarser than 1 px reduces noise sensitivity without losing precision. Should be ≤ line width (~3 px). |
@@ -122,6 +124,8 @@ distinguishes cage borders (≥ 3 peaks) from cell boundaries (≤ 2 peaks).
 Instead, a trained `BorderPCA1D` model is used: pixel values along the strip are
 projected onto a single discriminant axis (the product of two PCA stages, collapsed into
 one inner product), and the sign of the result determines the border label.
+
+[gb] Can we unify the way the detection is done?  Why doesn't the PCA transform work for the Guardian?
 
 ```mermaid
 flowchart TD
@@ -168,6 +172,10 @@ Candidate contours are filtered by bounding-box size: width between `subres/16` 
 rejects the grid lines themselves and stray specks. Wide bounding boxes (two adjacent
 digits that merge in the contour tree) are split at the peak of the column profile.
 Each digit thumbnail is warped to a canonical `(subres/2) × (subres/2)` square.
+
+[gb] all the subres fractions are derived by trial and error.  Is there a better way?  How can we deal with rotated puzzles?
+[gb] PCA + KNN does not seem to be as accurate as the literature suggest.  Is there a better way altogether?
+[gb] the training is done by labelling clusters by hand.  Can we be cleverer about this, eg injecting some known integers into the process and seeing which cluster they end up in?
 
 `CayenneNumber.get_sums` projects each flattened thumbnail through the trained PCA
 transform (8 components), then classifies with the stored KNN.

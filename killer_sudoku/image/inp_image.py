@@ -13,10 +13,10 @@ from typing import Any
 import cv2
 import numpy as np
 import numpy.typing as npt
-from scipy.signal import find_peaks
 
 from killer_sudoku.image.border_detection import (
     BorderPCA1D,
+    detect_borders_peak_count,
     load_observer_border_detector,
 )
 from killer_sudoku.image.config import ImagePipelineConfig
@@ -58,41 +58,6 @@ class PicInfo:
     brdrs: npt.NDArray[np.bool_] = dataclasses.field(
         default_factory=lambda: np.full((9, 9, 4), True, dtype=bool)
     )
-
-
-def _process_sample_guardian(s: npt.NDArray[np.uint8]) -> int:
-    """Count peaks in the inverted sample for Guardian border detection.
-
-    Guardian puzzles use peak-counting on the adaptive-threshold image row/column
-    to identify borders (more than 2 peaks indicates a cage border is present).
-
-    Args:
-        s: 1D pixel sample from the adaptive-threshold image.
-
-    Returns:
-        Number of peaks detected.
-    """
-    peaks: npt.NDArray[np.intp]
-    peaks, _ = find_peaks(~s, height=32)
-    return int(len(peaks))
-
-
-def _process_sample_observer(s: npt.NDArray[np.uint8]) -> int:
-    """Count rising edges in the binary sample for Observer border detection.
-
-    Observer puzzles use edge-counting (transitions from 0 to 1 in the binary
-    sample) to identify borders. More than 2 edges indicates a cage border.
-
-    Args:
-        s: 1D binary pixel sample.
-
-    Returns:
-        Number of rising edges detected.
-    """
-    sl = s[1:]
-    sr = s[:-1]
-    se = sl & ~sr
-    return int(np.count_nonzero(se))
 
 
 class InpImage:
@@ -240,7 +205,8 @@ class InpImage:
 
         Samples a strip centred on each interior grid edge. For Observer puzzles,
         passes the raw grayscale strip to the trained BorderPCA1D model. For
-        Guardian puzzles, applies adaptive thresholding then counts peaks/edges.
+        Guardian puzzles, applies adaptive thresholding then calls
+        detect_borders_peak_count (peak counting on the thresholded strips).
 
         Args:
             gry: Grayscale source image.
@@ -272,34 +238,36 @@ class InpImage:
             ),
             dtype=np.uint8,
         )
+
+        if border_detector is None:
+            # Guardian: peak-counting on the adaptive-threshold image.
+            return detect_borders_peak_count(
+                brd_view, subres, bd.sample_fraction, bd.sample_margin
+            )
+
+        # Observer: raw grayscale strips classified by the PCA1D model.
         brdrsh: npt.NDArray[np.bool_] = np.zeros((9, 8), dtype=bool)
         brdrsv: npt.NDArray[np.bool_] = np.zeros((8, 9), dtype=bool)
-
         sample_half = subres // bd.sample_fraction
-        sample_margin = subres // bd.sample_margin
+        sample_margin_px = subres // bd.sample_margin
 
         for col in range(9):
             xm = ((2 * col + 1) * subres) // 2
-            xb = xm - sample_half + sample_margin
-            xt = xm + sample_half - sample_margin
+            xb = xm - sample_half + sample_margin_px
+            xt = xm + sample_half - sample_margin_px
             for row in range(1, 9):
                 yl = (row * subres) - sample_half
                 yr = (row * subres) + sample_half
-                if border_detector is not None:
-                    brdrph = np.min(warped_gry[xb:xt, yl:yr], axis=0)
-                    brdrpv = np.min(warped_gry[yl:yr, xb:xt], axis=1)
-                    isbh_val, isbv_val = border_detector.is_border([brdrph, brdrpv])
-                    brdrsh[col, row - 1] = bool(isbh_val)
-                    brdrsv[row - 1, col] = bool(isbv_val)
-                else:
-                    brdrsh[col, row - 1] = (
-                        _process_sample_guardian(np.min(brd_view[xb:xt, yl:yr], axis=0))
-                        > 2
-                    )
-                    brdrsv[row - 1, col] = (
-                        _process_sample_guardian(np.min(brd_view[yl:yr, xb:xt], axis=1))
-                        > 2
-                    )
+                brdrph = np.min(warped_gry[xb:xt, yl:yr], axis=0)
+                brdrpv = np.min(warped_gry[yl:yr, xb:xt], axis=1)
+                isbh_val, isbv_val = border_detector.is_border(
+                    [
+                        np.asarray(brdrph, dtype=np.float64),
+                        np.asarray(brdrpv, dtype=np.float64),
+                    ]
+                )
+                brdrsh[col, row - 1] = bool(isbh_val)
+                brdrsv[row - 1, col] = bool(isbv_val)
 
         return brdrsh, brdrsv
 
@@ -328,3 +296,26 @@ class InpImage:
             Loaded CayenneNumber classifier.
         """
         return load_number_recogniser(config.num_recogniser_path)
+
+    @staticmethod
+    def load_cached(jpk_path: Path) -> "PicInfo":
+        """Load a cached PicInfo from a .jpk file.
+
+        Provides a clean interface for training code to read cached puzzle
+        data (border layout, cage totals) without knowing the serialisation
+        format or the pickle import alias used inside this module.
+
+        Args:
+            jpk_path: Path to the .jpk cache file.
+
+        Returns:
+            Deserialised PicInfo.
+
+        Raises:
+            FileNotFoundError: if jpk_path does not exist.
+        """
+        if not jpk_path.exists():
+            raise FileNotFoundError(f"Cache file not found: {jpk_path}")
+        with open(jpk_path, "rb") as fh:
+            result: PicInfo = pk.load(fh)
+        return result
