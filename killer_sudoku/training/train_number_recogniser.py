@@ -33,31 +33,39 @@ from killer_sudoku.image.number_recognition import CayenneNumber
 _log = logging.getLogger(__name__)
 
 
-def train_number_recogniser(config: ImagePipelineConfig) -> CayenneNumber:
+def train_number_recogniser(
+    config: ImagePipelineConfig,
+    bootstrap: bool = False,
+) -> CayenneNumber:
     """Train a CayenneNumber model from labelled digit images.
 
-    Reads numerals.pkl from config.puzzle_dir, groups digit images by label,
-    computes per-label means, fits PCA on those means, then trains a KNN
-    classifier on the PCA-projected full dataset.
+    Reads either numerals.pkl (standard) or bootstrap_numerals.pkl (bootstrap
+    mode) from config.puzzle_dir, groups digit images by label, computes
+    per-label means, fits PCA on those means, then trains a KNN classifier on
+    the reduced space.
 
     The number of PCA dimensions used is the minimum needed to explain at
     least 99% of variance in the mean images.
 
     Args:
         config: Pipeline configuration (supplies puzzle_dir and num_recogniser_path).
+        bootstrap: If True, read bootstrap_numerals.pkl instead of numerals.pkl.
+            Bootstrap labels are derived directly from cage totals with no
+            recogniser dependency; set True for a first-pass clean training run.
 
     Returns:
         Trained CayenneNumber model (also saved to config.num_recogniser_path).
 
     Raises:
-        FileNotFoundError: if numerals.pkl does not exist (run collect_numerals first).
+        FileNotFoundError: if the numerals file does not exist.
     """
-    numerals_path = config.puzzle_dir / "numerals.pkl"
+    filename = "bootstrap_numerals.pkl" if bootstrap else "numerals.pkl"
+    numerals_path = config.puzzle_dir / filename
     if not numerals_path.exists():
+        script = "collect_numerals --bootstrap" if bootstrap else "collect_numerals"
         raise FileNotFoundError(
-            f"numerals.pkl not found at {numerals_path}. "
-            "Run collect_numerals first: "
-            "python -m killer_sudoku.training.collect_numerals "
+            f"{filename} not found at {numerals_path}. "
+            f"Run first: python -m killer_sudoku.training.{script} "
             "--rag <guardian|observer>"
         )
 
@@ -109,6 +117,12 @@ def main() -> None:
         description="Train PCA+KNN digit recogniser from labelled digit images"
     )
     parser.add_argument("--rag", choices=["guardian", "observer"], required=True)
+    parser.add_argument(
+        "--bootstrap",
+        action="store_true",
+        default=False,
+        help="Read bootstrap_numerals.pkl instead of numerals.pkl",
+    )
     args = parser.parse_args()
 
     config = ImagePipelineConfig(
@@ -116,7 +130,7 @@ def main() -> None:
         newspaper=args.rag,
     )
 
-    train_number_recogniser(config)
+    train_number_recogniser(config, bootstrap=args.bootstrap)
 
 
 if __name__ == "__main__":
