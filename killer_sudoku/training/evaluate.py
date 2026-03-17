@@ -25,6 +25,7 @@ import itertools
 import json
 import logging
 import re
+import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -55,6 +56,7 @@ def write_eval_report(
     aerror: int,
     verror: int,
     total: int,
+    ctimeout: int = 0,
 ) -> Path:
     """Write a structured JSON evaluation report to {puzzle_dir}/eval_report.json.
 
@@ -71,13 +73,14 @@ def write_eval_report(
         aerror: Count of AssertionError puzzles.
         verror: Count of ValueError puzzles.
         total: Total puzzles processed.
+        ctimeout: Count of CheatTimeout puzzles (cheat_solve exceeded time limit).
 
     Returns:
         Path to the written report file.
     """
     solve_rate = solved / total if total else 0.0
     cheat_rate = cheated / total if total else 0.0
-    error_rate = (perror + aerror + verror) / total if total else 0.0
+    error_rate = (perror + aerror + verror + ctimeout) / total if total else 0.0
 
     per_image = dict(status.items())
 
@@ -87,6 +90,7 @@ def write_eval_report(
         "total": total,
         "solved": solved,
         "cheat": cheated,
+        "cheat_timeout": ctimeout,
         "processing_error": perror,
         "assertion_error": aerror,
         "value_error": verror,
@@ -192,17 +196,34 @@ def _process_one_image(
         'SOLVED', 'CHEAT', 'ProcessingError: ...', 'AssertionError: ...', or
         'ValueError: ...'.
     """
+    cheat_timeout_s = 30.0
     t0 = time.perf_counter()
     try:
         inp = InpImage(f, config, border_detector, num_recogniser)
         grd = Grid()
         grd.set_up(inp.info.cage_totals, inp.info.brdrs)
         alts_sum, _solns_sum = grd.solve()
-        elapsed = time.perf_counter() - t0
         if alts_sum != 81:
-            grd.cheat_solve()
+            # cheat_solve() can run indefinitely on contradictory cage layouts.
+            # Run it in a daemon thread and abandon it if it exceeds the timeout.
+            exc_holder: list[BaseException] = []
+
+            def _cheat() -> None:
+                try:
+                    grd.cheat_solve()
+                except BaseException as exc:  # noqa: BLE001
+                    exc_holder.append(exc)
+
+            t = threading.Thread(target=_cheat, daemon=True)
+            t.start()
+            t.join(timeout=cheat_timeout_s)
+            elapsed = time.perf_counter() - t0
+            if t.is_alive():
+                return f.name, "CheatTimeout", elapsed
+            if exc_holder:
+                raise exc_holder[0]
             return f.name, "CHEAT", elapsed
-        return f.name, "SOLVED", elapsed
+        return f.name, "SOLVED", time.perf_counter() - t0
     except ProcessingError as e:
         return f.name, f"ProcessingError: {e.msg}", time.perf_counter() - t0
     except AssertionError as e:
@@ -224,6 +245,7 @@ def collect_status(
     Status values written:
       - 'SOLVED': grid solved uniquely without cheating.
       - 'CHEAT': grid required cheat_solve() (no unique solution found).
+      - 'CheatTimeout': cheat_solve() exceeded its time limit.
       - 'ProcessingError: <msg>': image pipeline raised ProcessingError.
       - 'AssertionError: <msg>': image pipeline raised AssertionError.
       - 'ValueError: <msg>': grid setup raised ValueError.
@@ -237,7 +259,7 @@ def collect_status(
     """
     num_recogniser = InpImage.make_num_recogniser(config)
     status = StatusStore(config.status_path, config.puzzle_dir)
-    solved = cheated = perror = aerror = verror = total = 0
+    solved = cheated = ctimeout = perror = aerror = verror = total = 0
 
     files = list(config.puzzle_dir.glob("*.jpg"))
     n_total = len(files)
@@ -261,6 +283,8 @@ def collect_status(
             solved += 1
         elif stat == "CHEAT":
             cheated += 1
+        elif stat == "CheatTimeout":
+            ctimeout += 1
         elif stat.startswith("ProcessingError"):
             perror += 1
         elif stat.startswith("AssertionError"):
@@ -270,15 +294,20 @@ def collect_status(
 
         if total % 10 == 0 or total == n_total:
             _log.info(
-                "[%d/%d] SOLVED=%d CHEAT=%d PE=%d AE=%d VE=%d",
+                "[%d/%d] SOLVED=%d CHEAT=%d CT=%d PE=%d AE=%d VE=%d",
                 total,
                 n_total,
                 solved,
                 cheated,
+                ctimeout,
                 perror,
                 aerror,
                 verror,
             )
+
+        # Periodic save so external monitors see live progress.
+        if total % 50 == 0:
+            status.save()
 
     # Timing summary: percentiles and slowest images.
     # "Slow" is defined relative to the run distribution (>= P95) so the
@@ -304,6 +333,7 @@ def collect_status(
     status.save()
     _log.info("SOLVED          %3d", solved)
     _log.info("CHEATED         %3d", cheated)
+    _log.info("CheatTimeout    %3d", ctimeout)
     _log.info("ProcessingError %3d", perror)
     _log.info("AssertionError  %3d", aerror)
     _log.info("ValueError      %3d", verror)
@@ -318,6 +348,7 @@ def collect_status(
         aerror,
         verror,
         total,
+        ctimeout=ctimeout,
     )
     return status
 
