@@ -241,6 +241,140 @@ propagation does not uniquely determine all 81 cells, the CSP is the only sound 
 
 ---
 
+## Solver Rules Reference
+
+This section enumerates every rule the solver applies, in the order they are applied
+within `Grid.solve`. Rules marked **[MISSING]** are standard killer sudoku techniques
+that are not yet implemented.
+
+### Setup: equation generation (`Grid.set_up`)
+
+**R1 — Row sum**: Each of the 9 rows must sum to 45 and contain each digit 1–9 exactly
+once. One `Equation(row_cells, 45)` is created per row.
+
+**R2 — Column sum**: Same as R1 for each of the 9 columns.
+
+**R3 — Box sum**: Same as R1 for each of the nine 3×3 boxes.
+
+**R4 — Cage sum**: Each cage must sum to its printed total and contain distinct digits.
+One `Equation(cage_cells, total)` is created per cage.
+
+**R5 — Row/column window equations** (`add_equns`): A sliding window scans each row and
+column to derive partial-sum equations from cage coverage. When cage cells span a
+contiguous run of rows (or columns), any excess cells that extend beyond a complete set
+of rows/columns form a new equation with a known sum. This is the "innies and outies"
+rule: e.g. if all cages in rows 1–3 are known except for one cell that bulges into row 4,
+that cell's value equals (sum of those cages) − 3×45. The window runs in both directions
+(forward and reversed) to catch both innie and outie cases.
+
+**R6 — Box window equations** (`add_equns_r`): A recursive expansion from each 3×3 box
+accumulates cage cells and subtracts completed boxes (each summing to 45). Any remaining
+cells form a new equation. This generalises innies/outies to box clusters: e.g. if all
+cages within a 2×3 block of boxes are fully contained except for some cells that cross
+box boundaries, those boundary cells have a determined sum. The recursion expands into
+adjacent boxes that overlap the current cover.
+
+**R7 — Difference constraints** (`DFFS`): When `add_equns` finds that two consecutive
+windows differ by exactly one cell on each side, the difference between those two cells
+is fixed. Formally: if cover_A and cover_B satisfy `|A − B| == 1` and `|B − A| == 1`,
+then `cell_in_A_only − cell_in_B_only = sum_A − sum_B`. These constraints are stored as
+`(cell_p, cell_q, delta)` triples and applied in `elim_must` to restrict both cells
+simultaneously.
+
+**R8 — Equation reduction** (`reduce_equns`): Whenever one equation's cell set is a
+strict subset of another's, the smaller equation is subtracted from the larger: the
+larger equation's cells become the set difference and its sum is reduced accordingly.
+For example, if a cage lies entirely within a row, subtracting the cage equation from
+the row equation gives an equation over the remaining row cells with sum = 45 − cage_total.
+This simplification is applied repeatedly until no further reduction is possible.
+
+### Iteration: candidate filtering (`Grid.solve`)
+
+**R9 — Cage candidate intersection**: For each cage equation, a cell's candidate set is
+intersected with `equation.poss` (the union of all digits appearing in any valid
+assignment for that cage). This prunes candidates that cannot appear in any valid cage
+solution.
+
+**R10 — Naked single**: When a cell has exactly one remaining candidate, that digit is
+placed and removed from all other cells sharing a row, column, box, or cage.
+
+**R11 — Solution map filtering**: For each cage, every remaining complete digit
+assignment is tested against current cell candidates. Assignments that contain a digit
+no longer in a cell's candidate set are pruned from `equation.solns`. Any digit that
+is no longer present in any valid assignment is removed from that cell's candidates.
+
+**R12 — Hidden single**: For each row, column, and box, if a digit appears in the
+candidate set of exactly one cell in that unit, that cell must contain that digit (the
+digit is a "hidden single" because other candidates in that cell are not yet eliminated).
+A singleton cage equation is added to propagate the placement.
+
+**R13 — Hidden pair**: For each row, column, and box, if two digits each appear in the
+candidate sets of exactly the same two cells (and no other cells in the unit), those
+two cells can only contain those two digits. All other candidates are removed from
+those cells, and a new 2-cell cage equation with sum = digit1 + digit2 is added.
+
+**R14 — Must-contain propagation** (`elim_must`): For every pair of overlapping
+equation sets (ei, ej), if ei requires a digit (i.e. that digit appears in every valid
+assignment for ei — the `must` set) but that digit cannot appear in ei's exclusive cells
+(cells in ei but not in ej), then it also cannot appear in ej's exclusive cells. This
+handles "locked candidates": e.g. if a cage's required digit is confined to cells that
+are also in a particular row, that digit can be eliminated from all other cells in that
+row. The comparison is done exhaustively across all equation pairs, including rows,
+columns, boxes, and cage equations.
+
+**R15 — Difference constraint application**: The `DFFS` difference constraints from R7
+are applied in each `elim_must` pass: `cell_p` and `cell_q` are restricted to only
+those values where `cell_p = cell_q + delta` for some `cell_q` value still in
+`cell_q`'s candidate set.
+
+---
+
+### Rules Not Yet Implemented
+
+The following standard techniques are absent from the constraint-propagation solver.
+They are handled by the CSP fallback (`cheat_solve`) for puzzles that cannot be solved
+by R1–R15, but implementing them in the propagation loop would reduce CSP fallback usage.
+
+**[MISSING] Naked pair**: When exactly two cells in a unit share the same two
+candidates and no others, those candidates can be removed from all other cells in the
+unit. The current solver detects *hidden* pairs but not naked pairs from the opposite
+direction.
+
+**[MISSING] Naked triple / quad**: Generalisation of naked pair to three or four cells.
+
+**[MISSING] X-Wing**: When a digit's candidates in two rows (or columns) are confined
+to the same two columns (or rows), that digit can be eliminated from all other cells in
+those columns (or rows).
+
+**[MISSING] Swordfish / Jellyfish**: Generalisations of X-Wing to three or four rows/columns.
+
+---
+
+### Linear equation analysis
+
+The solver already builds a rich set of linear equations over cell values. The `DFFS`
+mechanism handles the 2-variable case (`x − y = k`). There is potential to go further:
+
+**2-variable determined cells**: When any pair of equations yields `x − y = k` (after
+reduction), the solver already captures this via DFFS. If either `x` or `y` is later
+determined, the other is immediately known. This mechanism could be extended to detect
+when a newly placed cell propagates a determination to its DFFS partner.
+
+**Multi-variable linear systems**: The full set of equations (R1–R8) defines a linear
+system over 81 variables with integer constraints. In principle, Gaussian elimination
+over the integers could reduce this system to identify cells that are uniquely determined
+by the linear structure alone — before any combinatorial search. This would be a
+significant enhancement for densely-constrained puzzles.
+
+**Sum-range pruning from linear combinations**: Given a set of simultaneous equations,
+it may be possible to derive tighter bounds on individual cell values by summing
+subsets of equations and applying the min/max possible values. For example, if
+`x + y = 7` and `x + z = 10` and `y + z = 11`, then `2(x+y+z) = 28` so `x+y+z = 14`,
+giving `z = 7`, `y = 4`, `x = 3`. The solver does not currently exploit such
+multi-equation sum relations beyond what equation reduction (R8) provides.
+
+---
+
 ## Training Pipeline
 
 The training pipeline converts solved puzzles into updated ML models. It should be run
