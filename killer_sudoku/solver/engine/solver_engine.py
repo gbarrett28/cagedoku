@@ -18,11 +18,63 @@ from typing import TYPE_CHECKING
 
 from killer_sudoku.solver.engine.board_state import BoardState
 from killer_sudoku.solver.engine.rule import RuleContext, RuleStats, SolverRule
-from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, UnitKind
 from killer_sudoku.solver.engine.work_queue import SolverQueue
+from killer_sudoku.solver.equation import sol_sums
 
 if TYPE_CHECKING:
     from killer_sudoku.solver.engine.types import BoardEvent
+
+
+def _filter_sum_constraint(
+    cells: list[Cell],
+    total: int,
+    candidates: list[list[set[int]]],
+) -> list[Elimination]:
+    """Return eliminations for a newly-derived burb sum constraint.
+
+    Computes all k-digit combinations summing to total (via sol_sums), maps
+    each against current candidates using backtracking, and eliminates any
+    (cell, digit) pair absent from every feasible assignment.
+
+    Only call this for burb cell sets (single row/col/box), which guarantee
+    digit distinctness — the required precondition for sol_sums.
+    """
+    solns = sol_sums(len(cells), 0, total)
+    if not solns:
+        return []
+
+    # Sort most-constrained first for backtracking efficiency
+    cand_union = frozenset().union(*solns)
+    sorted_cells = sorted(
+        cells, key=lambda rc: len(candidates[rc[0]][rc[1]] & cand_union)
+    )
+
+    per_cell_possible: dict[Cell, set[int]] = {c: set() for c in cells}
+
+    def _bt(idx: int, remaining: set[int]) -> bool:
+        if idx == len(sorted_cells):
+            return True
+        r, c = sorted_cells[idx]
+        found = False
+        for d in list(candidates[r][c] & remaining):
+            remaining.discard(d)
+            if _bt(idx + 1, remaining):
+                per_cell_possible[(r, c)].add(d)
+                found = True
+            remaining.add(d)
+        return found
+
+    for soln in solns:
+        _bt(0, set(soln))
+
+    elims: list[Elimination] = []
+    for cell in cells:
+        r, c = cell
+        for d in list(candidates[r][c]):
+            if d not in per_cell_possible.get(cell, set()):
+                elims.append(Elimination(cell=cell, digit=d))
+    return elims
 
 
 def _unit_kind(unit_id: int) -> UnitKind:
@@ -71,17 +123,48 @@ class SolverEngine:
             self._route_events(events, r, c)
 
     def _route_events(self, events: list[BoardEvent], src_r: int, src_c: int) -> None:
-        """Route BoardEvents to the work queue; handle LinearSystem substitution."""
+        """Route BoardEvents to the work queue; handle LinearSystem substitution.
+
+        GLOBAL rules are re-scheduled on every board change so they get another
+        pass after lower-priority rules have reduced the candidate set further.
+        The deduplication in enqueue_global ensures at most one pending entry
+        per rule at any time.
+        """
         for event in events:
             if event.trigger == Trigger.CELL_DETERMINED:
                 cell = event.payload
                 assert isinstance(cell, tuple)
                 val = event.hint_digit
                 assert val is not None
-                # Propagate through LinearSystem (substitute known value)
+                # Propagate through LinearSystem delta pairs (substitute known value)
                 new_elims = self.board.linear_system.substitute_cell(cell, val)
                 if new_elims:
                     self.apply_eliminations(new_elims)
+                # Dynamic RREF: reduce live rows and emit new sum constraints.
+                # This replicates the old solver's reduce_equns feedback loop:
+                # each determined cell can tighten multi-cell sum equations,
+                # producing new virtual cage constraints not derivable at startup.
+                new_constraints = self.board.linear_system.substitute_live_rows(
+                    cell, val
+                )
+                for vcells, vtotal in new_constraints:
+                    cell_list = list(vcells)
+                    if len(cell_list) == 1:
+                        # Single-cell constraint: directly determine the cell
+                        lone = cell_list[0]
+                        lr, lc = lone
+                        for d in range(1, 10):
+                            if d != vtotal and d in self.board.candidates[lr][lc]:
+                                self.apply_eliminations(
+                                    [Elimination(cell=lone, digit=d)]
+                                )
+                    else:
+                        # Multi-cell sum constraint: filter against candidates
+                        sum_elims = _filter_sum_constraint(
+                            cell_list, vtotal, self.board.candidates
+                        )
+                        if sum_elims:
+                            self.apply_eliminations(sum_elims)
                 # Route to CELL_DETERMINED rules
                 for rule in self._trigger_map[Trigger.CELL_DETERMINED]:
                     self.queue.enqueue_cell(0, rule, cell, Trigger.CELL_DETERMINED, val)
@@ -111,6 +194,11 @@ class SolverEngine:
                             event.trigger,
                             event.hint_digit,
                         )
+
+            # Re-schedule all GLOBAL rules whenever the board changes so they
+            # can exploit new patterns created by lower-priority rule cascades.
+            for rule in self._trigger_map[Trigger.GLOBAL]:
+                self.queue.enqueue_global(rule.priority, rule)
 
     def _seed_initial_state(self) -> None:
         """Enqueue rules for all units to process the initial puzzle state.

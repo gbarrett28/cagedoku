@@ -12,6 +12,7 @@ Rules are ordered by priority (ascending = higher priority = fired first):
   8  NakedHiddenTriple — COUNT_DECREASED (ROW/COL/BOX)
   9  PointingPairs     — COUNT_DECREASED (BOX)
  11  XWing             — GLOBAL
+ 12  SimpleColouring   — GLOBAL
 """
 
 from killer_sudoku.solver.engine.rule import SolverRule
@@ -24,6 +25,7 @@ from killer_sudoku.solver.engine.rules.naked_hidden_triple import NakedHiddenTri
 from killer_sudoku.solver.engine.rules.naked_pair import NakedPair
 from killer_sudoku.solver.engine.rules.naked_single import NakedSingle
 from killer_sudoku.solver.engine.rules.pointing_pairs import PointingPairs
+from killer_sudoku.solver.engine.rules.simple_colouring import SimpleColouring
 from killer_sudoku.solver.engine.rules.solution_map_filter import SolutionMapFilter
 from killer_sudoku.solver.engine.rules.x_wing import XWing
 
@@ -42,4 +44,5 @@ def default_rules() -> list[SolverRule]:
         NakedHiddenTriple(),
         PointingPairs(),
         XWing(),
+        SimpleColouring(),
     ]

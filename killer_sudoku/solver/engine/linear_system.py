@@ -30,10 +30,18 @@ class LinearSystem:
     _pairs_by_cell: dict[Cell, list[tuple[Cell, Cell, int]]]
 
     def __init__(self, spec: PuzzleSpec) -> None:
-        self.initial_eliminations = []
-        self.delta_pairs = []
-        self.virtual_cages = []
-        self._pairs_by_cell = {}
+        self.initial_eliminations: list[Elimination] = []
+        self.delta_pairs: list[tuple[Cell, Cell, int]] = []
+        self.virtual_cages: list[tuple[frozenset[Cell], int]] = []
+        self._pairs_by_cell: dict[Cell, list[tuple[Cell, Cell, int]]] = {}
+
+        # Live RREF rows for dynamic constraint propagation.
+        # When a cell is determined during solving, substitute_live_rows()
+        # reduces these rows and returns new derived sum constraints.
+        self._live_rows: dict[int, dict[Cell, Fraction]] = {}
+        self._live_rhs: dict[int, Fraction] = {}
+        self._live_by_cell: dict[Cell, set[int]] = {}
+        self._next_rid = 0
 
         # Variable index: cell (r,c) -> column 0..80
         var_index: dict[Cell, int] = {
@@ -104,7 +112,8 @@ class LinearSystem:
                     ]
             pivot_row += 1
 
-        # Extract determined cells, difference pairs, and virtual cage sums
+        # Extract determined cells, difference pairs, and virtual cage sums.
+        # Also store all multi-cell rows as live rows for dynamic propagation.
         idx_to_cell = {v: k for k, v in var_index.items()}
         for row in rows:
             nonzero = [(j, row[j]) for j in range(n_vars) if row[j] != 0]
@@ -149,6 +158,20 @@ class LinearSystem:
                 self._maybe_add_virtual_cage(
                     nonzero, rhs, idx_to_cell, real_cage_cell_sets
                 )
+
+            # Store multi-cell rows as live rows for dynamic propagation.
+            # These enable substitute_live_rows() to derive new constraints
+            # when cells are determined during solving.
+            if len(nonzero) >= 2:
+                rid = self._next_rid
+                self._next_rid += 1
+                rd: dict[Cell, Fraction] = {
+                    idx_to_cell[j]: coeff for j, coeff in nonzero
+                }
+                self._live_rows[rid] = rd
+                self._live_rhs[rid] = rhs
+                for cell in rd:
+                    self._live_by_cell.setdefault(cell, set()).add(rid)
 
         # Build per-cell index for O(k) lookup
         for pair in self.delta_pairs:
@@ -232,3 +255,70 @@ class LinearSystem:
                     if d != other_val:
                         eliminations.append(Elimination(cell=other, digit=d))
         return eliminations
+
+    def substitute_live_rows(
+        self, cell: Cell, value: int
+    ) -> list[tuple[frozenset[Cell], int]]:
+        """Reduce live RREF rows when a cell is determined.
+
+        Substitutes cell=value into every live row that contains it.
+        Returns new sum constraints (frozenset[Cell], total) for rows that
+        reduce to an all-positive, integer-RHS burb equation.  These can
+        then be filtered against current board candidates to emit eliminations.
+
+        Also directly emits a single-cell determination constraint when a row
+        reduces to one cell, returned as a 1-cell frozenset.
+        """
+        row_ids = list(self._live_by_cell.pop(cell, set()))
+        new_constraints: list[tuple[frozenset[Cell], int]] = []
+        seen: set[frozenset[Cell]] = set()
+
+        for rid in row_ids:
+            if rid not in self._live_rows:
+                continue
+            row_dict = self._live_rows.pop(rid)
+            row_rhs = self._live_rhs.pop(rid)
+
+            # Substitute: remove cell, adjust RHS
+            cell_coeff = row_dict.pop(cell)
+            new_rhs = row_rhs - cell_coeff * Fraction(value)
+
+            # Remove this row id from all other cells' live-row sets
+            for other in row_dict:
+                s = self._live_by_cell.get(other)
+                if s is not None:
+                    s.discard(rid)
+
+            if not row_dict:
+                # Row fully consumed — should be consistent (new_rhs ≈ 0)
+                continue
+
+            # Store reduced row under a new id
+            new_rid = self._next_rid
+            self._next_rid += 1
+            self._live_rows[new_rid] = row_dict
+            self._live_rhs[new_rid] = new_rhs
+            for other in row_dict:
+                self._live_by_cell.setdefault(other, set()).add(new_rid)
+
+            # Check if we can extract a new constraint from the reduced row
+            if len(row_dict) == 1:
+                # Single-cell row: directly determines the remaining cell
+                (remaining_cell, coeff) = next(iter(row_dict.items()))
+                val_frac = new_rhs / coeff
+                if val_frac.denominator == 1:
+                    det_val = int(val_frac)
+                    if 1 <= det_val <= 9:
+                        vcells = frozenset({remaining_cell})
+                        if vcells not in seen:
+                            seen.add(vcells)
+                            new_constraints.append((vcells, det_val))
+            elif all(c == Fraction(1) for c in row_dict.values()):
+                # All-positive sum row: check burb
+                if new_rhs.denominator == 1 and 1 <= int(new_rhs) <= 45:
+                    vcells = frozenset(row_dict)
+                    if vcells not in seen and self._is_burb(vcells):
+                        seen.add(vcells)
+                        new_constraints.append((vcells, int(new_rhs)))
+
+        return new_constraints
