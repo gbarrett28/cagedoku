@@ -26,6 +26,7 @@ from constraint import (  # type: ignore[import-untyped]
 )
 
 from killer_sudoku.output.sol_image import SolImage
+from killer_sudoku.solver.engine import solve as _engine_solve
 from killer_sudoku.solver.equation import Equation, NoSolnError
 from killer_sudoku.solver.puzzle_spec import PuzzleSpec
 
@@ -652,6 +653,41 @@ class Grid:
             if alts_sum == old_alts_sum and solns_sum == old_solns_sum:
                 break
         return alts_sum, solns_sum
+
+    def engine_solve(self) -> tuple[int, int]:
+        """Solve using the new SolverEngine.
+
+        Builds a PuzzleSpec from the current cage layout (regions + VALS),
+        runs the trigger-driven propagation engine, then synchronises sq_poss
+        with the engine's final candidates and draws determined digits.
+
+        Returns:
+            (alts_sum, solns_sum) matching the existing solve() contract.
+            solns_sum is always 0 — the engine fully resolves or leaves
+            residual candidates without a weighted solution count.
+        """
+        cage_totals = np.zeros((9, 9), dtype=np.intp)
+        for cage_cells, val in zip(self.CAGES, self.VALS, strict=False):
+            head = min(cage_cells)
+            cage_totals[head[0], head[1]] = val
+
+        spec = PuzzleSpec(
+            regions=self.region.copy(),
+            cage_totals=cage_totals,
+            border_x=np.zeros((9, 8), dtype=bool),
+            border_y=np.zeros((8, 9), dtype=bool),
+        )
+        board = _engine_solve(spec)
+
+        for r in range(9):
+            for c in range(9):
+                self.sq_poss[r][c] = set(board.candidates[r][c])
+                if len(self.sq_poss[r][c]) == 1:
+                    n = next(iter(self.sq_poss[r][c]))
+                    self.sol_img.draw_number(n, r, c)
+
+        alts_sum = int(sum(len(self.sq_poss[r][c]) for r in range(9) for c in range(9)))
+        return alts_sum, 0
 
     # ------------------------------------------------------------------
     # CSP fallback
