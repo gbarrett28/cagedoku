@@ -1,5 +1,6 @@
 """Tests for SolverEngine."""
 
+from killer_sudoku.solver.engine import solve
 from killer_sudoku.solver.engine.board_state import (
     BoardState,
     apply_initial_eliminations,
@@ -7,7 +8,7 @@ from killer_sudoku.solver.engine.board_state import (
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.solver_engine import SolverEngine
 from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
-from tests.fixtures.minimal_puzzle import make_trivial_spec
+from tests.fixtures.minimal_puzzle import KNOWN_SOLUTION, make_trivial_spec
 
 
 def test_engine_init_no_crash() -> None:
@@ -85,3 +86,12 @@ def test_engine_stats_recorded() -> None:
     engine.apply_eliminations([Elimination(cell=(0, 0), digit=5)])
     engine.solve()
     assert engine.stats["noop"].calls > 0
+
+
+def test_engine_solves_trivial_with_rules() -> None:
+    """Full solve() with default rules produces correct solution for trivial spec."""
+    spec = make_trivial_spec()
+    board = solve(spec)
+    for r in range(9):
+        for c in range(9):
+            assert board.candidates[r][c] == {KNOWN_SOLUTION[r][c]}
