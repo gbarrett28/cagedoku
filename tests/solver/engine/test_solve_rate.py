@@ -1,35 +1,65 @@
-"""Solve-rate smoke tests for the SolverEngine against real puzzle data.
+"""Non-regression solve-rate tests for the SolverEngine against real puzzle data.
 
-These tests are skipped if the puzzle image directories are not present
-(they are gitignored). Run manually against the full dataset to verify
-solve-rate does not regress vs. the old Grid.solve().
+These tests read the cached eval_report.json produced by:
+    python -m killer_sudoku.training.evaluate --rag guardian|observer
 
-Expected baselines (propagation-only, before CSP fallback):
-  Guardian  : >= 461 fully solved
-  Observer  : >= 413 fully solved
+They are skipped if the puzzle directories or eval reports are not present
+(they are gitignored). Run the evaluation first, then run the silver gate.
+
+Baseline numbers (propagation-only, no cheat, as of 2026-03-18):
+  Guardian  : >= 441 SOLVED out of 465 total
+  Observer  : >= 412 SOLVED out of 424 total
+
+To update baselines after a genuine improvement: edit GUARDIAN_BASELINE and
+OBSERVER_BASELINE below, commit the change, and record the new numbers in the
+commit message.
 """
 
+import json
 from pathlib import Path
 
 import pytest
 
 GUARDIAN_DIR = Path("guardian")
 OBSERVER_DIR = Path("observer")
+GUARDIAN_REPORT = GUARDIAN_DIR / "eval_report.json"
+OBSERVER_REPORT = OBSERVER_DIR / "eval_report.json"
+
+GUARDIAN_BASELINE = 441
+OBSERVER_BASELINE = 412
 
 
-@pytest.mark.skipif(not GUARDIAN_DIR.exists(), reason="Guardian data not present")
-def test_guardian_engine_solve_rate() -> None:
-    """Engine should solve at least as many Guardian puzzles as the old solver."""
-    # Manual verification command:
-    #   python -m killer_sudoku.main --rag guardian --rework
-    # Check output: should show >= 461 SOLVED, ideally 0 CheatTimeout
-    pass  # implementation depends on full pipeline API
+_GUARDIAN_SKIP = "Guardian eval report not present — run evaluate --rag guardian"
 
 
-@pytest.mark.skipif(not OBSERVER_DIR.exists(), reason="Observer data not present")
-def test_observer_engine_solve_rate() -> None:
-    """Engine should solve at least as many Observer puzzles as the old solver."""
-    # Manual verification command:
-    #   python -m killer_sudoku.main --rag observer --rework
-    # Check output: should show >= 413 SOLVED, ideally 0 CheatTimeout
-    pass  # implementation depends on full pipeline API
+@pytest.mark.skipif(not GUARDIAN_REPORT.exists(), reason=_GUARDIAN_SKIP)
+def test_guardian_engine_solve_rate_no_regression() -> None:
+    """Solve count must not drop below the committed Guardian baseline.
+
+    Reads the cached guardian/eval_report.json produced by the evaluate script.
+    Fails if the reported SOLVED count is less than GUARDIAN_BASELINE.
+    """
+    report = json.loads(GUARDIAN_REPORT.read_text())
+    solved = report["solved"]
+    assert solved >= GUARDIAN_BASELINE, (
+        f"Guardian solve-rate regression: {solved} < baseline {GUARDIAN_BASELINE}. "
+        f"Run 'python -m killer_sudoku.training.evaluate --rag guardian' to regenerate."
+    )
+
+
+_OBSERVER_SKIP = "Observer eval report not present — run evaluate --rag observer"
+
+
+@pytest.mark.skipif(not OBSERVER_REPORT.exists(), reason=_OBSERVER_SKIP)
+def test_observer_engine_solve_rate_no_regression() -> None:
+    """Solve count must not drop below the committed Observer baseline.
+
+    Reads the cached observer/eval_report.json produced by the evaluate script.
+    Fails if the reported SOLVED count is less than OBSERVER_BASELINE.
+    """
+    report = json.loads(OBSERVER_REPORT.read_text())
+    solved = report["solved"]
+    assert solved >= OBSERVER_BASELINE, (
+        f"Observer solve-rate regression: {solved} < baseline {OBSERVER_BASELINE}. "
+        f"Run 'python -m killer_sudoku.training.evaluate --rag observer' to regenerate."
+    )
