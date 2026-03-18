@@ -116,6 +116,15 @@ class NumberRecognitionConfig:
     svm_c: float = 5.0
     svm_gamma: str = "scale"
     template_threshold: float = 0.85
+    # C offset for adaptive threshold fallback: when the primary contour-based
+    # detection (using the global blk binary image) produces a cage-total sum
+    # outside [360, 450], the pipeline retries using an adaptive threshold of
+    # the warped grayscale with this C value.  Needs to be large enough to
+    # separate ink from paper even when the global threshold over-includes
+    # grey pixels (isblack too high), but not so large that faint digits are
+    # missed.  Validated empirically: C=20 recovers image 278 without
+    # regressions across the full Guardian and Observer datasets.
+    contour_fallback_adaptive_c: int = 20
 
 
 @dataclasses.dataclass(frozen=True)

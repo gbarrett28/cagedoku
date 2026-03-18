@@ -152,54 +152,44 @@ class InpImage:
             dtype=np.uint8,
         )
 
-        num_pixels: npt.NDArray[np.object_] = np.empty((9, 9), dtype=object)
-        contours_raw: Any
-        hiers_raw: Any
-        contours_raw, hiers_raw = cv2.findContours(
-            warped_blk, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
+        cage_totals = self._build_cage_totals(
+            warped_blk, num_recogniser, subres, self.info.brdrs
         )
-        if hiers_raw is not None:
-            [hier_raw] = hiers_raw
-            hier_rows: list[npt.NDArray[np.int32]] = [
-                np.asarray(row, dtype=np.int32) for row in hier_raw
-            ]
-            contours: list[npt.NDArray[np.int32]] = [
-                np.asarray(c, dtype=np.int32) for c in contours_raw
-            ]
-            chiers = contour_hier(list(zip(contours, hier_rows, strict=False)), set())
-            raw_nums = get_num_contours(chiers, subres)
-            for _c, br, _ds in sorted(raw_nums, key=lambda ch: ch[1][0]):
-                num_chiers, x, y = split_num(br, warped_blk, subres)
-                bx, by, bw, bh = br
-                col = (bx + bw // 2) // subres
-                row = (by + bh // 2) // subres
-                if num_pixels[col, row] is None:
-                    num_pixels[col, row] = []
-                num_pixels[col, row] += num_chiers
-
-        cage_totals: npt.NDArray[np.intp] = np.zeros(shape=(9, 9), dtype=np.intp)
-        for col in range(9):
-            for row in range(9):
-                sums = num_pixels[row, col]
-                if sums is not None:
-                    ntrs = num_recogniser.get_sums(sums)
-                    if len(ntrs) > 4:
-                        raise ProcessingError(
-                            f"Too many digits ({len(ntrs)}) in cell ({col},{row})",
-                            np.zeros((9, 9), dtype=np.intp),
-                            self.info.brdrs,
-                        )
-                    for v in ntrs:
-                        if int(v) >= 0:
-                            cage_totals[col, row] = (10 * cage_totals[col, row]) + int(
-                                v
-                            )
-        self.info.cage_totals = cage_totals
 
         # Every cell belongs to exactly one cage, so cage totals must sum to 405
         # (9 rows × (1+2+…+9) = 9 × 45). A sum outside [360, 450] (±10%) almost
         # always means the number recogniser read a cell incorrectly.
+        # Fallback: if the global-threshold blk binary floods cell interiors (e.g.
+        # when isblack is over-estimated), retry with adaptive thresholding of the
+        # warped grayscale image.  The adaptive C value is tuned so ink pixels are
+        # clearly below the local mean while flat paper background is excluded.
         total_sum = int(cage_totals.sum())
+        if not (360 <= total_sum <= 450):
+            warped_gry: npt.NDArray[np.uint8] = np.asarray(
+                cv2.warpPerspective(
+                    gry, m, (resolution, resolution), flags=cv2.INTER_LINEAR
+                ),
+                dtype=np.uint8,
+            )
+            fallback_c = config.number_recognition.contour_fallback_adaptive_c
+            warped_blk = np.asarray(
+                cv2.adaptiveThreshold(
+                    warped_gry,
+                    255,
+                    cv2.ADAPTIVE_THRESH_MEAN_C,
+                    cv2.THRESH_BINARY_INV,
+                    config.adaptive_block_size,
+                    fallback_c,
+                ),
+                dtype=np.uint8,
+            )
+            cage_totals = self._build_cage_totals(
+                warped_blk, num_recogniser, subres, self.info.brdrs
+            )
+            total_sum = int(cage_totals.sum())
+
+        self.info.cage_totals = cage_totals
+
         if total_sum < 360 or total_sum > 450:
             raise ProcessingError(
                 f"Cage totals sum to {total_sum}, expected 405",
@@ -290,6 +280,84 @@ class InpImage:
                 brdrsv[row - 1, col] = bool(isbv_val)
 
         return brdrsh, brdrsv
+
+    @staticmethod
+    def _build_cage_totals(
+        warped_blk: npt.NDArray[np.uint8],
+        num_recogniser: CayenneNumber,
+        subres: int,
+        brdrs: npt.NDArray[np.bool_],
+    ) -> npt.NDArray[np.intp]:
+        """Extract cage totals from a warped binary digit image.
+
+        Finds contours in warped_blk, classifies them as digit bounding rects,
+        splits two-digit numbers, and runs the digit classifier to build the
+        9×9 cage-total array.
+
+        Args:
+            warped_blk: Warped binary image (ink=white, background=black).
+            num_recogniser: Loaded digit classifier.
+            subres: Pixel width/height of one cell in the warped image.
+            brdrs: (9, 9, 4) border flags, used to populate ProcessingError.
+
+        Returns:
+            (9, 9) int array of cage totals (0 for non-head cells).
+
+        Raises:
+            ProcessingError: if any cell contains more than 4 digit candidates.
+        """
+        num_pixels: npt.NDArray[np.object_] = np.empty((9, 9), dtype=object)
+        contours_raw: Any
+        hiers_raw: Any
+        contours_raw, hiers_raw = cv2.findContours(
+            warped_blk, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
+        )
+        if hiers_raw is not None:
+            [hier_raw] = hiers_raw
+            hier_rows: list[npt.NDArray[np.int32]] = [
+                np.asarray(row, dtype=np.int32) for row in hier_raw
+            ]
+            contours: list[npt.NDArray[np.int32]] = [
+                np.asarray(c, dtype=np.int32) for c in contours_raw
+            ]
+            chiers = contour_hier(list(zip(contours, hier_rows, strict=False)), set())
+            raw_nums = get_num_contours(chiers, subres)
+            for _c, br, _ds in sorted(raw_nums, key=lambda ch: ch[1][0]):
+                try:
+                    num_chiers, x, y = split_num(br, warped_blk, subres)
+                except ValueError:
+                    # Contour passed the size filter but has unexpected geometry
+                    # (e.g. slightly wider than tall with no valid split point).
+                    # Skip it: it is almost certainly noise, not a cage total digit.
+                    continue
+                bx, by, bw, bh = br
+                col = (bx + bw // 2) // subres
+                row = (by + bh // 2) // subres
+                if col < 0 or col >= 9 or row < 0 or row >= 9:
+                    # Contour centre falls outside the 9×9 grid — skip.
+                    continue
+                if num_pixels[col, row] is None:
+                    num_pixels[col, row] = []
+                num_pixels[col, row] += num_chiers
+
+        cage_totals: npt.NDArray[np.intp] = np.zeros(shape=(9, 9), dtype=np.intp)
+        for col in range(9):
+            for row in range(9):
+                sums = num_pixels[row, col]
+                if sums is not None:
+                    ntrs = num_recogniser.get_sums(sums)
+                    if len(ntrs) > 4:
+                        raise ProcessingError(
+                            f"Too many digits ({len(ntrs)}) in cell ({col},{row})",
+                            np.zeros((9, 9), dtype=np.intp),
+                            brdrs,
+                        )
+                    for v in ntrs:
+                        if int(v) >= 0:
+                            cage_totals[col, row] = (10 * cage_totals[col, row]) + int(
+                                v
+                            )
+        return cage_totals
 
     @staticmethod
     def make_border_detector(config: ImagePipelineConfig) -> BorderPCA1D | None:

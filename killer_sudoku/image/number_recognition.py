@@ -81,15 +81,16 @@ def contour_hier(
 def contour_is_number(br: tuple[int, int, int, int], subres: int) -> bool:
     """Decide whether a bounding rectangle could be a digit in a cage total.
 
-    A valid digit bounding rect must have its bottom-right corner in an
-    even-numbered half-cell (to avoid cage separators) and have dimensions
-    consistent with a digit character occupying roughly 1/8 to 1/2 of a cell.
+    A valid digit bounding rect must have its centre in an even-numbered
+    half-cell (first half of a cell) and have dimensions consistent with a
+    digit character occupying roughly 1/8 to 1/2 of a cell.
 
-    The bottom-right corner (x+w, y+h) is used for the position check rather
-    than the top-left (x, y), because perspective warp can place a digit's
-    top-left edge 1-2 pixels outside the cell boundary while the digit body
-    remains firmly inside.  Since w < subres//2, the bottom-right is always
-    within the cell's first half regardless of any boundary slop.
+    The centre (x + w//2, y + h//2) is used for the position check.  This
+    is robust to both edges of the cell: perspective warp can place a digit's
+    top-left 1-2 pixels outside the cell boundary, and a digit that barely
+    straddles a cell wall will have its centre clearly inside the correct cell.
+    Using the centre keeps the position check consistent with the cell
+    assignment in inp_image (which uses bounding-box centre for col/row).
 
     Args:
         br: Bounding rect as (x, y, w, h).
@@ -99,8 +100,8 @@ def contour_is_number(br: tuple[int, int, int, int], subres: int) -> bool:
         True if the rect is plausibly a digit bounding box.
     """
     x, y, w, h = br
-    xx = (2 * (x + w)) // subres
-    yy = (2 * (y + h)) // subres
+    xx = (2 * (x + w // 2)) // subres
+    yy = (2 * (y + h // 2)) // subres
     return (
         xx % 2 == 0
         and yy % 2 == 0
@@ -195,6 +196,18 @@ def split_num(
     split point between two adjacent digits. Each resulting sub-rect is
     perspective-warped to a canonical thumbnail size.
 
+    A peak at column p within the crop is valid when both the left sub-rect
+    (x, y, p, h) and the right sub-rect (x+p, y, w-p, h) pass
+    contour_is_number.  Note that the right sub-rect uses x+p as its origin
+    (not x) so the position check reflects the actual pixel location of the
+    right digit in the warped image.
+
+    When no valid split peak is found the whole rect is treated as a single
+    digit regardless of aspect ratio.  A rect with w >= h that cannot be
+    split occurs in borderline cases where pixel quantisation after perspective
+    warp makes a portrait digit appear barely landscape; treating it as one
+    digit is correct and resilient.
+
     Args:
         br: Bounding rect (x, y, w, h) of the candidate digit group.
         warped_blk: Full thresholded grid image after perspective warp.
@@ -205,7 +218,8 @@ def split_num(
         and (x, y) is the top-left corner of the original bounding rect.
 
     Raises:
-        ValueError: if digit geometry is inconsistent with expected splits.
+        ValueError: if a located split point is geometrically inconsistent
+            (split position >= h or remainder >= h).
     """
     x, y, w, h = br
     ys: npt.NDArray[np.intp] = np.argmax(warped_blk[y : y + h, x : x + w], axis=0)
@@ -215,16 +229,12 @@ def split_num(
         p
         for p in peaks.tolist()
         if contour_is_number((x, y, p, h), subres)
-        and contour_is_number((x, y, w - p, h), subres)
+        and contour_is_number((x + p, y, w - p, h), subres)
     ]
 
     rects: list[tuple[int, int, int, int]] = []
     if len(valid_peaks) == 0:
-        if w >= h:
-            raise ValueError(
-                f"Unexpected digit geometry: bounding rect {br} "
-                "has w>=h with no valid split peaks"
-            )
+        # No valid split found: treat the whole rect as a single digit.
         rects.append((y, y + h, x, x + w))
     else:
         sp = valid_peaks[-1]
