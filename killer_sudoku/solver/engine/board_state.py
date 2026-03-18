@@ -46,6 +46,7 @@ class BoardState:
     All mutations go through remove_candidate() or remove_cage_solution().
     """
 
+    spec: PuzzleSpec
     units: list[Unit]
     candidates: list[list[set[int]]]  # [9][9]
     counts: list[list[int]]  # [n_units][10]
@@ -56,6 +57,7 @@ class BoardState:
     linear_system: LinearSystem
 
     def __init__(self, spec: PuzzleSpec) -> None:
+        self.spec: PuzzleSpec = spec
         # Convert regions to 0-based
         self.regions = spec.regions - 1
         n_cages = int(self.regions.max()) + 1
@@ -220,6 +222,70 @@ class BoardState:
         # d is impossible in this cage — remove all solutions containing it
         to_remove = [s for s in self.cage_solns[cage_idx] if d in s]
         return [self.remove_cage_solution(cage_idx, s) for s in to_remove]
+
+
+def validate_solution(bs: BoardState) -> list[str]:
+    """Validate a fully-solved board against all killer sudoku rules.
+
+    Returns a list of violation strings (empty if the solution is valid).
+    Checks:
+    - Every cell is determined (singleton candidate set)
+    - Each row, column, and 3×3 box contains each digit 1-9 exactly once
+    - Each real cage sums to its declared total and uses distinct digits
+    """
+    violations: list[str] = []
+
+    # All cells must be determined
+    for r in range(9):
+        for c in range(9):
+            if len(bs.candidates[r][c]) != 1:
+                violations.append(
+                    f"cell ({r},{c}) not determined: {bs.candidates[r][c]}"
+                )
+
+    if violations:
+        return violations  # Further checks need singleton candidates
+
+    val = [[next(iter(bs.candidates[r][c])) for c in range(9)] for r in range(9)]
+
+    # Rows
+    for r in range(9):
+        if sorted(val[r]) != list(range(1, 10)):
+            violations.append(f"row {r} invalid: {val[r]}")
+
+    # Columns
+    for c in range(9):
+        col = [val[r][c] for r in range(9)]
+        if sorted(col) != list(range(1, 10)):
+            violations.append(f"col {c} invalid: {col}")
+
+    # Boxes
+    for b in range(9):
+        r0, c0 = (b // 3) * 3, (b % 3) * 3
+        box = [val[r0 + dr][c0 + dc] for dr in range(3) for dc in range(3)]
+        if sorted(box) != list(range(1, 10)):
+            violations.append(f"box {b} invalid: {box}")
+
+    # Real cages: sum and distinct digits
+    n_real = int(bs.regions.max()) + 1
+    for cage_idx in range(n_real):
+        unit = bs.units[27 + cage_idx]
+        cage_vals = [val[r][c] for r, c in unit.cells]
+        if len(cage_vals) != len(set(cage_vals)):
+            violations.append(f"cage {cage_idx} has repeated digits: {cage_vals}")
+        # Get declared total from cage_totals
+        expected_total = 0
+        for r, c in unit.cells:
+            t = int(bs.spec.cage_totals[r, c])
+            if t != 0:
+                expected_total = t
+                break
+        if expected_total and sum(cage_vals) != expected_total:
+            violations.append(
+                f"cage {cage_idx} sums to {sum(cage_vals)}, expected {expected_total}"
+            )
+
+    return violations
 
 
 def apply_initial_eliminations(bs: BoardState) -> list[BoardEvent]:

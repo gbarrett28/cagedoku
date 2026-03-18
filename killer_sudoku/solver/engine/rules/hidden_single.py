@@ -11,7 +11,15 @@ from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
 
 
 class HiddenSingle:
-    """R2: when exactly one cell in a unit can hold a digit, place it there."""
+    """R2: when exactly one cell in a unit can hold a digit, place it there.
+
+    For ROW, COL, and BOX units: every digit 1-9 appears exactly once, so
+    count=1 for digit d forces the sole remaining cell to d.
+
+    For CAGE units: the rule is stricter. count=1 is necessary but not
+    sufficient — d must also appear in EVERY feasible cage solution. If any
+    solution omits d, d is not required in the cage and cannot be forced.
+    """
 
     name = "HiddenSingle"
     priority = 1
@@ -25,6 +33,15 @@ class HiddenSingle:
         assert ctx.unit is not None
         assert ctx.hint_digit is not None
         d = ctx.hint_digit
+
+        # For CAGE units, d is only forced if it appears in ALL feasible solutions.
+        # Count=1 alone is insufficient: d may not be required in the cage at all.
+        if ctx.unit.kind == UnitKind.CAGE:
+            cage_idx = ctx.unit.unit_id - 27
+            solns = ctx.board.cage_solns[cage_idx]
+            if not solns or not all(d in soln for soln in solns):
+                return []
+
         sole = next(
             ((r, c) for r, c in ctx.unit.cells if d in ctx.board.candidates[r][c]),
             None,

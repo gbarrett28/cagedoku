@@ -5,10 +5,12 @@ eliminations, runs the engine main loop with all default rules, and returns
 the final BoardState. The caller checks whether the board is fully solved.
 """
 
-from killer_sudoku.solver.engine.board_state import BoardState
+from killer_sudoku.solver.engine.board_state import BoardState, validate_solution
 from killer_sudoku.solver.engine.rules import default_rules
 from killer_sudoku.solver.engine.solver_engine import SolverEngine
 from killer_sudoku.solver.puzzle_spec import PuzzleSpec
+
+__all__ = ["solve", "validate_solution"]
 
 
 def solve(spec: PuzzleSpec) -> BoardState:

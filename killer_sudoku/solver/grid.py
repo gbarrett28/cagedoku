@@ -27,6 +27,7 @@ from constraint import (  # type: ignore[import-untyped]
 
 from killer_sudoku.output.sol_image import SolImage
 from killer_sudoku.solver.engine import solve as _engine_solve
+from killer_sudoku.solver.engine import validate_solution as _validate_solution
 from killer_sudoku.solver.equation import Equation, NoSolnError
 from killer_sudoku.solver.puzzle_spec import PuzzleSpec
 
@@ -687,6 +688,16 @@ class Grid:
                     self.sol_img.draw_number(n, r, c)
 
         alts_sum = int(sum(len(self.sq_poss[r][c]) for r in range(9) for c in range(9)))
+
+        # Validate whenever the engine claims to have fully solved the puzzle.
+        # An inconsistent solution indicates a rule made an incorrect deduction.
+        if alts_sum == 81:
+            violations = _validate_solution(board)
+            if violations:
+                raise AssertionError(
+                    f"engine_solve produced an inconsistent solution: {violations[:3]}"
+                )
+
         return alts_sum, 0
 
     # ------------------------------------------------------------------

@@ -156,6 +156,23 @@ class LinearSystem:
             self._pairs_by_cell.setdefault(p, []).append(pair)
             self._pairs_by_cell.setdefault(q, []).append(pair)
 
+    @staticmethod
+    def _is_burb(vcells: frozenset[Cell]) -> bool:
+        """Return True if all cells in vcells share a row, column, or 3×3 box.
+
+        Mirrors Grid.is_burb: a cell set is a 'burb' if it fits entirely within
+        a single sudoku unit. Only burb virtual cages may use sol_sums (which
+        assumes distinct digits), because unit membership guarantees distinctness.
+        """
+        rows = {r for r, _ in vcells}
+        if len(rows) == 1:
+            return True
+        cols = {c for _, c in vcells}
+        if len(cols) == 1:
+            return True
+        boxes = {(r // 3, c // 3) for r, c in vcells}
+        return len(boxes) == 1
+
     def _maybe_add_virtual_cage(
         self,
         nonzero: list[tuple[int, Fraction]],
@@ -163,11 +180,16 @@ class LinearSystem:
         idx_to_cell: dict[int, Cell],
         real_cage_cell_sets: set[frozenset[Cell]],
     ) -> None:
-        """Add a virtual cage if the row is all-positive with integer RHS.
+        """Add a virtual cage if the row is all-positive with integer RHS and burb.
 
         All-positive RREF rows represent derived sum equations: a set of cells
         whose values must sum to rhs. These arise from subtracting row/col/box
         totals from cage sums — e.g. 'rest of this row sums to k'.
+
+        Only burb virtual cages (cells in a single row, col, or box) are kept:
+        sol_sums assumes distinct digits, which is guaranteed only for cells that
+        share a sudoku unit. Multi-row+multi-col virtual cages can have repeated
+        digits and would cause incorrect eliminations if filtered with sol_sums.
         """
         if not all(coeff == Fraction(1) for _, coeff in nonzero):
             return
@@ -176,6 +198,9 @@ class LinearSystem:
         vcells = frozenset(idx_to_cell[j] for j, _ in nonzero)
         # Skip if identical to an existing real cage (redundant)
         if vcells in real_cage_cell_sets:
+            return
+        # Only keep burb virtual cages (cells sharing a single row/col/box)
+        if not self._is_burb(vcells):
             return
         self.virtual_cages.append((vcells, int(rhs)))
 
