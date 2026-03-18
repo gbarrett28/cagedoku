@@ -69,6 +69,22 @@ Elimination(cell: Cell, digit: int)
 Placing a digit is expressed as eliminating all other candidates from that cell — a batch
 of up to 8 eliminations. The engine handles batches atomically.
 
+### BoardEvent
+
+The typed return value from `BoardState` mutation methods:
+
+```python
+@dataclass(frozen=True)
+class BoardEvent:
+    trigger: Trigger
+    payload: tuple[int, int] | int   # Cell (r, c) for CELL_DETERMINED; unit_id otherwise
+    hint_digit: int | None           # digit involved, or None for SOLUTION_PRUNED
+```
+
+`apply_eliminations` consumes `list[BoardEvent]` from `remove_candidate` and
+`list[BoardEvent]` from `remove_cage_solution`, routing each event to the queue by
+inspecting `event.trigger`.
+
 ---
 
 ## Board state
@@ -80,16 +96,34 @@ BoardState:
     cage_solns: list[list[frozenset[int]]]         # remaining valid cage assignments
     regions: array[9][9] of int                    # cage ID per cell
     linear_system: LinearSystem                    # live matrix (see below)
+    unit_versions: array[n_units] of int          # incremented on every candidate removal
+                                                   # in that unit; used for stale-item detection
 ```
 
-`BoardState.remove_candidate(r, c, d) -> list[tuple[Trigger, unit_id, digit]]` is the
-**single mutation point**. It:
+`BoardState.remove_candidate(r, c, d) -> list[BoardEvent]` is the **single mutation point**.
+It:
 
 1. Removes `d` from `candidates[r][c]`
 2. Decrements `counts[unit_id][d]` for all four units containing `(r, c)`
 3. Updates the linear system (substitutes if `candidates[r][c]` became singleton)
-4. Checks which triggers fired for each affected unit and returns them
-5. Raises `NoSolnError` if any cell's candidate set becomes empty
+4. Prunes any cage solution for the cage containing `(r, c)` that assigns `d` to cell
+   `(r, c)`: calls `_prune_cage_solutions(cage_id, r, c, d)` internally and appends
+   `BoardEvent(SOLUTION_PRUNED, cage_unit_id, None)` for each removed solution
+5. Checks which other triggers fired and appends those events:
+   - `BoardEvent(CELL_DETERMINED, (r, c), d)` if `candidates[r][c]` became a singleton
+   - `BoardEvent(COUNT_HIT_ONE, unit_id, d)` / `BoardEvent(COUNT_HIT_TWO, unit_id, d)` /
+     `BoardEvent(COUNT_DECREASED, unit_id, d)` for each of the four containing units
+6. Raises `NoSolnError` if any cell's candidate set becomes empty
+
+`BoardState.remove_cage_solution(cage_id: int, solution: frozenset[int]) -> BoardEvent`
+removes `solution` from `cage_solns[cage_id]` (by value, not by index — uses `.remove()`)
+and returns `BoardEvent(SOLUTION_PRUNED, cage_unit_id, None)`. Called exclusively by
+`_prune_cage_solutions` (internal to `BoardState`).
+
+**Rules must not call `BoardState` mutators directly.** All mutation is mediated through
+`apply_eliminations` → `remove_candidate`. R4's `apply()` returns only `list[Elimination]`;
+the engine applies those eliminations through the normal path, which triggers further cage
+solution pruning inside `remove_candidate`. There is no secondary event path.
 
 The board state does not know about rules or the queue.
 
@@ -118,12 +152,37 @@ The linear system is a first-class component of `BoardState`, not a rule. It is:
   single unknown, that cell is immediately determined and `CELL_DETERMINED` is emitted
 
 This subsumes both the current `add_equns`/`add_equns_r` window-equation construction and
-the DFFS difference-constraint mechanism. Both were special cases of Gaussian elimination
-over subsets of the available equations.
+the linear-sum part of the DFFS mechanism — both are special cases of Gaussian elimination.
+
+However, **difference pairs** of the form `x − y = δ` that Gaussian elimination finds
+cannot be applied by further Gaussian steps; they require candidate narrowing:
+`candidates[p] ∩= {m − δ | m ∈ candidates[q]}` applied iteratively until fixed-point.
+This is handled by the reinstated **DeltaConstraint rule (R6)**: LinearSystem produces
+the set of active delta pairs at setup and updates it as cells are determined; R6 fires on
+`COUNT_DECREASED` and propagates candidate restrictions for each pair involving the
+changed unit.
 
 A **GLOBAL fallback** pass re-runs full Gaussian elimination on the residual system when the
 unit queue empties without solving the puzzle. This catches multi-variable linear
 combinations that incremental substitution misses.
+
+### LinearSystem API used by R6
+
+```python
+class LinearSystem:
+    delta_pairs: list[tuple[Cell, Cell, int]]
+    # Active difference pairs (p, q, delta) meaning candidates[p] - candidates[q] = delta.
+    # Pairs are removed when both cells are determined.
+
+    def pairs_for_cell(self, cell: Cell) -> list[tuple[Cell, Cell, int]]:
+        # Returns all active delta pairs where cell is either p or q.
+        # Backed by a per-cell index for O(k) lookup where k is pairs per cell.
+        ...
+```
+
+R6 receives `ctx.unit` (a set of cells) and calls `linear_system.pairs_for_cell(c)` for
+each cell `c` in `ctx.unit`, collecting relevant pairs, then applies candidate narrowing
+for each pair. Pairs where neither cell is in `ctx.unit` are not processed.
 
 ---
 
@@ -135,7 +194,7 @@ class SolverRule(Protocol):
     priority: int                     # lower = cheaper = runs first
     triggers: frozenset[Trigger]      # what activates this rule
     unit_kinds: frozenset[UnitKind]   # which unit types this rule applies to
-                                       # (empty set = GLOBAL rule, receives all units)
+                                       # (empty set = GLOBAL rule; unit=None in RuleContext)
 
     def apply(self, ctx: RuleContext) -> list[Elimination]:
         ...
@@ -146,7 +205,8 @@ class SolverRule(Protocol):
 ```python
 @dataclass
 class RuleContext:
-    unit: Unit                # the unit being processed (None for GLOBAL rules)
+    unit: Unit | None         # the unit being processed; None for CELL_DETERMINED and GLOBAL
+    cell: Cell | None         # set for CELL_DETERMINED; None for unit-scoped and GLOBAL rules
     board: BoardState         # full read access
     hint: Trigger             # which trigger fired
     hint_digit: int | None    # digit involved, if known (e.g. COUNT_HIT_ONE fires for d=5)
@@ -154,6 +214,10 @@ class RuleContext:
 
 `hint_digit` allows rules to search only the changed digit rather than all nine. For example,
 when `COUNT_HIT_ONE` fires for digit 5 in row 3, `HiddenSingle.apply` checks only digit 5.
+
+For `CELL_DETERMINED`: `unit=None`, `cell=(r, c)`, `hint_digit=digit`. The NakedSingle rule
+(R1) uses `cell` to place the digit; DeltaConstraint (R6) also fires on CELL_DETERMINED
+and uses `cell` to substitute the known value into active delta pairs.
 
 ### RuleStats
 
@@ -182,15 +246,30 @@ class RuleStats:
 
 ### Work item
 
-The unit of scheduling is:
+Work items have two forms depending on whether the trigger is cell-scoped or unit-scoped:
 
 ```
-WorkItem(priority: int, rule: SolverRule, unit_id: int, trigger: Trigger, hint_digit: int | None)
+# Unit-scoped (all triggers except CELL_DETERMINED and GLOBAL)
+WorkItem(priority: int, rule: SolverRule, unit_id: int, unit_version: int,
+         trigger: Trigger, hint_digit: int | None)
+
+# Cell-scoped (CELL_DETERMINED only) — no version tracking
+WorkItem(priority: int = 0, rule: SolverRule, cell: Cell,
+         trigger: CELL_DETERMINED, hint_digit: int)
+
+# GLOBAL (no unit or cell) — no version tracking
+WorkItem(priority: int, rule: SolverRule, trigger: GLOBAL, hint_digit: None)
 ```
 
-The priority queue is a min-heap keyed on `(priority, rule.name, unit_id)`. Two items for
-the same `(rule, unit_id)` pair are deduplicated: only one item is kept, with the lower
-priority and the most recent trigger/hint.
+`unit_version` records `board.unit_versions[unit_id]` at the time of enqueue. The
+`unit_version_unchanged(item)` check in the main loop compares this against
+`board.unit_versions[item.unit_id]`; equal means no candidate was removed in that unit
+since the item was enqueued — the rule can be skipped.
+
+The priority queue is a min-heap. Deduplication keys:
+- Unit-scoped items: `(rule, unit_id)` — one item per rule/unit pair; lower priority wins
+- Cell-scoped items: `(rule, cell)` — one item per rule/cell pair
+- GLOBAL items: `(rule,)` — one item per GLOBAL rule
 
 ### Version tracking
 
@@ -198,6 +277,11 @@ Each unit has an integer version counter that increments on any candidate remova
 unit. A work item records the unit version at enqueue time. When popped, if the unit's
 current version equals the recorded version, no changes have occurred since enqueue — skip
 without calling the rule.
+
+**CELL_DETERMINED and GLOBAL items are never version-skipped.** CELL_DETERMINED items
+represent a specific one-time event (a cell's candidates became a singleton) and must
+always be processed. GLOBAL items have no associated unit, so no version applies; they are
+always run when dequeued.
 
 ### Main loop
 
@@ -210,13 +294,15 @@ initialise:
 
 while queue not empty:
     item = queue.pop()
-    if unit_version_unchanged(item):
+    # CELL_DETERMINED and GLOBAL items are never version-skipped (see Version tracking)
+    if item.trigger not in (CELL_DETERMINED, GLOBAL) and unit_version_unchanged(item):
         continue                                       # stale, skip
     eliminations = item.rule.apply(RuleContext(...))
     stats[item.rule].record(eliminations)
     apply_eliminations(eliminations)                   # fires triggers, enqueues new work
-    if queue contains only GLOBAL items and not fully_solved:
-        run_global_rules()                             # X-Wing, full linear re-elimination
+    # GLOBAL items are processed through the normal loop — no separate function needed.
+    # When the queue contains only GLOBAL items, they are popped and applied as usual;
+    # eliminations from X-Wing or linear re-elimination feed back into apply_eliminations.
 
 return BoardState
 ```
@@ -226,19 +312,32 @@ return BoardState
 ```
 apply_eliminations(eliminations):
     for cell, digit in eliminations:
-        events = board.remove_candidate(cell, digit)
-        for trigger, unit_id, hint_digit in events:
-            if trigger == CELL_DETERMINED:
+        events = board.remove_candidate(cell, digit)   # list[BoardEvent]
+        for event in events:
+            if event.trigger == CELL_DETERMINED:
+                # event.payload is the cell (r, c) — not a unit ID
                 for rule in trigger_map[CELL_DETERMINED]:
-                    enqueue(priority=0, rule, unit_id, trigger, hint_digit)
+                    enqueue(priority=0, rule, cell=event.payload, trigger=CELL_DETERMINED,
+                            hint_digit=event.hint_digit)
+            elif event.trigger == SOLUTION_PRUNED:
+                # event.payload is cage_unit_id; hint_digit is None
+                unit_id = event.payload
+                for rule in trigger_map[SOLUTION_PRUNED]:
+                    enqueue(rule.priority, rule, unit_id, SOLUTION_PRUNED, None)
             else:
-                for rule in trigger_map[trigger]:
+                # event.payload is unit_id; filter rules by unit kind
+                unit_id = event.payload
+                for rule in trigger_map[event.trigger]:
                     if unit_kind(unit_id) in rule.unit_kinds:
-                        enqueue(rule.priority, rule, unit_id, trigger, hint_digit)
+                        enqueue(rule.priority, rule, unit_id, event.trigger,
+                                event.hint_digit)
 ```
 
 `CELL_DETERMINED` items always get `priority=0` regardless of the rule's nominal priority,
-ensuring the cascade fires before anything else.
+ensuring the cascade fires before anything else. No `unit_kinds` filter is applied to
+CELL_DETERMINED rules — they are cell-scoped and their `unit_kinds` field is unused.
+`SOLUTION_PRUNED` events come from within `remove_candidate` (cage solution pruning is
+inline) and are routed to all rules in `trigger_map[SOLUTION_PRUNED]` (R3 and R4).
 
 ---
 
@@ -246,22 +345,32 @@ ensuring the cascade fires before anything else.
 
 | # | Name | Priority | Triggers | Unit kinds | Status |
 |---|------|----------|----------|------------|--------|
-| R1 | Naked Single | 0 | `CELL_DETERMINED` | all | existing |
+| R1 | Naked Single | 0 | `CELL_DETERMINED` | — (cell-scoped) | existing |
 | R2 | Hidden Single | 1 | `COUNT_HIT_ONE` | all | existing |
 | R3 | Cage Intersection | 2 | `COUNT_DECREASED`, `SOLUTION_PRUNED` | CAGE | existing |
 | R4 | Solution Map Filter | 3 | `COUNT_DECREASED`, `SOLUTION_PRUNED` | CAGE | existing |
 | R5 | Must-Contain | 4 | `COUNT_DECREASED` | all | existing |
+| R6 | Delta Constraint | 5 | `COUNT_DECREASED`, `CELL_DETERMINED` | all | **reinstated** |
 | R7 | Naked Pair | 6 | `COUNT_HIT_TWO` | ROW, COL, BOX | **new** |
 | R8 | Hidden Pair | 7 | `COUNT_HIT_TWO` | ROW, COL, BOX | existing |
 | R9 | Naked/Hidden Triple | 8 | `COUNT_DECREASED` | ROW, COL, BOX | **new** |
 | R10 | Pointing Pairs | 9 | `COUNT_DECREASED` | BOX | **new** |
+| ~~R11~~ | ~~Window Equations~~ | — | — | — | removed (subsumed by LinearSystem) |
 | R12 | X-Wing | 11 | `GLOBAL` | — | **new** |
-| R13 | Linear System | setup + 0.5 + `GLOBAL` | `CELL_DETERMINED`, `GLOBAL` | — | **elevated** |
 
-Rules R6 (Difference Constraints) and R11 (Window Equations) are removed as standalone
-rules — both are subsumed by the always-active Linear System component.
+**LinearSystem** is a `BoardState` component, not a `SolverRule` — it does not appear in
+the rule table and does not go through the priority queue. It is active at setup (builds
+and Gaussian-reduces the equation system), on every `remove_candidate` call (incremental
+substitution), and as a GLOBAL pass when the queue empties.
 
-### Notes on new rules
+### Notes on reinstated and new rules
+
+**Delta Constraint (R6)**: the LinearSystem finds all difference pairs `x − y = δ` after
+Gaussian elimination at setup and updates the live set as cells are determined. R6 applies
+candidate narrowing for each pair: `candidates[p] ∩= {m − δ | m ∈ candidates[q]}`, run
+to fixed-point. Fires on `COUNT_DECREASED` (any unit touching either cell in a pair) and
+on `CELL_DETERMINED` (substitutes the known value directly). This is distinct from
+Gaussian elimination — it is iterative candidate filtering over integer domains.
 
 **Naked Pair (R7)**: when exactly two cells in a unit share the same two candidates,
 eliminate those candidates from all other cells. `hint_digit` narrows the search to the
@@ -283,7 +392,7 @@ only — requires scanning across all rows simultaneously.
 
 **Naked/Hidden Quad**: not included. In killer sudoku, cage constraints and the linear
 system provide independent elimination paths that make quads redundant in practice. If
-CheatTimeouts persist after R7–R13 are implemented, quads are the first candidate to add.
+CheatTimeouts persist after R6–R12 are implemented, quads are the first candidate to add.
 
 ---
 
@@ -324,10 +433,12 @@ re-evaluation the count structure enables.
 |-----------|--------|
 | `Grid.solve` | Replaced by the new `SolverEngine` |
 | `Grid.add_equns`, `add_equns_r` | Replaced by `LinearSystem` setup |
-| `Grid.elim_must` (DFFS part) | Replaced by `LinearSystem` incremental substitution |
-| `Equation.avoid` / `sol_maps` | Become `SolutionMapFilter` and `CageIntersection` rules |
-| `Grid.elim_must` (must-contain part) | Becomes `MustContain` rule |
-| Hidden singles / pairs in solve loop | Become `HiddenSingle` / `HiddenPair` rules |
+| `Grid.elim_must` (DFFS linear part) | Replaced by `LinearSystem` setup + incremental substitution |
+| `Grid.elim_must` (DFFS delta pairs) | Replaced by `DeltaConstraint` (R6) |
+| `Equation.avoid` | Becomes internal logic of `SolutionMapFilter` (R4) |
+| `sol_maps` | Becomes internal logic of `SolutionMapFilter` (R4) |
+| `Grid.elim_must` (must-contain part) | Becomes `MustContain` rule (R5) |
+| Hidden singles / pairs in solve loop | Become `HiddenSingle` (R2) / `HiddenPair` (R8) rules |
 
 ### What stays
 
