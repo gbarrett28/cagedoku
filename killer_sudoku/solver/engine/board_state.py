@@ -13,6 +13,7 @@ Global unit ID layout:
   cols    9..17
   boxes   18..26
   cages   27..27+n_cages-1
+  virtual 27+n_cages..
 """
 
 from __future__ import annotations
@@ -65,7 +66,7 @@ class BoardState:
             for c in range(9):
                 cage_cells_list[int(self.regions[r, c])].append((r, c))
 
-        # Build unit list: rows, cols, boxes, cages
+        # Build unit list: rows 0-8, cols 9-17, boxes 18-26, real cages 27..
         self.units: list[Unit] = []
         for r in range(9):
             self.units.append(
@@ -80,9 +81,31 @@ class BoardState:
         for idx, cells in enumerate(cage_cells_list):
             self.units.append(Unit(27 + idx, UnitKind.CAGE, frozenset(cells)))
 
+        # Real cage solutions via sol_sums
+        self.cage_solns: list[list[frozenset[int]]] = []
+        for _idx, cells in enumerate(cage_cells_list):
+            total = 0
+            for r, c in cells:
+                v = int(spec.cage_totals[r, c])
+                if v != 0:
+                    total = v
+                    break
+            self.cage_solns.append(sol_sums(len(cells), 0, total))
+
+        # LinearSystem: build now so virtual_cages are available
+        self.linear_system = LinearSystem(spec)
+
+        # Add virtual cage units from the linear system (derived sum equations).
+        # Virtual cage unit IDs start at 27 + n_cages and are indexed in
+        # cage_solns at offset n_cages (so cage_idx = unit_id - 27 works uniformly).
+        for vcells, vtotal in self.linear_system.virtual_cages:
+            vunit_id = len(self.units)
+            self.units.append(Unit(vunit_id, UnitKind.CAGE, vcells))
+            self.cage_solns.append(sol_sums(len(vcells), 0, vtotal))
+
         n_units = len(self.units)
 
-        # Per-cell unit ID lookup
+        # Per-cell unit ID lookup — built after all units (incl. virtual cages)
         self._cell_unit_ids = [[[] for _ in range(9)] for _ in range(9)]
         for unit in self.units:
             for r, c in unit.cells:
@@ -98,20 +121,6 @@ class BoardState:
                 self.counts[unit.unit_id][d] = len(unit.cells)
 
         self.unit_versions = [0] * n_units
-
-        # Cage solutions via sol_sums
-        self.cage_solns = []
-        for _idx, cells in enumerate(cage_cells_list):
-            total = 0
-            for r, c in cells:
-                v = int(spec.cage_totals[r, c])
-                if v != 0:
-                    total = v
-                    break
-            self.cage_solns.append(sol_sums(len(cells), 0, total))
-
-        # LinearSystem: built after cage_solns so spec is fully available
-        self.linear_system = LinearSystem(spec)
 
     # --- Unit ID accessors ---
 
@@ -142,10 +151,10 @@ class BoardState:
 
         This is the single mutation point for candidate sets. It:
         1. Removes d from candidates[r][c]
-        2. Decrements counts[unit_id][d] for all four units containing (r, c)
+        2. Decrements counts[unit_id][d] for all units containing (r, c)
         3. Emits COUNT_DECREASED, COUNT_HIT_TWO, COUNT_HIT_ONE as counts change
         4. Emits CELL_DETERMINED if candidates[r][c] becomes a singleton
-        5. Prunes cage solutions that are now impossible
+        5. Prunes cage solutions (real and virtual) that are now impossible
         6. Raises NoSolnError if candidates[r][c] would become empty
 
         Returns a list of BoardEvent objects for the engine to route.
@@ -174,9 +183,11 @@ class BoardState:
             sole = next(iter(cands))
             events.append(BoardEvent(Trigger.CELL_DETERMINED, (r, c), sole))
 
-        # Inline cage solution pruning
-        cage_idx = int(self.regions[r, c])
-        events.extend(self._prune_cage_solutions(cage_idx, r, c, d))
+        # Prune solutions for all cage units containing this cell (real + virtual)
+        for uid in self.cell_unit_ids(r, c):
+            if self.units[uid].kind == UnitKind.CAGE:
+                cage_idx = uid - 27
+                events.extend(self._prune_cage_solutions(cage_idx, r, c, d))
 
         return events
 

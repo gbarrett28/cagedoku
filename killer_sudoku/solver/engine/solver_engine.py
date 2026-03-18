@@ -112,8 +112,37 @@ class SolverEngine:
                             event.hint_digit,
                         )
 
+    def _seed_initial_state(self) -> None:
+        """Enqueue rules for all units to process the initial puzzle state.
+
+        The engine is event-driven: rules only fire in response to candidate
+        removals. Without this seed, puzzles with no LinearSystem initial
+        eliminations would never trigger any rule. Seeding with unit_version=-1
+        ensures no item is ever considered stale (unit_versions start at 0).
+
+        Only COUNT_DECREASED and SOLUTION_PRUNED triggers are seeded. Triggers
+        that require a specific hint_digit (COUNT_HIT_ONE, COUNT_HIT_TWO) and
+        cell-level triggers (CELL_DETERMINED, GLOBAL) are not seeded here — they
+        fire naturally as eliminations propagate from the seeded rules.
+        """
+        seed_triggers = frozenset({Trigger.COUNT_DECREASED, Trigger.SOLUTION_PRUNED})
+        for unit in self.board.units:
+            for trigger in seed_triggers:
+                for rule in self._trigger_map[trigger]:
+                    if not rule.unit_kinds or unit.kind in rule.unit_kinds:
+                        self.queue.enqueue_unit(
+                            rule.priority,
+                            rule,
+                            unit.unit_id,
+                            -1,
+                            trigger,
+                            None,
+                        )
+
     def solve(self) -> BoardState:
         """Run the main loop until no progress remains. Return the board state."""
+        # Seed all rules for all matching units (initial state propagation)
+        self._seed_initial_state()
         # Enqueue GLOBAL sentinel for initial pass
         for rule in self._trigger_map[Trigger.GLOBAL]:
             self.queue.enqueue_global(rule.priority, rule)

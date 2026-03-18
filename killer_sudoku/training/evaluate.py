@@ -25,7 +25,6 @@ import itertools
 import json
 import logging
 import re
-import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -194,37 +193,17 @@ def _process_one_image(
 
     Returns:
         (f.name, status_string, elapsed_seconds) where status_string is one of
-        'SOLVED', 'CHEAT', 'CheatTimeout', 'ProcessingError: ...',
-        'AssertionError: ...', or 'ValueError: ...'.
+        'SOLVED', 'UNSOLVED', 'ProcessingError: ...', 'AssertionError: ...',
+        or 'ValueError: ...'.
     """
-    cheat_timeout_s = 30.0
     t0 = time.perf_counter()
     try:
         inp = InpImage(f, config, border_detector, num_recogniser)
         grd = Grid()
         grd.set_up(inp.spec)
-        alts_sum, _solns_sum = grd.solve()
-        if alts_sum != 81:
-            # cheat_solve() can run indefinitely on contradictory cage layouts.
-            # Run it in a daemon thread and abandon it if it exceeds the timeout.
-            exc_holder: list[BaseException] = []
-
-            def _cheat() -> None:
-                try:
-                    grd.cheat_solve()
-                except BaseException as exc:  # noqa: BLE001
-                    exc_holder.append(exc)
-
-            t = threading.Thread(target=_cheat, daemon=True)
-            t.start()
-            t.join(timeout=cheat_timeout_s)
-            elapsed = time.perf_counter() - t0
-            if t.is_alive():
-                return f.name, "CheatTimeout", elapsed
-            if exc_holder:
-                raise exc_holder[0]
-            return f.name, "CHEAT", elapsed
-        return f.name, "SOLVED", time.perf_counter() - t0
+        alts_sum, _solns_sum = grd.engine_solve()
+        status = "SOLVED" if alts_sum == 81 else "UNSOLVED"
+        return f.name, status, time.perf_counter() - t0
     except ProcessingError as e:
         return f.name, f"ProcessingError: {e.msg}", time.perf_counter() - t0
     except AssertionError as e:

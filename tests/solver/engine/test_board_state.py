@@ -117,6 +117,34 @@ def test_remove_cage_solution_emits_solution_pruned() -> None:
     assert extra not in bs.cage_solns[cage_idx]
 
 
+def test_virtual_cages_included_in_units_and_solns() -> None:
+    """Virtual cages from LinearSystem RREF appear as extra CAGE units.
+
+    Regression test: before this fix, the LinearSystem's derived sum equations
+    were computed but never inserted into BoardState as units. Rules like
+    SolutionMapFilter never saw them, so row-derived constraints were ignored.
+    """
+    spec = make_trivial_spec()
+    bs = BoardState(spec)
+    n_real_cages = int(bs.regions.max()) + 1
+    n_virtual = len(bs.linear_system.virtual_cages)
+
+    # cage_solns should cover real cages + virtual cages
+    assert len(bs.cage_solns) == n_real_cages + n_virtual
+
+    # All virtual cage units should be CAGE kind
+    for i, (vcells, _vtotal) in enumerate(bs.linear_system.virtual_cages):
+        vunit_id = 27 + n_real_cages + i
+        assert bs.units[vunit_id].kind == UnitKind.CAGE
+        assert bs.units[vunit_id].cells == vcells
+
+    # Each virtual cage's cells must be in _cell_unit_ids
+    for i, (vcells, _vtotal) in enumerate(bs.linear_system.virtual_cages):
+        vunit_id = 27 + n_real_cages + i
+        for r, c in vcells:
+            assert vunit_id in bs.cell_unit_ids(r, c)
+
+
 def test_remove_candidate_triggers_cage_pruning() -> None:
     spec = make_trivial_spec()
     bs = BoardState(spec)

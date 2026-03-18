@@ -6,6 +6,7 @@ from killer_sudoku.solver.engine.board_state import (
     apply_initial_eliminations,
 )
 from killer_sudoku.solver.engine.rule import RuleContext
+from killer_sudoku.solver.engine.rules import default_rules
 from killer_sudoku.solver.engine.solver_engine import SolverEngine
 from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
 from tests.fixtures.minimal_puzzle import KNOWN_SOLUTION, make_trivial_spec
@@ -95,3 +96,24 @@ def test_engine_solves_trivial_with_rules() -> None:
     for r in range(9):
         for c in range(9):
             assert board.candidates[r][c] == {KNOWN_SOLUTION[r][c]}
+
+
+def test_engine_bootstraps_without_initial_eliminations() -> None:
+    """Engine makes progress even when LinearSystem yields no initial eliminations.
+
+    Regression test for the bootstrapping gap: if initial_eliminations is empty
+    the engine used to return immediately without processing any cage units.
+    The fix seeds all rules for all matching units before the main loop.
+    """
+    spec = make_trivial_spec()
+    board = BoardState(spec)
+    # Clear LinearSystem eliminations to simulate a pure cage-driven start
+    board.linear_system.initial_eliminations.clear()
+    engine = SolverEngine(board, rules=default_rules())
+    result = engine.solve()
+    # Even without LinearSystem seeding, cage propagation should determine all cells
+    for r in range(9):
+        for c in range(9):
+            assert result.candidates[r][c] == {KNOWN_SOLUTION[r][c]}, (
+                f"Cell ({r},{c}) not determined: {result.candidates[r][c]}"
+            )

@@ -60,3 +60,41 @@ def make_trivial_spec() -> PuzzleSpec:
         make_trivial_border_x(),
         make_trivial_border_y(),
     )
+
+
+# First-row triplet values from KNOWN_SOLUTION: 5 + 3 + 4 = 12
+THREE_CELL_CAGE_CELLS = ((0, 0), (0, 1), (0, 2))
+THREE_CELL_CAGE_TOTAL = (
+    KNOWN_SOLUTION[0][0] + KNOWN_SOLUTION[0][1] + KNOWN_SOLUTION[0][2]
+)  # = 12
+
+
+def make_three_cell_cage_spec() -> PuzzleSpec:
+    """Return a PuzzleSpec where BoardState cells (0,0), (0,1), (0,2) form one cage.
+
+    All other cells remain as single-cell cages (from KNOWN_SOLUTION values).
+    The 3-cell cage total is 12 (KNOWN_SOLUTION[0][0]+[0][1]+[0][2] = 5+3+4).
+
+    Border convention (from validation.py): border_x[col, row] controls the wall
+    between rows `row` and `row+1` in column `col`. BoardState cell (r, c)
+    corresponds to validation (col=r, row=c), so walls between (0,0)-(0,1) and
+    (0,1)-(0,2) are at border_x[0, 0] and border_x[0, 1] respectively.
+
+    This fixture is used to test rules that require multi-cell cages
+    (e.g. SolutionMapFilter per-cell feasibility) without loading image files.
+    """
+    totals = make_trivial_cage_totals().copy()
+    # Cage label goes in the first cell; other cage cells get 0
+    totals[0, 0] = THREE_CELL_CAGE_TOTAL
+    totals[0, 1] = 0
+    totals[0, 2] = 0
+
+    border_x = make_trivial_border_x().copy()
+    border_y = make_trivial_border_y()
+    # Remove walls between BoardState (0,0)↔(0,1) and (0,1)↔(0,2)
+    # border_x[col=0, row=0] → wall between validation (0,0) and (0,1)
+    # border_x[col=0, row=1] → wall between validation (0,1) and (0,2)
+    border_x[0, 0] = False
+    border_x[0, 1] = False
+
+    return validate_cage_layout(totals, border_x, border_y)

@@ -26,11 +26,13 @@ class LinearSystem:
 
     initial_eliminations: list[Elimination]
     delta_pairs: list[tuple[Cell, Cell, int]]
+    virtual_cages: list[tuple[frozenset[Cell], int]]
     _pairs_by_cell: dict[Cell, list[tuple[Cell, Cell, int]]]
 
     def __init__(self, spec: PuzzleSpec) -> None:
         self.initial_eliminations = []
         self.delta_pairs = []
+        self.virtual_cages = []
         self._pairs_by_cell = {}
 
         # Variable index: cell (r,c) -> column 0..80
@@ -57,7 +59,7 @@ class LinearSystem:
             r0, c0 = (b // 3) * 3, (b % 3) * 3
             add_eq([(r0 + dr, c0 + dc) for dr in range(3) for dc in range(3)], 45)
 
-        # Cage equations
+        # Cage equations; also track real cage cell sets for dedup
         cage_cells: dict[int, list[Cell]] = {}
         cage_totals_map: dict[int, int] = {}
         for r in range(9):
@@ -71,6 +73,10 @@ class LinearSystem:
             total = cage_totals_map.get(cid, 0)
             if total > 0:
                 add_eq(cells, total)
+
+        real_cage_cell_sets: set[frozenset[Cell]] = {
+            frozenset(cells) for cells in cage_cells.values()
+        }
 
         # Gaussian elimination to RREF
         n_rows = len(rows)
@@ -98,7 +104,7 @@ class LinearSystem:
                     ]
             pivot_row += 1
 
-        # Extract determined cells and difference pairs from reduced system
+        # Extract determined cells, difference pairs, and virtual cage sums
         idx_to_cell = {v: k for k, v in var_index.items()}
         for row in rows:
             nonzero = [(j, row[j]) for j in range(n_vars) if row[j] != 0]
@@ -120,7 +126,7 @@ class LinearSystem:
             elif len(nonzero) == 2:
                 j_p, coeff_p = nonzero[0]
                 j_q, coeff_q = nonzero[1]
-                # Pattern: +1*x + -1*y = delta  →  x - y = delta
+                # +1*x - 1*y = delta  →  x - y = delta
                 if coeff_p == Fraction(1) and coeff_q == Fraction(-1):
                     if rhs.denominator == 1:
                         pair: tuple[Cell, Cell, int] = (
@@ -133,12 +139,45 @@ class LinearSystem:
                     if rhs.denominator == 1:
                         pair = (idx_to_cell[j_q], idx_to_cell[j_p], int(-rhs))
                         self.delta_pairs.append(pair)
+                else:
+                    # +1*x + 1*y = k: 2-cell virtual cage sum
+                    self._maybe_add_virtual_cage(
+                        nonzero, rhs, idx_to_cell, real_cage_cell_sets
+                    )
+            else:
+                # k >= 3: potential virtual cage if all coefficients are +1
+                self._maybe_add_virtual_cage(
+                    nonzero, rhs, idx_to_cell, real_cage_cell_sets
+                )
 
         # Build per-cell index for O(k) lookup
         for pair in self.delta_pairs:
             p, q, _ = pair
             self._pairs_by_cell.setdefault(p, []).append(pair)
             self._pairs_by_cell.setdefault(q, []).append(pair)
+
+    def _maybe_add_virtual_cage(
+        self,
+        nonzero: list[tuple[int, Fraction]],
+        rhs: Fraction,
+        idx_to_cell: dict[int, Cell],
+        real_cage_cell_sets: set[frozenset[Cell]],
+    ) -> None:
+        """Add a virtual cage if the row is all-positive with integer RHS.
+
+        All-positive RREF rows represent derived sum equations: a set of cells
+        whose values must sum to rhs. These arise from subtracting row/col/box
+        totals from cage sums — e.g. 'rest of this row sums to k'.
+        """
+        if not all(coeff == Fraction(1) for _, coeff in nonzero):
+            return
+        if rhs.denominator != 1 or rhs <= 0:
+            return
+        vcells = frozenset(idx_to_cell[j] for j, _ in nonzero)
+        # Skip if identical to an existing real cage (redundant)
+        if vcells in real_cage_cell_sets:
+            return
+        self.virtual_cages.append((vcells, int(rhs)))
 
     def pairs_for_cell(self, cell: Cell) -> list[tuple[Cell, Cell, int]]:
         """Return all active delta pairs where cell is either p or q."""
