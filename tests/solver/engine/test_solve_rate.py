@@ -7,8 +7,13 @@ They are skipped if the puzzle directories or eval reports are not present
 (they are gitignored). Run the evaluation first, then run the silver gate.
 
 Baseline numbers (propagation-only, no cheat, as of 2026-03-18):
-  Guardian  : >= 441 SOLVED out of 465 total
-  Observer  : >= 412 SOLVED out of 424 total
+  Guardian  : >= 442 SOLVED out of 465 total
+  Observer  : >= 373 SOLVED out of 424 total
+
+Note: Observer dropped from 412 after fixing the cage HiddenSingle bug (the rule
+was incorrectly firing on cage units without checking all feasible solutions). The
+39 previously-"solved" Observer puzzles were solved by an incorrect shortcut that
+happened to give the right answer. Recovering them requires additional correct rules.
 
 To update baselines after a genuine improvement: edit GUARDIAN_BASELINE and
 OBSERVER_BASELINE below, commit the change, and record the new numbers in the
@@ -25,8 +30,8 @@ OBSERVER_DIR = Path("observer")
 GUARDIAN_REPORT = GUARDIAN_DIR / "eval_report.json"
 OBSERVER_REPORT = OBSERVER_DIR / "eval_report.json"
 
-GUARDIAN_BASELINE = 441
-OBSERVER_BASELINE = 412
+GUARDIAN_BASELINE = 442
+OBSERVER_BASELINE = 373
 
 
 _GUARDIAN_SKIP = "Guardian eval report not present — run evaluate --rag guardian"
