@@ -57,6 +57,7 @@ def write_eval_report(
     verror: int,
     total: int,
     ctimeout: int = 0,
+    unsolved: int = 0,
 ) -> Path:
     """Write a structured JSON evaluation report to {puzzle_dir}/eval_report.json.
 
@@ -74,6 +75,7 @@ def write_eval_report(
         verror: Count of ValueError puzzles.
         total: Total puzzles processed.
         ctimeout: Count of CheatTimeout puzzles (cheat_solve exceeded time limit).
+        unsolved: Count of UNSOLVED puzzles (engine made no further progress).
 
     Returns:
         Path to the written report file.
@@ -89,6 +91,7 @@ def write_eval_report(
         "newspaper": newspaper,
         "total": total,
         "solved": solved,
+        "unsolved": unsolved,
         "cheat": cheated,
         "cheat_timeout": ctimeout,
         "processing_error": perror,
@@ -239,7 +242,7 @@ def collect_status(
     """
     num_recogniser = InpImage.make_num_recogniser(config)
     status = StatusStore(config.status_path, config.puzzle_dir)
-    solved = cheated = ctimeout = perror = aerror = verror = total = 0
+    solved = cheated = ctimeout = perror = aerror = verror = unsolved = total = 0
 
     files = list(config.puzzle_dir.glob("*.jpg"))
     n_total = len(files)
@@ -261,6 +264,8 @@ def collect_status(
         status[f] = stat
         if stat == "SOLVED":
             solved += 1
+        elif stat == "UNSOLVED":
+            unsolved += 1
         elif stat == "CHEAT":
             cheated += 1
         elif stat == "CheatTimeout":
@@ -274,10 +279,11 @@ def collect_status(
 
         if total % 10 == 0 or total == n_total:
             _log.info(
-                "[%d/%d] SOLVED=%d CHEAT=%d CT=%d PE=%d AE=%d VE=%d",
+                "[%d/%d] SOLVED=%d UNSOLVED=%d CHEAT=%d CT=%d PE=%d AE=%d VE=%d",
                 total,
                 n_total,
                 solved,
+                unsolved,
                 cheated,
                 ctimeout,
                 perror,
@@ -316,6 +322,7 @@ def collect_status(
 
     status.save()
     _log.info("SOLVED          %3d", solved)
+    _log.info("UNSOLVED        %3d", unsolved)
     _log.info("CHEATED         %3d", cheated)
     _log.info("CheatTimeout    %3d", ctimeout)
     _log.info("ProcessingError %3d", perror)
@@ -333,6 +340,7 @@ def collect_status(
         verror,
         total,
         ctimeout=ctimeout,
+        unsolved=unsolved,
     )
     return status
 
