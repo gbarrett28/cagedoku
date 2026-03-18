@@ -72,7 +72,7 @@ def main() -> None:
         grd.set_up(inp.spec)
 
         try:
-            alts_sum, _solns_sum = grd.solve()
+            alts_sum, _solns_sum = grd.engine_solve()
         except (AssertionError, ValueError) as exc:
             _log.error("  Solve error for %s -- %s", filepath, exc)
             alts_sum = 0
