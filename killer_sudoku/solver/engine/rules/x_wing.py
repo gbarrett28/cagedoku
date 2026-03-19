@@ -20,7 +20,7 @@ class XWing:
     """R12: X-Wing pattern — eliminate from column/row peers outside the rectangle."""
 
     name = "XWing"
-    priority = 11
+    priority = 13
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL
 

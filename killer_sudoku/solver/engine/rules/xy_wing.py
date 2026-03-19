@@ -27,7 +27,7 @@ class XYWing:
     """R15: XY-Wing — three bivalue cells forming a chain."""
 
     name = "XYWing"
-    priority = 15
+    priority = 16
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL
 

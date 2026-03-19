@@ -21,7 +21,7 @@ class Jellyfish:
     """R14: Jellyfish — 4-row or 4-column basic fish."""
 
     name = "Jellyfish"
-    priority = 14
+    priority = 15
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL
 

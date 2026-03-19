@@ -1,24 +1,25 @@
 """Default rule set for the solver engine.
 
 Rules are ordered by priority (ascending = higher priority = fired first):
-  0  NakedSingle        — CELL_DETERMINED
-  1  HiddenSingle       — COUNT_HIT_ONE
-  2  CageIntersection   — COUNT_DECREASED / SOLUTION_PRUNED (CAGE)
-  3  SolutionMapFilter  — COUNT_DECREASED / SOLUTION_PRUNED (CAGE)
-  4  MustContain        — COUNT_DECREASED (all units)
-  5  DeltaConstraint    — COUNT_DECREASED / CELL_DETERMINED
-  6  NakedPair          — COUNT_HIT_TWO
-  7  HiddenPair         — COUNT_HIT_TWO
-  8  NakedHiddenTriple  — COUNT_DECREASED (ROW/COL/BOX)
-  9  NakedHiddenQuad    — COUNT_DECREASED (ROW/COL/BOX)
- 10  PointingPairs      — COUNT_DECREASED (BOX)
- 11  LockedCandidates   — COUNT_DECREASED (ROW/COL/BOX)
- 12  XWing              — GLOBAL
- 13  Swordfish          — GLOBAL
- 14  Jellyfish          — GLOBAL
- 15  XYWing             — GLOBAL
- 16  UniqueRectangle    — GLOBAL
- 17  SimpleColouring    — GLOBAL
+  0  NakedSingle           — CELL_DETERMINED
+  1  HiddenSingle          — COUNT_HIT_ONE
+  2  CageIntersection      — COUNT_DECREASED / SOLUTION_PRUNED (CAGE)
+  3  SolutionMapFilter     — COUNT_DECREASED / SOLUTION_PRUNED (CAGE)
+  4  MustContain           — COUNT_DECREASED (all units)
+  5  DeltaConstraint       — COUNT_DECREASED / CELL_DETERMINED
+  6  NakedPair             — COUNT_HIT_TWO
+  7  HiddenPair            — COUNT_HIT_TWO
+  8  NakedHiddenTriple     — COUNT_DECREASED (ROW/COL/BOX)
+  9  NakedHiddenQuad       — COUNT_DECREASED (ROW/COL/BOX)
+ 10  PointingPairs         — COUNT_DECREASED (BOX)
+ 11  LockedCandidates      — COUNT_DECREASED (ROW/COL/BOX)
+ 12  UnitPartitionFilter   — GLOBAL
+ 13  XWing                 — GLOBAL
+ 14  Swordfish             — GLOBAL
+ 15  Jellyfish             — GLOBAL
+ 16  XYWing                — GLOBAL
+ 17  UniqueRectangle       — GLOBAL
+ 18  SimpleColouring       — GLOBAL
 """
 
 from killer_sudoku.solver.engine.rule import SolverRule
@@ -38,6 +39,7 @@ from killer_sudoku.solver.engine.rules.simple_colouring import SimpleColouring
 from killer_sudoku.solver.engine.rules.solution_map_filter import SolutionMapFilter
 from killer_sudoku.solver.engine.rules.swordfish import Swordfish
 from killer_sudoku.solver.engine.rules.unique_rectangle import UniqueRectangle
+from killer_sudoku.solver.engine.rules.unit_partition_filter import UnitPartitionFilter
 from killer_sudoku.solver.engine.rules.x_wing import XWing
 from killer_sudoku.solver.engine.rules.xy_wing import XYWing
 
@@ -57,6 +59,7 @@ def default_rules() -> list[SolverRule]:
         NakedHiddenQuad(),
         PointingPairs(),
         LockedCandidates(),
+        UnitPartitionFilter(),
         XWing(),
         Swordfish(),
         Jellyfish(),

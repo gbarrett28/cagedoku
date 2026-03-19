@@ -23,7 +23,7 @@ class Swordfish:
     """R13: Swordfish — 3-row or 3-column basic fish."""
 
     name = "Swordfish"
-    priority = 13
+    priority = 14
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL
 

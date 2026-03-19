@@ -8,7 +8,7 @@ They are skipped if the puzzle directories or eval reports are not present
 
 Baseline numbers (propagation-only, no cheat, as of 2026-03-19):
   Guardian  : >= 461 SOLVED out of 465 total
-  Observer  : >= 417 SOLVED out of 424 total
+  Observer  : >= 419 SOLVED out of 424 total
 
 Note: Observer dropped from 412 after fixing the cage HiddenSingle bug (the rule
 was incorrectly firing on cage units without checking all feasible solutions). The
@@ -24,7 +24,10 @@ Observer (381→416) by surfacing cage-aware sub-sum equations that RREF cannot
 derive when cages span multiple units. Box-spanning DFS equation generation
 (add_equns_r-style over adjacent 3x3 boxes) added 1 Guardian (460→461) and 1
 Observer (416→417) by deriving multi-box constraints that neither RREF nor the
-row/col sliding window can produce.
+row/col sliding window can produce. UnitPartitionFilter (cross-cage compatibility
+for completely partitioned units, ranked by m×n! complexity) added 2 Observer
+(417→419) by eliminating cage solutions that contradict any valid cross-unit
+digit assignment.
 
 To update baselines after a genuine improvement: edit GUARDIAN_BASELINE and
 OBSERVER_BASELINE below, commit the change, and record the new numbers in the
@@ -42,7 +45,7 @@ GUARDIAN_REPORT = GUARDIAN_DIR / "eval_report.json"
 OBSERVER_REPORT = OBSERVER_DIR / "eval_report.json"
 
 GUARDIAN_BASELINE = 461
-OBSERVER_BASELINE = 417
+OBSERVER_BASELINE = 419
 
 
 _GUARDIAN_SKIP = "Guardian eval report not present — run evaluate --rag guardian"

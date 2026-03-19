@@ -37,7 +37,7 @@ class SimpleColouring:
     """R13: Simple colouring — eliminate a digit via single-digit chain reasoning."""
 
     name = "SimpleColouring"
-    priority = 12
+    priority = 18
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL
 

@@ -40,7 +40,7 @@ class UniqueRectangle:
     """R16: Unique Rectangle types 1 and 2."""
 
     name = "UniqueRectangle"
-    priority = 16
+    priority = 17
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL
 

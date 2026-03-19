@@ -28,7 +28,7 @@ class LockedCandidates:
     """R10b: digit in a unit confined to one cage or box — eliminate from container."""
 
     name = "LockedCandidates"
-    priority = 10
+    priority = 11
     triggers: frozenset[Trigger] = frozenset({Trigger.COUNT_DECREASED})
     unit_kinds: frozenset[UnitKind] = frozenset(
         {UnitKind.ROW, UnitKind.COL, UnitKind.BOX}
