@@ -211,6 +211,11 @@ class LinearSystem:
         # in the derivation as input equations.
         self._derive_nonburb_virtual_cages(spec, real_cage_cell_sets)
 
+        # Derive delta pairs from overlapping sum equations.
+        # Must be called AFTER all virtual cages are added (both burb and non-burb)
+        # so that RREF-derived virtual cages participate in the overlap scan.
+        self._derive_overlapping_delta_pairs(spec)
+
     @staticmethod
     def _is_burb(vcells: frozenset[Cell]) -> bool:
         """Return True if all cells in vcells share a row, column, or 3×3 box.
@@ -616,3 +621,72 @@ class LinearSystem:
                     continue  # non-burb with no must: no constraint worth propagating
             seen.add(eq.cells)
             self.virtual_cages.append((eq.cells, eq.total, distinct, list(eq.solns)))
+
+    def _derive_overlapping_delta_pairs(self, spec: PuzzleSpec) -> None:
+        """Derive delta pairs from overlapping all-positive sum equations.
+
+        When two sum equations share a common subset S of cells, their
+        difference eliminates S and yields a signed constraint on the
+        non-shared cells.  If each equation has exactly one unique cell
+        (|left| = |right| = 1), the result is a delta pair:
+
+            left_cell - right_cell = eq1.total - eq2.total
+
+        This captures constraints the RREF cannot express as delta pairs
+        because its elimination order converts them into virtual cages
+        (e.g. box - cage12 - cage14 - cage17 → burb virtual cage, then
+        virtual_cage - cage13 → delta pair).
+
+        Scans all pairs from real cages + virtual cages.  O(n²) in the
+        number of equations; n ≈ 50–80 per puzzle so this is fast.
+        """
+        # Collect (cells, total) for real cages.
+        cage_cells_map: dict[int, list[Cell]] = {}
+        cage_totals_map: dict[int, int] = {}
+        for r in range(9):
+            for c in range(9):
+                cid = int(spec.regions[r, c])
+                cage_cells_map.setdefault(cid, []).append((r, c))
+                v = int(spec.cage_totals[r, c])
+                if v != 0:
+                    cage_totals_map[cid] = v
+
+        all_eqs: list[tuple[frozenset[Cell], int]] = []
+        for cid, cells_list in cage_cells_map.items():
+            total = cage_totals_map.get(cid, 0)
+            if total > 0:
+                all_eqs.append((frozenset(cells_list), total))
+        for vcells, vtotal, _, _ in self.virtual_cages:
+            all_eqs.append((vcells, vtotal))
+
+        # Track already-known pairs to avoid duplicates.
+        existing: set[frozenset[Cell]] = {
+            frozenset({p, q}) for p, q, _ in self.delta_pairs
+        }
+
+        for i, (cells1, total1) in enumerate(all_eqs):
+            for cells2, total2 in itertools.islice(all_eqs, i + 1, None):
+                shared = cells1 & cells2
+                if not shared:
+                    continue
+                left = cells1 - shared
+                right = cells2 - shared
+                if len(left) != 1 or len(right) != 1:
+                    continue
+                left_cell = next(iter(left))
+                right_cell = next(iter(right))
+                pair_key = frozenset({left_cell, right_cell})
+                if pair_key in existing:
+                    continue
+                existing.add(pair_key)
+                delta = total1 - total2
+                if delta > 0:
+                    pair: tuple[Cell, Cell, int] = (left_cell, right_cell, delta)
+                elif delta < 0:
+                    pair = (right_cell, left_cell, -delta)
+                else:
+                    continue  # Equal sums: cells are equal, not a useful delta.
+                self.delta_pairs.append(pair)
+                p, q, _ = pair
+                self._pairs_by_cell.setdefault(p, []).append(pair)
+                self._pairs_by_cell.setdefault(q, []).append(pair)
