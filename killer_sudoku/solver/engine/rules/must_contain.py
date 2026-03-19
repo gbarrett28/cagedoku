@@ -24,8 +24,17 @@ class MustContain:
     )
 
     def apply(self, ctx: RuleContext) -> list[Elimination]:
-        """For each cage overlapping this unit, eliminate its confined digits."""
+        """For each cage overlapping this unit, eliminate its confined digits.
+
+        Non-burb virtual cages (distinct_digits=False) are skipped as the
+        triggering unit: eliminating from their cells via real-cage must-sets
+        is unsound because those cells span multiple units and can share digits.
+        Non-burb cages still contribute as the *overlapping* cage when a real
+        unit fires — in that direction the logic is safe.
+        """
         assert ctx.unit is not None
+        if not ctx.unit.distinct_digits:
+            return []
         board = ctx.board
         unit_cells = ctx.unit.cells
         elims: list[Elimination] = []

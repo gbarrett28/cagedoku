@@ -26,6 +26,33 @@ if TYPE_CHECKING:
     from killer_sudoku.solver.engine.types import BoardEvent
 
 
+def _filter_sum_range(
+    cells: list[Cell],
+    total: int,
+    candidates: list[list[set[int]]],
+) -> list[Elimination]:
+    """Return eliminations for a non-burb sum constraint using range filtering.
+
+    For each cell and each candidate digit, checks whether the digit can
+    participate in an assignment summing to total given the current candidate
+    ranges of the other cells.  Does NOT assume digit distinctness — safe for
+    non-burb cell sets where cells may legally share a digit.
+    """
+    elims: list[Elimination] = []
+    for i, (r, c) in enumerate(cells):
+        others = [cells[j] for j in range(len(cells)) if j != i]
+        min_others = sum(
+            min(candidates[or_][oc]) for or_, oc in others if candidates[or_][oc]
+        )
+        max_others = sum(
+            max(candidates[or_][oc]) for or_, oc in others if candidates[or_][oc]
+        )
+        for d in list(candidates[r][c]):
+            if not (min_others + d <= total <= max_others + d):
+                elims.append(Elimination(cell=(r, c), digit=d))
+    return elims
+
+
 def _filter_sum_constraint(
     cells: list[Cell],
     total: int,
@@ -147,7 +174,7 @@ class SolverEngine:
                 new_constraints = self.board.linear_system.substitute_live_rows(
                     cell, val
                 )
-                for vcells, vtotal in new_constraints:
+                for vcells, vtotal, distinct in new_constraints:
                     cell_list = list(vcells)
                     if len(cell_list) == 1:
                         # Single-cell constraint: directly determine the cell
@@ -158,9 +185,16 @@ class SolverEngine:
                                 self.apply_eliminations(
                                     [Elimination(cell=lone, digit=d)]
                                 )
-                    else:
-                        # Multi-cell sum constraint: filter against candidates
+                    elif distinct:
+                        # Burb sum constraint: full sol_sums backtracking filter
                         sum_elims = _filter_sum_constraint(
+                            cell_list, vtotal, self.board.candidates
+                        )
+                        if sum_elims:
+                            self.apply_eliminations(sum_elims)
+                    else:
+                        # Non-burb sum constraint: range-only filter (no distinctness)
+                        sum_elims = _filter_sum_range(
                             cell_list, vtotal, self.board.candidates
                         )
                         if sum_elims:
