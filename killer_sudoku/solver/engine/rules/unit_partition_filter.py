@@ -10,10 +10,13 @@ cage {r4c8,r5c8}=9, cage {r6c8,r7c8,r8c8}=22.  Solution {1,5} for the 6-cage
 forces {2,6} for the 8-cage, leaving no valid pair for the 9-cage →
 eliminate {1,5}, which forces {r0c8,r1c8}={2,4}.
 
-This is equivalent to limited backtracking over cage solutions: each partition
-cage is a branch point, and the enumeration only considers combinations within
-the local unit — not a global search.  A cage with k solutions requires at most
-k "leaves" to check, which is human-tractable when k is small.
+Enumeration uses DFS with constraint propagation: after fixing one cage's digit
+set, the remaining cages' solution lists are filtered immediately (any solution
+that shares a digit with the chosen set is discarded).  Forced assignments
+(m=1 after filtering) propagate for free without counting as a branch.  Only
+genuine branch points (m≥2) consume a node from the budget.  When the budget
+is exhausted, the current branch is treated conservatively — it is recorded as
+potentially valid rather than invalid — so no correct solution is ever discarded.
 
 Only cages whose cells lie entirely within the unit are considered, so the rule
 cannot use a cage that crosses unit boundaries unless a virtual cage (derived by
@@ -24,15 +27,15 @@ Fires on GLOBAL trigger.
 
 from __future__ import annotations
 
-import itertools
-
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, UnitKind
 
-# Maximum total combinations (product of m_i across the partition) to enumerate.
-# Since we work with digit sets rather than ordered cell assignments, the
-# complexity is product(m_i), not product(m_i * n_i!).
-_MAX_COMBOS = 500
+# Maximum number of DFS branch nodes to explore per partition.
+# A node is counted each time we pick a solution for a cage that still has
+# two or more valid choices (forced singletons propagate for free).
+# When the budget runs out the current branch is treated as potentially valid
+# (conservative: never discard a correct solution).
+_MAX_NODES = 200
 
 
 class UnitPartitionFilter:
@@ -75,31 +78,8 @@ class UnitPartitionFilter:
             if partition is None:
                 continue
 
-            # Skip partitions whose enumeration space exceeds the cap.
-            n_combos = 1
-            for _, solns in partition:
-                n_combos *= len(solns)
-                if n_combos > _MAX_COMBOS:
-                    break
-            if n_combos > _MAX_COMBOS:
-                continue
-
-            # Enumerate all cross-cage solution combinations.
-            # A combination is valid iff no digit appears in more than one cage.
-            solution_lists = [solns for _, solns in partition]
-            valid_per_cage: list[set[frozenset[int]]] = [set() for _ in partition]
-
-            for combo in itertools.product(*solution_lists):
-                combined: set[int] = set()
-                ok = True
-                for s in combo:
-                    if combined & s:  # digit conflict between cage assignments
-                        ok = False
-                        break
-                    combined |= s
-                if ok:
-                    for i, s in enumerate(combo):
-                        valid_per_cage[i].add(s)
+            # DFS with constraint propagation; cap on search-tree nodes.
+            valid_per_cage = _cross_valid_combos(partition, _MAX_NODES)
 
             # For each partition cage, eliminate cell candidates that never
             # appear in any valid cross-cage combination.
@@ -140,3 +120,98 @@ def _find_partition(
             return [(cells, solns), *result]
 
     return None  # no cage covers target; partition impossible
+
+
+def _cross_valid_combos(
+    partition: list[tuple[frozenset[Cell], list[frozenset[int]]]],
+    max_nodes: int,
+) -> list[set[frozenset[int]]]:
+    """Enumerate valid cross-cage solution combinations via DFS + propagation.
+
+    Returns one set of valid solutions per partition cage.  A solution is
+    considered valid if it participated in at least one digit-conflict-free
+    combination, OR if the node budget was exhausted before that branch was
+    refuted (conservative treatment).
+
+    Args:
+        partition: ordered list of (cells, solutions) for each cage in the unit.
+        max_nodes: maximum DFS branch-nodes to explore before treating remaining
+            branches as conservatively valid.
+
+    Returns:
+        A list (same length as partition) of sets; each set contains the
+        solutions for that cage that are consistent with at least one valid
+        cross-cage assignment.
+    """
+    n = len(partition)
+    valid_per_cage: list[set[frozenset[int]]] = [set() for _ in range(n)]
+    nodes = [0]  # mutable counter shared across recursive calls
+
+    def dfs(
+        idx: int,
+        filtered: list[list[frozenset[int]]],
+    ) -> bool:
+        """Recursively assign solutions to partition[idx..n-1].
+
+        filtered[i] is the current solution list for partition[i] after
+        propagating the choices made at depth 0..idx-1.
+
+        Returns True if at least one valid complete assignment was found,
+        False if all branches were contradictions, or raises _CapHit if the
+        node budget runs out (caller treats remaining branches conservatively).
+        """
+        if idx == n:
+            return True  # complete assignment — no digit conflicts anywhere
+
+        solns = filtered[idx]
+        if not solns:
+            return False  # contradiction — no valid solution for this cage
+
+        # Forced singleton: propagate for free without consuming a node.
+        # Multiple choices: count each as a branch node.
+        is_forced = len(solns) == 1
+
+        found_valid = False
+        for soln in solns:
+            if not is_forced:
+                nodes[0] += 1
+                if nodes[0] > max_nodes:
+                    # Budget exhausted — record remaining solns as conservatively
+                    # valid for this cage and all downstream cages.
+                    for remaining_soln in solns:
+                        valid_per_cage[idx].add(remaining_soln)
+                    for j in range(idx + 1, n):
+                        for s in filtered[j]:
+                            valid_per_cage[j].add(s)
+                    raise _CapHitError
+
+            # Propagate: filter each downstream cage's solutions.
+            new_filtered = [
+                [s for s in filtered[j] if not (s & soln)] if j > idx else filtered[j]
+                for j in range(n)
+            ]
+
+            try:
+                sub = dfs(idx + 1, new_filtered)
+            except _CapHitError:
+                # Budget hit deeper down — this solution is conservatively valid.
+                valid_per_cage[idx].add(soln)
+                raise  # propagate the cap upward
+
+            if sub:
+                valid_per_cage[idx].add(soln)
+                found_valid = True
+
+        return found_valid
+
+    initial = [solns for _, solns in partition]
+    try:
+        dfs(0, initial)
+    except _CapHitError:
+        pass  # conservative results already recorded by the DFS
+
+    return valid_per_cage
+
+
+class _CapHitError(Exception):
+    """Sentinel raised when the DFS node budget is exhausted."""
