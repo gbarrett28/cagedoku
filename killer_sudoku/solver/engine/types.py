@@ -25,11 +25,21 @@ class UnitKind(Enum):
 
 @dataclasses.dataclass(frozen=True)
 class Unit:
-    """A typed, indexed group of cells (row, col, box, or cage)."""
+    """A typed, indexed group of cells (row, col, box, or cage).
+
+    distinct_digits controls whether the cells are guaranteed to hold distinct
+    digits (True for rows, cols, boxes, and burb virtual cages; False for
+    non-burb derived sum constraints).  When False, SolutionMapFilter skips
+    this cage — per-cell backtracking assumes distinctness and would produce
+    wrong eliminations for cells that can legally share a digit.  MustContain
+    still applies because its must-intersection + elsewhere-candidates check
+    is safe even with an overestimated must set.
+    """
 
     unit_id: int
     kind: UnitKind
     cells: frozenset[Cell]
+    distinct_digits: bool = True
 
 
 class Trigger(Enum):

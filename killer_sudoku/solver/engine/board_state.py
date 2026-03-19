@@ -100,10 +100,17 @@ class BoardState:
         # Add virtual cage units from the linear system (derived sum equations).
         # Virtual cage unit IDs start at 27 + n_cages and are indexed in
         # cage_solns at offset n_cages (so cage_idx = unit_id - 27 works uniformly).
-        for vcells, vtotal in self.linear_system.virtual_cages:
+        # Burb virtual cages (distinct=True, precomp_solns=None): sol_sums is correct.
+        # Non-burb virtual cages (distinct=False, precomp_solns=list): use the
+        # reduce_equns-propagated solutions directly — sol_sums would wrongly
+        # assume digit distinctness for cells spanning multiple units.
+        for vcells, vtotal, distinct, precomp_solns in self.linear_system.virtual_cages:
             vunit_id = len(self.units)
-            self.units.append(Unit(vunit_id, UnitKind.CAGE, vcells))
-            self.cage_solns.append(sol_sums(len(vcells), 0, vtotal))
+            self.units.append(Unit(vunit_id, UnitKind.CAGE, vcells, distinct))
+            if precomp_solns is not None:
+                self.cage_solns.append(precomp_solns)
+            else:
+                self.cage_solns.append(sol_sums(len(vcells), 0, vtotal))
 
         n_units = len(self.units)
 

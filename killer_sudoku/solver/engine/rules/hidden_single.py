@@ -36,7 +36,12 @@ class HiddenSingle:
 
         # For CAGE units, d is only forced if it appears in ALL feasible solutions.
         # Count=1 alone is insufficient: d may not be required in the cage at all.
+        # Non-burb virtual cages (distinct_digits=False) are always skipped: their
+        # sol_sums assume distinct digits which is not guaranteed, so their must
+        # sets are unreliable and cannot be used to force cell assignments.
         if ctx.unit.kind == UnitKind.CAGE:
+            if not ctx.unit.distinct_digits:
+                return []
             cage_idx = ctx.unit.unit_id - 27
             solns = ctx.board.cage_solns[cage_idx]
             if not solns or not all(d in soln for soln in solns):

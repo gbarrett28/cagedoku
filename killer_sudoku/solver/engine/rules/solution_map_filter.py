@@ -67,6 +67,10 @@ class SolutionMapFilter:
     def apply(self, ctx: RuleContext) -> list[Elimination]:
         """Prune infeasible cage solutions; eliminate unsupported (cell, digit) pairs.
 
+        Skips non-burb virtual cages (distinct_digits=False): per-cell
+        backtracking assumes distinct digit assignment which is not guaranteed
+        for cells spanning multiple sudoku units.  MustContain handles these.
+
         For each surviving solution, runs per-cell backtracking to find all
         feasible digit assignments. Solutions with no feasible per-cell
         assignment are removed from cage_solns. Each (cell, digit) pair not
@@ -80,6 +84,11 @@ class SolutionMapFilter:
         Eliminations.
         """
         assert ctx.unit is not None
+        # Non-burb virtual cages: skip per-cell filtering (distinct-digit
+        # backtracking would eliminate valid candidates for cells that can share
+        # digits across units).  MustContain handles the must-intersection logic.
+        if not ctx.unit.distinct_digits:
+            return []
         cage_cells: list[Cell] = list(ctx.unit.cells)
         board = ctx.board
         cage_idx = ctx.unit.unit_id - 27

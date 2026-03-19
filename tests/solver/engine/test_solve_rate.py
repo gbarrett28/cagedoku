@@ -6,15 +6,19 @@ These tests read the cached eval_report.json produced by:
 They are skipped if the puzzle directories or eval reports are not present
 (they are gitignored). Run the evaluation first, then run the silver gate.
 
-Baseline numbers (propagation-only, no cheat, as of 2026-03-18):
+Baseline numbers (propagation-only, no cheat, as of 2026-03-19):
   Guardian  : >= 446 SOLVED out of 465 total
-  Observer  : >= 378 SOLVED out of 424 total
+  Observer  : >= 381 SOLVED out of 424 total
 
 Note: Observer dropped from 412 after fixing the cage HiddenSingle bug (the rule
 was incorrectly firing on cage units without checking all feasible solutions). The
 39 previously-"solved" Observer puzzles were solved by an incorrect shortcut that
 happened to give the right answer. Dynamic RREF propagation (substitute_live_rows)
-and SimpleColouring recovered some of them (373→378 Observer, 442→446 Guardian).
+and SimpleColouring recovered some (373→378). LockedCandidates (Box-Line Reduction
++ Unit→Cage) added 2 more Observer (378→380). Non-burb virtual cages via
+reduce_equns-style subset subtraction (with solution propagation) added 1 more
+Observer (380→381), eliminating the 8 Guardian and 33 Observer AssertionErrors
+that plagued the previous RREF-only non-burb approach.
 
 To update baselines after a genuine improvement: edit GUARDIAN_BASELINE and
 OBSERVER_BASELINE below, commit the change, and record the new numbers in the
@@ -32,7 +36,7 @@ GUARDIAN_REPORT = GUARDIAN_DIR / "eval_report.json"
 OBSERVER_REPORT = OBSERVER_DIR / "eval_report.json"
 
 GUARDIAN_BASELINE = 446
-OBSERVER_BASELINE = 378
+OBSERVER_BASELINE = 381
 
 
 _GUARDIAN_SKIP = "Guardian eval report not present — run evaluate --rag guardian"

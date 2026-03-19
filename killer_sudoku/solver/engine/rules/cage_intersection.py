@@ -25,8 +25,16 @@ class CageIntersection:
 
     def apply(self, ctx: RuleContext) -> list[Elimination]:
         """For each must-contain digit, if all carrier cells share a non-cage unit,
-        eliminate that digit from the rest of that unit."""
+        eliminate that digit from the rest of that unit.
+
+        Non-burb virtual cages (distinct_digits=False) are skipped: their
+        must-sets come from sol_sums which assumes distinct digits — not
+        guaranteed for cells spanning multiple units.  An overestimated must
+        set would eliminate valid candidates from real rows/cols/boxes.
+        """
         assert ctx.unit is not None
+        if not ctx.unit.distinct_digits:
+            return []
         cage_cells = ctx.unit.cells
         board = ctx.board
         cage_idx = ctx.unit.unit_id - 27
