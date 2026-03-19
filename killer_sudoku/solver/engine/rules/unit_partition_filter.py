@@ -25,13 +25,13 @@ Fires on GLOBAL trigger.
 from __future__ import annotations
 
 import itertools
-import math
 
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, UnitKind
 
-# Maximum number of cross-cage combinations to enumerate per partition.
-# Protects against combinatorial explosion on large partitions.
+# Maximum total combinations (product of m_i across the partition) to enumerate.
+# Since we work with digit sets rather than ordered cell assignments, the
+# complexity is product(m_i), not product(m_i * n_i!).
 _MAX_COMBOS = 500
 
 
@@ -65,9 +65,10 @@ class UnitPartitionFilter:
                 if solns:
                     sub_cages.append((other.cells, solns))
 
-            # Sort by m × n! (solutions × factorial(cells)) ascending so the
-            # most constrained cage drives the DFS first and prunes early.
-            sub_cages.sort(key=lambda x: len(x[1]) * math.factorial(len(x[0])))
+            # Sort by m (number of solutions) ascending so the most constrained
+            # cage drives the DFS first and prunes the combination tree early.
+            # n! is not relevant here — we compare digit sets, not ordered maps.
+            sub_cages.sort(key=lambda x: len(x[1]))
 
             # Find a disjoint partition of this unit's 9 cells from the sub_cages.
             partition = _find_partition(unit.cells, sub_cages)

@@ -25,7 +25,7 @@ derive when cages span multiple units. Box-spanning DFS equation generation
 (add_equns_r-style over adjacent 3x3 boxes) added 1 Guardian (460→461) and 1
 Observer (416→417) by deriving multi-box constraints that neither RREF nor the
 row/col sliding window can produce. UnitPartitionFilter (cross-cage compatibility
-for completely partitioned units, ranked by m×n! complexity) added 2 Observer
+for completely partitioned units, ranked by m — solutions per cage) added 2 Observer
 (417→419) by eliminating cage solutions that contradict any valid cross-unit
 digit assignment.
 
