@@ -10,10 +10,15 @@ Rules are ordered by priority (ascending = higher priority = fired first):
   6  NakedPair          — COUNT_HIT_TWO
   7  HiddenPair         — COUNT_HIT_TWO
   8  NakedHiddenTriple  — COUNT_DECREASED (ROW/COL/BOX)
-  9  PointingPairs      — COUNT_DECREASED (BOX)
- 10  LockedCandidates   — COUNT_DECREASED (ROW/COL/BOX)
- 11  XWing              — GLOBAL
- 12  SimpleColouring    — GLOBAL
+  9  NakedHiddenQuad    — COUNT_DECREASED (ROW/COL/BOX)
+ 10  PointingPairs      — COUNT_DECREASED (BOX)
+ 11  LockedCandidates   — COUNT_DECREASED (ROW/COL/BOX)
+ 12  XWing              — GLOBAL
+ 13  Swordfish          — GLOBAL
+ 14  Jellyfish          — GLOBAL
+ 15  XYWing             — GLOBAL
+ 16  UniqueRectangle    — GLOBAL
+ 17  SimpleColouring    — GLOBAL
 """
 
 from killer_sudoku.solver.engine.rule import SolverRule
@@ -21,15 +26,20 @@ from killer_sudoku.solver.engine.rules.cage_intersection import CageIntersection
 from killer_sudoku.solver.engine.rules.delta_constraint import DeltaConstraint
 from killer_sudoku.solver.engine.rules.hidden_pair import HiddenPair
 from killer_sudoku.solver.engine.rules.hidden_single import HiddenSingle
+from killer_sudoku.solver.engine.rules.jellyfish import Jellyfish
 from killer_sudoku.solver.engine.rules.locked_candidates import LockedCandidates
 from killer_sudoku.solver.engine.rules.must_contain import MustContain
+from killer_sudoku.solver.engine.rules.naked_hidden_quad import NakedHiddenQuad
 from killer_sudoku.solver.engine.rules.naked_hidden_triple import NakedHiddenTriple
 from killer_sudoku.solver.engine.rules.naked_pair import NakedPair
 from killer_sudoku.solver.engine.rules.naked_single import NakedSingle
 from killer_sudoku.solver.engine.rules.pointing_pairs import PointingPairs
 from killer_sudoku.solver.engine.rules.simple_colouring import SimpleColouring
 from killer_sudoku.solver.engine.rules.solution_map_filter import SolutionMapFilter
+from killer_sudoku.solver.engine.rules.swordfish import Swordfish
+from killer_sudoku.solver.engine.rules.unique_rectangle import UniqueRectangle
 from killer_sudoku.solver.engine.rules.x_wing import XWing
+from killer_sudoku.solver.engine.rules.xy_wing import XYWing
 
 
 def default_rules() -> list[SolverRule]:
@@ -44,8 +54,13 @@ def default_rules() -> list[SolverRule]:
         NakedPair(),
         HiddenPair(),
         NakedHiddenTriple(),
+        NakedHiddenQuad(),
         PointingPairs(),
         LockedCandidates(),
         XWing(),
+        Swordfish(),
+        Jellyfish(),
+        XYWing(),
+        UniqueRectangle(),
         SimpleColouring(),
     ]
