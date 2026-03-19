@@ -428,28 +428,92 @@ class LinearSystem:
                     equns.append((fcvr, sm))
         return equns
 
+    @staticmethod
+    def _add_equns_box(
+        box_cells: list[frozenset[Cell]],
+        cage_of: dict[Cell, frozenset[Cell]],
+        total_of: dict[Cell, int],
+    ) -> list[tuple[frozenset[Cell], int]]:
+        """BFS/DFS over adjacent 3×3 boxes, emitting cage-spanning burb equations.
+
+        Mirrors Grid.add_equns_r: starting at each box in turn, expands cage
+        coverage into adjacent boxes, subtracts fully-covered boxes, and emits
+        burb residuals.  Generates multi-box spanning constraints that neither
+        RREF nor the row/col sliding window can derive — for example, "cells
+        in boxes 0+1 minus rows 0 and 1" where a cage bridges the two boxes.
+
+        Each box is visited at most once per DFS branch (tracked via `visited`)
+        to guarantee termination.
+
+        Args:
+            box_cells: 9-element list; box_cells[b] is the frozenset of cells in box b.
+            cage_of: Maps each cell to its cage's frozenset of cells.
+            total_of: Maps each cell to its cage's total.
+        """
+        equns: list[tuple[frozenset[Cell], int]] = []
+        seen_eq: set[frozenset[Cell]] = set()
+
+        def recurse(
+            box: int,
+            cvr: set[Cell],
+            sm: int,
+            subtracted: set[int],
+            visited: frozenset[int],
+        ) -> None:
+            visited = visited | {box}
+            # Accumulate all cage cells touching cells in this box
+            for cell in box_cells[box]:
+                if cell not in cvr:
+                    cvr |= cage_of[cell]
+                    sm += total_of[cell]
+            # Subtract completely covered boxes
+            for b in range(9):
+                if b not in subtracted and box_cells[b] <= cvr:
+                    subtracted.add(b)
+                    sm -= 45
+                    cvr -= box_cells[b]
+            # Emit equation if non-trivial, burb, and not already seen
+            if sm != 0 and cvr:
+                fcvr = frozenset(cvr)
+                if fcvr not in seen_eq and LinearSystem._is_burb(fcvr):
+                    seen_eq.add(fcvr)
+                    equns.append((fcvr, sm))
+            # Expand to adjacent boxes that still share cells with cvr
+            bi, bj = box // 3, box % 3
+            for di, dj in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                ni, nj = bi + di, bj + dj
+                if 0 <= ni < 3 and 0 <= nj < 3:
+                    nb = 3 * ni + nj
+                    if nb not in visited and not box_cells[nb].isdisjoint(cvr):
+                        recurse(nb, cvr.copy(), sm, subtracted.copy(), visited)
+
+        for start in range(9):
+            recurse(start, set(), 0, set(), frozenset())
+
+        return equns
+
     def _derive_nonburb_virtual_cages(
         self,
         spec: PuzzleSpec,
         real_cage_cell_sets: set[frozenset[Cell]],
     ) -> None:
-        """Derive virtual cages via sliding-window + reduce_equns-style subtraction.
+        """Derive virtual cages via sliding-window + box-DFS + reduce_equns subtraction.
 
         Builds an initial equation set (rows + cols + boxes + real cages +
-        sliding-window burb equations + RREF burb virtual cages) then
-        repeatedly subtracts sub-equations from larger ones, carrying solution
-        sets through each step.
+        sliding-window burb equations + box-spanning DFS burb equations +
+        RREF burb virtual cages) then repeatedly subtracts sub-equations from
+        larger ones, carrying solution sets through each step.
 
         Any resulting equation not already in the initial set is appended to
         self.virtual_cages:
-          - burb equations → distinct_digits=True, precomp_solns=propagated solns
-          - non-burb equations with non-empty must → distinct_digits=False,
+          - burb equations -> distinct_digits=True, precomp_solns=propagated solns
+          - non-burb equations with non-empty must -> distinct_digits=False,
             precomp_solns=propagated solns
 
-        The sliding-window step (add_equns-style) seeds additional burb equations
-        that RREF misses because multi-unit cages block the subset-subtraction
-        chain.  Without it, constraints like "col-3 residual after removing cages
-        spanning cols 3-4" are absent, leaving LockedCandidates unable to fire.
+        Two complementary sliding-window passes seed burb equations RREF misses:
+          - Row/col pass (_add_equns_line): cage-aware sub-sums along rows/cols.
+          - Box-DFS pass (_add_equns_box): multi-box spanning constraints where
+            cages bridge adjacent 3x3 boxes (mirrors Grid.add_equns_r).
         """
         nine_solns = sol_sums(9, 0, 45)  # always [{1,...,9}]
 
@@ -462,19 +526,18 @@ class LinearSystem:
         cols: list[frozenset[Cell]] = [
             frozenset((r, c) for r in range(9)) for c in range(9)
         ]
+        box_cells: list[frozenset[Cell]] = [
+            frozenset(
+                (b // 3 * 3 + dr, b % 3 * 3 + dc) for dr in range(3) for dc in range(3)
+            )
+            for b in range(9)
+        ]
         for row in rows:
             eqs.append(_DeriveEq(row, 45, list(nine_solns)))
         for col in cols:
             eqs.append(_DeriveEq(col, 45, list(nine_solns)))
-        for b in range(9):
-            r0, c0 = (b // 3) * 3, (b % 3) * 3
-            eqs.append(
-                _DeriveEq(
-                    frozenset((r0 + dr, c0 + dc) for dr in range(3) for dc in range(3)),
-                    45,
-                    list(nine_solns),
-                )
-            )
+        for box in box_cells:
+            eqs.append(_DeriveEq(box, 45, list(nine_solns)))
 
         # Real cage equations from the puzzle spec; build per-cell lookups too
         cage_cells_map: dict[int, list[Cell]] = {}
@@ -500,11 +563,10 @@ class LinearSystem:
                     _DeriveEq(fc, total, list(sol_sums(len(cells_list), 0, total)))
                 )
 
-        # Sliding-window burb equations along rows and cols (both directions).
-        # These capture cage-aware sub-sums that _reduce_derive cannot reach when
-        # cages span multiple units (mirrors Grid.add_equns on ROWS/COLS/reversed).
-        # They are added to virtual_cages immediately (distinct=True, burb by
-        # construction) AND to eqs so _reduce_derive can use them as inputs.
+        # Sliding-window burb equations along rows/cols (both directions) and
+        # box-spanning DFS equations (mirrors Grid.add_equns + Grid.add_equns_r).
+        # Added immediately to virtual_cages (distinct=True) AND to eqs so that
+        # _reduce_derive can use them as subtraction inputs.
         seen_sw: set[frozenset[Cell]] = {eq.cells for eq in eqs}
         for line in [rows, list(reversed(rows)), cols, list(reversed(cols))]:
             for fcvr, sm in self._add_equns_line(line, cage_of, total_of):
@@ -513,6 +575,13 @@ class LinearSystem:
                     sw_solns = list(sol_sums(len(fcvr), 0, sm))
                     eqs.append(_DeriveEq(fcvr, sm, sw_solns))
                     self.virtual_cages.append((fcvr, sm, True, None))
+
+        for fcvr, sm in self._add_equns_box(box_cells, cage_of, total_of):
+            if fcvr not in seen_sw and fcvr not in real_cage_cell_sets:
+                seen_sw.add(fcvr)
+                bx_solns = list(sol_sums(len(fcvr), 0, sm))
+                eqs.append(_DeriveEq(fcvr, sm, bx_solns))
+                self.virtual_cages.append((fcvr, sm, True, None))
 
         # Burb virtual cages already derived by RREF (distinct_digits=True)
         for vcells, vtotal, distinct, _ in self.virtual_cages:
