@@ -567,7 +567,11 @@ class LinearSystem:
         # box-spanning DFS equations (mirrors Grid.add_equns + Grid.add_equns_r).
         # Added immediately to virtual_cages (distinct=True) AND to eqs so that
         # _reduce_derive can use them as subtraction inputs.
-        seen_sw: set[frozenset[Cell]] = {eq.cells for eq in eqs}
+        # Include RREF-derived burb cages already in self.virtual_cages so that
+        # the sliding-window and box-DFS loops do not re-add them.
+        seen_sw: set[frozenset[Cell]] = {eq.cells for eq in eqs} | {
+            vcells for vcells, _, _, _ in self.virtual_cages
+        }
         for line in [rows, list(reversed(rows)), cols, list(reversed(cols))]:
             for fcvr, sm in self._add_equns_line(line, cage_of, total_of):
                 if fcvr not in seen_sw and fcvr not in real_cage_cell_sets:
@@ -591,12 +595,15 @@ class LinearSystem:
                     _DeriveEq(vcells, vtotal, list(sol_sums(len(vcells), 0, vtotal)))
                 )
 
-        # Snapshot the initial cell sets before any reductions
+        # Snapshot the initial cell sets before any reductions.
+        # Also include seen_sw so the final loop doesn't re-add equations that
+        # _reduce_derive re-derives from equations already added by the
+        # sliding-window or box-DFS passes.
         initial_cell_sets: set[frozenset[Cell]] = {eq.cells for eq in eqs}
 
         self._reduce_derive(eqs)
 
-        seen: set[frozenset[Cell]] = set(initial_cell_sets)
+        seen: set[frozenset[Cell]] = set(initial_cell_sets) | seen_sw
         for eq in eqs:
             if not eq.cells or not eq.solns or eq.cells in seen:
                 continue
