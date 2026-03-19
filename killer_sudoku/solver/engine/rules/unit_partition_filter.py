@@ -5,32 +5,44 @@ sub-cages (real or virtual), the digit assignments across those cages must
 form a valid permutation of {1..9}.  Any cage solution that cannot participate
 in any valid cross-cage combination is eliminated.
 
-Example: col 8 partitioned by virtual-cage {r0c8,r1c8}=6, cage {r2c8,r3c8}=8,
-cage {r4c8,r5c8}=9, cage {r6c8,r7c8,r8c8}=22.  Solution {1,5} for the 6-cage
-forces {2,6} for the 8-cage, leaving no valid pair for the 9-cage →
-eliminate {1,5}, which forces {r0c8,r1c8}={2,4}.
+Elimination proceeds in two phases:
 
-Enumeration uses DFS with constraint propagation: after fixing one cage's digit
-set, the remaining cages' solution lists are filtered immediately (any solution
-that shares a digit with the chosen set is discarded).  Forced assignments
-(m=1 after filtering) propagate for free without counting as a branch.  Only
-genuine branch points (m≥2) consume a node from the budget.  When the budget
-is exhausted, the current branch is treated conservatively — it is recorded as
-potentially valid rather than invalid — so no correct solution is ever discarded.
+  Phase 1 — cage-set DFS: find which digit *sets* are valid for each partition
+  cage, using constraint propagation (fixing one cage's digit set immediately
+  filters conflicting solutions from remaining cages).  Forced singletons
+  propagate for free; genuine branch points consume a node from the budget.
+  When the budget is exhausted remaining branches are treated conservatively
+  (potentially valid) so no correct solution is ever discarded.
 
-Only cages whose cells lie entirely within the unit are considered, so the rule
-cannot use a cage that crosses unit boundaries unless a virtual cage (derived by
-the linear system) captures exactly the in-unit portion.
+  Phase 2 — cell-level expansion: for each valid digit-set combination, enumerate
+  all assignments of those digits to the specific cells within each cage, filtered
+  by cell candidates.  Non-partition cages that lie entirely within the unit but
+  span multiple partition cages (cross-cages, e.g. virtual cages derived by the
+  linear system) impose additional sum constraints on these cell assignments.
+  Only (cell, digit) pairs that survive at least one valid complete cell
+  assignment are kept.
+
+Example: box (rows 0-2, cols 6-8) partitioned by D={r0c6,r1c6,r2c6}=22,
+E={r0c7,r0c8}=11, H={r1c7,r1c8}=5, J={r2c7,r2c8}=7.  Phase 1 finds 2 valid
+cage-set combinations.  The virtual cross-cage {r0c8,r1c8,r2c8}=12 — derived
+from the column total minus P and V — has cells spanning E, H and J.  Phase 2
+finds exactly one valid cell assignment per combination consistent with this
+cross-cage sum, pinning each cell in E, H and J to at most 2 candidate digits
+and propagating strongly into the column cages below.
+
+Only cages whose cells lie entirely within the unit are considered.
 
 Fires on GLOBAL trigger.
 """
 
 from __future__ import annotations
 
+import itertools
+
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, UnitKind
 
-# Maximum number of DFS branch nodes to explore per partition.
+# Maximum number of DFS branch nodes to explore per partition (Phase 1).
 # A node is counted each time we pick a solution for a cage that still has
 # two or more valid choices (forced singletons propagate for free).
 # When the budget runs out the current branch is treated as potentially valid
@@ -47,7 +59,7 @@ class UnitPartitionFilter:
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL
 
     def apply(self, ctx: RuleContext) -> list[Elimination]:
-        """Scan units; eliminate solutions incompatible with their cage partition."""
+        """Scan units; eliminate candidates incompatible with any valid cell assignment."""
         board = ctx.board
         elims: list[Elimination] = []
 
@@ -70,7 +82,6 @@ class UnitPartitionFilter:
 
             # Sort by m (number of solutions) ascending so the most constrained
             # cage drives the DFS first and prunes the combination tree early.
-            # n! is not relevant here — we compare digit sets, not ordered maps.
             sub_cages.sort(key=lambda x: len(x[1]))
 
             # Find a disjoint partition of this unit's 9 cells from the sub_cages.
@@ -78,19 +89,29 @@ class UnitPartitionFilter:
             if partition is None:
                 continue
 
-            # DFS with constraint propagation; cap on search-tree nodes.
+            # Cross-cages: cages within the unit that are NOT partition members.
+            # They span cells from multiple partition cages and impose additional
+            # positional sum constraints (e.g. virtual cages from the linear system).
+            partition_cells = {cells for cells, _ in partition}
+            cross_cages = [
+                (cells, solns)
+                for cells, solns in sub_cages
+                if cells not in partition_cells
+            ]
+
+            # Phase 1: DFS over cage-level digit-set assignments.
             valid_per_cage = _cross_valid_combos(partition, _MAX_NODES)
 
-            # For each partition cage, eliminate cell candidates that never
-            # appear in any valid cross-cage combination.
-            for (cells, _), valid_solns in zip(partition, valid_per_cage, strict=False):
-                valid_digits: set[int] = set()
-                for s in valid_solns:
-                    valid_digits |= s
-                for r, c in cells:
-                    for d in list(board.candidates[r][c]):
-                        if d not in valid_digits:
-                            elims.append(Elimination(cell=(r, c), digit=d))
+            # Phase 2: Cell-level expansion, filtered by cell candidates and
+            # cross-cage sum constraints.
+            valid_cell_digits = _expand_cell_level(
+                partition, valid_per_cage, cross_cages, board.candidates
+            )
+
+            for (r, c), valid_digits in valid_cell_digits.items():
+                for d in list(board.candidates[r][c]):
+                    if d not in valid_digits:
+                        elims.append(Elimination(cell=(r, c), digit=d))
 
         return list(dict.fromkeys(elims))
 
@@ -157,7 +178,7 @@ def _cross_valid_combos(
         propagating the choices made at depth 0..idx-1.
 
         Returns True if at least one valid complete assignment was found,
-        False if all branches were contradictions, or raises _CapHit if the
+        False if all branches were contradictions, or raises _CapHitError if the
         node budget runs out (caller treats remaining branches conservatively).
         """
         if idx == n:
@@ -211,6 +232,79 @@ def _cross_valid_combos(
         pass  # conservative results already recorded by the DFS
 
     return valid_per_cage
+
+
+def _expand_cell_level(
+    partition: list[tuple[frozenset[Cell], list[frozenset[int]]]],
+    valid_per_cage: list[set[frozenset[int]]],
+    cross_cages: list[tuple[frozenset[Cell], list[frozenset[int]]]],
+    candidates: list[list[set[int]]],
+) -> dict[Cell, set[int]]:
+    """Expand valid cage-set combinations to valid cell-to-digit assignments.
+
+    For each valid combination of digit sets (one per partition cage), enumerates
+    all assignments of those digits to specific cells, filtered by:
+      - cell candidates (the digit must be in the cell's current candidate set), and
+      - cross-cage sum constraints (any non-partition cage within the unit whose
+        cells are all assigned must have its digit set in its solution list).
+
+    Returns a dict mapping each partition cell to the set of digits it can hold
+    across all valid complete cell assignments.  A (cell, digit) pair is included
+    only if it participates in at least one valid complete assignment.
+
+    Args:
+        partition: ordered list of (cells, _) for each cage in the partition.
+        valid_per_cage: valid digit sets per cage from Phase 1.
+        cross_cages: non-partition cages entirely within the unit.
+        candidates: board.candidates — current candidate set per cell.
+    """
+    result: dict[Cell, set[int]] = {
+        cell: set() for cells, _ in partition for cell in cells
+    }
+    n = len(partition)
+
+    # Pre-convert cross-cage solution lists to frozensets for O(1) membership.
+    cross_cage_soln_sets = [(cells, frozenset(solns)) for cells, solns in cross_cages]
+
+    def dfs(idx: int, current: dict[Cell, int], used: frozenset[int]) -> None:
+        if idx == n:
+            for cell, digit in current.items():
+                result[cell].add(digit)
+            return
+
+        cells, _ = partition[idx]
+        cells_sorted = sorted(cells)
+
+        for digit_set in valid_per_cage[idx]:
+            if digit_set & used:
+                continue  # Digit already used by an earlier cage in this combo.
+
+            for perm in itertools.permutations(sorted(digit_set)):
+                # Filter by cell candidates.
+                if not all(
+                    perm[i] in candidates[r][c] for i, (r, c) in enumerate(cells_sorted)
+                ):
+                    continue
+
+                cell_asn: dict[Cell, int] = dict(zip(cells_sorted, perm, strict=False))
+                new_current = {**current, **cell_asn}
+
+                # Check any cross-cage whose cells are now fully assigned.
+                ok = True
+                for cc_cells, cc_solns in cross_cage_soln_sets:
+                    if not cc_cells.issubset(new_current):
+                        continue  # Not all cells assigned yet.
+                    assigned = frozenset(new_current[c] for c in cc_cells)
+                    if assigned not in cc_solns:
+                        ok = False
+                        break
+                if not ok:
+                    continue
+
+                dfs(idx + 1, new_current, used | digit_set)
+
+    dfs(0, {}, frozenset())
+    return result
 
 
 class _CapHitError(Exception):

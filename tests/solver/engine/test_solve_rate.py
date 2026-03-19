@@ -27,7 +27,9 @@ Observer (416→417) by deriving multi-box constraints that neither RREF nor the
 row/col sliding window can produce. UnitPartitionFilter (cross-cage compatibility
 for completely partitioned units, ranked by m — solutions per cage) added 2 Observer
 (417→419) by eliminating cage solutions that contradict any valid cross-unit
-digit assignment.
+digit assignment. Cell-level expansion in UnitPartitionFilter (applying cross-cage
+virtual-cage constraints to pin cell assignments within each valid combo) added 1
+more Observer (419→420) by propagating the box partition through a cross-cage sum.
 
 To update baselines after a genuine improvement: edit GUARDIAN_BASELINE and
 OBSERVER_BASELINE below, commit the change, and record the new numbers in the
@@ -45,7 +47,7 @@ GUARDIAN_REPORT = GUARDIAN_DIR / "eval_report.json"
 OBSERVER_REPORT = OBSERVER_DIR / "eval_report.json"
 
 GUARDIAN_BASELINE = 461
-OBSERVER_BASELINE = 419
+OBSERVER_BASELINE = 420
 
 
 _GUARDIAN_SKIP = "Guardian eval report not present — run evaluate --rag guardian"
