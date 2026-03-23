@@ -54,6 +54,10 @@ class LinearSystem:
     def __init__(self, spec: PuzzleSpec) -> None:
         self.initial_eliminations: list[Elimination] = []
         self.delta_pairs: list[tuple[Cell, Cell, int]] = []
+        # Sum pairs: (a, b, total) meaning a + b = total.  Unlike delta pairs,
+        # both coefficients are +1 so repeated digits are allowed (non-burb cells).
+        # Derived from pairs of complementary RREF rows whose non-pivot cells cancel.
+        self.sum_pairs: list[tuple[Cell, Cell, int]] = []
         # (cells, total, distinct_digits, pre_computed_solns)
         # distinct_digits=False for non-burb derived equations.
         # pre_computed_solns=None for burb cages (board_state uses sol_sums);
@@ -61,6 +65,7 @@ class LinearSystem:
         # propagated via reduce_equns-style difference_update, not plain sol_sums).
         self.virtual_cages: list[_VirtualCage] = []
         self._pairs_by_cell: dict[Cell, list[tuple[Cell, Cell, int]]] = {}
+        self._sum_pairs_by_cell: dict[Cell, list[tuple[Cell, Cell, int]]] = {}
 
         # Live RREF rows for dynamic constraint propagation.
         # When a cell is determined during solving, substitute_live_rows()
@@ -216,6 +221,10 @@ class LinearSystem:
         # so that RREF-derived virtual cages participate in the overlap scan.
         self._derive_overlapping_delta_pairs(spec)
 
+        # Derive sum pairs from complementary RREF row pairs.
+        # Must be called AFTER _live_rows is fully populated (done above).
+        self._derive_sum_pairs()
+
     @staticmethod
     def _is_burb(vcells: frozenset[Cell]) -> bool:
         """Return True if all cells in vcells share a row, column, or 3×3 box.
@@ -265,13 +274,16 @@ class LinearSystem:
         return list(self._pairs_by_cell.get(cell, []))
 
     def substitute_cell(self, cell: Cell, value: int) -> list[Elimination]:
-        """Update active delta pairs when cell becomes determined.
+        """Update active delta/sum pairs when cell becomes determined.
 
-        Removes all pairs containing this cell. For each such pair, if the
-        other cell's value is now forced, emits eliminations to place it.
+        Removes all pairs containing this cell.  For each delta pair, the
+        other cell's value is forced to value ± delta.  For each sum pair,
+        the other cell is forced to total − value.
         """
-        pairs = list(self._pairs_by_cell.pop(cell, []))
         eliminations: list[Elimination] = []
+
+        # Delta pairs: p - q = delta
+        pairs = list(self._pairs_by_cell.pop(cell, []))
         for pair in pairs:
             p, q, delta = pair
             if pair in self.delta_pairs:
@@ -280,13 +292,28 @@ class LinearSystem:
             other_list = self._pairs_by_cell.get(other, [])
             if pair in other_list:
                 other_list.remove(pair)
-            # Derive other cell's value: if cell=p then value_q = value - delta
-            #                            if cell=q then value_p = value + delta
             other_val = (value - delta) if p == cell else (value + delta)
             if 1 <= other_val <= 9:
                 for d in range(1, 10):
                     if d != other_val:
                         eliminations.append(Elimination(cell=other, digit=d))
+
+        # Sum pairs: a + b = total
+        sum_ps = list(self._sum_pairs_by_cell.pop(cell, []))
+        for pair in sum_ps:
+            a, b, total = pair
+            if pair in self.sum_pairs:
+                self.sum_pairs.remove(pair)
+            other = b if a == cell else a
+            other_list = self._sum_pairs_by_cell.get(other, [])
+            if pair in other_list:
+                other_list.remove(pair)
+            other_val = total - value
+            if 1 <= other_val <= 9:
+                for d in range(1, 10):
+                    if d != other_val:
+                        eliminations.append(Elimination(cell=other, digit=d))
+
         return eliminations
 
     def substitute_live_rows(
@@ -690,3 +717,66 @@ class LinearSystem:
                 p, q, _ = pair
                 self._pairs_by_cell.setdefault(p, []).append(pair)
                 self._pairs_by_cell.setdefault(q, []).append(pair)
+
+    def _derive_sum_pairs(self) -> None:
+        """Derive sum pairs a + b = total from complementary RREF live rows.
+
+        When two live rows R_i and R_j have non-pivot cells with opposite signs
+        that exactly cancel upon addition, the remaining terms give a direct
+        sum constraint on just the two pivot cells:
+
+            R_i: a + Σ c_k * free_k = rhs_i
+            R_j: b - Σ c_k * free_k = rhs_j
+            R_i + R_j: a + b = rhs_i + rhs_j
+
+        This captures constraints that all-positive overlap scanning misses,
+        because one of the two rows has negative (non-burb) free-cell terms.
+        Example for puzzle 448: row17 (r2c7 - {r7c3..}) + row36 (r6c8 + {r7c3..})
+        = r2c7 + r6c8 = 12, forcing r2c7 = 6 and r6c8 = 6.
+
+        Scans all O(n^2) pairs of live rows; n is roughly 45 per puzzle.
+        Skips pairs already covered by delta_pairs or existing virtual cages.
+        """
+        covered: set[frozenset[Cell]] = {
+            frozenset({p, q}) for p, q, _ in self.delta_pairs
+        }
+        for vcells, _, _, _ in self.virtual_cages:
+            if len(vcells) == 2:
+                covered.add(vcells)
+
+        rids = list(self._live_rows.keys())
+        for idx_i, rid_i in enumerate(rids):
+            row_i = self._live_rows[rid_i]
+            rhs_i = self._live_rhs[rid_i]
+            for rid_j in rids[idx_i + 1 :]:
+                row_j = self._live_rows[rid_j]
+                rhs_j = self._live_rhs[rid_j]
+                # Add the two rows cell-by-cell and collect non-zero results.
+                merged: dict[Cell, Fraction] = dict(row_i)
+                for cell, coeff in row_j.items():
+                    merged[cell] = merged.get(cell, Fraction(0)) + coeff
+                nonzero = {c: v for c, v in merged.items() if v != Fraction(0)}
+                if len(nonzero) != 2:
+                    continue
+                cells_list = list(nonzero.keys())
+                if nonzero[cells_list[0]] != Fraction(1) or nonzero[
+                    cells_list[1]
+                ] != Fraction(1):
+                    continue
+                total_frac = rhs_i + rhs_j
+                if total_frac.denominator != 1:
+                    continue
+                total = int(total_frac)
+                # Both cells are digits 1-9; for non-burb cells the same digit
+                # is allowed so the achievable range is [2, 18].
+                if not (2 <= total <= 18):
+                    continue
+                pair_key = frozenset(cells_list)
+                if pair_key in covered:
+                    continue
+                covered.add(pair_key)
+                pair: tuple[Cell, Cell, int] = (cells_list[0], cells_list[1], total)
+                self.sum_pairs.append(pair)
+                a, b, _ = pair
+                self._sum_pairs_by_cell.setdefault(a, []).append(pair)
+                self._sum_pairs_by_cell.setdefault(b, []).append(pair)

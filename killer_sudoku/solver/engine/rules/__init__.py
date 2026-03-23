@@ -7,6 +7,7 @@ Rules are ordered by priority (ascending = higher priority = fired first):
   3  SolutionMapFilter     — COUNT_DECREASED / SOLUTION_PRUNED (CAGE)
   4  MustContain           — COUNT_DECREASED (all units)
   5  DeltaConstraint       — COUNT_DECREASED / CELL_DETERMINED
+  5  SumPairConstraint     — COUNT_DECREASED / CELL_DETERMINED
   6  NakedPair             — COUNT_HIT_TWO
   7  HiddenPair            — COUNT_HIT_TWO
   8  NakedHiddenTriple     — COUNT_DECREASED (ROW/COL/BOX)
@@ -37,6 +38,7 @@ from killer_sudoku.solver.engine.rules.naked_single import NakedSingle
 from killer_sudoku.solver.engine.rules.pointing_pairs import PointingPairs
 from killer_sudoku.solver.engine.rules.simple_colouring import SimpleColouring
 from killer_sudoku.solver.engine.rules.solution_map_filter import SolutionMapFilter
+from killer_sudoku.solver.engine.rules.sum_pair_constraint import SumPairConstraint
 from killer_sudoku.solver.engine.rules.swordfish import Swordfish
 from killer_sudoku.solver.engine.rules.unique_rectangle import UniqueRectangle
 from killer_sudoku.solver.engine.rules.unit_partition_filter import UnitPartitionFilter
@@ -53,6 +55,7 @@ def default_rules() -> list[SolverRule]:
         SolutionMapFilter(),
         MustContain(),
         DeltaConstraint(),
+        SumPairConstraint(),
         NakedPair(),
         HiddenPair(),
         NakedHiddenTriple(),

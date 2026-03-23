@@ -59,7 +59,7 @@ class UnitPartitionFilter:
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL
 
     def apply(self, ctx: RuleContext) -> list[Elimination]:
-        """Scan units; eliminate candidates incompatible with any valid cell assignment."""
+        """Scan units; eliminate candidates incompatible with any valid assignment."""
         board = ctx.board
         elims: list[Elimination] = []
 

@@ -6,9 +6,9 @@ These tests read the cached eval_report.json produced by:
 They are skipped if the puzzle directories or eval reports are not present
 (they are gitignored). Run the evaluation first, then run the silver gate.
 
-Baseline numbers (propagation-only, no cheat, as of 2026-03-19):
-  Guardian  : >= 461 SOLVED out of 465 total
-  Observer  : >= 419 SOLVED out of 424 total
+Baseline numbers (propagation-only, no cheat, as of 2026-03-23):
+  Guardian  : >= 463 SOLVED out of 465 total
+  Observer  : >= 423 SOLVED out of 424 total
 
 Note: Observer dropped from 412 after fixing the cage HiddenSingle bug (the rule
 was incorrectly firing on cage units without checking all feasible solutions). The
@@ -35,6 +35,12 @@ LinearSystem — scanning all real-cage + virtual-cage equation pairs for 1-vs-1
 cell differences) added 3 Observer (420→423) by recovering signed constraints
 (e.g. r5c0 − r4c3 = 8) that the RREF expresses as virtual cages but DeltaConstraint
 can exploit once the shared-cell prefix is cancelled between the two equations.
+Complementary RREF row sum pairs (_derive_sum_pairs in LinearSystem — scanning all
+live RREF row pairs whose non-pivot cells cancel upon addition, yielding a + b = k)
+added 2 Guardian (461→463) by capturing constraints like r2c7 + r6c8 = 12 that arise
+from non-burb cell pairs and are unreachable by the all-positive overlap scan or the
+existing virtual cage framework (which uses frozensets and loses repeated-digit
+solutions).
 
 To update baselines after a genuine improvement: edit GUARDIAN_BASELINE and
 OBSERVER_BASELINE below, commit the change, and record the new numbers in the
@@ -51,7 +57,7 @@ OBSERVER_DIR = Path("observer")
 GUARDIAN_REPORT = GUARDIAN_DIR / "eval_report.json"
 OBSERVER_REPORT = OBSERVER_DIR / "eval_report.json"
 
-GUARDIAN_BASELINE = 461
+GUARDIAN_BASELINE = 463
 OBSERVER_BASELINE = 423
 
 
