@@ -12,6 +12,8 @@ import os
 from pathlib import Path
 from typing import Literal
 
+from killer_sudoku.solver.puzzle_spec import PuzzleSpec
+
 
 @dataclasses.dataclass(frozen=True)
 class CoachConfig:
@@ -40,6 +42,9 @@ class CoachConfig:
     port: int = dataclasses.field(
         default_factory=lambda: int(os.environ.get("COACH_PORT", "8000"))
     )
+    mock_spec: PuzzleSpec | None = dataclasses.field(default=None)
+    # When set, the upload endpoint bypasses InpImage and returns this spec
+    # directly. Used by Playwright e2e tests via CoachConfig(mock_spec=...).
 
     def puzzle_dir(self, newspaper: Literal["guardian", "observer"]) -> Path:
         """Return the model/puzzle directory for the given newspaper source."""

@@ -99,6 +99,7 @@ class PuzzleState(BaseModel):
         golden_solution:     None before /confirm; 9×9 solver solution after.
         user_grid:           None before /confirm; 9×9 user-entered digits after.
         move_history:        Chronological record of every cell entry or clear.
+        candidate_grid:      None before /confirm; CandidateGrid after.
     """
 
     session_id: str
@@ -117,6 +118,10 @@ class PuzzleState(BaseModel):
 
     move_history: list[MoveRecord] = []
     # Ordered record of every digit entry or clear, newest last.
+
+    candidate_grid: CandidateGrid | None = None
+    # None → pre-confirm. Set at /confirm; updated after /cell, /undo,
+    # /candidates/cell, and /candidates/mode.
 
 
 class UploadResponse(BaseModel):
@@ -150,3 +155,46 @@ class SolveResponse(BaseModel):
     solved: bool
     grid: list[list[int]]
     error: str | None = None
+
+
+class CandidateCell(BaseModel):
+    """Candidate state for one cell.
+
+    auto_candidates: digits solver considers possible, from BoardState.candidates.
+    auto_essential: auto_candidates ∩ cage must-set (cage-level property stored
+        per-cell for frontend convenience).
+    user_essential: user-promoted digits (overrides auto inessential).
+    user_removed: user-eliminated digits (overrides auto present).
+    Rule A: digits dropped from auto_candidates are silently removed from
+        user_essential on recomputation.
+    """
+
+    auto_candidates: list[int]
+    auto_essential: list[int]
+    user_essential: list[int]
+    user_removed: list[int]
+
+
+class CandidateGrid(BaseModel):
+    """Full 9×9 grid of per-cell candidate state plus the current mode."""
+
+    cells: list[list[CandidateCell]]  # 9 rows × 9 cols, 0-based
+    mode: Literal["auto", "manual"] = "auto"
+
+
+class CandidateCycleRequest(BaseModel):
+    """Cycle one digit in one cell, or reset the whole cell (digit=0).
+
+    Mode is read from candidate_grid.mode in the session — not sent by client.
+    row and col are 1-based (1–9). digit is 1–9 to cycle, or 0 to reset.
+    """
+
+    row: int
+    col: int
+    digit: int
+
+
+class CandidateModeRequest(BaseModel):
+    """Switch candidate grid between auto and manual modes."""
+
+    mode: Literal["auto", "manual"]
