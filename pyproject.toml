@@ -22,7 +22,7 @@ dependencies = [
 
 [project.optional-dependencies]
 scraper = ["requests", "beautifulsoup4"]
-dev = ["ruff", "mypy", "pytest", "pytest-cov"]
+dev = ["ruff", "mypy", "pytest", "pytest-cov", "playwright>=1.40", "pytest-playwright>=0.4", "httpx"]
 
 [project.scripts]
 cagedoku = "killer_sudoku.main:main"
