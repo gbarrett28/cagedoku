@@ -251,14 +251,23 @@ def _compute_candidate_grid(
                         )
                     )
             else:
-                # Unsolved cell: derive auto state from engine output
-                auto_cands_set = board.candidates[r][c]
+                # Unsolved cell: derive auto state from cage_solns.
+                # board.candidates only narrows by linear-system equations;
+                # cage-combination filtering (SolutionMapFilter) runs inside
+                # engine.solve() which we deliberately skip.  Build the
+                # candidate set as the union of valid cage combinations
+                # intersected with board.candidates for sudoku constraints.
                 cage_idx = int(board.regions[r, c])  # 0-based
                 cage_solns: list[frozenset[int]] = board.cage_solns[cage_idx]
+                cage_possible: set[int] = set()
                 cage_must: set[int] = set(range(1, 10)) if cage_solns else set()
                 for soln in cage_solns:
+                    cage_possible |= soln
                     cage_must &= soln
 
+                # Intersect with board.candidates to respect sudoku constraints
+                # (row/col/box eliminations applied by linear system).
+                auto_cands_set = board.candidates[r][c] & cage_possible
                 auto_ess = sorted(auto_cands_set & cage_must)
                 auto_cands = sorted(auto_cands_set)
 
