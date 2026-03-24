@@ -22,7 +22,9 @@ from killer_sudoku.api.config import CoachConfig
 from killer_sudoku.api.schemas import (
     CagePatchRequest,
     CageState,
+    CellEntryRequest,
     CellPosition,
+    MoveRecord,
     PuzzleSpecData,
     PuzzleState,
     SolveResponse,
@@ -311,6 +313,51 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
         ]
 
         updated = state.model_copy(update={"cages": updated_cages})
+        store.save(updated)
+        return updated
+
+    @router.post("/{session_id}/confirm", response_model=PuzzleState)
+    async def confirm_puzzle(session_id: str) -> PuzzleState:
+        """Solve the puzzle and transition the session to playing mode.
+
+        Runs engine_solve() with cheat_solve() fallback. Stores the golden
+        solution (0 for cells the solver cannot determine) and initialises
+        user_grid to all zeros. Returns 409 if already confirmed.
+        """
+        try:
+            state = store.load(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+
+        if state.user_grid is not None:
+            raise HTTPException(status_code=409, detail="Session already confirmed")
+
+        spec = _cage_states_to_spec(state.cages, state.spec_data)
+        grd = Grid()
+        try:
+            grd.set_up(spec)
+            alts_sum, _ = grd.engine_solve()
+        except (AssertionError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        if alts_sum != 81:
+            grd.cheat_solve()
+
+        golden: list[list[int]] = [
+            [
+                int(next(iter(grd.sq_poss[r][c])))
+                if len(grd.sq_poss[r][c]) == 1
+                else 0
+                for c in range(9)
+            ]
+            for r in range(9)
+        ]
+        updated = state.model_copy(
+            update={
+                "golden_solution": golden,
+                "user_grid": [[0] * 9 for _ in range(9)],
+            }
+        )
         store.save(updated)
         return updated
 

@@ -322,3 +322,54 @@ class TestSubdivideCage:
             json={"sub_cages": []},
         )
         assert res.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# POST /api/puzzle/{session_id}/confirm
+# ---------------------------------------------------------------------------
+
+
+class TestConfirm:
+    def test_returns_200_with_user_grid_all_zeros(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        store.save(trivial_state)
+        res = client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["user_grid"] is not None
+        assert len(body["user_grid"]) == 9
+        assert all(len(row) == 9 for row in body["user_grid"])
+        assert all(cell == 0 for row in body["user_grid"] for cell in row)
+
+    def test_golden_solution_matches_known_solution(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        store.save(trivial_state)
+        res = client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
+        body = res.json()
+        assert body["golden_solution"] == KNOWN_SOLUTION
+
+    def test_returns_409_on_already_confirmed_session(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        store.save(trivial_state)
+        client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
+        res = client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
+        assert res.status_code == 409
+
+    def test_returns_404_for_unknown_session(self, client: TestClient) -> None:
+        res = client.post("/api/puzzle/no-such-session/confirm")
+        assert res.status_code == 404
+
+    def test_returns_422_for_invalid_cage_layout(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        """Solver raises on an invalid layout — endpoint must return 422."""
+        corrupted_cages = [
+            cage.model_copy(update={"total": 0}) for cage in trivial_state.cages
+        ]
+        bad_state = trivial_state.model_copy(update={"cages": corrupted_cages})
+        store.save(bad_state)
+        res = client.post(f"/api/puzzle/{bad_state.session_id}/confirm")
+        assert res.status_code == 422
