@@ -329,6 +329,20 @@ function renderSolution(grid: number[][]): void {
   el<HTMLElement>("solution-panel").hidden = false;
 }
 
+function renderPlayingMode(state: PuzzleState): void {
+  currentState = state;
+  drawGrid(el<HTMLCanvasElement>("grid-canvas"), state, selectedCell);
+  el<HTMLElement>("review-actions").hidden = true;
+  el<HTMLElement>("editor-section").hidden = true;
+  el<HTMLElement>("playing-actions").hidden = false;
+  el<HTMLElement>("solution-panel").hidden = true;
+  updateUndoButton(state);
+}
+
+function updateUndoButton(state: PuzzleState): void {
+  el<HTMLButtonElement>("undo-btn").disabled = state.move_history.length === 0;
+}
+
 // ── Event handlers ──────────────────────────────────────────────────────────
 
 async function handleProcess(): Promise<void> {
@@ -395,6 +409,69 @@ async function handleCageEdit(label: string, newTotal: number): Promise<void> {
   }
 }
 
+async function handleConfirm(): Promise<void> {
+  if (!currentSessionId) {
+    setStatus("No active session — process an image first.", true);
+    return;
+  }
+  setLoading(true);
+  try {
+    const res = await fetch(`/api/puzzle/${currentSessionId}/confirm`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const err = (await res.json()) as { detail: string };
+      setStatus(`Confirm failed: ${err.detail}`, true);
+      return;
+    }
+    const state = (await res.json()) as PuzzleState;
+    renderPlayingMode(state);
+    setStatus("");
+  } catch (e) {
+    setStatus(`Network error: ${String(e)}`, true);
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function handleCellEntry(digit: number): Promise<void> {
+  if (!currentSessionId || selectedCell === null) return;
+  try {
+    const res = await fetch(`/api/puzzle/${currentSessionId}/cell`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        row: selectedCell.row,
+        col: selectedCell.col,
+        digit,
+      }),
+    });
+    if (!res.ok) return;
+    const state = (await res.json()) as PuzzleState;
+    currentState = state;
+    drawGrid(el<HTMLCanvasElement>("grid-canvas"), state, selectedCell);
+    updateUndoButton(state);
+  } catch {
+    // Cell entry is best-effort; network errors are silently ignored
+  }
+}
+
+async function handleUndo(): Promise<void> {
+  if (!currentSessionId) return;
+  try {
+    const res = await fetch(`/api/puzzle/${currentSessionId}/undo`, {
+      method: "POST",
+    });
+    if (!res.ok) return;
+    const state = (await res.json()) as PuzzleState;
+    currentState = state;
+    drawGrid(el<HTMLCanvasElement>("grid-canvas"), state, selectedCell);
+    updateUndoButton(state);
+  } catch {
+    // Undo is best-effort; network errors are silently ignored
+  }
+}
+
 async function handleSolve(): Promise<void> {
   if (!currentSessionId) {
     setStatus("No active session — process an image first.", true);
@@ -442,9 +519,9 @@ el<HTMLButtonElement>("process-btn").addEventListener("click", () => {
   void handleProcess();
 });
 
-// "Looks correct — solve!" goes straight to the solver
+// "Looks correct — solve!" now confirms the layout and enters playing mode
 el<HTMLButtonElement>("confirm-btn").addEventListener("click", () => {
-  void handleSolve();
+  void handleConfirm();
 });
 
 // "Edit cage totals" reveals the cage editor table
@@ -455,6 +532,33 @@ el<HTMLButtonElement>("edit-btn").addEventListener("click", () => {
 
 el<HTMLButtonElement>("solve-btn").addEventListener("click", () => {
   void handleSolve();
+});
+
+el<HTMLButtonElement>("undo-btn").addEventListener("click", () => {
+  void handleUndo();
+});
+
+el<HTMLCanvasElement>("grid-canvas").addEventListener("mousedown", (e) => {
+  if (currentState?.user_grid == null) return;
+  const rect = el<HTMLCanvasElement>("grid-canvas").getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const col = Math.floor((x - MARGIN) / CELL) + 1;
+  const row = Math.floor((y - MARGIN) / CELL) + 1;
+  if (col >= 1 && col <= 9 && row >= 1 && row <= 9) {
+    selectedCell = { row, col };
+    drawGrid(el<HTMLCanvasElement>("grid-canvas"), currentState, selectedCell);
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (currentState?.user_grid == null) return;
+  if (selectedCell === null) return;
+  if (e.key >= "1" && e.key <= "9") {
+    void handleCellEntry(Number(e.key));
+  } else if (e.key === "Backspace" || e.key === "Delete") {
+    void handleCellEntry(0);
+  }
 });
 
 el<HTMLButtonElement>("quit-btn").addEventListener("click", () => {
