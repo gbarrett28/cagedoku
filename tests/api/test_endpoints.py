@@ -563,8 +563,12 @@ class TestConfirmInitializesCandidates:
         for r in range(9):
             for c in range(9):
                 cell = cg["cells"][r][c]
-                assert cell["user_essential"] == [], f"cell ({r},{c}) user_essential not empty"
-                assert cell["user_removed"] == [], f"cell ({r},{c}) user_removed not empty"
+                assert cell["user_essential"] == [], (
+                    f"cell ({r},{c}) user_essential not empty"
+                )
+                assert cell["user_removed"] == [], (
+                    f"cell ({r},{c}) user_removed not empty"
+                )
 
     def test_auto_candidates_match_solution(
         self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
@@ -579,10 +583,12 @@ class TestConfirmInitializesCandidates:
                 cell = cg["cells"][r][c]
                 expected = KNOWN_SOLUTION[r][c]
                 assert cell["auto_candidates"] == [expected], (
-                    f"cell ({r},{c}): expected [{expected}], got {cell['auto_candidates']}"
+                    f"cell ({r},{c}): expected [{expected}],"
+                    f" got {cell['auto_candidates']}"
                 )
                 assert cell["auto_essential"] == [expected], (
-                    f"cell ({r},{c}): expected essential [{expected}], got {cell['auto_essential']}"
+                    f"cell ({r},{c}): expected essential [{expected}],"
+                    f" got {cell['auto_essential']}"
                 )
 
 
@@ -712,13 +718,15 @@ class TestRuleA:
         data = res.json()
         cell_00 = data["candidate_grid"]["cells"][0][0]
         assert 3 not in cell_00["user_essential"], (
-            "Rule A: digit 3 should be removed from user_essential since auto says impossible"
+            "Rule A: digit 3 should be removed from user_essential"
+            " since auto says impossible"
         )
 
     def test_user_removed_preserved_when_auto_also_impossible(
         self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
     ) -> None:
-        """user_removed entries are preserved even when auto also considers digit impossible."""
+        """user_removed entries are preserved even when auto also considers digit
+        impossible."""
         store.save(trivial_state)
         client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
         sid = trivial_state.session_id
@@ -760,19 +768,18 @@ class TestCandidateMode:
         sid = self._confirmed_sid(client, store, trivial_state)
         before = store.load(sid)
         assert before.candidate_grid is not None
-        res = client.post(
-            f"/api/puzzle/{sid}/candidates/mode", json={"mode": "manual"}
-        )
+        res = client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "manual"})
         assert res.status_code == 200
         data = res.json()
         assert data["candidate_grid"]["mode"] == "manual"
+        cg = before.candidate_grid
         assert data["candidate_grid"]["cells"] == [
             [
                 {
-                    "auto_candidates": before.candidate_grid.cells[r][c].auto_candidates,
-                    "auto_essential": before.candidate_grid.cells[r][c].auto_essential,
-                    "user_essential": before.candidate_grid.cells[r][c].user_essential,
-                    "user_removed": before.candidate_grid.cells[r][c].user_removed,
+                    "auto_candidates": cg.cells[r][c].auto_candidates,
+                    "auto_essential": cg.cells[r][c].auto_essential,
+                    "user_essential": cg.cells[r][c].user_essential,
+                    "user_removed": cg.cells[r][c].user_removed,
                 }
                 for c in range(9)
             ]
@@ -785,9 +792,16 @@ class TestCandidateMode:
         """User-removed digit that auto says possible stays in user_removed."""
         sid = self._confirmed_sid(client, store, trivial_state)
         client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "manual"})
-        # In manual mode, cycle digit 5 in cell (0,0): inessential→essential→impossible
-        client.patch(f"/api/puzzle/{sid}/candidates/cell", json={"row": 1, "col": 1, "digit": 5})
-        client.patch(f"/api/puzzle/{sid}/candidates/cell", json={"row": 1, "col": 1, "digit": 5})
+        # In manual mode, cycle digit 5 in cell (0,0):
+        # inessential → essential → impossible
+        client.patch(
+            f"/api/puzzle/{sid}/candidates/cell",
+            json={"row": 1, "col": 1, "digit": 5},
+        )
+        client.patch(
+            f"/api/puzzle/{sid}/candidates/cell",
+            json={"row": 1, "col": 1, "digit": 5},
+        )
         # Now cell (0,0) has digit 5 in user_removed
         res = client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "auto"})
         assert res.status_code == 200
@@ -804,7 +818,10 @@ class TestCandidateMode:
         client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "manual"})
         # In manual mode, cycle digit 3 in cell (0,0): inessential→essential
         # (digit 3 is NOT in auto_candidates for (0,0), which has auto_candidates=[5])
-        client.patch(f"/api/puzzle/{sid}/candidates/cell", json={"row": 1, "col": 1, "digit": 3})
+        client.patch(
+            f"/api/puzzle/{sid}/candidates/cell",
+            json={"row": 1, "col": 1, "digit": 3},
+        )
         # Switch to auto: digit 3 not in auto_candidates → cleared from user_essential
         res = client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "auto"})
         assert res.status_code == 200
@@ -842,7 +859,10 @@ class TestCandidateCycle:
     ) -> None:
         sid = self._confirmed_sid(client, store, trivial_state)
         client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "manual"})
-        res = client.patch(f"/api/puzzle/{sid}/candidates/cell", json={"row": 1, "col": 1, "digit": 3})
+        res = client.patch(
+            f"/api/puzzle/{sid}/candidates/cell",
+            json={"row": 1, "col": 1, "digit": 3},
+        )
         assert res.status_code == 200
         cell = res.json()["candidate_grid"]["cells"][0][0]
         assert 3 in cell["user_essential"]
@@ -853,8 +873,14 @@ class TestCandidateCycle:
     ) -> None:
         sid = self._confirmed_sid(client, store, trivial_state)
         client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "manual"})
-        client.patch(f"/api/puzzle/{sid}/candidates/cell", json={"row": 1, "col": 1, "digit": 3})
-        res = client.patch(f"/api/puzzle/{sid}/candidates/cell", json={"row": 1, "col": 1, "digit": 3})
+        client.patch(
+            f"/api/puzzle/{sid}/candidates/cell",
+            json={"row": 1, "col": 1, "digit": 3},
+        )
+        res = client.patch(
+            f"/api/puzzle/{sid}/candidates/cell",
+            json={"row": 1, "col": 1, "digit": 3},
+        )
         assert res.status_code == 200
         cell = res.json()["candidate_grid"]["cells"][0][0]
         assert 3 not in cell["user_essential"]
@@ -865,9 +891,18 @@ class TestCandidateCycle:
     ) -> None:
         sid = self._confirmed_sid(client, store, trivial_state)
         client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "manual"})
-        client.patch(f"/api/puzzle/{sid}/candidates/cell", json={"row": 1, "col": 1, "digit": 3})
-        client.patch(f"/api/puzzle/{sid}/candidates/cell", json={"row": 1, "col": 1, "digit": 3})
-        res = client.patch(f"/api/puzzle/{sid}/candidates/cell", json={"row": 1, "col": 1, "digit": 3})
+        client.patch(
+            f"/api/puzzle/{sid}/candidates/cell",
+            json={"row": 1, "col": 1, "digit": 3},
+        )
+        client.patch(
+            f"/api/puzzle/{sid}/candidates/cell",
+            json={"row": 1, "col": 1, "digit": 3},
+        )
+        res = client.patch(
+            f"/api/puzzle/{sid}/candidates/cell",
+            json={"row": 1, "col": 1, "digit": 3},
+        )
         cell = res.json()["candidate_grid"]["cells"][0][0]
         assert 3 not in cell["user_essential"]
         assert 3 not in cell["user_removed"]
@@ -877,7 +912,10 @@ class TestCandidateCycle:
     ) -> None:
         """Auto-essential digit: cycles essential → impossible (user_removed)."""
         sid = self._confirmed_sid(client, store, trivial_state)
-        res = client.patch(f"/api/puzzle/{sid}/candidates/cell", json={"row": 1, "col": 1, "digit": 5})
+        res = client.patch(
+            f"/api/puzzle/{sid}/candidates/cell",
+            json={"row": 1, "col": 1, "digit": 5},
+        )
         assert res.status_code == 200
         cell = res.json()["candidate_grid"]["cells"][0][0]
         assert 5 in cell["user_removed"]
@@ -888,8 +926,14 @@ class TestCandidateCycle:
     ) -> None:
         """After making auto-essential impossible, next cycle restores it."""
         sid = self._confirmed_sid(client, store, trivial_state)
-        client.patch(f"/api/puzzle/{sid}/candidates/cell", json={"row": 1, "col": 1, "digit": 5})
-        res = client.patch(f"/api/puzzle/{sid}/candidates/cell", json={"row": 1, "col": 1, "digit": 5})
+        client.patch(
+            f"/api/puzzle/{sid}/candidates/cell",
+            json={"row": 1, "col": 1, "digit": 5},
+        )
+        res = client.patch(
+            f"/api/puzzle/{sid}/candidates/cell",
+            json={"row": 1, "col": 1, "digit": 5},
+        )
         cell = res.json()["candidate_grid"]["cells"][0][0]
         assert 5 not in cell["user_removed"]
         assert 5 not in cell["user_essential"]  # auto-essential, not user-essential
@@ -897,11 +941,15 @@ class TestCandidateCycle:
     def test_auto_impossible_no_op(
         self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
     ) -> None:
-        """Cycling a digit that auto says impossible (and not user-removed) is a no-op."""
+        """Cycling a digit that auto says impossible (and not user-removed) is a
+        no-op."""
         sid = self._confirmed_sid(client, store, trivial_state)
         before = store.load(sid)
         assert before.candidate_grid is not None
-        res = client.patch(f"/api/puzzle/{sid}/candidates/cell", json={"row": 1, "col": 1, "digit": 3})
+        res = client.patch(
+            f"/api/puzzle/{sid}/candidates/cell",
+            json={"row": 1, "col": 1, "digit": 3},
+        )
         assert res.status_code == 200
         after = res.json()["candidate_grid"]["cells"][0][0]
         assert after["user_essential"] == []
@@ -913,8 +961,14 @@ class TestCandidateCycle:
         """digit=0 clears user_essential and user_removed for the cell."""
         sid = self._confirmed_sid(client, store, trivial_state)
         client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "manual"})
-        client.patch(f"/api/puzzle/{sid}/candidates/cell", json={"row": 1, "col": 1, "digit": 3})
-        res = client.patch(f"/api/puzzle/{sid}/candidates/cell", json={"row": 1, "col": 1, "digit": 0})
+        client.patch(
+            f"/api/puzzle/{sid}/candidates/cell",
+            json={"row": 1, "col": 1, "digit": 3},
+        )
+        res = client.patch(
+            f"/api/puzzle/{sid}/candidates/cell",
+            json={"row": 1, "col": 1, "digit": 0},
+        )
         assert res.status_code == 200
         cell = res.json()["candidate_grid"]["cells"][0][0]
         assert cell["user_essential"] == []

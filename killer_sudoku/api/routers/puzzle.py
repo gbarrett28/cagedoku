@@ -37,9 +37,9 @@ from killer_sudoku.api.schemas import (
 )
 from killer_sudoku.api.session import SessionStore
 from killer_sudoku.image.config import ImagePipelineConfig
+from killer_sudoku.image.inp_image import InpImage
 from killer_sudoku.solver.engine import BoardState, SolverEngine, default_rules
 from killer_sudoku.solver.engine.types import Elimination
-from killer_sudoku.image.inp_image import InpImage
 from killer_sudoku.solver.grid import (  # Grid used in solve endpoint
     Grid,
     ProcessingError,
@@ -252,9 +252,7 @@ def _compute_candidate_grid(
                 auto_cands_set = board.candidates[r][c]
                 cage_idx = int(board.regions[r, c])  # 0-based
                 cage_solns: list[frozenset[int]] = board.cage_solns[cage_idx]
-                cage_must: set[int] = (
-                    set(range(1, 10)) if cage_solns else set()
-                )
+                cage_must: set[int] = set(range(1, 10)) if cage_solns else set()
                 for soln in cage_solns:
                     cage_must &= soln
 
@@ -262,8 +260,8 @@ def _compute_candidate_grid(
                 auto_cands = sorted(auto_cands_set)
 
                 # Preserve overrides; apply Rule A to user_essential in auto mode only.
-                # In manual mode user_essential is user-owned and not filtered here —
-                # Rule A runs only when transitioning manual→auto via _min_merge_to_auto.
+                # In manual mode user_essential is user-owned and not filtered here
+                # — Rule A fires only on manual→auto transition via _min_merge_to_auto.
                 if existing_grid is not None:
                     prev = existing_grid.cells[r][c]
                     if existing_grid.mode == "auto":
@@ -415,9 +413,7 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
             cages = _spec_to_cage_states(spec)
             spec_data = _spec_to_data(spec)
             placeholder = np.zeros((1, 1, 3), dtype=np.uint8) + 255
-            original_b64 = _encode_image(
-                np.asarray(placeholder, dtype=np.uint8)
-            )
+            original_b64 = _encode_image(np.asarray(placeholder, dtype=np.uint8))
             session_id = str(uuid.uuid4())
             mock_state = PuzzleState(
                 session_id=session_id,
@@ -746,7 +742,9 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
 
         new_rows = [
             [
-                new_cell if (row == r and col == c) else state.candidate_grid.cells[row][col]
+                new_cell
+                if (row == r and col == c)
+                else state.candidate_grid.cells[row][col]
                 for col in range(9)
             ]
             for row in range(9)

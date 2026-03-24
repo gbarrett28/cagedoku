@@ -132,7 +132,10 @@ class TestKeyboardRouting:
         page.wait_for_timeout(300)
 
         candidate_calls = [u for u in requests if "/candidates/cell" in u]
-        cell_calls = [u for u in requests if u.endswith("/cell")]
+        # Filter for the solution-entry /cell endpoint only (not /candidates/cell)
+        cell_calls = [
+            u for u in requests if u.endswith("/cell") and "/candidates" not in u
+        ]
         assert len(candidate_calls) >= 1, "Expected /candidates/cell to be called"
         assert len(cell_calls) == 0, "Expected no /cell call in candidate edit mode"
 

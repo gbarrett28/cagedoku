@@ -139,7 +139,8 @@ function clearChildren(node: Node): void {
 function drawGrid(
   canvas: HTMLCanvasElement,
   state: PuzzleState,
-  selected: { row: number; col: number } | null = null
+  selected: { row: number; col: number } | null = null,
+  showCands: boolean = false
 ): void {
   canvas.width = GRID_PX;
   canvas.height = GRID_PX;
@@ -271,6 +272,35 @@ function drawGrid(
       }
     }
   }
+
+  // 8. Candidate sub-grid (only when showCands && candidate data available)
+  if (showCands && state.candidate_grid !== null && state.user_grid !== null) {
+    const cg = state.candidate_grid;
+    const SUB = CELL / 3;
+    ctx.font = "bold 10px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        if ((state.user_grid[r]?.[c] ?? 0) !== 0) continue;  // skip solved cells
+        const cell = cg.cells[r]?.[c];
+        if (cell === undefined) continue;
+        const autoSet = new Set(cell.auto_candidates);
+        const removedSet = new Set(cell.user_removed);
+        const essSet = new Set([...cell.user_essential, ...cell.auto_essential]);
+        for (let n = 1; n <= 9; n++) {
+          if (removedSet.has(n)) continue;
+          if (cg.mode === "auto" && !autoSet.has(n)) continue;
+          const subRow = Math.floor((n - 1) / 3);
+          const subCol = (n - 1) % 3;
+          const cx = MARGIN + c * CELL + (subCol + 0.5) * SUB;
+          const cy = MARGIN + r * CELL + (subRow + 0.5) * SUB;
+          ctx.fillStyle = essSet.has(n) ? "#ffb5a7" : "#9ca3af";
+          ctx.fillText(String(n), cx, cy);
+        }
+      }
+    }
+  }
 }
 
 // ── Render helpers ──────────────────────────────────────────────────────────
@@ -346,12 +376,13 @@ function renderSolution(grid: number[][]): void {
 
 function renderPlayingMode(state: PuzzleState): void {
   currentState = state;
-  drawGrid(el<HTMLCanvasElement>("grid-canvas"), state, selectedCell);
+  drawGrid(el<HTMLCanvasElement>("grid-canvas"), state, selectedCell, showCandidates);
   el<HTMLElement>("review-actions").hidden = true;
   el<HTMLElement>("editor-section").hidden = true;
   el<HTMLElement>("playing-actions").hidden = false;
   el<HTMLElement>("solution-panel").hidden = true;
   updateUndoButton(state);
+  el<HTMLButtonElement>("candidates-btn").disabled = false;
 }
 
 function updateUndoButton(state: PuzzleState): void {
@@ -464,7 +495,7 @@ async function handleCellEntry(digit: number): Promise<void> {
     if (!res.ok) return;
     const state = (await res.json()) as PuzzleState;
     currentState = state;
-    drawGrid(el<HTMLCanvasElement>("grid-canvas"), state, selectedCell);
+    drawGrid(el<HTMLCanvasElement>("grid-canvas"), state, selectedCell, showCandidates);
     updateUndoButton(state);
   } catch {
     // Cell entry is best-effort; network errors are silently ignored
@@ -480,10 +511,68 @@ async function handleUndo(): Promise<void> {
     if (!res.ok) return;
     const state = (await res.json()) as PuzzleState;
     currentState = state;
-    drawGrid(el<HTMLCanvasElement>("grid-canvas"), state, selectedCell);
+    drawGrid(el<HTMLCanvasElement>("grid-canvas"), state, selectedCell, showCandidates);
     updateUndoButton(state);
   } catch {
     // Undo is best-effort; network errors are silently ignored
+  }
+}
+
+async function handleCandidateCycle(
+  row: number,
+  col: number,
+  digit: number
+): Promise<void> {
+  if (!currentSessionId) return;
+  try {
+    const res = await fetch(
+      `/api/puzzle/${currentSessionId}/candidates/cell`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ row, col, digit }),
+      }
+    );
+    if (!res.ok) return;
+    const state = (await res.json()) as PuzzleState;
+    currentState = state;
+    drawGrid(
+      el<HTMLCanvasElement>("grid-canvas"),
+      state,
+      selectedCell,
+      showCandidates
+    );
+  } catch {
+    // Candidate cycle is best-effort; network errors silently ignored
+  }
+}
+
+async function handleCandidateMode(): Promise<void> {
+  if (!currentSessionId || currentState?.candidate_grid == null) return;
+  const newMode =
+    currentState.candidate_grid.mode === "auto" ? "manual" : "auto";
+  try {
+    const res = await fetch(
+      `/api/puzzle/${currentSessionId}/candidates/mode`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: newMode }),
+      }
+    );
+    if (!res.ok) return;
+    const state = (await res.json()) as PuzzleState;
+    currentState = state;
+    el<HTMLButtonElement>("candidates-mode-btn").textContent =
+      state.candidate_grid?.mode === "auto" ? "Auto" : "Manual";
+    drawGrid(
+      el<HTMLCanvasElement>("grid-canvas"),
+      state,
+      selectedCell,
+      showCandidates
+    );
+  } catch {
+    // Best-effort
   }
 }
 
@@ -561,19 +650,88 @@ el<HTMLCanvasElement>("grid-canvas").addEventListener("mousedown", (e) => {
   const col = Math.floor((x - MARGIN) / CELL) + 1;
   const row = Math.floor((y - MARGIN) / CELL) + 1;
   if (col >= 1 && col <= 9 && row >= 1 && row <= 9) {
-    selectedCell = { row, col };
-    drawGrid(el<HTMLCanvasElement>("grid-canvas"), currentState, selectedCell);
+    if (showCandidates && candidateEditMode) {
+      // Detect which digit sub-cell was clicked (3×3 layout within the cell)
+      const cellX = (x - MARGIN) - (col - 1) * CELL;
+      const cellY = (y - MARGIN) - (row - 1) * CELL;
+      const subCol = Math.floor((cellX / CELL) * 3); // 0, 1, 2
+      const subRow = Math.floor((cellY / CELL) * 3); // 0, 1, 2
+      const digit = subRow * 3 + subCol + 1; // 1–9
+      selectedCell = { row, col };
+      void handleCandidateCycle(row, col, digit);
+    } else {
+      selectedCell = { row, col };
+      drawGrid(
+        el<HTMLCanvasElement>("grid-canvas"),
+        currentState,
+        selectedCell,
+        showCandidates
+      );
+    }
   }
 });
 
 document.addEventListener("keydown", (e) => {
   if (currentState?.user_grid == null) return;
   if (selectedCell === null) return;
-  if (e.key >= "1" && e.key <= "9") {
-    void handleCellEntry(Number(e.key));
-  } else if (e.key === "Backspace" || e.key === "Delete") {
-    void handleCellEntry(0);
+  if (showCandidates && candidateEditMode) {
+    if (e.key >= "1" && e.key <= "9") {
+      void handleCandidateCycle(
+        selectedCell.row,
+        selectedCell.col,
+        Number(e.key)
+      );
+    } else if (e.key === "Backspace" || e.key === "Delete") {
+      void handleCandidateCycle(selectedCell.row, selectedCell.col, 0);
+    }
+  } else {
+    if (e.key >= "1" && e.key <= "9") {
+      void handleCellEntry(Number(e.key));
+    } else if (e.key === "Backspace" || e.key === "Delete") {
+      void handleCellEntry(0);
+    }
   }
+});
+
+el<HTMLButtonElement>("candidates-btn").addEventListener("click", () => {
+  showCandidates = !showCandidates;
+  const btn = el<HTMLButtonElement>("candidates-btn");
+  btn.textContent = showCandidates ? "Hide candidates" : "Show candidates";
+  el<HTMLButtonElement>("edit-candidates-btn").hidden = !showCandidates;
+  el<HTMLButtonElement>("candidates-mode-btn").hidden = !showCandidates;
+  el<HTMLButtonElement>("help-candidates-btn").hidden = !showCandidates;
+  if (!showCandidates) {
+    candidateEditMode = false;
+    el<HTMLButtonElement>("edit-candidates-btn").textContent =
+      "Edit candidates";
+  }
+  if (currentState) {
+    drawGrid(
+      el<HTMLCanvasElement>("grid-canvas"),
+      currentState,
+      selectedCell,
+      showCandidates
+    );
+  }
+});
+
+el<HTMLButtonElement>("edit-candidates-btn").addEventListener("click", () => {
+  candidateEditMode = !candidateEditMode;
+  el<HTMLButtonElement>("edit-candidates-btn").textContent = candidateEditMode
+    ? "Done editing"
+    : "Edit candidates";
+});
+
+el<HTMLButtonElement>("candidates-mode-btn").addEventListener("click", () => {
+  void handleCandidateMode();
+});
+
+el<HTMLButtonElement>("help-candidates-btn").addEventListener("click", () => {
+  (el<HTMLDialogElement>("help-candidates-modal") as HTMLDialogElement).showModal();
+});
+
+el<HTMLButtonElement>("close-help-btn").addEventListener("click", () => {
+  (el<HTMLDialogElement>("help-candidates-modal") as HTMLDialogElement).close();
 });
 
 el<HTMLButtonElement>("quit-btn").addEventListener("click", () => {
