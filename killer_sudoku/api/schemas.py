@@ -46,6 +46,27 @@ class CageState(BaseModel):
     subdivisions: list[SubCageState] = []
 
 
+class MoveRecord(BaseModel):
+    """One step in the user's play history.
+
+    Stores both the new digit and the previous digit so any move can be
+    reversed without needing to replay the full history.
+    """
+
+    row: int         # 1-based (1–9)
+    col: int         # 1-based (1–9)
+    digit: int       # digit placed (1–9); 0 = cell was cleared
+    prev_digit: int  # digit that was there before (0 = was empty)
+
+
+class CellEntryRequest(BaseModel):
+    """Request to place or clear a digit in the user's grid."""
+
+    row: int    # 1-based (1–9)
+    col: int    # 1-based (1–9)
+    digit: int  # 1–9 to place; 0 to clear
+
+
 class PuzzleSpecData(BaseModel):
     """Serialized form of PuzzleSpec numpy arrays for JSON session storage.
 
@@ -73,8 +94,11 @@ class PuzzleState(BaseModel):
         session_id:          UUID identifying this session.
         newspaper:           Source newspaper (determines which OCR models to use).
         cages:               Current cage layout, editable by the user.
-        spec_data:          Serialized PuzzleSpec arrays (for canvas rendering).
-        original_image_b64: Base64-encoded JPEG of the uploaded photo.
+        spec_data:           Serialized PuzzleSpec arrays (for canvas rendering).
+        original_image_b64:  Base64-encoded JPEG of the uploaded photo.
+        golden_solution:     None before /confirm; 9×9 solver solution after.
+        user_grid:           None before /confirm; 9×9 user-entered digits after.
+        move_history:        Chronological record of every cell entry or clear.
     """
 
     session_id: str
@@ -82,6 +106,17 @@ class PuzzleState(BaseModel):
     cages: list[CageState]
     spec_data: PuzzleSpecData
     original_image_b64: str
+
+    golden_solution: list[list[int]] | None = None
+    # None  → pre-confirm (OCR review phase)
+    # 9×9   → computed by /confirm; 0 means solver could not determine cell
+
+    user_grid: list[list[int]] | None = None
+    # None  → pre-confirm
+    # 9×9   → playing mode; 0 = cell not yet filled by user
+
+    move_history: list[MoveRecord] = []
+    # Ordered record of every digit entry or clear, newest last.
 
 
 class UploadResponse(BaseModel):
