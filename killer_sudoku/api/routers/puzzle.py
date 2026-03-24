@@ -276,13 +276,7 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
             for c in state.cages
         ]
 
-        updated = PuzzleState(
-            session_id=state.session_id,
-            newspaper=state.newspaper,
-            cages=updated_cages,
-            spec_data=state.spec_data,
-            original_image_b64=state.original_image_b64,
-        )
+        updated = state.model_copy(update={"cages": updated_cages})
         store.save(updated)
         return updated
 
@@ -316,13 +310,7 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
             for c in state.cages
         ]
 
-        updated = PuzzleState(
-            session_id=state.session_id,
-            newspaper=state.newspaper,
-            cages=updated_cages,
-            spec_data=state.spec_data,
-            original_image_b64=state.original_image_b64,
-        )
+        updated = state.model_copy(update={"cages": updated_cages})
         store.save(updated)
         return updated
 

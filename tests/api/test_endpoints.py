@@ -186,6 +186,28 @@ class TestPatchCage:
         )
         assert res.status_code == 200
 
+    def test_playing_mode_fields_survive_cage_edit(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        """Editing a cage total must not wipe out playing-mode fields."""
+        playing = trivial_state.model_copy(
+            update={
+                "user_grid": [[0] * 9 for _ in range(9)],
+                "golden_solution": [[1] * 9 for _ in range(9)],
+                "move_history": [],
+            }
+        )
+        store.save(playing)
+        first_label = playing.cages[0].label
+        res = client.patch(
+            f"/api/puzzle/{playing.session_id}/cage/{first_label}",
+            json={"total": 7},
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["user_grid"] is not None
+        assert body["golden_solution"] is not None
+
 
 # ---------------------------------------------------------------------------
 # POST /api/puzzle/{session_id}/solve
