@@ -53,17 +53,17 @@ class MoveRecord(BaseModel):
     reversed without needing to replay the full history.
     """
 
-    row: int         # 1-based (1–9)
-    col: int         # 1-based (1–9)
-    digit: int       # digit placed (1–9); 0 = cell was cleared
+    row: int  # 1-based (1–9)
+    col: int  # 1-based (1–9)
+    digit: int  # digit placed (1–9); 0 = cell was cleared
     prev_digit: int  # digit that was there before (0 = was empty)
 
 
 class CellEntryRequest(BaseModel):
     """Request to place or clear a digit in the user's grid."""
 
-    row: int    # 1-based (1–9)
-    col: int    # 1-based (1–9)
+    row: int  # 1-based (1–9)
+    col: int  # 1-based (1–9)
     digit: int  # 1–9 to place; 0 to clear
 
 

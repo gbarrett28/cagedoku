@@ -345,9 +345,7 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
 
         golden: list[list[int]] = [
             [
-                int(next(iter(grd.sq_poss[r][c])))
-                if len(grd.sq_poss[r][c]) == 1
-                else 0
+                int(next(iter(grd.sq_poss[r][c]))) if len(grd.sq_poss[r][c]) == 1 else 0
                 for c in range(9)
             ]
             for r in range(9)
