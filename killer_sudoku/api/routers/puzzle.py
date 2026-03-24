@@ -261,12 +261,17 @@ def _compute_candidate_grid(
                 auto_ess = sorted(auto_cands_set & cage_must)
                 auto_cands = sorted(auto_cands_set)
 
-                # Preserve overrides; apply Rule A to user_essential
+                # Preserve overrides; apply Rule A to user_essential in auto mode only.
+                # In manual mode user_essential is user-owned and not filtered here —
+                # Rule A runs only when transitioning manual→auto via _min_merge_to_auto.
                 if existing_grid is not None:
                     prev = existing_grid.cells[r][c]
-                    user_essential = [
-                        d for d in prev.user_essential if d in auto_cands_set
-                    ]
+                    if existing_grid.mode == "auto":
+                        user_essential = [
+                            d for d in prev.user_essential if d in auto_cands_set
+                        ]
+                    else:
+                        user_essential = list(prev.user_essential)
                     user_removed = list(prev.user_removed)
                 else:
                     user_essential = []
@@ -668,6 +673,86 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
         # Recompute candidates after restoring the cell
         new_cg = _compute_candidate_grid(updated, updated.candidate_grid)
         updated = updated.model_copy(update={"candidate_grid": new_cg})
+        store.save(updated)
+        return updated
+
+    @router.post("/{session_id}/candidates/mode", response_model=PuzzleState)
+    async def set_candidates_mode(
+        session_id: str,
+        req: CandidateModeRequest,
+    ) -> PuzzleState:
+        """Switch between auto and manual candidate modes.
+
+        auto→manual: update mode field only; no state change.
+        manual→auto: recompute auto state; apply min-merge (more restrictive wins).
+        """
+        try:
+            state = store.load(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+
+        if state.candidate_grid is None:
+            raise HTTPException(status_code=409, detail="Session not yet confirmed")
+
+        if req.mode == "manual":
+            new_cg = state.candidate_grid.model_copy(update={"mode": "manual"})
+        else:
+            # manual → auto: recompute then min-merge
+            assert state.user_grid is not None
+            new_auto = _compute_candidate_grid(state, None)
+            new_cg = _min_merge_to_auto(state.candidate_grid, new_auto, state.user_grid)
+
+        updated = state.model_copy(update={"candidate_grid": new_cg})
+        store.save(updated)
+        return updated
+
+    @router.patch("/{session_id}/candidates/cell", response_model=PuzzleState)
+    async def cycle_candidate(
+        session_id: str,
+        req: CandidateCycleRequest,
+    ) -> PuzzleState:
+        """Cycle one digit's state in a cell, or reset all overrides (digit=0).
+
+        Reads current mode from candidate_grid.mode. Does not run solver
+        recomputation — only updates user_essential and user_removed overrides.
+        """
+        try:
+            state = store.load(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+
+        if state.candidate_grid is None:
+            raise HTTPException(status_code=409, detail="Session not yet confirmed")
+
+        if not (1 <= req.row <= 9 and 1 <= req.col <= 9 and 0 <= req.digit <= 9):
+            raise HTTPException(
+                status_code=422, detail="row/col must be 1–9; digit 0–9"
+            )
+
+        r, c = req.row - 1, req.col - 1
+        mode = state.candidate_grid.mode
+        old_cell = state.candidate_grid.cells[r][c]
+
+        if req.digit == 0:
+            # Reset: clear all overrides for this cell
+            new_cell = CandidateCell(
+                auto_candidates=old_cell.auto_candidates,
+                auto_essential=old_cell.auto_essential,
+                user_essential=[],
+                user_removed=[],
+            )
+        else:
+            new_cell = _cycle_candidate(old_cell, req.digit, mode)
+
+        new_rows = [
+            [
+                new_cell if (row == r and col == c) else state.candidate_grid.cells[row][col]
+                for col in range(9)
+            ]
+            for row in range(9)
+        ]
+        new_cg = CandidateGrid(cells=new_rows, mode=mode)
+        updated = state.model_copy(update={"candidate_grid": new_cg})
         store.save(updated)
         return updated
 
