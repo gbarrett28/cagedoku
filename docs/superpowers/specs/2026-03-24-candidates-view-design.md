@@ -139,9 +139,9 @@ class CandidateModeRequest(BaseModel):
    - `auto_candidates` = `list(grd.sq_poss[r][c])`
    - `auto_essential` = `list(auto_candidates_set ∩ cage_equation.must)`, where `cage_equation` is the `Equation` for this cell's cage
 
-### Solved-cell rule
+### Solved-cell freeze rule
 
-**Recomputation only runs for unsolved cells** (`user_grid[r][c] == 0`). Solved cells' `CandidateCell` — including both auto state and user overrides — is frozen until the cell becomes unsolved again. This ensures that undoing a digit entry restores the exact candidate state the user had before placing it.
+Steps 3–4 of the recomputation procedure still run for **all** cells (including solved ones) so that `engine_solve()` receives the correct placed-digit constraints. The freeze applies only to writing back the resulting `CandidateCell` in the output: **solved cells' `CandidateCell` entries are left unchanged**. Specifically, for any cell where `user_grid[r][c] != 0`, the existing `CandidateCell` (including user overrides) is copied unchanged into the new `CandidateGrid`. Only cells where `user_grid[r][c] == 0` have their `auto_candidates` and `auto_essential` updated. This ensures that undoing a digit entry restores the exact candidate state the user had before placing it.
 
 ### Rule A — auto impossible overrides user essential
 
@@ -183,13 +183,15 @@ Switch between auto and manual modes.
 
 Cycle one digit in one cell, or reset a cell's overrides.
 
+> **Path convention note:** Row and column are in the request body (validated by Pydantic) rather than in the path, following the same pattern as the existing `PATCH /{session_id}/cell` endpoint.
+
 **Request body:** `CandidateCycleRequest`
 
 **Behaviour:**
 1. Load session; return 404 if not found.
 2. Return 409 if `candidate_grid` is None.
-3. Validate row/col 1–9; return 422 otherwise.
-4. If `digit == 0`: clear `user_essential` and `user_removed` for `(row, col)`; save and return.
+3. Validate row/col 1–9; return 422 otherwise. Convert to 0-based indices: `r = row - 1`, `c = col - 1`; use these throughout.
+4. If `digit == 0`: clear `user_essential` and `user_removed` for `(r, c)`; save and return.
 5. Otherwise determine current displayed state for `digit` in `(row, col)`:
    - In auto mode: if `digit` not in `auto_candidates` and not in `user_removed` → no-op (return 200 unchanged).
    - Apply cycle rules (see table below).
@@ -203,7 +205,6 @@ Cycle one digit in one cell, or reset a cell's overrides.
 | essential (user) | digit in `user_essential` | impossible | remove from `user_essential`; add to `user_removed` |
 | essential (auto only) | digit in `auto_essential`, not `user_essential` | impossible | add to `user_removed` |
 | impossible (user) | digit in `user_removed` | inessential/essential | remove from `user_removed` (auto_essential determines display) |
-| impossible (auto) | digit not in `auto_candidates`, not `user_removed` | no-op | — |
 
 Note: an auto-essential digit cycles essential → impossible → essential (inessential is unreachable because removing from `user_removed` restores auto_essential).
 
@@ -226,6 +227,25 @@ Each of these must now also compute and return an updated `candidate_grid` in th
 ---
 
 ## Frontend Changes
+
+### TypeScript schema additions
+
+```typescript
+interface CandidateCell {
+  auto_candidates: number[];
+  auto_essential:  number[];
+  user_essential:  number[];
+  user_removed:    number[];
+}
+
+interface CandidateGrid {
+  cells: CandidateCell[][];   // 9 rows × 9 cols, 0-based
+  mode:  "auto" | "manual";
+}
+
+// Added to PuzzleState interface:
+candidate_grid: CandidateGrid | null;
+```
 
 ### New module state
 
@@ -362,7 +382,7 @@ The **Auto / Manual** toggle controls how the candidate grid is maintained.
 
 **Switching from manual to auto** merges your work with the solver's knowledge: for each digit in each cell, the more restrictive of the two assessments wins. If you removed a digit the solver thinks is still possible, it stays removed. If you marked a digit essential that the solver considers inessential, it stays essential. If the solver has ruled something out entirely, that takes precedence.
 
-**Switching from auto to manual** leaves everything exactly as it is.
+**Switching from auto to manual** leaves your candidate marks exactly as they are — the display is unchanged.
 
 ---
 
@@ -431,9 +451,13 @@ When you enter a digit into a cell, its candidates are hidden but not lost. If y
 
 **Mock OCR setup:**
 
-`CoachConfig` gains a `mock_ocr: bool = False` field. When `True`, the upload endpoint bypasses `InpImage` entirely and returns a fixture `PuzzleSpec` designed for candidate testing (multiple genuinely ambiguous cages with interesting essential-digit patterns). A dedicated fixture, distinct from `minimal_puzzle.py`, is created during implementation.
+`CoachConfig` gains a `mock_ocr: bool = False` field. When `True`, the `upload_puzzle` endpoint bypasses `InpImage` entirely and returns a fixture `PuzzleSpec` — the normal upload path is taken but OCR is skipped. The fixture is a Python constant in a new `tests/fixtures/candidates_puzzle.py` module.
 
-The Playwright test server is started with `mock_ocr=True`. Tests upload a minimal valid JPEG (e.g. a 1×1 pixel image); the server returns the fixture puzzle.
+**Backend unit test fixture** (`TestConfirmInitializesCandidates`): uses the existing `make_trivial_spec()` from `tests/fixtures/minimal_puzzle.py` — nine single-cell cages, each with a unique known digit. In this fixture `engine_solve()` fully determines every cell, so `auto_candidates` for each cell contains exactly one digit and `auto_essential` equals `auto_candidates` (every cage has only one solution).
+
+**Playwright fixture** (`candidates_puzzle.py`): must be a valid `PuzzleSpec` with at least one cage where `engine_solve()` leaves multiple solutions so that `Equation.must` is a proper subset of `Equation.poss` (non-trivial `auto_essential` for at least one cell). Exact cage layout is deferred to implementation.
+
+The Playwright test server is started with `mock_ocr=True`. Tests upload a minimal valid JPEG (e.g. a 1×1 pixel image); the server ignores it and returns the fixture puzzle.
 
 **Test cases:**
 
