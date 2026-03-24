@@ -415,6 +415,72 @@ class TestCellEntry:
 
 
 # ---------------------------------------------------------------------------
+# POST /api/puzzle/{session_id}/undo
+# ---------------------------------------------------------------------------
+
+
+class TestUndo:
+    def _setup_with_move(
+        self,
+        client: TestClient,
+        store: SessionStore,
+        trivial_state: PuzzleState,
+        row: int = 1,
+        col: int = 1,
+        digit: int = 5,
+    ) -> None:
+        store.save(trivial_state)
+        client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
+        client.patch(
+            f"/api/puzzle/{trivial_state.session_id}/cell",
+            json={"row": row, "col": col, "digit": digit},
+        )
+
+    def test_undo_restores_prev_digit(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        self._setup_with_move(client, store, trivial_state)
+        res = client.post(f"/api/puzzle/{trivial_state.session_id}/undo")
+        assert res.status_code == 200
+        assert res.json()["user_grid"][0][0] == 0
+
+    def test_undo_removes_move_from_history(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        self._setup_with_move(client, store, trivial_state)
+        res = client.post(f"/api/puzzle/{trivial_state.session_id}/undo")
+        assert res.json()["move_history"] == []
+
+    def test_undo_of_overwrite_restores_previous_digit(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        store.save(trivial_state)
+        client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
+        client.patch(
+            f"/api/puzzle/{trivial_state.session_id}/cell",
+            json={"row": 1, "col": 1, "digit": 5},
+        )
+        client.patch(
+            f"/api/puzzle/{trivial_state.session_id}/cell",
+            json={"row": 1, "col": 1, "digit": 9},
+        )
+        res = client.post(f"/api/puzzle/{trivial_state.session_id}/undo")
+        assert res.json()["user_grid"][0][0] == 5
+
+    def test_returns_409_on_empty_history(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        store.save(trivial_state)
+        client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
+        res = client.post(f"/api/puzzle/{trivial_state.session_id}/undo")
+        assert res.status_code == 409
+
+    def test_returns_404_for_unknown_session(self, client: TestClient) -> None:
+        res = client.post("/api/puzzle/no-such-session/undo")
+        assert res.status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # POST /api/puzzle/{session_id}/confirm
 # ---------------------------------------------------------------------------
 

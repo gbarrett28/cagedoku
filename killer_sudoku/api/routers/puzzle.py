@@ -405,6 +405,37 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
         store.save(updated)
         return updated
 
+    @router.post("/{session_id}/undo", response_model=PuzzleState)
+    async def undo_move(session_id: str) -> PuzzleState:
+        """Reverse the most recent cell entry or clear.
+
+        Pops the last MoveRecord and restores the previous digit in user_grid.
+        Returns 409 if there is nothing to undo.
+        """
+        try:
+            state = store.load(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+
+        if not state.move_history:
+            raise HTTPException(status_code=409, detail="Nothing to undo")
+
+        # user_grid is guaranteed non-None here: move_history is only non-empty
+        # after /confirm, which sets user_grid at the same time.
+        assert state.user_grid is not None
+
+        last = state.move_history[-1]
+        new_history = list(state.move_history[:-1])
+
+        new_grid = [row[:] for row in state.user_grid]
+        new_grid[last.row - 1][last.col - 1] = last.prev_digit
+
+        updated = state.model_copy(
+            update={"user_grid": new_grid, "move_history": new_history}
+        )
+        store.save(updated)
+        return updated
+
     @router.post("/{session_id}/solve", response_model=SolveResponse)
     async def solve_puzzle(session_id: str) -> SolveResponse:
         """Solve the puzzle using the constraint engine, with CSP fallback.
