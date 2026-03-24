@@ -18,7 +18,7 @@ Extend the COACH playing mode with a candidates view. For each unsolved cell the
 - `CandidateCell`, `CandidateGrid`, `CandidateCycleRequest`, `CandidateModeRequest` Pydantic schemas
 - `PuzzleState` extended with `candidate_grid`
 - Candidate computation: `auto_candidates` from solver `sq_poss`; `auto_essential` from cage solution sets
-- Three new API endpoints: `POST /candidates/mode`, `PATCH /candidates/cell`; existing `/confirm`, `/cell`, `/undo` extended
+- Two new API endpoints: `POST /candidates/mode`, `PATCH /candidates/cell`; existing `/confirm`, `/cell`, `/undo` extended
 - Frontend: Show Candidates toggle, Edit Candidates toggle, Auto/Manual toggle, help modal button
 - Canvas layer 8: 3×3 candidate sub-grid per unsolved cell (grey / salmon)
 - Keyboard cycling (1–9, Delete) and mousedown sub-cell cycling
@@ -43,15 +43,24 @@ Extend the COACH playing mode with a candidates view. For each unsolved cell the
 class CandidateCell(BaseModel):
     """Candidate state for one cell.
 
-    auto_candidates and auto_essential are computed by the solver and updated
-    after every cell entry. user_essential and user_removed store the user's
-    overrides and are preserved even when the cell is solved (so they survive
-    undo). Rule A: if a digit drops out of auto_candidates for an unsolved
-    cell, it is silently removed from user_essential.
+    auto_candidates: digits the solver considers possible for this cell, read
+    from Grid.sq_poss[r][c] after engine_solve().
+
+    auto_essential: digits in auto_candidates that also appear in Equation.must
+    for this cell's cage (i.e. auto_candidates[r][c] ∩ cage.must). This is a
+    cage-level property — every cell in the same cage has the same auto_essential
+    set intersected with its own auto_candidates. Stored per-cell for frontend
+    convenience.
+
+    user_essential and user_removed store the user's overrides and are preserved
+    even when the cell is solved (so they survive undo).
+
+    Rule A: if a digit drops out of auto_candidates for an unsolved cell, it is
+    silently removed from user_essential.
     """
 
     auto_candidates: list[int]  # digits solver considers possible (1–9)
-    auto_essential:  list[int]  # digits present in ALL remaining cage solutions
+    auto_essential:  list[int]  # auto_candidates ∩ cage.must (cage-level essential set)
     user_essential:  list[int]  # user-marked essential (overrides auto inessential)
     user_removed:    list[int]  # user-removed digits (overrides auto present)
 ```
@@ -65,7 +74,7 @@ class CandidateCell(BaseModel):
 | `n` in `user_essential` OR `auto_essential` | essential — salmon `#ffb5a7` |
 | otherwise | inessential — grey `#9ca3af` |
 
-In **manual mode** the `auto_candidates` check is skipped; the base set is all nine digits minus digits already placed in the same row, column, or box by `user_grid`.
+In **manual mode** the `auto_candidates` check is skipped; the base set is all nine digits (no automatic peer elimination — the user manages everything themselves).
 
 ### New schema: `CandidateGrid`
 
@@ -83,10 +92,10 @@ class CandidateGrid(BaseModel):
 class CandidateCycleRequest(BaseModel):
     """Cycle one digit in one cell, or reset the whole cell (digit=0)."""
 
-    row:   int                      # 1-based (1–9)
-    col:   int                      # 1-based (1–9)
-    digit: int                      # 1–9 to cycle; 0 to reset cell
-    mode:  Literal["auto", "manual"]
+    row:   int  # 1-based (1–9)
+    col:   int  # 1-based (1–9)
+    digit: int  # 1–9 to cycle; 0 to reset cell
+    # mode is read from candidate_grid.mode in the session — not sent by client
 ```
 
 ### New schema: `CandidateModeRequest`
@@ -122,12 +131,13 @@ class CandidateModeRequest(BaseModel):
 
 ### Recomputation procedure
 
-1. Create a fresh `Grid`, call `set_up(spec)`.
-2. For each solved cell (`user_grid[r][c] != 0`), place that digit and propagate via `discard_n`.
-3. `sq_poss[r][c]` after propagation is `auto_candidates` for unsolved cell `(r, c)`.
-4. For each cage, inspect remaining valid solutions (`cge.alts` after propagation) to derive per-cell `auto_essential`: digits that appear in **every** remaining cage solution at that cell's position.
-
-> **Implementation note:** The exact API for `cge.alts` after partial placement must be confirmed during implementation. If `cge.alts` is not updated by `discard_n` alone, an additional propagation step may be required.
+1. Reconstruct a `PuzzleSpec` from the session via `_data_to_spec(state.spec_data)` (already implemented in `puzzle.py`).
+2. Create a fresh `Grid`, call `set_up(spec)` — this initialises `sq_poss` and all cage `Equation` objects (including `solns`, `must`, `poss`).
+3. For each solved cell (`user_grid[r][c] != 0`), narrow `grd.sq_poss[r][c]` to `{digit}`.
+4. Call `grd.engine_solve()` — this propagates the narrowed candidates through all constraint rules, updating both `sq_poss` and cage `Equation.solns`/`must` to reflect the placed digits.
+5. For each unsolved cell `(r, c)` (`user_grid[r][c] == 0`):
+   - `auto_candidates` = `list(grd.sq_poss[r][c])`
+   - `auto_essential` = `list(auto_candidates_set ∩ cage_equation.must)`, where `cage_equation` is the `Equation` for this cell's cage
 
 ### Solved-cell rule
 
@@ -139,7 +149,7 @@ After recomputing `auto_candidates` for an unsolved cell, any digit in `user_ess
 
 ### Manual mode base set
 
-In manual mode the displayed candidates for an unsolved cell are all nine digits minus any digit already placed in the same row, column, or box in `user_grid`. The solver's `auto_candidates` and `auto_essential` are still computed and stored but are not consulted for display.
+In manual mode the displayed candidates for an unsolved cell are all nine digits (no automatic peer elimination). The solver's `auto_candidates` and `auto_essential` are still computed and stored but are not consulted for display.
 
 ---
 
@@ -244,8 +254,8 @@ let candidateEditMode: boolean = false;
 
 ```
 showCandidates && candidateEditMode && selectedCell !== null:
-  digit 1–9       → PATCH /candidates/cell  {row, col, digit, mode}
-  Delete/Backspace → PATCH /candidates/cell  {row, col, digit: 0, mode}
+  digit 1–9       → PATCH /candidates/cell  {row, col, digit}
+  Delete/Backspace → PATCH /candidates/cell  {row, col, digit: 0}
 
 else (solution entry mode) && selectedCell !== null:
   digit 1–9       → PATCH /cell  {row, col, digit}
@@ -262,6 +272,8 @@ function drawGrid(
   showCandidates: boolean = false
 ): void
 ```
+
+`showCandidates` defaults to `false`; all existing call sites remain valid without modification.
 
 ### Canvas layer 8 — candidates
 
@@ -408,7 +420,8 @@ When you enter a digit into a cell, its candidates are hidden but not lost. If y
 **`TestCandidateWithCellEntry`**
 - After placing digit `d` in cell `(r,c)`, peers no longer have `d` in `auto_candidates`
 - Solved cell's `user_essential` and `user_removed` are unchanged after a peer cell changes
-- After `/undo`, cell's candidate state is visible again and unchanged
+- After `/undo`, cell's candidate state is restored exactly as it was before placement
+- Freeze scope: place digit in cell A (freezing it); cycle a candidate in peer cell B; undo cell A; assert cell A's candidates are restored and cell B's override is preserved unchanged
 
 **`TestRuleA`**
 - When a cell entry causes a digit to drop from `auto_candidates` in a peer, that digit is cleared from `user_essential` in the peer
@@ -440,5 +453,4 @@ Canvas pixel/colour assertions are explicitly excluded — too brittle for maint
 
 ## Open Questions
 
-1. **`cge.alts` API after partial placement** — confirm whether cage alternative sets are updated by `discard_n` propagation alone, or whether an additional step is required to filter them. To be resolved during implementation.
-2. **Playwright fixture design** — the exact cage layout for the mock-OCR fixture (chosen to produce interesting essential-digit patterns) is deferred to implementation.
+1. **Playwright fixture design** — the exact cage layout for the mock-OCR fixture (chosen to produce interesting essential-digit patterns) is deferred to implementation.
