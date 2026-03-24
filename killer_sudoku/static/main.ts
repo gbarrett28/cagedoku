@@ -274,10 +274,14 @@ function drawGrid(
   }
 
   // 8. Candidate sub-grid (only when showCands && candidate data available)
+  //    Reserve CAND_TOP px at the top of each cell so digit 1 does not
+  //    collide with the cage-total label (drawn at y+2 with 11px font).
   if (showCands && state.candidate_grid !== null && state.user_grid !== null) {
     const cg = state.candidate_grid;
-    const SUB = CELL / 3;
-    ctx.font = "bold 10px sans-serif";
+    const CAND_TOP = 13; // px reserved for cage-total label at top of cell
+    const SUB_W = CELL / 3;
+    const SUB_H = (CELL - CAND_TOP) / 3;
+    ctx.font = "bold 9px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     for (let r = 0; r < 9; r++) {
@@ -293,8 +297,8 @@ function drawGrid(
           if (cg.mode === "auto" && !autoSet.has(n)) continue;
           const subRow = Math.floor((n - 1) / 3);
           const subCol = (n - 1) % 3;
-          const cx = MARGIN + c * CELL + (subCol + 0.5) * SUB;
-          const cy = MARGIN + r * CELL + (subRow + 0.5) * SUB;
+          const cx = MARGIN + c * CELL + (subCol + 0.5) * SUB_W;
+          const cy = MARGIN + r * CELL + CAND_TOP + (subRow + 0.5) * SUB_H;
           ctx.fillStyle = essSet.has(n) ? "#ffb5a7" : "#9ca3af";
           ctx.fillText(String(n), cx, cy);
         }
@@ -651,11 +655,14 @@ el<HTMLCanvasElement>("grid-canvas").addEventListener("mousedown", (e) => {
   const row = Math.floor((y - MARGIN) / CELL) + 1;
   if (col >= 1 && col <= 9 && row >= 1 && row <= 9) {
     if (showCandidates && candidateEditMode) {
-      // Detect which digit sub-cell was clicked (3×3 layout within the cell)
+      // Detect which digit sub-cell was clicked (3×3 layout within the cell).
+      // Matches the non-square CAND_TOP layout used in drawGrid layer 8.
+      const CAND_TOP = 13;
       const cellX = (x - MARGIN) - (col - 1) * CELL;
       const cellY = (y - MARGIN) - (row - 1) * CELL;
       const subCol = Math.floor((cellX / CELL) * 3); // 0, 1, 2
-      const subRow = Math.floor((cellY / CELL) * 3); // 0, 1, 2
+      const adjustedY = Math.max(0, cellY - CAND_TOP);
+      const subRow = Math.floor((adjustedY / (CELL - CAND_TOP)) * 3); // 0, 1, 2
       const digit = subRow * 3 + subCol + 1; // 1–9
       selectedCell = { row, col };
       void handleCandidateCycle(row, col, digit);

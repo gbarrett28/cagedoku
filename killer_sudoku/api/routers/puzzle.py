@@ -185,25 +185,34 @@ def _compute_candidate_grid(
     state: PuzzleState,
     existing_grid: CandidateGrid | None,
 ) -> CandidateGrid:
-    """Recompute auto_candidates and auto_essential for all unsolved cells.
+    """Compute pre-solve candidates for all unsolved cells.
 
-    Uses BoardState/SolverEngine directly so that user placements can be
-    injected as Elimination events before the engine runs. This ensures
-    cage_solns and candidates reflect placed digits correctly.
+    Builds a fresh BoardState and applies only the linear-system initial
+    eliminations (structural cage-sum constraints) plus eliminations for
+    digits already placed by the user.  The full solver is deliberately NOT
+    run — candidates reflect what is possible from cage constraints alone,
+    not the unique solution.
+
+    For example, a 2-cell cage totalling 6 will show {1,2,4,5} as possible
+    in each cell (combinations {1,5} and {2,4}).  A 2-cell cage totalling 16
+    will show {7,9} as possible and both digits as essential (they appear in
+    the only valid combination {7,9}).
 
     Solved cells (user_grid[r][c] != 0) have their CandidateCell copied
     unchanged from existing_grid (freeze rule). If existing_grid is None
     (initial call at /confirm), all user_essential and user_removed start empty.
 
-    Rule A is applied for unsolved cells: digits no longer in auto_candidates
-    are removed from user_essential.
+    Rule A is applied for unsolved cells in auto mode: digits no longer in
+    auto_candidates are silently removed from user_essential.
     """
     assert state.user_grid is not None
     spec = _data_to_spec(state.spec_data)
     board = BoardState(spec)
     engine: SolverEngine = SolverEngine(board, rules=default_rules())
 
-    # Step 1: apply linear system initial eliminations (same as normal solve)
+    # Step 1: apply linear system initial eliminations — these come from the
+    # cage-sum equations and narrow candidates to those that can participate
+    # in a valid cage assignment.  This is the structural pre-solve state.
     engine.apply_eliminations(
         [
             e
@@ -212,7 +221,7 @@ def _compute_candidate_grid(
         ]
     )
 
-    # Step 2: pin user placements so the engine propagates them
+    # Step 2: pin user placements so their effect propagates into cage_solns
     user_elims: list[Elimination] = [
         Elimination(cell=(r, c), digit=d)
         for r in range(9)
@@ -222,13 +231,7 @@ def _compute_candidate_grid(
     ]
     engine.apply_eliminations(user_elims)
 
-    # Step 3: propagate — best-effort (partial results still useful)
-    try:
-        engine.solve()
-    except (AssertionError, ValueError):
-        pass
-
-    # Step 4: build per-cell CandidateCell
+    # Step 3: build per-cell CandidateCell
     cells: list[list[CandidateCell]] = []
     for r in range(9):
         row_cells: list[CandidateCell] = []
