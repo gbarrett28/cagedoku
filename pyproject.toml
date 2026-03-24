@@ -15,6 +15,9 @@ dependencies = [
     "matplotlib",
     "python-constraint",
     "joblib",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +26,7 @@ dev = ["ruff", "mypy", "pytest", "pytest-cov"]
 
 [project.scripts]
 cagedoku = "killer_sudoku.main:main"
+coach    = "killer_sudoku.api.app:serve"
 ks-collect-numerals = "killer_sudoku.training.collect_numerals:main"
 ks-train-numbers = "killer_sudoku.training.train_number_recogniser:main"
 ks-train-borders = "killer_sudoku.training.train_border_detector:main"

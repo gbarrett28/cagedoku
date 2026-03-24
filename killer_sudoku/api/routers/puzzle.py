@@ -1,0 +1,365 @@
+"""API router for puzzle upload, cage editing, and solving.
+
+All endpoints share a session store and coach configuration injected via the
+make_router() factory, avoiding module-level globals while keeping the
+FastAPI route definitions clean.
+"""
+
+from __future__ import annotations
+
+import base64
+import tempfile
+import uuid
+from pathlib import Path
+from typing import Literal
+
+import cv2
+import numpy as np
+import numpy.typing as npt
+from fastapi import APIRouter, HTTPException, UploadFile
+
+from killer_sudoku.api.config import CoachConfig
+from killer_sudoku.api.schemas import (
+    CagePatchRequest,
+    CageState,
+    CellPosition,
+    PuzzleSpecData,
+    PuzzleState,
+    SolveResponse,
+    SubdivideRequest,
+    UploadResponse,
+)
+from killer_sudoku.api.session import SessionStore
+from killer_sudoku.image.config import ImagePipelineConfig
+from killer_sudoku.image.inp_image import InpImage
+from killer_sudoku.solver.grid import (  # Grid used in solve endpoint
+    Grid,
+    ProcessingError,
+)
+from killer_sudoku.solver.puzzle_spec import PuzzleSpec
+
+# ---------------------------------------------------------------------------
+# Pure conversion helpers (no I/O, easily unit-tested)
+# ---------------------------------------------------------------------------
+
+
+def _cage_label(i: int) -> str:
+    """Generate an Excel-column-style label: A…Z, AA…AZ, BA…
+
+    Uses 0-based index i. Supports any number of cages without overflow.
+    """
+    label = ""
+    n = i + 1
+    while n > 0:
+        n, remainder = divmod(n - 1, 26)
+        label = chr(ord("A") + remainder) + label
+    return label
+
+
+def _spec_to_cage_states(spec: PuzzleSpec) -> list[CageState]:
+    """Convert a PuzzleSpec into a list of CageState Pydantic models.
+
+    Groups cells by cage index from spec.regions, assigns sequential
+    uppercase labels (A, B, C …), and reads the total from spec.cage_totals
+    (stored at the head cell of each cage; all other cells are 0).
+    """
+    cage_cells: dict[int, list[CellPosition]] = {}
+    cage_totals_map: dict[int, int] = {}
+
+    for row in range(9):
+        for col in range(9):
+            idx = int(spec.regions[row, col])
+            if idx == 0:
+                continue  # 0 = unassigned; skip
+            if idx not in cage_cells:
+                cage_cells[idx] = []
+            cage_cells[idx].append(CellPosition(row=row + 1, col=col + 1))
+            total = int(spec.cage_totals[row, col])
+            if total > 0:
+                cage_totals_map[idx] = total
+
+    return [
+        CageState(
+            label=_cage_label(i),
+            total=cage_totals_map.get(idx, 0),
+            cells=cage_cells[idx],
+        )
+        for i, idx in enumerate(sorted(cage_cells))
+    ]
+
+
+def _spec_to_data(spec: PuzzleSpec) -> PuzzleSpecData:
+    """Serialize a PuzzleSpec's numpy arrays to nested Python lists for JSON storage."""
+    return PuzzleSpecData(
+        regions=spec.regions.tolist(),
+        cage_totals=spec.cage_totals.tolist(),
+        border_x=spec.border_x.tolist(),
+        border_y=spec.border_y.tolist(),
+    )
+
+
+def _data_to_spec(data: PuzzleSpecData) -> PuzzleSpec:
+    """Reconstruct a PuzzleSpec from serialized session data."""
+    return PuzzleSpec(
+        regions=np.array(data.regions, dtype=np.intp),
+        cage_totals=np.array(data.cage_totals, dtype=np.intp),
+        border_x=np.array(data.border_x, dtype=bool),
+        border_y=np.array(data.border_y, dtype=bool),
+    )
+
+
+def _cage_states_to_spec(cages: list[CageState], data: PuzzleSpecData) -> PuzzleSpec:
+    """Rebuild a PuzzleSpec from (possibly edited) cage states and stored border data.
+
+    Re-derives regions and cage_totals from the current cage list so that
+    user corrections to cage totals are reflected. The original border_x /
+    border_y arrays from the OCR run are reused for rendering.
+    """
+    regions = np.zeros((9, 9), dtype=np.intp)
+    cage_totals = np.zeros((9, 9), dtype=np.intp)
+
+    for cage_idx, cage in enumerate(cages, start=1):
+        head: tuple[int, int] | None = None
+        for cell in cage.cells:
+            r, c = cell.row - 1, cell.col - 1
+            regions[r, c] = cage_idx
+            if head is None:
+                head = (r, c)
+        if head is not None:
+            cage_totals[head[0], head[1]] = cage.total
+
+    return PuzzleSpec(
+        regions=regions,
+        cage_totals=cage_totals,
+        border_x=np.array(data.border_x, dtype=bool),
+        border_y=np.array(data.border_y, dtype=bool),
+    )
+
+
+def _encode_image(img: npt.NDArray[np.uint8], fmt: str = ".jpg") -> str:
+    """Encode a numpy BGR image as a base64 string.
+
+    Args:
+        img: BGR image array.
+        fmt: File extension controlling the codec, e.g. ".jpg" or ".png".
+    """
+    success, buf = cv2.imencode(fmt, img)
+    if not success:
+        raise RuntimeError(f"cv2.imencode({fmt!r}) failed")
+    return base64.b64encode(buf.tobytes()).decode("ascii")
+
+
+def _resize_for_display(
+    img: npt.NDArray[np.uint8], max_px: int = 504
+) -> npt.NDArray[np.uint8]:
+    """Downscale img so its largest dimension is at most max_px.
+
+    Returns the original array unchanged if it already fits.
+    """
+    h, w = img.shape[:2]
+    largest = max(h, w)
+    if largest <= max_px:
+        return img
+    scale = max_px / largest
+    new_w, new_h = int(w * scale), int(h * scale)
+    return np.asarray(
+        cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA),
+        dtype=np.uint8,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Router factory
+# ---------------------------------------------------------------------------
+
+
+def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
+    """Create the puzzle API router bound to the given config and session store.
+
+    Uses a factory pattern so that config and store are injected once at
+    startup (in app.py) rather than read from module-level globals, making
+    the router straightforwardly testable.
+    """
+    router = APIRouter(prefix="/api/puzzle", tags=["puzzle"])
+
+    @router.post("", response_model=UploadResponse)
+    async def upload_puzzle(
+        file: UploadFile,
+        newspaper: Literal["guardian", "observer"] = "guardian",
+    ) -> UploadResponse:
+        """Accept a puzzle image, run the OCR pipeline, and create a session.
+
+        The uploaded image is written to a temp file for InpImage processing
+        (InpImage requires a Path, not bytes). rework=True ensures no stale
+        .jpk cache files are left alongside the temp file.
+
+        Raises 422 if the OCR pipeline cannot parse the image.
+        """
+        contents = await file.read()
+        suffix = Path(file.filename or "upload.jpg").suffix or ".jpg"
+
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                tmp.write(contents)
+                tmp_path = Path(tmp.name)
+
+            puzzle_dir = config.puzzle_dir(newspaper)
+            img_config = ImagePipelineConfig(
+                puzzle_dir=puzzle_dir,
+                newspaper=newspaper,
+                rework=True,
+            )
+            border_detector = InpImage.make_border_detector(img_config)
+            num_recogniser = InpImage.make_num_recogniser(img_config)
+
+            try:
+                inp = InpImage(tmp_path, img_config, border_detector, num_recogniser)
+            except (AssertionError, ValueError, ProcessingError) as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+            spec = inp.spec
+            cages = _spec_to_cage_states(spec)
+            spec_data = _spec_to_data(spec)
+            original_b64 = _encode_image(_resize_for_display(inp.img))
+
+            session_id = str(uuid.uuid4())
+            state = PuzzleState(
+                session_id=session_id,
+                newspaper=newspaper,
+                cages=cages,
+                spec_data=spec_data,
+                original_image_b64=original_b64,
+            )
+            store.save(state)
+            return UploadResponse(session_id=session_id, state=state)
+
+        finally:
+            if tmp_path is not None:
+                tmp_path.unlink(missing_ok=True)
+
+    @router.get("/{session_id}", response_model=PuzzleState)
+    async def get_puzzle(session_id: str) -> PuzzleState:
+        """Retrieve the current state of a puzzle session."""
+        try:
+            return store.load(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+
+    @router.patch("/{session_id}/cage/{label}", response_model=PuzzleState)
+    async def patch_cage(
+        session_id: str,
+        label: str,
+        req: CagePatchRequest,
+    ) -> PuzzleState:
+        """Correct the OCR-detected total for a named cage.
+
+        Re-renders the overlay image with the updated total so the frontend
+        can display the correction immediately.
+        """
+        try:
+            state = store.load(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+
+        upper = label.upper()
+        if not any(c.label == upper for c in state.cages):
+            raise HTTPException(status_code=404, detail=f"Cage {label!r} not found")
+
+        updated_cages = [
+            CageState(
+                label=c.label,
+                total=req.total if c.label == upper else c.total,
+                cells=c.cells,
+                subdivisions=c.subdivisions,
+            )
+            for c in state.cages
+        ]
+
+        updated = PuzzleState(
+            session_id=state.session_id,
+            newspaper=state.newspaper,
+            cages=updated_cages,
+            spec_data=state.spec_data,
+            original_image_b64=state.original_image_b64,
+        )
+        store.save(updated)
+        return updated
+
+    @router.post("/{session_id}/cage/{label}/subdivide", response_model=PuzzleState)
+    async def subdivide_cage(
+        session_id: str,
+        label: str,
+        req: SubdivideRequest,
+    ) -> PuzzleState:
+        """Split a cage into user-defined sub-cages.
+
+        Stores the subdivision in the session for Phase 2 use. The parent
+        cage total and cells are unchanged; solving still uses the parent cage.
+        """
+        try:
+            state = store.load(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+
+        upper = label.upper()
+        if not any(c.label == upper for c in state.cages):
+            raise HTTPException(status_code=404, detail=f"Cage {label!r} not found")
+
+        updated_cages = [
+            CageState(
+                label=c.label,
+                total=c.total,
+                cells=c.cells,
+                subdivisions=req.sub_cages if c.label == upper else c.subdivisions,
+            )
+            for c in state.cages
+        ]
+
+        updated = PuzzleState(
+            session_id=state.session_id,
+            newspaper=state.newspaper,
+            cages=updated_cages,
+            spec_data=state.spec_data,
+            original_image_b64=state.original_image_b64,
+        )
+        store.save(updated)
+        return updated
+
+    @router.post("/{session_id}/solve", response_model=SolveResponse)
+    async def solve_puzzle(session_id: str) -> SolveResponse:
+        """Solve the puzzle using the constraint engine, with CSP fallback.
+
+        Reconstructs a PuzzleSpec from the current (possibly edited) cage
+        states, runs engine_solve(), and falls back to cheat_solve() if the
+        constraint engine cannot reach a full solution.
+
+        Returns a 9×9 grid of digits (0 = unsolved) and a solved flag.
+        """
+        try:
+            state = store.load(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+
+        spec = _cage_states_to_spec(state.cages, state.spec_data)
+        grd = Grid()
+        grd.set_up(spec)
+
+        try:
+            alts_sum, _ = grd.engine_solve()
+        except (AssertionError, ValueError) as exc:
+            empty: list[list[int]] = [[0] * 9 for _ in range(9)]
+            return SolveResponse(solved=False, grid=empty, error=str(exc))
+
+        if alts_sum != 81:
+            grd.cheat_solve()
+
+        solution = [
+            [int(next(iter(grd.sq_poss[r][c]))) for c in range(9)] for r in range(9)
+        ]
+        solved = all(
+            len(set(grd.sq_poss[r][c])) == 1 for r in range(9) for c in range(9)
+        )
+        return SolveResponse(solved=solved, grid=solution)
+
+    return router

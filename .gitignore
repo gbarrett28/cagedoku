@@ -15,3 +15,7 @@ build/
 .serena/
 .mcp.json
 no_gutter.py
+
+# Runtime artifacts
+sessions/
+killer_sudoku/static/main.js

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>COACH — Killer Sudoku</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <h1>COACH</h1>
+    <span class="header-sub">Killer Sudoku Coaching App</span>
+    <button id="quit-btn" class="btn-secondary btn-quit">Quit server</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ── Phase 1a: Upload ── -->
+  <section id="upload-panel" class="card">
+    <h2>Open Puzzle</h2>
+    <div class="form-row">
+      <label class="field-label" for="newspaper-select">Newspaper</label>
+      <select id="newspaper-select">
+        <option value="guardian">Guardian</option>
+        <option value="observer">Observer</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label class="field-label" for="file-input">Puzzle image</label>
+      <input type="file" id="file-input" accept="image/*">
+    </div>
+    <div class="form-actions">
+      <button id="process-btn">Process image</button>
+      <span id="status-msg" class="status"></span>
+    </div>
+  </section>
+
+  <!-- ── Phase 1b: Review & confirm ── -->
+  <section id="review-panel" class="card" hidden>
+
+    <div id="images-row">
+      <div class="image-col">
+        <h2>Detected Layout</h2>
+        <canvas id="grid-canvas"></canvas>
+      </div>
+      <div class="image-col">
+        <h2>Original Photo</h2>
+        <img id="original-img" alt="Uploaded puzzle photo">
+      </div>
+    </div>
+
+    <div class="form-actions" id="review-actions">
+      <button id="confirm-btn">Looks correct — solve!</button>
+      <button id="edit-btn" class="btn-secondary">Edit cage totals</button>
+    </div>
+
+    <!-- Hidden until user requests cage editing -->
+    <div id="editor-section" hidden>
+      <h2>Cage Totals</h2>
+      <p class="hint-text">Correct any OCR errors below, then solve.</p>
+      <div id="cage-table-wrap">
+        <table id="cage-table">
+          <thead>
+            <tr>
+              <th>Cage</th>
+              <th>Cells</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody id="cage-tbody"></tbody>
+        </table>
+      </div>
+      <div class="form-actions">
+        <button id="solve-btn">Solve puzzle</button>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ── Phase 1c: Solution ── -->
+  <section id="solution-panel" class="card" hidden>
+    <h2>Solution</h2>
+    <div id="solution-grid"></div>
+  </section>
+
+</main>
+
+<script src="/static/main.js" type="module"></script>
+</body>
+</html>
