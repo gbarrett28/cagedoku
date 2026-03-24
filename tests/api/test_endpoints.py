@@ -584,3 +584,161 @@ class TestConfirmInitializesCandidates:
                 assert cell["auto_essential"] == [expected], (
                     f"cell ({r},{c}): expected essential [{expected}], got {cell['auto_essential']}"
                 )
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/puzzle/{session_id}/cell — candidate_grid updates
+# ---------------------------------------------------------------------------
+
+
+class TestCandidateWithCellEntry:
+    """candidate_grid is updated after /cell and restored after /undo.
+
+    Freeze rule: solved cell's CandidateCell is unchanged during recomputation.
+    """
+
+    def _confirmed_session(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> str:
+        """Confirm trivial session and return session_id."""
+        store.save(trivial_state)
+        res = client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
+        assert res.status_code == 200
+        return trivial_state.session_id
+
+    def test_candidate_grid_updated_after_cell_entry(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        sid = self._confirmed_session(client, store, trivial_state)
+        res = client.patch(
+            f"/api/puzzle/{sid}/cell",
+            json={"row": 1, "col": 1, "digit": 5},
+        )
+        assert res.status_code == 200
+        cg = res.json()["candidate_grid"]
+        assert cg is not None
+
+    def test_solved_cell_candidates_frozen(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        """After placing a digit, that cell's CandidateCell is frozen unchanged."""
+        sid = self._confirmed_session(client, store, trivial_state)
+        state_before = store.load(sid)
+        assert state_before.candidate_grid is not None
+        cell_before = state_before.candidate_grid.cells[0][0]
+
+        res = client.patch(
+            f"/api/puzzle/{sid}/cell",
+            json={"row": 1, "col": 1, "digit": KNOWN_SOLUTION[0][0]},
+        )
+        assert res.status_code == 200
+        cg_after = res.json()["candidate_grid"]
+        cell_after = cg_after["cells"][0][0]
+        assert cell_after["auto_candidates"] == cell_before.auto_candidates
+        assert cell_after["auto_essential"] == cell_before.auto_essential
+
+    def test_undo_restores_candidate_state(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        """After undo, candidate_grid is non-None and cell (0,0) is unsolved again."""
+        sid = self._confirmed_session(client, store, trivial_state)
+        client.patch(
+            f"/api/puzzle/{sid}/cell",
+            json={"row": 1, "col": 1, "digit": KNOWN_SOLUTION[0][0]},
+        )
+        res = client.post(f"/api/puzzle/{sid}/undo")
+        assert res.status_code == 200
+        state = res.json()
+        assert state["user_grid"][0][0] == 0
+        assert state["candidate_grid"] is not None
+        cell = state["candidate_grid"]["cells"][0][0]
+        assert KNOWN_SOLUTION[0][0] in cell["auto_candidates"]
+
+    @pytest.mark.skip(reason="depends on Task 5+6 (/candidates/mode, /candidates/cell)")
+    def test_freeze_scope(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        """Place in cell A; cycle peer cell B; undo A; assert B's override preserved."""
+        sid = self._confirmed_session(client, store, trivial_state)
+        # Switch to manual so we can cycle any digit in peer cell B = (0,1)
+        client.post(
+            f"/api/puzzle/{sid}/candidates/mode",
+            json={"mode": "manual"},
+        )
+        # Cycle digit 7 in cell B (0,1) [row=1, col=2]: inessential → essential
+        client.patch(
+            f"/api/puzzle/{sid}/candidates/cell",
+            json={"row": 1, "col": 2, "digit": 7},
+        )
+        # Place digit in cell A = (0,0)
+        client.patch(
+            f"/api/puzzle/{sid}/cell",
+            json={"row": 1, "col": 1, "digit": KNOWN_SOLUTION[0][0]},
+        )
+        # Undo
+        res = client.post(f"/api/puzzle/{sid}/undo")
+        data = res.json()
+        cell_b = data["candidate_grid"]["cells"][0][1]
+        assert 7 in cell_b["user_essential"], (
+            "Cell B's user_essential should still have 7 after undoing cell A"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Rule A
+# ---------------------------------------------------------------------------
+
+
+class TestRuleA:
+    """Rule A: digits dropped from auto_candidates are removed from user_essential."""
+
+    @pytest.mark.skip(reason="depends on Task 5+6 (/candidates/mode, /candidates/cell)")
+    def test_rule_a_removes_from_user_essential(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        """After confirming, manually promote a digit in cell (0,1).
+        Then switch to auto — Rule A removes any digit not in auto_candidates."""
+        store.save(trivial_state)
+        client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
+        sid = trivial_state.session_id
+        # Switch to manual
+        client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "manual"})
+        # In manual mode, cycle digit 3 in cell (0,0): inessential → essential
+        # (digit 3 is NOT in auto_candidates for (0,0), which has auto_candidates=[5])
+        client.patch(
+            f"/api/puzzle/{sid}/candidates/cell",
+            json={"row": 1, "col": 1, "digit": 3},
+        )
+        # Switch to auto: digit 3 not in auto_candidates → cleared from user_essential
+        res = client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "auto"})
+        data = res.json()
+        cell_00 = data["candidate_grid"]["cells"][0][0]
+        assert 3 not in cell_00["user_essential"], (
+            "Rule A: digit 3 should be removed from user_essential since auto says impossible"
+        )
+
+    @pytest.mark.skip(reason="depends on Task 6 (/candidates/cell)")
+    def test_user_removed_preserved_when_auto_also_impossible(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        """user_removed entries are preserved even when auto also considers digit impossible."""
+        store.save(trivial_state)
+        client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
+        sid = trivial_state.session_id
+        # In auto mode: cycle digit 5 in cell (0,0) [row=1,col=1]
+        # Digit 5 is auto-essential → first cycle sends it to impossible (user_removed)
+        res = client.patch(
+            f"/api/puzzle/{sid}/candidates/cell",
+            json={"row": 1, "col": 1, "digit": 5},
+        )
+        cell = res.json()["candidate_grid"]["cells"][0][0]
+        assert 5 in cell["user_removed"]
+        # Place a digit in the same row (cell entry should preserve user_removed)
+        res2 = client.patch(
+            f"/api/puzzle/{sid}/cell",
+            json={"row": 1, "col": 2, "digit": KNOWN_SOLUTION[0][1]},
+        )
+        cell_after = res2.json()["candidate_grid"]["cells"][0][0]
+        assert 5 in cell_after["user_removed"], (
+            "user_removed should be preserved after cell entry"
+        )

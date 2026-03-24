@@ -631,6 +631,9 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
         updated = state.model_copy(
             update={"user_grid": new_grid, "move_history": new_history}
         )
+        # Recompute candidates after the cell entry
+        new_cg = _compute_candidate_grid(updated, updated.candidate_grid)
+        updated = updated.model_copy(update={"candidate_grid": new_cg})
         store.save(updated)
         return updated
 
@@ -662,6 +665,9 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
         updated = state.model_copy(
             update={"user_grid": new_grid, "move_history": new_history}
         )
+        # Recompute candidates after restoring the cell
+        new_cg = _compute_candidate_grid(updated, updated.candidate_grid)
+        updated = updated.model_copy(update={"candidate_grid": new_cg})
         store.save(updated)
         return updated
 
