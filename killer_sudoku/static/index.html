@@ -83,6 +83,10 @@
       <div class="form-actions">
         <button id="undo-btn" class="btn-secondary" disabled>Undo</button>
         <button id="hints-btn" class="btn-secondary" disabled>Hints</button>
+        <button id="candidates-btn" class="btn-secondary" disabled>Show candidates</button>
+        <button id="edit-candidates-btn" class="btn-secondary" hidden>Edit candidates</button>
+        <button id="candidates-mode-btn" class="btn-secondary" hidden>Auto</button>
+        <button id="help-candidates-btn" class="btn-secondary" hidden>?</button>
       </div>
     </div>
 
@@ -95,6 +99,43 @@
   </section>
 
 </main>
+
+<dialog id="help-candidates-modal">
+  <h2>Candidates</h2>
+  <p>The candidates view shows, for each unsolved cell, which digits are still possible &mdash; and highlights which digits appear in every valid solution for that cage.</p>
+
+  <h3>Turning it on</h3>
+  <p>Press <strong>Show candidates</strong> to reveal the candidate grid. Each unsolved cell displays up to nine small digits arranged in a 3&times;3 layout matching their position on a keypad:</p>
+  <pre>1  2  3
+4  5  6
+7  8  9</pre>
+  <p>A digit that does not appear has been ruled out. A digit shown in <strong>grey</strong> is possible but not yet certain. A digit shown in <span style="color:#cc5a45">salmon</span> is essential to that cage.</p>
+
+  <h3>Essential digits</h3>
+  <p>A digit is <em>essential</em> for a cell if it appears in every remaining valid solution for that cell&#8217;s cage. Essential digits are worth paying close attention to when you are stuck.</p>
+
+  <h3>Auto mode and manual mode</h3>
+  <p>The <strong>Auto / Manual</strong> toggle controls how the candidate grid is maintained.</p>
+  <p><em>Auto mode</em> (default): the app computes candidates for you. When you place a digit in any cell, candidates in related cells are immediately updated.</p>
+  <p><em>Manual mode</em>: you manage candidates yourself. The app does not eliminate or promote anything.</p>
+  <p><strong>Switching from manual to auto</strong> merges your work with the solver&#8217;s knowledge: for each digit in each cell, the more restrictive of the two assessments wins.</p>
+  <p><strong>Switching from auto to manual</strong> leaves your candidate marks exactly as they are.</p>
+
+  <h3>Cycling a digit&#8217;s state</h3>
+  <p>Press <strong>Edit candidates</strong> to enter candidate editing mode. Each digit cycles through its states:</p>
+  <table>
+    <tr><th>State</th><th>Appearance</th><th>Meaning</th></tr>
+    <tr><td>Inessential</td><td>grey</td><td>Possible, but not in every cage solution</td></tr>
+    <tr><td>Essential</td><td>salmon</td><td>Marked as present in every cage solution</td></tr>
+    <tr><td>Impossible</td><td>hidden</td><td>Ruled out &mdash; not shown</td></tr>
+  </table>
+  <p>Press <strong>Delete</strong> (or <strong>Backspace</strong>) in candidate editing mode to reset the selected cell to its auto-computed state.</p>
+
+  <h3>Solved cells</h3>
+  <p>When you enter a digit into a cell, its candidates are hidden but not lost. If you undo or clear the digit, the candidates reappear exactly as you left them.</p>
+
+  <button id="close-help-btn">Close</button>
+</dialog>
 
 <script src="/static/main.js" type="module"></script>
 </body>

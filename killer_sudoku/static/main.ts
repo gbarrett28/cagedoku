@@ -35,6 +35,18 @@ interface MoveRecord {
   prev_digit: number; // 0–9
 }
 
+interface CandidateCell {
+  auto_candidates: number[];
+  auto_essential:  number[];
+  user_essential:  number[];
+  user_removed:    number[];
+}
+
+interface CandidateGrid {
+  cells: CandidateCell[][];   // 9 rows × 9 cols, 0-based
+  mode:  "auto" | "manual";
+}
+
 interface PuzzleSpecData {
   regions: number[][];
   cage_totals: number[][];
@@ -51,6 +63,7 @@ interface PuzzleState {
   golden_solution: number[][] | null;
   user_grid: number[][] | null;
   move_history: MoveRecord[];
+  candidate_grid: CandidateGrid | null;
 }
 
 interface UploadResponse {
@@ -76,6 +89,8 @@ let currentSessionId: string | null = null;
 let currentState: PuzzleState | null = null;
 let selectedCell: { row: number; col: number } | null = null;
 // row and col are 1-based (1–9), matching the API convention
+let showCandidates: boolean = false;
+let candidateEditMode: boolean = false;
 
 // ── UI helpers ──────────────────────────────────────────────────────────────
 
