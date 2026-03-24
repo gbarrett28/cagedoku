@@ -10,7 +10,13 @@ from killer_sudoku.solver.engine.rules import default_rules
 from killer_sudoku.solver.engine.solver_engine import SolverEngine
 from killer_sudoku.solver.puzzle_spec import PuzzleSpec
 
-__all__ = ["solve", "validate_solution"]
+__all__ = [
+    "BoardState",
+    "SolverEngine",
+    "default_rules",
+    "solve",
+    "validate_solution",
+]
 
 
 def solve(spec: PuzzleSpec) -> BoardState:

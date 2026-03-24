@@ -22,6 +22,10 @@ from killer_sudoku.api.config import CoachConfig
 from killer_sudoku.api.schemas import (
     CagePatchRequest,
     CageState,
+    CandidateCell,
+    CandidateCycleRequest,
+    CandidateGrid,
+    CandidateModeRequest,
     CellEntryRequest,
     CellPosition,
     MoveRecord,
@@ -33,6 +37,8 @@ from killer_sudoku.api.schemas import (
 )
 from killer_sudoku.api.session import SessionStore
 from killer_sudoku.image.config import ImagePipelineConfig
+from killer_sudoku.solver.engine import BoardState, SolverEngine, default_rules
+from killer_sudoku.solver.engine.types import Elimination
 from killer_sudoku.image.inp_image import InpImage
 from killer_sudoku.solver.grid import (  # Grid used in solve endpoint
     Grid,
@@ -168,6 +174,208 @@ def _resize_for_display(
         cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA),
         dtype=np.uint8,
     )
+
+
+# ---------------------------------------------------------------------------
+# Candidate grid helpers
+# ---------------------------------------------------------------------------
+
+
+def _compute_candidate_grid(
+    state: PuzzleState,
+    existing_grid: CandidateGrid | None,
+) -> CandidateGrid:
+    """Recompute auto_candidates and auto_essential for all unsolved cells.
+
+    Uses BoardState/SolverEngine directly so that user placements can be
+    injected as Elimination events before the engine runs. This ensures
+    cage_solns and candidates reflect placed digits correctly.
+
+    Solved cells (user_grid[r][c] != 0) have their CandidateCell copied
+    unchanged from existing_grid (freeze rule). If existing_grid is None
+    (initial call at /confirm), all user_essential and user_removed start empty.
+
+    Rule A is applied for unsolved cells: digits no longer in auto_candidates
+    are removed from user_essential.
+    """
+    assert state.user_grid is not None
+    spec = _data_to_spec(state.spec_data)
+    board = BoardState(spec)
+    engine: SolverEngine = SolverEngine(board, rules=default_rules())
+
+    # Step 1: apply linear system initial eliminations (same as normal solve)
+    engine.apply_eliminations(
+        [
+            e
+            for e in board.linear_system.initial_eliminations
+            if e.digit in board.candidates[e.cell[0]][e.cell[1]]
+        ]
+    )
+
+    # Step 2: pin user placements so the engine propagates them
+    user_elims: list[Elimination] = [
+        Elimination(cell=(r, c), digit=d)
+        for r in range(9)
+        for c in range(9)
+        for d in range(1, 10)
+        if state.user_grid[r][c] != 0 and d != state.user_grid[r][c]
+    ]
+    engine.apply_eliminations(user_elims)
+
+    # Step 3: propagate — best-effort (partial results still useful)
+    try:
+        engine.solve()
+    except (AssertionError, ValueError):
+        pass
+
+    # Step 4: build per-cell CandidateCell
+    cells: list[list[CandidateCell]] = []
+    for r in range(9):
+        row_cells: list[CandidateCell] = []
+        for c in range(9):
+            placed = state.user_grid[r][c]
+            if placed != 0:
+                # Solved cell: freeze existing state unchanged
+                if existing_grid is not None:
+                    row_cells.append(existing_grid.cells[r][c])
+                else:
+                    row_cells.append(
+                        CandidateCell(
+                            auto_candidates=[],
+                            auto_essential=[],
+                            user_essential=[],
+                            user_removed=[],
+                        )
+                    )
+            else:
+                # Unsolved cell: derive auto state from engine output
+                auto_cands_set = board.candidates[r][c]
+                cage_idx = int(board.regions[r, c])  # 0-based
+                cage_solns: list[frozenset[int]] = board.cage_solns[cage_idx]
+                cage_must: set[int] = (
+                    set(range(1, 10)) if cage_solns else set()
+                )
+                for soln in cage_solns:
+                    cage_must &= soln
+
+                auto_ess = sorted(auto_cands_set & cage_must)
+                auto_cands = sorted(auto_cands_set)
+
+                # Preserve overrides; apply Rule A to user_essential
+                if existing_grid is not None:
+                    prev = existing_grid.cells[r][c]
+                    user_essential = [
+                        d for d in prev.user_essential if d in auto_cands_set
+                    ]
+                    user_removed = list(prev.user_removed)
+                else:
+                    user_essential = []
+                    user_removed = []
+
+                row_cells.append(
+                    CandidateCell(
+                        auto_candidates=auto_cands,
+                        auto_essential=auto_ess,
+                        user_essential=user_essential,
+                        user_removed=user_removed,
+                    )
+                )
+        cells.append(row_cells)
+
+    mode = existing_grid.mode if existing_grid is not None else "auto"
+    return CandidateGrid(cells=cells, mode=mode)
+
+
+def _cycle_candidate(
+    cell: CandidateCell,
+    digit: int,
+    mode: Literal["auto", "manual"],
+) -> CandidateCell:
+    """Advance digit one step through its state cycle in the given mode.
+
+    Auto mode cycle (pre-check: if auto-impossible and not user-removed → no-op):
+      inessential → essential (user)
+      essential (user) → impossible
+      essential (auto only) → impossible
+      impossible (user) → restore (auto_essential determines displayed state)
+
+    Manual mode cycle (all digits cycle freely):
+      inessential → essential → impossible → inessential
+    """
+    auto_set = set(cell.auto_candidates)
+    auto_ess = set(cell.auto_essential)
+    user_ess = set(cell.user_essential)
+    user_rem = set(cell.user_removed)
+
+    if mode == "auto":
+        if digit not in auto_set and digit not in user_rem:
+            return cell  # auto-impossible, not user-removed: no-op
+        if digit in user_rem:
+            user_rem.discard(digit)
+        elif digit in user_ess:
+            user_ess.discard(digit)
+            user_rem.add(digit)
+        elif digit in auto_ess:
+            # auto-essential only (not user_essential): essential → impossible
+            user_rem.add(digit)
+        else:
+            # inessential: promote to essential
+            user_ess.add(digit)
+    else:
+        # manual: full three-state cycle
+        if digit in user_rem:
+            user_rem.discard(digit)
+        elif digit in user_ess:
+            user_ess.discard(digit)
+            user_rem.add(digit)
+        else:
+            user_ess.add(digit)
+
+    return CandidateCell(
+        auto_candidates=cell.auto_candidates,
+        auto_essential=cell.auto_essential,
+        user_essential=sorted(user_ess),
+        user_removed=sorted(user_rem),
+    )
+
+
+def _min_merge_to_auto(
+    existing: CandidateGrid,
+    new_auto: CandidateGrid,
+    user_grid: list[list[int]],
+) -> CandidateGrid:
+    """Merge manual→auto: for each digit, the more restrictive state wins.
+
+    Uses ordering: impossible=0 < essential=1 < inessential=2.
+    - Auto says impossible → clears from user_essential (Rule A).
+    - User removed + auto says possible → stays in user_removed.
+    - User essential + auto says inessential → stays in user_essential.
+    Solved cells are frozen unchanged.
+    """
+    cells: list[list[CandidateCell]] = []
+    for r in range(9):
+        row_cells: list[CandidateCell] = []
+        for c in range(9):
+            if user_grid[r][c] != 0:
+                row_cells.append(existing.cells[r][c])
+            else:
+                auto_cell = new_auto.cells[r][c]
+                manual_cell = existing.cells[r][c]
+                auto_set = set(auto_cell.auto_candidates)
+                # Rule A: auto-impossible beats user_essential
+                merged_ess = [d for d in manual_cell.user_essential if d in auto_set]
+                # User-removed stays removed (manual restriction persists)
+                merged_rem = list(manual_cell.user_removed)
+                row_cells.append(
+                    CandidateCell(
+                        auto_candidates=auto_cell.auto_candidates,
+                        auto_essential=auto_cell.auto_essential,
+                        user_essential=merged_ess,
+                        user_removed=merged_rem,
+                    )
+                )
+        cells.append(row_cells)
+    return CandidateGrid(cells=cells, mode="auto")
 
 
 # ---------------------------------------------------------------------------
