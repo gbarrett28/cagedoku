@@ -1,16 +1,17 @@
 # Playing Mode Design
 
 **Date:** 2026-03-24
-**Feature:** Cell-by-cell puzzle solving with mistake detection, undo history, and hint scaffolding
+**Feature:** Cell-by-cell puzzle solving with undo history and hint scaffolding
 
 ---
 
 ## Overview
 
 Extend the COACH web app so the user can play through a puzzle themselves after
-confirming the cage layout. The app silently checks each entered digit against the
-golden solution and checkpoints the first mistake, enabling a future "rewind to
-first mistake" hint. A full undo history supports step-by-step reversal of moves.
+confirming the cage layout. The app stores a golden solution for future hint use
+but does not perform real-time mistake detection — that is deferred to the hints
+sprint, where wrong cells and eliminated candidates will be surfaced together.
+A full undo history supports step-by-step reversal of moves.
 
 ---
 
@@ -18,9 +19,9 @@ first mistake" hint. A full undo history supports step-by-step reversal of moves
 
 ### In scope
 - `PuzzleState` extended with playing-mode fields (golden solution, user grid,
-  move history, first-mistake index)
+  move history)
 - New schemas: `MoveRecord`, `CellEntryRequest`
-- TypeScript `PuzzleState` interface updated to include the four new fields
+- TypeScript `PuzzleState` interface updated to include the three new fields
 - Three new API endpoints: `confirm`, `cell` (PATCH), `undo`
 - Canvas: click-to-select cell, keyboard digit entry, user-digit rendering,
   selected-cell highlight
@@ -28,12 +29,12 @@ first mistake" hint. A full undo history supports step-by-step reversal of moves
 - Hints button (visible, permanently disabled — placeholder for future work)
 
 ### Explicitly out of scope
+- Mistake detection and first-mistake checkpointing (deferred to hints sprint)
 - Candidate/pencil-mark view (DEL-in-cell behaviour deferred)
-- Hints implementation (rule suggestions, reveal-cell, reveal-grid)
-- Rewind-to-checkpoint UI (achievable as repeated undo once hints land)
+- Hints implementation (rule suggestions, reveal-cell, reveal-grid, rewind)
 - Multiple-solution re-solve: if `golden_solution` has a 0 for a cell (solver
-  could not determine it), no mistake check is performed for that cell. The
-  re-solve-with-user-digit strategy is deferred.
+  could not determine it), no check is performed for that cell
+- Solver failure reporting (see Open Questions)
 
 ---
 
@@ -79,16 +80,6 @@ class PuzzleState(BaseModel):
     move_history: list[MoveRecord] = []
     # Ordered record of every digit entry or clear, newest last.
     # Sufficient to replay or reverse the full game history.
-
-    first_mistake_index: int | None = None
-    # Index into move_history of the first move that disagreed with
-    # golden_solution (for a cell golden_solution can determine, i.e. != 0).
-    #
-    # INVARIANT: first_mistake_index is immutable once set. It is cleared only
-    # by /undo when the undone move was the move at that index. It reflects
-    # history, not the current grid state — the cell may subsequently have been
-    # overwritten with the correct digit without clearing the flag.
-    # None = no confirmed mistake in history yet.
 ```
 
 **Lifecycle:**
@@ -128,8 +119,8 @@ mode. Replaces the role of the "Looks correct — solve!" button in the UI flow.
    if alts_sum != 81:       # engine did not fully solve; alts_sum == 81 means
        grd.cheat_solve()    # each cell has exactly one candidate remaining
    ```
-   A partial result (cells still 0 after `cheat_solve`) is acceptable — those
-   cells will never be flagged as mistakes.
+   A partial result (cells still unsolved after `cheat_solve`) is acceptable —
+   those cells are stored as 0 in the golden solution.
 5. Extract golden solution — cells with more than one candidate remaining are stored
    as 0:
    ```python
@@ -147,15 +138,15 @@ mode. Replaces the role of the "Looks correct — solve!" button in the UI flow.
 **Response:** `PuzzleState`
 
 **Note on existing endpoints:** `patch_cage` and `subdivide_cage` reconstruct
-`PuzzleState` by name when saving updates. Both must be updated to pass through
-the new fields (`golden_solution`, `user_grid`, `move_history`,
-`first_mistake_index`) so that confirming a session and then editing a cage does
-not silently revert the playing-mode fields to their defaults.
+`PuzzleState` by field name when saving updates. Both must be updated to pass
+through the new fields (`golden_solution`, `user_grid`, `move_history`) so that
+confirming a session and then editing a cage does not silently revert the
+playing-mode fields to their defaults.
 
 **Edge cases:**
 - Solver raises (invalid cage layout) → 422.
 - Solver returns partial grid (some zeros) → playing mode activates; those cells
-  are simply never checked.
+  are simply not used for checking.
 
 ### `PATCH /api/puzzle/{session_id}/cell`
 
@@ -172,12 +163,7 @@ Enter or clear a digit in the user's grid.
 6. Append `MoveRecord(row=row, col=col, digit=digit, prev_digit=prev_digit)` to
    `move_history`. Clear moves (`digit=0`) are recorded identically to digit
    placements — undo must be able to reverse them.
-7. **Mistake detection** (only when `digit != 0`):
-   - `golden = golden_solution[row-1][col-1]`
-   - If `golden != 0` and `digit != golden` and `first_mistake_index is None`:
-     - `first_mistake_index = len(move_history) - 1`
-   - If `golden == 0` (solver could not determine cell): no check performed.
-8. Save session; return updated `PuzzleState`.
+7. Save session; return updated `PuzzleState`.
 
 **Response:** `PuzzleState`
 
@@ -192,9 +178,7 @@ Reverse the most recent move.
 2. Return 409 if `move_history` is empty.
 3. Pop the last `MoveRecord` from `move_history`.
 4. Restore `user_grid[row-1][col-1] = prev_digit`.
-5. If `first_mistake_index == len(move_history)` (the popped move was the
-   first-mistake move), clear `first_mistake_index` to `None`.
-6. Save session; return updated `PuzzleState`.
+5. Save session; return updated `PuzzleState`.
 
 **Response:** `PuzzleState`
 
@@ -222,11 +206,10 @@ interface MoveRecord {
   prev_digit: number; // 0–9
 }
 
-// PuzzleState gains four new fields (added to the existing interface):
+// PuzzleState gains three new fields (added to the existing interface):
 // golden_solution: number[][] | null;
 // user_grid:       number[][] | null;
 // move_history:    MoveRecord[];
-// first_mistake_index: number | null;
 ```
 
 ### `selectedCell` storage convention
@@ -310,18 +293,14 @@ unchanged — useful for testing and direct solution display.
 - Returns 422 when cage layout is invalid (solver raises)
 
 **`TestCellEntry`:**
-- Digit stored in `user_grid` at correct 0-based index
+- Digit stored in `user_grid` at correct position
 - `MoveRecord` appended with correct `prev_digit`
-- Wrong digit (vs non-zero golden) sets `first_mistake_index`
-- Correct digit leaves `first_mistake_index` as `None`
-- Clear (`digit=0`) appended to history; no mistake check performed
+- Clear (`digit=0`) appended to history
 - Returns 409 on unconfirmed session
 
 **`TestUndo`:**
 - `prev_digit` restored in `user_grid`
 - `MoveRecord` removed from `move_history`
-- Undoing first-mistake move clears `first_mistake_index`
-- Undoing a non-mistake move does not touch `first_mistake_index`
 - Returns 409 on empty history
 
 ---
@@ -331,4 +310,8 @@ unchanged — useful for testing and direct solution display.
 1. **DEL in candidate/pencil-mark view** — when the candidate view is implemented,
    what should deleting a user digit do to the pencil marks for that cell? Deferred.
 2. **Multiple-solution re-solve** — deferred to a future sprint. Cells the solver
-   cannot determine (`golden_solution[r][c] == 0`) are never checked for mistakes.
+   cannot determine (`golden_solution[r][c] == 0`) are simply not checked.
+3. **Solver failure reporting** — when the solver cannot fully resolve a puzzle,
+   the abstract cage representation (cells + totals) should be reported so the
+   solver can be improved. Mechanism TBD: email to a nominated address, GitHub
+   issue, or local log file. Deferred to a future sprint.
