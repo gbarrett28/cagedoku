@@ -361,6 +361,50 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
         store.save(updated)
         return updated
 
+    @router.patch("/{session_id}/cell", response_model=PuzzleState)
+    async def enter_cell(
+        session_id: str,
+        req: CellEntryRequest,
+    ) -> PuzzleState:
+        """Place or clear a digit in the user's playing grid.
+
+        Records every change as a MoveRecord (including clears) so the full
+        history can be reversed by repeated calls to /undo.
+        """
+        try:
+            state = store.load(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+
+        if state.user_grid is None:
+            raise HTTPException(status_code=409, detail="Session not yet confirmed")
+
+        if not (1 <= req.row <= 9 and 1 <= req.col <= 9 and 0 <= req.digit <= 9):
+            raise HTTPException(
+                status_code=422, detail="row/col must be 1–9; digit 0–9"
+            )
+
+        r, c = req.row - 1, req.col - 1
+        prev_digit = state.user_grid[r][c]
+
+        new_grid = [row[:] for row in state.user_grid]
+        new_grid[r][c] = req.digit
+
+        new_history = list(state.move_history) + [
+            MoveRecord(
+                row=req.row,
+                col=req.col,
+                digit=req.digit,
+                prev_digit=prev_digit,
+            )
+        ]
+
+        updated = state.model_copy(
+            update={"user_grid": new_grid, "move_history": new_history}
+        )
+        store.save(updated)
+        return updated
+
     @router.post("/{session_id}/solve", response_model=SolveResponse)
     async def solve_puzzle(session_id: str) -> SolveResponse:
         """Solve the puzzle using the constraint engine, with CSP fallback.

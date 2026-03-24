@@ -325,6 +325,96 @@ class TestSubdivideCage:
 
 
 # ---------------------------------------------------------------------------
+# PATCH /api/puzzle/{session_id}/cell
+# ---------------------------------------------------------------------------
+
+
+class TestCellEntry:
+    def _confirm(self, client: TestClient, session_id: str) -> None:
+        client.post(f"/api/puzzle/{session_id}/confirm")
+
+    def test_digit_stored_in_user_grid(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        store.save(trivial_state)
+        self._confirm(client, trivial_state.session_id)
+        res = client.patch(
+            f"/api/puzzle/{trivial_state.session_id}/cell",
+            json={"row": 1, "col": 1, "digit": 5},
+        )
+        assert res.status_code == 200
+        assert res.json()["user_grid"][0][0] == 5
+
+    def test_move_record_appended_with_prev_digit(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        store.save(trivial_state)
+        self._confirm(client, trivial_state.session_id)
+        res = client.patch(
+            f"/api/puzzle/{trivial_state.session_id}/cell",
+            json={"row": 2, "col": 3, "digit": 7},
+        )
+        history = res.json()["move_history"]
+        assert len(history) == 1
+        assert history[0] == {"row": 2, "col": 3, "digit": 7, "prev_digit": 0}
+
+    def test_prev_digit_recorded_on_overwrite(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        store.save(trivial_state)
+        self._confirm(client, trivial_state.session_id)
+        client.patch(
+            f"/api/puzzle/{trivial_state.session_id}/cell",
+            json={"row": 1, "col": 1, "digit": 5},
+        )
+        res = client.patch(
+            f"/api/puzzle/{trivial_state.session_id}/cell",
+            json={"row": 1, "col": 1, "digit": 3},
+        )
+        history = res.json()["move_history"]
+        assert history[-1]["prev_digit"] == 5
+
+    def test_clear_sets_cell_to_zero_and_records_prev(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        store.save(trivial_state)
+        self._confirm(client, trivial_state.session_id)
+        client.patch(
+            f"/api/puzzle/{trivial_state.session_id}/cell",
+            json={"row": 1, "col": 1, "digit": 5},
+        )
+        res = client.patch(
+            f"/api/puzzle/{trivial_state.session_id}/cell",
+            json={"row": 1, "col": 1, "digit": 0},
+        )
+        body = res.json()
+        assert body["user_grid"][0][0] == 0
+        assert body["move_history"][-1]["digit"] == 0
+        assert body["move_history"][-1]["prev_digit"] == 5
+
+    def test_returns_409_on_unconfirmed_session(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        store.save(trivial_state)
+        res = client.patch(
+            f"/api/puzzle/{trivial_state.session_id}/cell",
+            json={"row": 1, "col": 1, "digit": 5},
+        )
+        assert res.status_code == 409
+
+    def test_returns_422_on_invalid_row(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        store.save(trivial_state)
+        self._confirm(client, trivial_state.session_id)
+        res = client.patch(
+            f"/api/puzzle/{trivial_state.session_id}/cell",
+            json={"row": 10, "col": 1, "digit": 5},
+        )
+        assert res.status_code == 422
+
+
+# ---------------------------------------------------------------------------
 # POST /api/puzzle/{session_id}/confirm
 # ---------------------------------------------------------------------------
 
