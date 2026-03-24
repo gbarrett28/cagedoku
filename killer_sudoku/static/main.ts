@@ -28,6 +28,13 @@ interface CageState {
   subdivisions: SubCageState[];
 }
 
+interface MoveRecord {
+  row: number;        // 1-based
+  col: number;        // 1-based
+  digit: number;      // 0–9 (0 = clear)
+  prev_digit: number; // 0–9
+}
+
 interface PuzzleSpecData {
   regions: number[][];
   cage_totals: number[][];
@@ -41,6 +48,9 @@ interface PuzzleState {
   cages: CageState[];
   spec_data: PuzzleSpecData;
   original_image_b64: string;
+  golden_solution: number[][] | null;
+  user_grid: number[][] | null;
+  move_history: MoveRecord[];
 }
 
 interface UploadResponse {
@@ -63,6 +73,9 @@ const GRID_PX = MARGIN * 2 + 9 * CELL;  // total canvas size (= 458px)
 // ── Module state ────────────────────────────────────────────────────────────
 
 let currentSessionId: string | null = null;
+let currentState: PuzzleState | null = null;
+let selectedCell: { row: number; col: number } | null = null;
+// row and col are 1-based (1–9), matching the API convention
 
 // ── UI helpers ──────────────────────────────────────────────────────────────
 
@@ -108,7 +121,11 @@ function clearChildren(node: Node): void {
  *  border_x[col][rowBnd]  — horizontal wall below row rowBnd in column col
  *  border_y[row][colBnd]  — vertical wall right of col colBnd in row row
  */
-function drawGrid(canvas: HTMLCanvasElement, state: PuzzleState): void {
+function drawGrid(
+  canvas: HTMLCanvasElement,
+  state: PuzzleState,
+  selected: { row: number; col: number } | null = null
+): void {
   canvas.width = GRID_PX;
   canvas.height = GRID_PX;
   const ctx = canvas.getContext("2d");
@@ -117,6 +134,17 @@ function drawGrid(canvas: HTMLCanvasElement, state: PuzzleState): void {
   // 1. White background
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, GRID_PX, GRID_PX);
+
+  // 1b. Selected-cell highlight (before cage underlay so red lines render on top)
+  if (selected !== null) {
+    ctx.fillStyle = "#dbeafe";
+    ctx.fillRect(
+      MARGIN + (selected.col - 1) * CELL,
+      MARGIN + (selected.row - 1) * CELL,
+      CELL,
+      CELL
+    );
+  }
 
   // 2. Cage boundaries in red — drawn first as a wide underlay so the black
   //    grid lines (dashed cell dividers, box lines, outer border) appear on top.
@@ -205,6 +233,26 @@ function drawGrid(canvas: HTMLCanvasElement, state: PuzzleState): void {
         const cage = state.cages[cageIdx];
         const total = cage !== undefined ? cage.total : headCells[r][c];
         ctx.fillText(String(total), MARGIN + c * CELL + 2, MARGIN + r * CELL + 2);
+      }
+    }
+  }
+
+  // 7. User-entered digits (playing mode)
+  if (state.user_grid !== null) {
+    ctx.fillStyle = "#2563eb";
+    ctx.font = "bold 28px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        const digit = state.user_grid[r]?.[c] ?? 0;
+        if (digit > 0) {
+          ctx.fillText(
+            String(digit),
+            MARGIN + c * CELL + CELL / 2,
+            MARGIN + r * CELL + CELL / 2
+          );
+        }
       }
     }
   }
