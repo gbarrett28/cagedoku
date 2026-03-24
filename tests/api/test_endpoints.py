@@ -529,3 +529,58 @@ class TestConfirm:
         store.save(bad_state)
         res = client.post(f"/api/puzzle/{bad_state.session_id}/confirm")
         assert res.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# POST /api/puzzle/{session_id}/confirm — candidate_grid initialisation
+# ---------------------------------------------------------------------------
+
+
+class TestConfirmInitializesCandidates:
+    def test_candidate_grid_is_not_none(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        store.save(trivial_state)
+        res = client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["candidate_grid"] is not None
+
+    def test_mode_is_auto(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        store.save(trivial_state)
+        res = client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
+        cg = res.json()["candidate_grid"]
+        assert cg["mode"] == "auto"
+
+    def test_all_overrides_empty(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        store.save(trivial_state)
+        res = client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
+        cg = res.json()["candidate_grid"]
+        for r in range(9):
+            for c in range(9):
+                cell = cg["cells"][r][c]
+                assert cell["user_essential"] == [], f"cell ({r},{c}) user_essential not empty"
+                assert cell["user_removed"] == [], f"cell ({r},{c}) user_removed not empty"
+
+    def test_auto_candidates_match_solution(
+        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
+    ) -> None:
+        """Trivial spec: every cell is a single-cell cage. After engine_solve,
+        each cell's auto_candidates equals its solution digit."""
+        store.save(trivial_state)
+        res = client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
+        cg = res.json()["candidate_grid"]
+        for r in range(9):
+            for c in range(9):
+                cell = cg["cells"][r][c]
+                expected = KNOWN_SOLUTION[r][c]
+                assert cell["auto_candidates"] == [expected], (
+                    f"cell ({r},{c}): expected [{expected}], got {cell['auto_candidates']}"
+                )
+                assert cell["auto_essential"] == [expected], (
+                    f"cell ({r},{c}): expected essential [{expected}], got {cell['auto_essential']}"
+                )

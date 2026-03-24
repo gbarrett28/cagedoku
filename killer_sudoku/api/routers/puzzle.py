@@ -405,6 +405,25 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
 
         Raises 422 if the OCR pipeline cannot parse the image.
         """
+        if config.mock_spec is not None:
+            spec = config.mock_spec
+            cages = _spec_to_cage_states(spec)
+            spec_data = _spec_to_data(spec)
+            placeholder = np.zeros((1, 1, 3), dtype=np.uint8) + 255
+            original_b64 = _encode_image(
+                np.asarray(placeholder, dtype=np.uint8)
+            )
+            session_id = str(uuid.uuid4())
+            mock_state = PuzzleState(
+                session_id=session_id,
+                newspaper=newspaper,
+                cages=cages,
+                spec_data=spec_data,
+                original_image_b64=original_b64,
+            )
+            store.save(mock_state)
+            return UploadResponse(session_id=session_id, state=mock_state)
+
         contents = await file.read()
         suffix = Path(file.filename or "upload.jpg").suffix or ".jpg"
 
@@ -558,11 +577,15 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
             ]
             for r in range(9)
         ]
-        updated = state.model_copy(
+        initial_state_for_cg = state.model_copy(
             update={
                 "golden_solution": golden,
                 "user_grid": [[0] * 9 for _ in range(9)],
             }
+        )
+        candidate_grid = _compute_candidate_grid(initial_state_for_cg, None)
+        updated = initial_state_for_cg.model_copy(
+            update={"candidate_grid": candidate_grid}
         )
         store.save(updated)
         return updated
