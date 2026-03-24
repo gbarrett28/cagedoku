@@ -334,3 +334,11 @@ button:hover:not(:disabled) {
 .solution-table td.box-right {
   border-right: 2px solid var(--text-muted);
 }
+
+/* ── Playing mode ── */
+
+#playing-actions {
+  border-top: 1px solid var(--border);
+  padding-top: 1.25rem;
+  margin-top: 0.25rem;
+}
