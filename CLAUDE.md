@@ -235,6 +235,15 @@ This pattern is **prohibited** in all new and refactored code:
 
 ---
 
+# Branch Workflow
+
+- All new work must be done on a **feature branch** (never commit directly to `master`).
+- Name branches descriptively: `feature/short-description`.
+- **Bronze gate must pass before every commit** on any branch.
+- **Silver gate must pass before merging to `master`**, and before any direct commit on `master`.
+
+---
+
 # Quality Gates
 
 **CRITICAL:** Before creating any commit, you MUST automatically run the **bronze gate** checks.
@@ -259,7 +268,8 @@ python -m mypy --strict killer_sudoku/ # Entire package tree
 ```
 
 **Rationale:** Changes to shared utilities can affect code throughout the codebase
-even if those files don't appear modified. Silver gate catches this.
+even if those files don't appear modified. Silver gate catches this. It is also the
+bar required before merging to `master` or committing directly on `master`.
 
 If complexity warnings appear (PLR091x), refactor the code — DO NOT add `# noqa`.
 
