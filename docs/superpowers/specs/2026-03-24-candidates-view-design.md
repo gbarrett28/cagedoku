@@ -131,13 +131,30 @@ class CandidateModeRequest(BaseModel):
 
 ### Recomputation procedure
 
-1. Reconstruct a `PuzzleSpec` from the session via `_data_to_spec(state.spec_data)` (already implemented in `puzzle.py`).
-2. Create a fresh `Grid`, call `set_up(spec)` — this initialises `sq_poss` and all cage `Equation` objects (including `solns`, `must`, `poss`).
-3. For each solved cell (`user_grid[r][c] != 0`), narrow `grd.sq_poss[r][c]` to `{digit}`.
-4. Call `grd.engine_solve()` — this propagates the narrowed candidates through all constraint rules, updating both `sq_poss` and cage `Equation.solns`/`must` to reflect the placed digits.
-5. For each unsolved cell `(r, c)` (`user_grid[r][c] == 0`):
-   - `auto_candidates` = `list(grd.sq_poss[r][c])`
-   - `auto_essential` = `list(auto_candidates_set ∩ cage_equation.must)`, where `cage_equation` is the `Equation` for this cell's cage
+The solver has two engines: the legacy `Grid`/`Equation` path and the new `BoardState`/`SolverEngine` path. `Grid.engine_solve()` uses the new engine internally and overwrites `sq_poss` from its results; pre-injected placements into `sq_poss` are discarded. The correct approach uses `BoardState` and `SolverEngine` directly.
+
+1. Reconstruct a `PuzzleSpec` via `_data_to_spec(state.spec_data)` (already in `puzzle.py`).
+2. Create `board = BoardState(spec)` and `engine = SolverEngine(board, rules=default_rules())`.
+3. Apply the linear system's initial eliminations (as the normal `solve()` function does):
+   ```python
+   engine.apply_eliminations([
+       e for e in board.linear_system.initial_eliminations
+       if e.digit in board.candidates[e.cell[0]][e.cell[1]]
+   ])
+   ```
+4. For each solved cell (`user_grid[r][c] != 0`), emit `Elimination(cell=(r,c), digit=d)` for every `d != user_grid[r][c]`, and call `engine.apply_eliminations(user_elims)`. This pins the placed digits so the engine propagates them through all constraint rules.
+5. Call `engine.solve()` (best-effort: catch `AssertionError`/`ValueError`). This updates `board.candidates` and `board.cage_solns` in place.
+6. For each unsolved cell `(r, c)` (`user_grid[r][c] == 0`):
+   - `auto_candidates` = `sorted(board.candidates[r][c])`
+   - `cage_idx` = `int(board.regions[r, c])` (0-based, `board.regions = spec.regions - 1`)
+   - `cage_must` = intersection of all frozensets in `board.cage_solns[cage_idx]` (empty set if `cage_solns[cage_idx]` is empty)
+   - `auto_essential` = `sorted(set(auto_candidates) ∩ cage_must)`
+
+**Required imports** (at top of `puzzle.py`):
+```python
+from killer_sudoku.solver.engine import BoardState, SolverEngine, default_rules
+from killer_sudoku.solver.engine.types import Elimination
+```
 
 ### Solved-cell freeze rule
 
