@@ -15,12 +15,17 @@ from starlette.testclient import TestClient
 from killer_sudoku.api.app import create_app
 from killer_sudoku.api.config import CoachConfig
 from killer_sudoku.api.routers.puzzle import (
+    _compute_candidate_grid,
     _spec_to_cage_states,
     _spec_to_data,
 )
 from killer_sudoku.api.schemas import PuzzleState
 from killer_sudoku.api.session import SessionStore
-from tests.fixtures.minimal_puzzle import KNOWN_SOLUTION, make_trivial_spec
+from tests.fixtures.minimal_puzzle import (
+    KNOWN_SOLUTION,
+    make_trivial_spec,
+    make_two_cell_cage_spec,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -60,6 +65,30 @@ def trivial_state() -> PuzzleState:
         spec_data=_spec_to_data(spec),
         original_image_b64="dGVzdA==",  # base64("test") — placeholder for unit tests
     )
+
+
+@pytest.fixture
+def two_cell_state(store: SessionStore) -> PuzzleState:
+    """Confirmed PuzzleState with a 2-cell cage (cells (0,0)+(0,1), total=8).
+
+    sol_sums(2, 0, 8) = [{1,7},{2,6},{3,5}] — three valid combinations.
+    """
+    spec = make_two_cell_cage_spec()
+    cages = _spec_to_cage_states(spec)
+    state = PuzzleState(
+        session_id="two-cell-001",
+        newspaper="guardian",
+        cages=cages,
+        spec_data=_spec_to_data(spec),
+        original_image_b64="dGVzdA==",
+        golden_solution=KNOWN_SOLUTION,
+        user_grid=[[0] * 9 for _ in range(9)],
+    )
+    state = state.model_copy(
+        update={"candidate_grid": _compute_candidate_grid(state, None)}
+    )
+    store.save(state)
+    return state
 
 
 # ---------------------------------------------------------------------------
@@ -981,5 +1010,55 @@ class TestCandidateCycle:
         res = client.patch(
             f"/api/puzzle/{trivial_state.session_id}/candidates/cell",
             json={"row": 1, "col": 1, "digit": 5},
+        )
+        assert res.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# GET /api/puzzle/{session_id}/cage/{label}/solutions
+# ---------------------------------------------------------------------------
+
+
+class TestCageSolutions:
+    def test_returns_all_solutions_for_fresh_cage(
+        self,
+        client: TestClient,
+        store: SessionStore,
+        two_cell_state: PuzzleState,
+    ) -> None:
+        """2-cell total-8 cage: sol_sums gives [{1,7},{2,6},{3,5}]."""
+        sid = two_cell_state.session_id
+        label = two_cell_state.cages[0].label
+        res = client.get(f"/api/puzzle/{sid}/cage/{label}/solutions")
+        assert res.status_code == 200
+        body = res.json()
+        assert sorted(body["all_solutions"]) == [[1, 7], [2, 6], [3, 5]]
+        assert body["user_eliminated"] == []
+        for s in body["auto_impossible"]:
+            assert s in body["all_solutions"]
+
+    def test_returns_404_for_unknown_session(self, client: TestClient) -> None:
+        res = client.get("/api/puzzle/no-such-session/cage/A/solutions")
+        assert res.status_code == 404
+
+    def test_returns_404_for_unknown_label(
+        self,
+        client: TestClient,
+        store: SessionStore,
+        two_cell_state: PuzzleState,
+    ) -> None:
+        res = client.get(f"/api/puzzle/{two_cell_state.session_id}/cage/ZZZ/solutions")
+        assert res.status_code == 404
+
+    def test_returns_409_before_confirm(
+        self,
+        client: TestClient,
+        store: SessionStore,
+        trivial_state: PuzzleState,
+    ) -> None:
+        store.save(trivial_state)
+        label = trivial_state.cages[0].label
+        res = client.get(
+            f"/api/puzzle/{trivial_state.session_id}/cage/{label}/solutions"
         )
         assert res.status_code == 409

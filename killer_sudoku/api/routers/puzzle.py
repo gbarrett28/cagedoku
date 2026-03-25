@@ -21,6 +21,7 @@ from fastapi import APIRouter, HTTPException, UploadFile
 from killer_sudoku.api.config import CoachConfig
 from killer_sudoku.api.schemas import (
     CagePatchRequest,
+    CageSolutionsResponse,
     CageState,
     CandidateCell,
     CandidateCycleRequest,
@@ -40,6 +41,7 @@ from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.inp_image import InpImage
 from killer_sudoku.solver.engine import BoardState, SolverEngine, default_rules
 from killer_sudoku.solver.engine.types import Elimination
+from killer_sudoku.solver.equation import sol_sums
 from killer_sudoku.solver.grid import (  # Grid used in solve endpoint
     Grid,
     ProcessingError,
@@ -807,5 +809,77 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
             len(set(grd.sq_poss[r][c])) == 1 for r in range(9) for c in range(9)
         )
         return SolveResponse(solved=solved, grid=solution)
+
+    @router.get(
+        "/{session_id}/cage/{label}/solutions",
+        response_model=CageSolutionsResponse,
+    )
+    async def get_cage_solutions(
+        session_id: str,
+        label: str,
+    ) -> CageSolutionsResponse:
+        """Return all valid digit combinations for a cage, split by status.
+
+        all_solutions: complete set from sol_sums, each as a sorted digit list.
+        auto_impossible: solutions absent from board.cage_solns after linear-system
+            eliminations — consistent with _compute_candidate_grid.
+        user_eliminated: stored from CageState.user_eliminated_solns.
+        Returns 404 if session/label unknown; 409 if not yet confirmed;
+        400 if cage has subdivisions.
+        """
+        try:
+            state = store.load(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+
+        upper = label.upper()
+        try:
+            cage_idx, cage = next(
+                (i, c) for i, c in enumerate(state.cages) if c.label == upper
+            )
+        except StopIteration as exc:
+            raise HTTPException(
+                status_code=404, detail=f"Cage {label!r} not found"
+            ) from exc
+
+        if state.user_grid is None:
+            raise HTTPException(status_code=409, detail="Session not yet confirmed")
+
+        if cage.subdivisions:
+            raise HTTPException(
+                status_code=400, detail="Subdivided cages are not supported"
+            )
+
+        spec = _data_to_spec(state.spec_data)
+        board = BoardState(spec)
+        engine: SolverEngine = SolverEngine(board, rules=default_rules())
+        engine.apply_eliminations(
+            [
+                e
+                for e in board.linear_system.initial_eliminations
+                if e.digit in board.candidates[e.cell[0]][e.cell[1]]
+            ]
+        )
+        user_elims: list[Elimination] = [
+            Elimination(cell=(r, c), digit=d)
+            for r in range(9)
+            for c in range(9)
+            for d in range(1, 10)
+            if state.user_grid[r][c] != 0 and d != state.user_grid[r][c]
+        ]
+        engine.apply_eliminations(user_elims)
+
+        all_solutions = sorted(
+            sorted(s) for s in sol_sums(len(cage.cells), 0, cage.total)
+        )
+        possible = {frozenset(s) for s in board.cage_solns[cage_idx]}
+        auto_impossible = [s for s in all_solutions if frozenset(s) not in possible]
+
+        return CageSolutionsResponse(
+            label=upper,
+            all_solutions=all_solutions,
+            auto_impossible=auto_impossible,
+            user_eliminated=cage.user_eliminated_solns,
+        )
 
     return router
