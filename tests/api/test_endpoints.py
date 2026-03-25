@@ -1062,3 +1062,106 @@ class TestCageSolutions:
             f"/api/puzzle/{trivial_state.session_id}/cage/{label}/solutions"
         )
         assert res.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# POST /api/puzzle/{session_id}/cage/{label}/solutions/eliminate
+# ---------------------------------------------------------------------------
+
+
+class TestEliminateSolution:
+    def test_eliminate_adds_to_user_eliminated(
+        self,
+        client: TestClient,
+        store: SessionStore,
+        two_cell_state: PuzzleState,
+    ) -> None:
+        sid = two_cell_state.session_id
+        label = two_cell_state.cages[0].label
+        res = client.post(
+            f"/api/puzzle/{sid}/cage/{label}/solutions/eliminate",
+            json={"solution": [3, 5]},
+        )
+        assert res.status_code == 200
+        cage = next(c for c in res.json()["cages"] if c["label"] == label)
+        assert [3, 5] in cage["user_eliminated_solns"]
+
+    def test_eliminate_twice_restores(
+        self,
+        client: TestClient,
+        store: SessionStore,
+        two_cell_state: PuzzleState,
+    ) -> None:
+        sid = two_cell_state.session_id
+        label = two_cell_state.cages[0].label
+        url = f"/api/puzzle/{sid}/cage/{label}/solutions/eliminate"
+        client.post(url, json={"solution": [3, 5]})
+        res = client.post(url, json={"solution": [3, 5]})
+        assert res.status_code == 200
+        cage = next(c for c in res.json()["cages"] if c["label"] == label)
+        assert [3, 5] not in cage["user_eliminated_solns"]
+
+    def test_eliminate_narrows_candidates(
+        self,
+        client: TestClient,
+        store: SessionStore,
+        two_cell_state: PuzzleState,
+    ) -> None:
+        """Eliminating [3,5] from 2-cell total-8 removes 3 and 5 from candidates."""
+        sid = two_cell_state.session_id
+        label = two_cell_state.cages[0].label
+        res = client.post(
+            f"/api/puzzle/{sid}/cage/{label}/solutions/eliminate",
+            json={"solution": [3, 5]},
+        )
+        assert res.status_code == 200
+        cg = res.json()["candidate_grid"]
+        assert 3 not in cg["cells"][0][0]["auto_candidates"]
+        assert 5 not in cg["cells"][0][0]["auto_candidates"]
+
+    def test_returns_404_unknown_session(self, client: TestClient) -> None:
+        res = client.post(
+            "/api/puzzle/bad/cage/A/solutions/eliminate",
+            json={"solution": [1, 7]},
+        )
+        assert res.status_code == 404
+
+    def test_returns_404_unknown_label(
+        self,
+        client: TestClient,
+        store: SessionStore,
+        two_cell_state: PuzzleState,
+    ) -> None:
+        res = client.post(
+            f"/api/puzzle/{two_cell_state.session_id}/cage/ZZZ/solutions/eliminate",
+            json={"solution": [1, 7]},
+        )
+        assert res.status_code == 404
+
+    def test_returns_409_before_confirm(
+        self,
+        client: TestClient,
+        store: SessionStore,
+        trivial_state: PuzzleState,
+    ) -> None:
+        store.save(trivial_state)
+        label = trivial_state.cages[0].label
+        res = client.post(
+            f"/api/puzzle/{trivial_state.session_id}/cage/{label}/solutions/eliminate",
+            json={"solution": [1]},
+        )
+        assert res.status_code == 409
+
+    def test_returns_422_invalid_digits(
+        self,
+        client: TestClient,
+        store: SessionStore,
+        two_cell_state: PuzzleState,
+    ) -> None:
+        sid = two_cell_state.session_id
+        label = two_cell_state.cages[0].label
+        res = client.post(
+            f"/api/puzzle/{sid}/cage/{label}/solutions/eliminate",
+            json={"solution": [0, 10]},
+        )
+        assert res.status_code == 422

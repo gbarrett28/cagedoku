@@ -29,6 +29,7 @@ from killer_sudoku.api.schemas import (
     CandidateModeRequest,
     CellEntryRequest,
     CellPosition,
+    EliminateSolutionRequest,
     MoveRecord,
     PuzzleSpecData,
     PuzzleState,
@@ -881,5 +882,73 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
             auto_impossible=auto_impossible,
             user_eliminated=cage.user_eliminated_solns,
         )
+
+    @router.post(
+        "/{session_id}/cage/{label}/solutions/eliminate",
+        response_model=PuzzleState,
+    )
+    async def eliminate_cage_solution(
+        session_id: str,
+        label: str,
+        req: EliminateSolutionRequest,
+    ) -> PuzzleState:
+        """Toggle a cage combination as user-eliminated (or restore it).
+
+        Validates digits are in 1-9, distinct, and count matches cage size.
+        Returns the full updated PuzzleState with recomputed candidate_grid.
+        """
+        try:
+            state = store.load(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+
+        upper = label.upper()
+        try:
+            cage = next(c for c in state.cages if c.label == upper)
+        except StopIteration as exc:
+            raise HTTPException(
+                status_code=404, detail=f"Cage {label!r} not found"
+            ) from exc
+
+        if state.user_grid is None:
+            raise HTTPException(status_code=409, detail="Session not yet confirmed")
+
+        if cage.subdivisions:
+            raise HTTPException(
+                status_code=400, detail="Subdivided cages are not supported"
+            )
+
+        solution = sorted(req.solution)
+        if (
+            len(solution) != len(cage.cells)
+            or any(d < 1 or d > 9 for d in solution)
+            or len(set(solution)) != len(solution)
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "solution must contain distinct digits 1-9,"
+                    f" one per cage cell ({len(cage.cells)} cells)"
+                ),
+            )
+
+        current = [sorted(s) for s in cage.user_eliminated_solns]
+        if solution in current:
+            current.remove(solution)
+        else:
+            current.append(solution)
+
+        updated_cages = [
+            c.model_copy(update={"user_eliminated_solns": current})
+            if c.label == upper
+            else c
+            for c in state.cages
+        ]
+        updated = state.model_copy(update={"cages": updated_cages})
+        assert updated.user_grid is not None
+        new_cg = _compute_candidate_grid(updated, updated.candidate_grid)
+        updated = updated.model_copy(update={"candidate_grid": new_cg})
+        store.save(updated)
+        return updated
 
     return router
