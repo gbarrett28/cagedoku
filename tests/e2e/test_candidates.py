@@ -163,3 +163,23 @@ class TestHelpModal:
         expect(page.locator("#help-candidates-modal")).to_be_visible()
         page.click("#close-help-btn")
         expect(page.locator("#help-candidates-modal")).to_be_hidden()
+
+
+class TestCageInspector:
+    def test_inspect_cage_btn_appears_when_candidates_shown(
+        self, page: Page, live_server_url: str, tiny_jpeg_bytes: bytes
+    ) -> None:
+        _upload_and_confirm(page, live_server_url, tiny_jpeg_bytes)
+        page.click("#candidates-btn")
+        expect(page.locator("#inspect-cage-btn")).to_be_visible()
+
+    def test_cage_inspector_appears_on_cage_click(
+        self, page: Page, live_server_url: str, tiny_jpeg_bytes: bytes
+    ) -> None:
+        _upload_and_confirm(page, live_server_url, tiny_jpeg_bytes)
+        page.click("#candidates-btn")
+        page.click("#inspect-cage-btn")
+        canvas = page.locator("#grid-canvas")
+        canvas.click(position={"x": 30, "y": 30})
+        page.wait_for_timeout(500)
+        expect(page.locator("#inspector-col")).to_be_visible()
