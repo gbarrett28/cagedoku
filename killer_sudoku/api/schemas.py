@@ -38,12 +38,16 @@ class CageState(BaseModel):
         total: OCR-detected (or user-corrected) cage sum.
         cells: All cells belonging to this cage, 1-based row/col.
         subdivisions: Non-empty only after the user manually splits this cage.
+        user_eliminated_solns: Sorted digit lists the user has eliminated, e.g.
+            [[1, 5], [2, 4]]. Persisted server-side; feeds back into candidate
+            computation (eliminated combinations are excluded from cage_solns).
     """
 
     label: str
     total: int
     cells: list[CellPosition]
     subdivisions: list[SubCageState] = []
+    user_eliminated_solns: list[list[int]] = []
 
 
 class MoveRecord(BaseModel):
@@ -198,3 +202,29 @@ class CandidateModeRequest(BaseModel):
     """Switch candidate grid between auto and manual modes."""
 
     mode: Literal["auto", "manual"]
+
+
+class EliminateSolutionRequest(BaseModel):
+    """Request body for toggling a cage solution as user-eliminated.
+
+    solution: Sorted list of digits identifying the combination, e.g. [1, 5].
+    The endpoint toggles: if already eliminated it is restored, otherwise added.
+    """
+
+    solution: list[int]
+
+
+class CageSolutionsResponse(BaseModel):
+    """All solution data for one cage, split by status.
+
+    all_solutions: Complete set from sol_sums, each as a sorted digit list.
+    auto_impossible: Subset of all_solutions absent from board.cage_solns after
+        linear-system eliminations — consistent with _compute_candidate_grid.
+    user_eliminated: Combinations the user has explicitly struck out.
+    active = all_solutions - auto_impossible - user_eliminated (frontend computes).
+    """
+
+    label: str
+    all_solutions: list[list[int]]
+    auto_impossible: list[list[int]]
+    user_eliminated: list[list[int]]
