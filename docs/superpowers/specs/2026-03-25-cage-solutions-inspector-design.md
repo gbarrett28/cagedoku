@@ -4,13 +4,17 @@
 eliminate combinations they know are wrong — with eliminations persisted server-side and
 feeding back into the candidate grid.
 
-**Architecture:** New "Inspect cage" toggle button opens an inline panel below the canvas.
-Clicking a cage in inspect mode fetches its solutions from a new GET endpoint and renders
-them in the panel. A toggle POST endpoint eliminates or restores individual solutions.
+**Architecture:** New "Inspect cage" toggle button enables inspect mode. Clicking a cage
+in that mode fetches its solutions from a new GET endpoint and renders them in a panel
+that replaces the original-photo column (the photo is no longer needed once the grid is
+confirmed). A toggle POST endpoint eliminates or restores individual solutions.
 Eliminated solutions feed back into candidate computation in auto mode.
 
 **Tech stack:** FastAPI + Pydantic (backend), TypeScript + Canvas (frontend), existing
 JSON session store.
+
+**Note:** Cage totals cannot be edited after confirm, so `user_eliminated_solns` never
+needs to be invalidated by a total change.
 
 ---
 
@@ -27,9 +31,6 @@ user_eliminated_solns: list[list[int]] = []
 Each entry is a sorted list of digits identifying one eliminated combination — e.g.
 `[[1, 5], [2, 4]]` means those two combinations have been user-eliminated.
 
-Stored as digit lists (not indices) so they are stable if the cage total is edited:
-old lists simply fail to match any new solutions and become inert.
-
 ### New schemas — `killer_sudoku/api/schemas.py`
 
 ```python
@@ -39,7 +40,7 @@ class EliminateSolutionRequest(BaseModel):
 
 ```python
 class CageSolutionsResponse(BaseModel):
-    label: str
+    label: str                        # letter label, used in API URLs
     all_solutions: list[list[int]]    # complete set from sol_sums, as sorted lists
     auto_impossible: list[list[int]]  # solver says unreachable
     user_eliminated: list[list[int]]  # user has struck these out
@@ -56,8 +57,7 @@ all_solutions = sorted(sorted(s) for s in sol_sums(len(cage.cells), 0, cage.tota
 `auto_impossible` definition: a solution is auto-impossible if it is absent from
 `board.cage_solns[cage_idx]` after linear-system eliminations are applied. This is
 exactly the filtered list that `_compute_candidate_grid` already uses, so the inspector
-and the candidate grid are perfectly consistent with each other. `auto_impossible` is
-therefore the set difference:
+and the candidate grid are perfectly consistent with each other:
 
 ```python
 possible = {frozenset(s) for s in board.cage_solns[cage_idx]}
@@ -109,7 +109,7 @@ it faded regardless).
 
 Steps:
 1. Load session; find cage (404 guards as above).
-2. Guard 409 (not confirmed) and 400 (subdivided), 422 (invalid digits).
+2. Guard 409 (not confirmed), 400 (subdivided), 422 (invalid digits).
 3. Normalise request `solution` to a sorted list.
 4. Toggle: if the sorted solution is already in `user_eliminated_solns` (compare as
    sorted lists), remove it; otherwise append it.
@@ -117,24 +117,6 @@ Steps:
 6. Recompute candidate grid (`_compute_candidate_grid`) — user eliminations filter
    `cage_solns`, automatically narrowing candidates in auto mode.
 7. Return full updated `PuzzleState`.
-
-### `patch_cage` (existing endpoint — modified)
-
-When a cage total is edited, clear `user_eliminated_solns` on that cage. The existing
-implementation reconstructs every `CageState` via an explicit constructor call, which
-will drop any new fields unless they are included. Fix the reconstruction loop to
-preserve `user_eliminated_solns` for non-patched cages and use `[]` for the patched
-cage:
-
-```python
-CageState(
-    label=c.label,
-    total=req.total if c.label == upper else c.total,
-    cells=c.cells,
-    subdivisions=c.subdivisions,
-    user_eliminated_solns=[] if c.label == upper else c.user_eliminated_solns,
-)
-```
 
 ---
 
@@ -151,8 +133,15 @@ let inspectedCageLabel: string | null = null;
 
 Sits in `#playing-actions` alongside `#edit-candidates-btn` and `#candidates-mode-btn`.
 Hidden until candidates are shown. Toggling it sets/clears `inspectCageMode` and
-updates `#cage-inspector` visibility. Independent of `candidateEditMode` — both can
-be active simultaneously.
+shows/hides `#cage-inspector`. Independent of `candidateEditMode` — both can be active
+simultaneously.
+
+### Layout change on confirm
+
+After the user confirms the grid, `#original-img` and its containing `.image-col` are
+hidden. `#cage-inspector` takes their place in the right column of `#images-row`.
+The `#cage-inspector` div is a sibling of the left `.image-col` (which contains
+`#grid-canvas`), and is initially hidden until the user opens it via `#inspect-cage-btn`.
 
 ### Mousedown handler (modified)
 
@@ -172,23 +161,27 @@ GET /api/puzzle/{sid}/cage/{label}/solutions
 
 ### `renderCageInspector(data: CageSolutionsResponse): void`
 
-Populates `#cage-inspector` with:
+Populates `#cage-inspector`. The cage header uses the coordinate of the top-left cell
+(i.e. `cage.cells[0]` from `currentState.cages`, which is where the total is displayed
+on the grid), formatted as `c<row>,<col>` with 1-based indices. Example: a cage whose
+total appears in cell (row 2, col 3) has header "c2,3 — total 15 — 3 cells".
 
-- Header: "Cage {label} — total {N} — {k} cells"
+Each solution is displayed as a set literal: `{1,5}`, `{2,4}`, etc.
+
 - **Active solutions** (`all_solutions` minus `auto_impossible` minus `user_eliminated`,
-  where auto-impossible takes precedence over user-eliminated if a solution appears in
-  both): full-colour digit chips, one solution per row, clickable. Click calls
-  `eliminateSolution(label, solution)`.
+  auto-impossible takes precedence if a solution appears in both): normal text, cursor
+  pointer. Click calls `eliminateSolution(label, solution)`.
 - **User-eliminated solutions** (in `user_eliminated` and NOT in `auto_impossible`):
-  same chip layout but with strikethrough text, clickable to restore (same
-  `eliminateSolution` endpoint — it toggles).
-- **Auto-impossible solutions**: faded chips, at bottom, not interactive, regardless of
+  strikethrough text, cursor pointer. Click restores (same `eliminateSolution` toggle).
+- **Auto-impossible solutions**: faded text, at bottom, not interactive, regardless of
   whether they also appear in `user_eliminated`.
 
-Chip layout example for solution [1, 5]:
+Example panel for a 2-cell cage total 6 where `{2,4}` has been user-eliminated:
 
 ```
-[1] [5]
+c3,1 — total 6 — 2 cells
+{1,5}
+~~{2,4}~~
 ```
 
 ### `eliminateSolution(label: string, solution: number[]): Promise<void>`
@@ -198,7 +191,7 @@ POST /api/puzzle/{sid}/cage/{label}/solutions/eliminate
 body: { solution }
 → PuzzleState
 → currentState = response
-→ renderPlayingMode()      // updates candidate canvas
+→ renderPlayingMode()        // updates candidate canvas
 → fetchCageSolutions(label)  // refreshes inspector panel
 ```
 
@@ -210,7 +203,7 @@ body: { solution }
 
 ---
 
-## HTML additions (`killer_sudoku/static/index.html`)
+## HTML changes (`killer_sudoku/static/index.html`)
 
 ```html
 <button id="inspect-cage-btn" class="btn-secondary" hidden>Inspect cage</button>
@@ -218,25 +211,31 @@ body: { solution }
 
 Added to `#playing-actions` alongside the other candidates sub-buttons.
 
+The right `.image-col` (which currently contains `<h2>Original Photo</h2>` and
+`#original-img`) is repurposed: on confirm, its contents are replaced with
+`#cage-inspector`:
+
 ```html
-<div id="cage-inspector" hidden>
-  <!-- populated by renderCageInspector() -->
+<div class="image-col" id="inspector-col" hidden>
+  <h2 id="inspector-heading"></h2>
+  <div id="cage-inspector">
+    <!-- populated by renderCageInspector() -->
+  </div>
 </div>
 ```
 
-Added directly below `#grid-canvas`, inside the `.image-col` div that contains the
-canvas (i.e. the left column of `#images-row`), so the inspector aligns with the grid.
+`#inspector-col` is shown when `#inspect-cage-btn` is toggled on, hidden when toggled
+off or when candidates are hidden.
 
 ---
 
 ## CSS additions (`killer_sudoku/static/styles.css`)
 
-- `.soln-row`: flex row, gap, margin for each solution.
-- `.soln-chip`: small bordered box showing one digit.
-- `.soln-row.active`: default colour, `cursor: pointer`.
-- `.soln-row.user-eliminated`: `text-decoration: line-through`, muted colour, `cursor: pointer`.
-- `.soln-row.auto-impossible`: `opacity: 0.4`, `cursor: default`.
-- `#cage-inspector`: padding, border-top, max-height with overflow-y auto (defensive).
+- `.soln-item`: block element, one solution per line, `cursor: pointer`.
+- `.soln-item.active`: default text colour.
+- `.soln-item.user-eliminated`: `text-decoration: line-through`, muted colour.
+- `.soln-item.auto-impossible`: `opacity: 0.4`, `cursor: default`.
+- `#cage-inspector`: padding, `font-family: monospace`.
 
 ---
 
@@ -255,10 +254,6 @@ canvas (i.e. the left column of `#images-row`), so the inspector aligns with the
 - `test_eliminate_narrows_candidates`: POST eliminate on a 2-cell cage; eliminating one
   combination reduces possible digits; assert returned `candidate_grid` reflects narrowing.
 - `test_eliminate_422_invalid_digits`: POST with out-of-range digits → 422.
-- `test_patch_cage_clears_eliminated_solns_for_patched_cage`: PATCH cage total; assert
-  `user_eliminated_solns` is `[]` for the patched cage.
-- `test_patch_cage_preserves_eliminated_solns_for_other_cages`: PATCH one cage total;
-  assert `user_eliminated_solns` is unchanged for all other cages.
 
 ### `tests/e2e/test_candidates.py`
 
@@ -277,6 +272,5 @@ canvas (i.e. the left column of `#images-row`), so the inspector aligns with the
 - Auto-impossible is derived from `board.cage_solns` (already filtered by the linear
   system) — no additional bipartite matching needed.
 - No undo support for solution eliminations in this sprint.
-- Subdivided cages (non-empty `subdivisions`): not supported in this sprint. The GET
-  endpoint operates on the parent cage label only; behaviour for subdivided cages is
-  undefined and out of scope.
+- Subdivided cages (non-empty `subdivisions`): not supported in this sprint. Both new
+  endpoints return 400 for subdivided cages.
