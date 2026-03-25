@@ -1,3 +1,13 @@
+# Agent Behaviour
+
+## Token Efficiency
+
+When there is a choice of approaches, always prefer the one that achieves the final
+result with the fewest total tokens. Avoid redundant reads, intermediate explorations
+that are not necessary for the task, and verbose output where concise output suffices.
+
+---
+
 # Current State & Next Steps
 
 ## What This Project Is
