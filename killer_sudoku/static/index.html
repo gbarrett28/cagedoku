@@ -46,9 +46,9 @@
         <h2>Detected Layout</h2>
         <canvas id="grid-canvas"></canvas>
       </div>
-      <div class="image-col">
-        <h2>Original Photo</h2>
-        <img id="original-img" alt="Uploaded puzzle photo">
+      <div class="image-col" id="inspector-col" hidden>
+        <h2 id="inspector-heading"></h2>
+        <div id="cage-inspector"></div>
       </div>
     </div>
 
@@ -87,6 +87,7 @@
         <button id="edit-candidates-btn" class="btn-secondary" hidden>Edit candidates</button>
         <button id="candidates-mode-btn" class="btn-secondary" hidden>Auto</button>
         <button id="help-candidates-btn" class="btn-secondary" hidden>?</button>
+        <button id="inspect-cage-btn" class="btn-secondary" hidden>Inspect cage</button>
       </div>
     </div>
 
