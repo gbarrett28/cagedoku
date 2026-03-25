@@ -258,7 +258,13 @@ def _compute_candidate_grid(
                 # candidate set as the union of valid cage combinations
                 # intersected with board.candidates for sudoku constraints.
                 cage_idx = int(board.regions[r, c])  # 0-based
-                cage_solns: list[frozenset[int]] = board.cage_solns[cage_idx]
+                # Filter user-eliminated combos before computing possible/essential.
+                _eliminated = {
+                    frozenset(s) for s in state.cages[cage_idx].user_eliminated_solns
+                }
+                cage_solns: list[frozenset[int]] = [
+                    s for s in board.cage_solns[cage_idx] if s not in _eliminated
+                ]
                 cage_possible: set[int] = set()
                 cage_must: set[int] = set(range(1, 10)) if cage_solns else set()
                 for soln in cage_solns:
