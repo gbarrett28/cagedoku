@@ -26,6 +26,14 @@ interface CageState {
   total: number;
   cells: CellPosition[];
   subdivisions: SubCageState[];
+  user_eliminated_solns: number[][];
+}
+
+interface CageSolutionsResponse {
+  label: string;
+  all_solutions: number[][];
+  auto_impossible: number[][];
+  user_eliminated: number[][];
 }
 
 interface MoveRecord {
@@ -91,6 +99,8 @@ let selectedCell: { row: number; col: number } | null = null;
 // row and col are 1-based (1–9), matching the API convention
 let showCandidates: boolean = false;
 let candidateEditMode: boolean = false;
+let inspectCageMode: boolean = false;
+let inspectedCageLabel: string | null = null;
 
 // ── UI helpers ──────────────────────────────────────────────────────────────
 
@@ -378,11 +388,101 @@ function renderSolution(grid: number[][]): void {
   el<HTMLElement>("solution-panel").hidden = false;
 }
 
+function renderCageInspector(
+  data: CageSolutionsResponse,
+  cage: CageState
+): void {
+  const inspector = el<HTMLElement>("cage-inspector");
+  const heading = el<HTMLElement>("inspector-heading");
+
+  const topLeft = cage.cells[0];
+  heading.textContent =
+    `c${topLeft.row},${topLeft.col} \u2014 total ${cage.total} \u2014 ${cage.cells.length} cells`;
+
+  const impossibleSet = new Set(data.auto_impossible.map((s) => s.join(",")));
+  const eliminatedSet = new Set(data.user_eliminated.map((s) => s.join(",")));
+  const active = data.all_solutions.filter(
+    (s) => !impossibleSet.has(s.join(",")) && !eliminatedSet.has(s.join(","))
+  );
+  const userElim = data.user_eliminated.filter(
+    (s) => !impossibleSet.has(s.join(","))
+  );
+
+  inspector.replaceChildren();
+
+  for (const soln of active) {
+    const div = document.createElement("div");
+    div.className = "soln-item active";
+    div.textContent = `{${soln.join(",")}}`;
+    div.addEventListener("click", () => {
+      void eliminateSolution(data.label, soln);
+    });
+    inspector.appendChild(div);
+  }
+
+  for (const soln of userElim) {
+    const div = document.createElement("div");
+    div.className = "soln-item user-eliminated";
+    div.textContent = `{${soln.join(",")}}`;
+    div.addEventListener("click", () => {
+      void eliminateSolution(data.label, soln);
+    });
+    inspector.appendChild(div);
+  }
+
+  for (const soln of data.auto_impossible) {
+    const div = document.createElement("div");
+    div.className = "soln-item auto-impossible";
+    div.textContent = `{${soln.join(",")}}`;
+    inspector.appendChild(div);
+  }
+}
+
+async function fetchCageSolutions(label: string): Promise<void> {
+  if (!currentSessionId || !currentState) return;
+  const cage = currentState.cages.find((c) => c.label === label);
+  if (!cage) return;
+  try {
+    const res = await fetch(
+      `/api/puzzle/${currentSessionId}/cage/${label}/solutions`
+    );
+    if (!res.ok) return;
+    const data = (await res.json()) as CageSolutionsResponse;
+    renderCageInspector(data, cage);
+  } catch {
+    // best effort — inspector is non-critical
+  }
+}
+
+async function eliminateSolution(
+  label: string,
+  solution: number[]
+): Promise<void> {
+  if (!currentSessionId) return;
+  try {
+    const res = await fetch(
+      `/api/puzzle/${currentSessionId}/cage/${label}/solutions/eliminate`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ solution }),
+      }
+    );
+    if (!res.ok) return;
+    const state = (await res.json()) as PuzzleState;
+    renderPlayingMode(state);
+    void fetchCageSolutions(label);
+  } catch {
+    // best effort
+  }
+}
+
 function renderPlayingMode(state: PuzzleState): void {
   currentState = state;
   drawGrid(el<HTMLCanvasElement>("grid-canvas"), state, selectedCell, showCandidates);
   el<HTMLElement>("review-actions").hidden = true;
   el<HTMLElement>("editor-section").hidden = true;
+  el<HTMLElement>("original-col").hidden = true;
   el<HTMLElement>("playing-actions").hidden = false;
   el<HTMLElement>("solution-panel").hidden = true;
   updateUndoButton(state);
@@ -675,6 +775,16 @@ el<HTMLCanvasElement>("grid-canvas").addEventListener("mousedown", (e) => {
         showCandidates
       );
     }
+    if (inspectCageMode && currentState) {
+      const clickedCage = currentState.cages.find((cage) =>
+        cage.cells.some((cp) => cp.row === row && cp.col === col)
+      );
+      if (clickedCage) {
+        inspectedCageLabel = clickedCage.label;
+        el<HTMLElement>("inspector-col").hidden = false;
+        void fetchCageSolutions(clickedCage.label);
+      }
+    }
   }
 });
 
@@ -707,10 +817,15 @@ el<HTMLButtonElement>("candidates-btn").addEventListener("click", () => {
   el<HTMLButtonElement>("edit-candidates-btn").hidden = !showCandidates;
   el<HTMLButtonElement>("candidates-mode-btn").hidden = !showCandidates;
   el<HTMLButtonElement>("help-candidates-btn").hidden = !showCandidates;
+  el<HTMLButtonElement>("inspect-cage-btn").hidden = !showCandidates;
   if (!showCandidates) {
     candidateEditMode = false;
     el<HTMLButtonElement>("edit-candidates-btn").textContent =
       "Edit candidates";
+    inspectCageMode = false;
+    el<HTMLButtonElement>("inspect-cage-btn").textContent = "Inspect cage";
+    el<HTMLElement>("inspector-col").hidden = true;
+    inspectedCageLabel = null;
   }
   if (currentState) {
     drawGrid(
@@ -735,6 +850,16 @@ el<HTMLButtonElement>("candidates-mode-btn").addEventListener("click", () => {
 
 el<HTMLButtonElement>("help-candidates-btn").addEventListener("click", () => {
   (el<HTMLDialogElement>("help-candidates-modal") as HTMLDialogElement).showModal();
+});
+
+el<HTMLButtonElement>("inspect-cage-btn").addEventListener("click", () => {
+  inspectCageMode = !inspectCageMode;
+  const btn = el<HTMLButtonElement>("inspect-cage-btn");
+  btn.textContent = inspectCageMode ? "Stop inspecting" : "Inspect cage";
+  if (!inspectCageMode) {
+    el<HTMLElement>("inspector-col").hidden = true;
+    inspectedCageLabel = null;
+  }
 });
 
 el<HTMLButtonElement>("close-help-btn").addEventListener("click", () => {
