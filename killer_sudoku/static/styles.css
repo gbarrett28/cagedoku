@@ -342,3 +342,41 @@ button:hover:not(:disabled) {
   padding-top: 1.25rem;
   margin-top: 0.25rem;
 }
+
+/* ── Cage solutions inspector ── */
+
+#cage-inspector {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9rem;
+  padding: 0.5rem 0;
+}
+
+.soln-item {
+  display: block;
+  padding: 0.2rem 0;
+  line-height: 1.6;
+}
+
+.soln-item.active {
+  color: var(--text);
+  cursor: pointer;
+}
+
+.soln-item.active:hover {
+  color: var(--accent);
+}
+
+.soln-item.user-eliminated {
+  text-decoration: line-through;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.soln-item.user-eliminated:hover {
+  color: var(--text);
+}
+
+.soln-item.auto-impossible {
+  opacity: 0.35;
+  cursor: default;
+}
