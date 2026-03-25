@@ -98,3 +98,28 @@ def make_three_cell_cage_spec() -> PuzzleSpec:
     border_x[0, 1] = False
 
     return validate_cage_layout(totals, border_x, border_y)
+
+
+# Cells (0,0) and (0,1) from KNOWN_SOLUTION: 5 + 3 = 8
+TWO_CELL_CAGE_CELLS = ((0, 0), (0, 1))
+TWO_CELL_CAGE_TOTAL = KNOWN_SOLUTION[0][0] + KNOWN_SOLUTION[0][1]  # = 8
+
+
+def make_two_cell_cage_spec() -> PuzzleSpec:
+    """Return a PuzzleSpec where BoardState cells (0,0) and (0,1) form one cage.
+
+    All other cells remain as single-cell cages.
+    Cage total = 8 (KNOWN_SOLUTION[0][0] + KNOWN_SOLUTION[0][1] = 5 + 3).
+    sol_sums(2, 0, 8) = [{1,7}, {2,6}, {3,5}] — three valid combinations.
+
+    Border removal: border_x[col=0, row=0] controls the wall between
+    validation (0,0) and (0,1), i.e. BoardState cells (0,0) and (0,1).
+    """
+    totals = make_trivial_cage_totals().copy()
+    totals[0, 0] = TWO_CELL_CAGE_TOTAL
+    totals[0, 1] = 0
+
+    border_x = make_trivial_border_x().copy()
+    border_x[0, 0] = False  # remove wall between (0,0) and (0,1)
+
+    return validate_cage_layout(totals, border_x, make_trivial_border_y())
