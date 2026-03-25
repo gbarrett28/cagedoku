@@ -94,7 +94,7 @@ Steps:
 3. Guard: if `state.user_grid is None`, raise 409. If `cage.subdivisions`, raise 400.
 4. Build `BoardState`; apply `linear_system.initial_eliminations` and user placements (same as `_compute_candidate_grid`).
 5. `all_solutions` = `sorted(sorted(s) for s in sol_sums(len(cage.cells), 0, cage.total))`.
-6. `possible` = `{frozenset(s) for s in board.cage_solns[cage_idx]}` (already filtered by linear system; use the same `cage_idx` lookup as `_compute_candidate_grid` does via `board.regions`).
+6. `possible` = `{frozenset(s) for s in board.cage_solns[cage_idx]}` (already filtered by linear system). `board` is always built from `state.cages` in order, so the 0-based index from step 2 is identical to the `int(board.regions[r, c])` index used in `_compute_candidate_grid`.
 7. `auto_impossible` = `[s for s in all_solutions if frozenset(s) not in possible]`.
 8. `user_eliminated` = `cage.user_eliminated_solns`.
 
@@ -246,8 +246,7 @@ canvas (i.e. the left column of `#images-row`), so the inspector aligns with the
 
 - `test_cage_solutions_returns_all_for_fresh_cage`: GET solutions for a confirmed puzzle;
   assert `all_solutions` matches expected combinations for the cage total; assert
-  `user_eliminated` is empty; assert every solution in `auto_impossible` is absent from
-  `all_solutions` is wrong — instead assert `auto_impossible ⊆ all_solutions`.
+  `user_eliminated` is empty; assert `auto_impossible ⊆ all_solutions`.
 - `test_cage_solutions_404_unknown_session`: GET with unknown sid → 404.
 - `test_cage_solutions_404_unknown_label`: GET with unknown label → 404.
 - `test_cage_solutions_409_before_confirm`: GET before `/confirm` → 409.
