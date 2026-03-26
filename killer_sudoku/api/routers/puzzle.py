@@ -796,17 +796,14 @@ def make_router(
                 status_code=400, detail="Subdivided cages are not supported"
             )
 
+        always_apply = frozenset(settings_store.load().always_apply_rules)
         spec = _data_to_spec(state.spec_data)
         board = BoardState(spec)
-        engine: SolverEngine = SolverEngine(board, rules=default_rules())
-        engine.apply_eliminations(
-            [
-                e
-                for e in board.linear_system.initial_eliminations
-                if e.digit in board.candidates[e.cell[0]][e.cell[1]]
-            ]
+        engine: SolverEngine = SolverEngine(
+            board, rules=[r for r in default_rules() if r.name in always_apply]
         )
         engine.apply_eliminations(_user_eliminations(board, state.user_grid))
+        engine.solve()
 
         all_solutions = sorted(
             sorted(s) for s in sol_sums(len(cage.cells), 0, cage.total)
