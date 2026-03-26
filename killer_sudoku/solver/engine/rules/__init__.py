@@ -3,6 +3,7 @@
 Rules are ordered by priority (ascending = higher priority = fired first):
   0  NakedSingle           — CELL_DETERMINED (recognition only, no eliminations)
   0  SolvedCellElimination — CELL_DETERMINED (eliminate confirmed digit from unit peers)
+  1  LinearElimination     — GLOBAL (cells determined by cage-sum algebra)
   1  HiddenSingle          — COUNT_HIT_ONE
   2  CageIntersection      — COUNT_DECREASED / SOLUTION_PRUNED (CAGE)
   3  SolutionMapFilter     — COUNT_DECREASED / SOLUTION_PRUNED (CAGE)
@@ -31,6 +32,7 @@ from killer_sudoku.solver.engine.rules.delta_constraint import DeltaConstraint
 from killer_sudoku.solver.engine.rules.hidden_pair import HiddenPair
 from killer_sudoku.solver.engine.rules.hidden_single import HiddenSingle
 from killer_sudoku.solver.engine.rules.jellyfish import Jellyfish
+from killer_sudoku.solver.engine.rules.linear_elimination import LinearElimination
 from killer_sudoku.solver.engine.rules.locked_candidates import LockedCandidates
 from killer_sudoku.solver.engine.rules.must_contain import MustContain
 from killer_sudoku.solver.engine.rules.must_contain_outie import MustContainOutie
@@ -57,6 +59,7 @@ def default_rules() -> list[SolverRule]:
     return [
         NakedSingle(),
         SolvedCellElimination(),
+        LinearElimination(),
         HiddenSingle(),
         CageIntersection(),
         SolutionMapFilter(),

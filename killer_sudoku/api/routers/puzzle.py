@@ -258,28 +258,18 @@ def _compute_candidate_grid(
         board, rules=[r for r in default_rules() if r.name in always_apply]
     )
 
-    # Step 1: apply linear system initial eliminations — narrows candidates to
-    # those that can participate in a valid cage assignment.
-    engine.apply_eliminations(
-        [
-            e
-            for e in board.linear_system.initial_eliminations
-            if e.digit in board.candidates[e.cell[0]][e.cell[1]]
-        ]
-    )
-
-    # Step 2: pin user placements — eliminate other digits from each solved cell
+    # Step 1: pin user placements — eliminate other digits from each solved cell
     # and eliminate the placed digit from all peers (same row, col, 3×3 box).
     engine.apply_eliminations(_user_eliminations(board, state.user_grid))
 
-    # Step 3: run always-apply rules to convergence.
+    # Step 2: run always-apply rules to convergence.
     # User-eliminated cage solutions are NOT fed into the solver here — they are
     # applied as a display-time filter in Step 4.  This prevents an impossible
     # board state when the solver's row/col/box constraints already narrow a cell
     # to exactly the digits the user chose to eliminate.
     engine.solve()
 
-    # Step 4: build per-cell CandidateCell from the post-solve board state.
+    # Step 3: build per-cell CandidateCell from the post-solve board state.
     # auto_candidates = solver candidates ∩ cage_possible (user-filtered solns)
     # auto_essential  = auto_candidates ∩ must-contain set (user-filtered solns)
     cells: list[list[CandidateCell]] = []
@@ -925,13 +915,6 @@ def make_router(
         # (e.g. MustContainOutie) are not pre-applied and can still fire.
         engine: SolverEngine = SolverEngine(
             board, rules=[r for r in default_rules() if r.name in always_apply]
-        )
-        engine.apply_eliminations(
-            [
-                e
-                for e in board.linear_system.initial_eliminations
-                if e.digit in board.candidates[e.cell[0]][e.cell[1]]
-            ]
         )
         engine.apply_eliminations(_user_eliminations(board, state.user_grid))
         # Apply user-eliminated cage solutions so the solver sees the user's
