@@ -7,13 +7,16 @@ fully solved.
 """
 
 from killer_sudoku.solver.engine.board_state import BoardState, validate_solution
+from killer_sudoku.solver.engine.hint import HintableRule, collect_hints
 from killer_sudoku.solver.engine.rules import default_rules
 from killer_sudoku.solver.engine.solver_engine import SolverEngine
 from killer_sudoku.solver.puzzle_spec import PuzzleSpec
 
 __all__ = [
     "BoardState",
+    "HintableRule",
     "SolverEngine",
+    "collect_hints",
     "default_rules",
     "solve",
     "validate_solution",

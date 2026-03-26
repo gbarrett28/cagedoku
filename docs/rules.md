@@ -53,3 +53,55 @@ are restricted to {6, 8, 9}, eliminating 7.
 > those cells by *unit* uniqueness. The cage must therefore place that digit at
 > the outie *outie* (the only cage cell outside *unit*). So *outie*'s
 > candidates are restricted to {*x_cands*}, eliminating *removed*.
+
+---
+
+## CageConfinement(n)
+
+**Spec:**
+
+Let n ≥ 1.  Find n distinct cages C₁, …, Cₙ and n distinct units U₁, …, Uₙ
+of the same type (all rows, all columns, or all boxes) such that for some digit d:
+
+1. d is essential (must-contain) for every cage Cᵢ.
+2. Every cell in ⋃ Cᵢ that still has d as a candidate lies within ⋃ Uⱼ.
+3. At least one cell in (⋃ Uⱼ) \ (⋃ Cᵢ) has d as a candidate
+   (otherwise there is nothing to eliminate).
+
+Then d can be eliminated from every cell in (⋃ Uⱼ) \ (⋃ Cᵢ).
+
+**Reasoning:**  Since U₁, …, Uₙ are distinct units of the same type they are
+pairwise disjoint.  Each unit must contain exactly one copy of d, so ⋃ Uⱼ
+contains exactly n copies of d.  Each cage Cᵢ must contain one copy of d
+(condition 1), and every possible placement for that copy is inside ⋃ Uⱼ
+(condition 2).  By pigeonhole the n cages consume all n available copies of d
+in the n units; no cell outside the cages but inside the units can hold d.
+
+**n = 1 example:**  After MustContainOutie restricts r2c8 to {6, 8, 9}, digit 7
+has candidates only at r1c6, r1c7, r1c8 within cage r1c6 — all in row 1.
+Since 7 is essential to that cage and all its placements are in row 1, 7 is
+eliminated from every other cell in row 1 outside the cage.
+
+**n = 2 example:**  Digits {6, 8, 9} are essential to both cage r1c3 and cage
+r1c6; all cells of both cages lie in rows 1 and 2.  Rows 1 and 2 jointly
+contain exactly two copies of each of {6, 8, 9}, and both cages need one copy
+each.  Therefore {6, 8, 9} are eliminated from rows 1 and 2 outside these two
+cages.
+
+**Complexity:**  For a fixed digit and unit type the search is O(Cₙ × Uₙ)
+where Cₙ = C(|cages|, n) and Uₙ = C(27, n) (9 rows + 9 cols + 9 boxes).
+n = 1 is cheap; n = 2 is tractable; n ≥ 3 is expensive and hard for humans to
+follow — the implementation should therefore expose n as a configuration
+parameter and default to n ≤ 2.
+
+**Hint template (n = 1):**
+> Digit *d* is essential to cage [*cells*] and can only be placed in *unit*
+> cells of that cage (*confined_cells*).  Since *unit* must contain exactly
+> one *d*, it must land in the cage.  Eliminating *d* from *removed_cells*.
+
+**Hint template (n = 2):**
+> Digit *d* is essential to cages [*C₁_cells*] and [*C₂_cells*].  Every
+> possible placement of *d* in either cage lies within *unit₁* or *unit₂*.
+> Those two *unit_type*s contain exactly two copies of *d*, both of which are
+> claimed by these cages.  Eliminating *d* from *removed_cells* in
+> *unit₁* and *unit₂*.

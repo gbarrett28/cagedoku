@@ -18,6 +18,7 @@ Rules are ordered by priority (ascending = higher priority = fired first):
   9  NakedHiddenQuad       — COUNT_DECREASED (ROW/COL/BOX)
  10  PointingPairs         — COUNT_DECREASED (BOX)
  11  LockedCandidates      — COUNT_DECREASED (ROW/COL/BOX)
+ 12  CageConfinement       — GLOBAL (n cages confined to n same-type units)
  12  UnitPartitionFilter   — GLOBAL
  13  XWing                 — GLOBAL
  14  Swordfish             — GLOBAL
@@ -29,6 +30,7 @@ Rules are ordered by priority (ascending = higher priority = fired first):
 
 from killer_sudoku.solver.engine.rule import SolverRule
 from killer_sudoku.solver.engine.rules.cage_candidate_filter import CageCandidateFilter
+from killer_sudoku.solver.engine.rules.cage_confinement import CageConfinement
 from killer_sudoku.solver.engine.rules.cage_intersection import CageIntersection
 from killer_sudoku.solver.engine.rules.delta_constraint import DeltaConstraint
 from killer_sudoku.solver.engine.rules.hidden_pair import HiddenPair
@@ -76,6 +78,7 @@ def default_rules() -> list[SolverRule]:
         NakedHiddenQuad(),
         PointingPairs(),
         LockedCandidates(),
+        CageConfinement(),
         UnitPartitionFilter(),
         XWing(),
         Swordfish(),

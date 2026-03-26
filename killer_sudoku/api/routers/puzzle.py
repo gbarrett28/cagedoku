@@ -45,7 +45,7 @@ from killer_sudoku.api.settings import SettingsStore
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.inp_image import InpImage
 from killer_sudoku.solver.engine import BoardState, SolverEngine, default_rules
-from killer_sudoku.solver.engine.rules.must_contain_outie import MustContainOutie
+from killer_sudoku.solver.engine.hint import HintableRule, collect_hints
 from killer_sudoku.solver.engine.types import Elimination
 from killer_sudoku.solver.equation import sol_sums
 from killer_sudoku.solver.grid import (  # Grid used in solve endpoint
@@ -954,7 +954,10 @@ def make_router(
             engine.apply_eliminations(cage_narrow)
             engine.solve()
 
-        raw_hints = MustContainOutie().compute_hints(board)
+        hint_rules: list[HintableRule] = [
+            r for r in default_rules() if isinstance(r, HintableRule)
+        ]
+        raw_hints = collect_hints(hint_rules, board, skip_names=set(always_apply))
         raw_hints.sort(key=lambda h: h.elimination_count, reverse=True)
 
         return HintsResponse(
