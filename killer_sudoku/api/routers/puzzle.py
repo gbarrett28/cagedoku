@@ -954,6 +954,21 @@ def make_router(
             engine.apply_eliminations(cage_narrow)
             engine.solve()
 
+        # Apply user-accepted hint eliminations (user_removed from the stored
+        # candidate grid) so that downstream hints see the board state as it
+        # exists after all hints the player has already accepted.
+        if state.candidate_grid is not None:
+            accepted: list[Elimination] = [
+                Elimination(cell=(r, c), digit=d)
+                for r in range(9)
+                for c in range(9)
+                for d in state.candidate_grid.cells[r][c].user_removed
+                if d in board.candidates[r][c]
+            ]
+            if accepted:
+                engine.apply_eliminations(accepted)
+                engine.solve()
+
         hint_rules: list[HintableRule] = [
             r for r in default_rules() if isinstance(r, HintableRule)
         ]

@@ -935,7 +935,7 @@ el<HTMLButtonElement>("hint-apply-btn").addEventListener("click", async () => {
   const eliminations = activeHintItem.eliminations;
   (el<HTMLDialogElement>("hint-modal") as HTMLDialogElement).close();
   clearHintHighlight();
-  const resp = await fetch(`/api/puzzles/${currentSessionId}/hints/apply`, {
+  const resp = await fetch(`/api/puzzle/${currentSessionId}/hints/apply`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ eliminations }),
