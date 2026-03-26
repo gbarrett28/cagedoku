@@ -1,5 +1,8 @@
 /* COACH — Killer Sudoku Coaching App */
 
+/* Enforce the semantic meaning of [hidden] against any display rules below */
+[hidden] { display: none !important; }
+
 :root {
   --bg:           #111827;
   --surface:      #1f2937;

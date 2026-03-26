@@ -184,6 +184,46 @@ def _resize_for_display(
 # ---------------------------------------------------------------------------
 
 
+def _user_eliminations(
+    board: BoardState,
+    user_grid: list[list[int]],
+) -> list[Elimination]:
+    """Build eliminations that reflect the user's placed digits.
+
+    For each placed digit d at (r, c):
+    - Removes all non-d digits from that cell (pins the cell to d).
+    - Removes d from every peer: same row, same column, and same 3×3 box.
+
+    Only emits eliminations for digits still present in board.candidates to
+    avoid redundant work.
+    """
+    elim_set: set[tuple[tuple[int, int], int]] = set()
+    for r in range(9):
+        for c in range(9):
+            placed = user_grid[r][c]
+            if placed == 0:
+                continue
+            for d in range(1, 10):
+                if d != placed:
+                    elim_set.add(((r, c), d))
+            box_r, box_c = (r // 3) * 3, (c // 3) * 3
+            for cc in range(9):
+                if cc != c:
+                    elim_set.add(((r, cc), placed))
+            for rr in range(9):
+                if rr != r:
+                    elim_set.add(((rr, c), placed))
+            for rr in range(box_r, box_r + 3):
+                for cc in range(box_c, box_c + 3):
+                    if (rr, cc) != (r, c):
+                        elim_set.add(((rr, cc), placed))
+    return [
+        Elimination(cell=cell, digit=d)
+        for cell, d in elim_set
+        if d in board.candidates[cell[0]][cell[1]]
+    ]
+
+
 def _compute_candidate_grid(
     state: PuzzleState,
     existing_grid: CandidateGrid | None,
@@ -224,15 +264,9 @@ def _compute_candidate_grid(
         ]
     )
 
-    # Step 2: pin user placements so their effect propagates into cage_solns
-    user_elims: list[Elimination] = [
-        Elimination(cell=(r, c), digit=d)
-        for r in range(9)
-        for c in range(9)
-        for d in range(1, 10)
-        if state.user_grid[r][c] != 0 and d != state.user_grid[r][c]
-    ]
-    engine.apply_eliminations(user_elims)
+    # Step 2: pin user placements — eliminate other digits from each solved cell
+    # and eliminate the placed digit from all peers (same row, col, 3×3 box).
+    engine.apply_eliminations(_user_eliminations(board, state.user_grid))
 
     # Step 3: build per-cell CandidateCell
     cells: list[list[CandidateCell]] = []
@@ -861,14 +895,7 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
                 if e.digit in board.candidates[e.cell[0]][e.cell[1]]
             ]
         )
-        user_elims: list[Elimination] = [
-            Elimination(cell=(r, c), digit=d)
-            for r in range(9)
-            for c in range(9)
-            for d in range(1, 10)
-            if state.user_grid[r][c] != 0 and d != state.user_grid[r][c]
-        ]
-        engine.apply_eliminations(user_elims)
+        engine.apply_eliminations(_user_eliminations(board, state.user_grid))
 
         all_solutions = sorted(
             sorted(s) for s in sol_sums(len(cage.cells), 0, cage.total)

@@ -748,9 +748,12 @@ el<HTMLButtonElement>("undo-btn").addEventListener("click", () => {
 
 el<HTMLCanvasElement>("grid-canvas").addEventListener("mousedown", (e) => {
   if (currentState?.user_grid == null) return;
-  const rect = el<HTMLCanvasElement>("grid-canvas").getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
+  const canvas = el<HTMLCanvasElement>("grid-canvas");
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const x = (e.clientX - rect.left) * scaleX;
+  const y = (e.clientY - rect.top) * scaleY;
   const col = Math.floor((x - MARGIN) / CELL) + 1;
   const row = Math.floor((y - MARGIN) / CELL) + 1;
   if (col >= 1 && col <= 9 && row >= 1 && row <= 9) {

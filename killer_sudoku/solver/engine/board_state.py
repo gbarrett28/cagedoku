@@ -85,7 +85,7 @@ class BoardState:
 
         # Real cage solutions via sol_sums
         self.cage_solns: list[list[frozenset[int]]] = []
-        for _idx, cells in enumerate(cage_cells_list):
+        for cells in cage_cells_list:
             total = 0
             for r, c in cells:
                 v = int(spec.cage_totals[r, c])

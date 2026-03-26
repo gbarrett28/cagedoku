@@ -707,12 +707,10 @@ class LinearSystem:
                     continue
                 existing.add(pair_key)
                 delta = total1 - total2
-                if delta > 0:
+                if delta >= 0:
                     pair: tuple[Cell, Cell, int] = (left_cell, right_cell, delta)
-                elif delta < 0:
-                    pair = (right_cell, left_cell, -delta)
                 else:
-                    continue  # Equal sums: cells are equal, not a useful delta.
+                    pair = (right_cell, left_cell, -delta)
                 self.delta_pairs.append(pair)
                 p, q, _ = pair
                 self._pairs_by_cell.setdefault(p, []).append(pair)
