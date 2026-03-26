@@ -3,14 +3,13 @@
 Each rule is listed with its logical specification and the hint text it produces.
 This table is populated as rules are designed and their hints implemented.
 
-Rules marked **always-apply** run automatically on every board change.
-Rules marked **hint-only** are never applied automatically; they surface as hints for the player to act on.
+Every rule can be toggled between always-apply and hint-only. When always-apply,
+the rule fires automatically on every board change. When hint-only, it surfaces
+as a hint for the player to act on. Either way, every rule must have a hint.
 
 ---
 
 ## CageCandidateFilter
-
-**Status:** always-apply (planned — currently applied only as a display-time filter)
 
 **Spec:**
 For each cage, the candidates of every cell in that cage must be a subset of
@@ -18,16 +17,17 @@ the union of the cage's remaining solutions. Any candidate digit that does not
 appear in any valid solution for the cage is impossible and is eliminated.
 
 Example: a 3-cell cage has only the solution {6, 8, 9}. Every cell in that cage
-must therefore have candidates drawn from {6, 8, 9}; digits 1–5 and 7 are
-eliminated from all three cells.
+must have candidates drawn from {6, 8, 9}; digits 1–5 and 7 are eliminated from
+all three cells.
 
-**Hint:** *(not yet implemented — this rule is always-apply and produces no hint)*
+**Hint template:**
+> Cell *X* is in cage [*cells*] (total *T*). Digit *D* does not appear in any
+> valid solution for this cage, so it cannot be placed there. Eliminating *D*
+> from *X*.
 
 ---
 
 ## MustContainOutie
-
-**Status:** hint-only
 
 **Spec:**
 A cage must contain certain digits in every one of its solutions (its
