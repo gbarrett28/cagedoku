@@ -124,11 +124,18 @@ class SolverEngine:
     eliminations back through apply_eliminations.
     """
 
-    def __init__(self, board: BoardState, rules: list[SolverRule]) -> None:
+    def __init__(
+        self,
+        board: BoardState,
+        rules: list[SolverRule],
+        *,
+        linear_system_active: bool = True,
+    ) -> None:
         self.board = board
         self.queue: SolverQueue = SolverQueue()
         self.stats: dict[str, RuleStats] = {r.name: RuleStats() for r in rules}
         self._trigger_map: dict[Trigger, list[SolverRule]] = {t: [] for t in Trigger}
+        self._linear_system_active = linear_system_active
         for rule in rules:
             for trigger in rule.triggers:
                 self._trigger_map[trigger].append(rule)
@@ -163,42 +170,43 @@ class SolverEngine:
                 assert isinstance(cell, tuple)
                 val = event.hint_digit
                 assert val is not None
-                # Propagate through LinearSystem delta pairs (substitute known value)
-                new_elims = self.board.linear_system.substitute_cell(cell, val)
-                if new_elims:
-                    self.apply_eliminations(new_elims)
-                # Dynamic RREF: reduce live rows and emit new sum constraints.
-                # This replicates the old solver's reduce_equns feedback loop:
-                # each determined cell can tighten multi-cell sum equations,
-                # producing new virtual cage constraints not derivable at startup.
-                new_constraints = self.board.linear_system.substitute_live_rows(
-                    cell, val
-                )
-                for vcells, vtotal, distinct in new_constraints:
-                    cell_list = list(vcells)
-                    if len(cell_list) == 1:
-                        # Single-cell constraint: directly determine the cell
-                        lone = cell_list[0]
-                        lr, lc = lone
-                        for d in range(1, 10):
-                            if d != vtotal and d in self.board.candidates[lr][lc]:
-                                self.apply_eliminations(
-                                    [Elimination(cell=lone, digit=d)]
-                                )
-                    elif distinct:
-                        # Burb sum constraint: full sol_sums backtracking filter
-                        sum_elims = _filter_sum_constraint(
-                            cell_list, vtotal, self.board.candidates
-                        )
-                        if sum_elims:
-                            self.apply_eliminations(sum_elims)
-                    else:
-                        # Non-burb sum constraint: range-only filter (no distinctness)
-                        sum_elims = _filter_sum_range(
-                            cell_list, vtotal, self.board.candidates
-                        )
-                        if sum_elims:
-                            self.apply_eliminations(sum_elims)
+                if self._linear_system_active:
+                    # Propagate through LinearSystem delta pairs
+                    new_elims = self.board.linear_system.substitute_cell(cell, val)
+                    if new_elims:
+                        self.apply_eliminations(new_elims)
+                    # Dynamic RREF: reduce live rows and emit new sum constraints.
+                    # This replicates the old solver's reduce_equns feedback loop:
+                    # each determined cell can tighten multi-cell sum equations,
+                    # producing new virtual cage constraints not derivable at startup.
+                    new_constraints = self.board.linear_system.substitute_live_rows(
+                        cell, val
+                    )
+                    for vcells, vtotal, distinct in new_constraints:
+                        cell_list = list(vcells)
+                        if len(cell_list) == 1:
+                            # Single-cell constraint: directly determine the cell
+                            lone = cell_list[0]
+                            lr, lc = lone
+                            for d in range(1, 10):
+                                if d != vtotal and d in self.board.candidates[lr][lc]:
+                                    self.apply_eliminations(
+                                        [Elimination(cell=lone, digit=d)]
+                                    )
+                        elif distinct:
+                            # Burb sum constraint: full sol_sums backtracking filter
+                            sum_elims = _filter_sum_constraint(
+                                cell_list, vtotal, self.board.candidates
+                            )
+                            if sum_elims:
+                                self.apply_eliminations(sum_elims)
+                        else:
+                            # Non-burb sum constraint: range-only filter
+                            sum_elims = _filter_sum_range(
+                                cell_list, vtotal, self.board.candidates
+                            )
+                            if sum_elims:
+                                self.apply_eliminations(sum_elims)
                 # Route to CELL_DETERMINED rules
                 for rule in self._trigger_map[Trigger.CELL_DETERMINED]:
                     self.queue.enqueue_cell(0, rule, cell, Trigger.CELL_DETERMINED, val)

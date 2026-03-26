@@ -253,9 +253,12 @@ def _compute_candidate_grid(
     """
     assert state.user_grid is not None
     spec = _data_to_spec(state.spec_data)
-    board = BoardState(spec)
+    linear_active = "LinearElimination" in always_apply
+    board = BoardState(spec, include_virtual_cages=linear_active)
     engine: SolverEngine = SolverEngine(
-        board, rules=[r for r in default_rules() if r.name in always_apply]
+        board,
+        rules=[r for r in default_rules() if r.name in always_apply],
+        linear_system_active=linear_active,
     )
 
     # Step 1: pin user placements — eliminate other digits from each solved cell
@@ -798,9 +801,12 @@ def make_router(
 
         always_apply = frozenset(settings_store.load().always_apply_rules)
         spec = _data_to_spec(state.spec_data)
-        board = BoardState(spec)
+        linear_active = "LinearElimination" in always_apply
+        board = BoardState(spec, include_virtual_cages=linear_active)
         engine: SolverEngine = SolverEngine(
-            board, rules=[r for r in default_rules() if r.name in always_apply]
+            board,
+            rules=[r for r in default_rules() if r.name in always_apply],
+            linear_system_active=linear_active,
         )
         engine.apply_eliminations(_user_eliminations(board, state.user_grid))
         engine.solve()
@@ -907,11 +913,14 @@ def make_router(
 
         always_apply = frozenset(settings_store.load().always_apply_rules)
         spec = _data_to_spec(state.spec_data)
-        board = BoardState(spec)
+        linear_active = "LinearElimination" in always_apply
+        board = BoardState(spec, include_virtual_cages=linear_active)
         # Run the solver with always-apply rules only, so hint-only rules
         # (e.g. MustContainOutie) are not pre-applied and can still fire.
         engine: SolverEngine = SolverEngine(
-            board, rules=[r for r in default_rules() if r.name in always_apply]
+            board,
+            rules=[r for r in default_rules() if r.name in always_apply],
+            linear_system_active=linear_active,
         )
         engine.apply_eliminations(_user_eliminations(board, state.user_grid))
         # Apply user-eliminated cage solutions so the solver sees the user's

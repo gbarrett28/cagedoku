@@ -56,7 +56,7 @@ class BoardState:
     _cell_unit_ids: list[list[list[int]]]  # [9][9] -> list of unit_ids
     linear_system: LinearSystem
 
-    def __init__(self, spec: PuzzleSpec) -> None:
+    def __init__(self, spec: PuzzleSpec, *, include_virtual_cages: bool = True) -> None:
         self.spec: PuzzleSpec = spec
         # Convert regions to 0-based
         self.regions = spec.regions - 1
@@ -104,7 +104,12 @@ class BoardState:
         # Non-burb virtual cages (distinct=False, precomp_solns=list): use the
         # reduce_equns-propagated solutions directly — sol_sums would wrongly
         # assume digit distinctness for cells spanning multiple units.
-        for vcells, vtotal, distinct, precomp_solns in self.linear_system.virtual_cages:
+        # When include_virtual_cages=False (playing mode without LinearElimination
+        # active), skip these so the linear system's derived constraints do not
+        # leak into candidate computation via CageIntersection.
+        for vcells, vtotal, distinct, precomp_solns in (
+            self.linear_system.virtual_cages if include_virtual_cages else []
+        ):
             vunit_id = len(self.units)
             self.units.append(Unit(vunit_id, UnitKind.CAGE, vcells, distinct))
             if precomp_solns is not None:
