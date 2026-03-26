@@ -930,9 +930,20 @@ document.addEventListener("click", (e) => {
   }
 });
 
-el<HTMLButtonElement>("hint-apply-btn").addEventListener("click", () => {
+el<HTMLButtonElement>("hint-apply-btn").addEventListener("click", async () => {
+  if (!activeHintItem || !currentSessionId) return;
+  const eliminations = activeHintItem.eliminations;
   (el<HTMLDialogElement>("hint-modal") as HTMLDialogElement).close();
   clearHintHighlight();
+  const resp = await fetch(`/api/puzzles/${currentSessionId}/hints/apply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ eliminations }),
+  });
+  if (resp.ok) {
+    currentState = await resp.json();
+    redrawGrid();
+  }
 });
 
 el<HTMLButtonElement>("hint-close-btn").addEventListener("click", () => {

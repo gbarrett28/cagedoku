@@ -273,3 +273,13 @@ class HintsResponse(BaseModel):
     """All applicable hints for the current board state, ordered by impact."""
 
     hints: list[HintItem]
+
+
+class ApplyHintRequest(BaseModel):
+    """Request to apply a hint's eliminations to the board state.
+
+    Each elimination marks a digit as user_removed in the given cell,
+    recording that the player has accepted this deduction.
+    """
+
+    eliminations: list[EliminationItem]

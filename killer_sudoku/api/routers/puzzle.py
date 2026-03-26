@@ -20,6 +20,7 @@ from fastapi import APIRouter, HTTPException, UploadFile
 
 from killer_sudoku.api.config import CoachConfig
 from killer_sudoku.api.schemas import (
+    ApplyHintRequest,
     CagePatchRequest,
     CageSolutionsResponse,
     CageState,
@@ -972,5 +973,41 @@ def make_router(
                 for h in raw_hints
             ]
         )
+
+    @router.post("/{session_id}/hints/apply", response_model=PuzzleState)
+    async def apply_hint(session_id: str, req: ApplyHintRequest) -> PuzzleState:
+        """Apply a hint's eliminations by marking each digit as user_removed.
+
+        Records the player's acceptance of the deduction.  Candidate grids
+        are recomputed so the display reflects the updated user_removed sets.
+        """
+        try:
+            state = store.load(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+
+        if state.candidate_grid is None:
+            raise HTTPException(
+                status_code=400, detail="No candidate grid — confirm puzzle first"
+            )
+
+        cells = [list(row) for row in state.candidate_grid.cells]
+        for elim in req.eliminations:
+            r, c = elim.cell
+            d = elim.digit
+            cell = cells[r][c]
+            if d in cell.auto_candidates and d not in cell.user_removed:
+                cells[r][c] = CandidateCell(
+                    auto_candidates=cell.auto_candidates,
+                    auto_essential=cell.auto_essential,
+                    user_essential=cell.user_essential,
+                    user_removed=sorted(set(cell.user_removed) | {d}),
+                )
+
+        updated = state.model_copy(
+            update={"candidate_grid": CandidateGrid(cells=cells)}
+        )
+        store.save(updated)
+        return updated
 
     return router
