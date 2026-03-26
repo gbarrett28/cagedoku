@@ -5,6 +5,7 @@ Rules are ordered by priority (ascending = higher priority = fired first):
   0  SolvedCellElimination — CELL_DETERMINED (eliminate confirmed digit from unit peers)
   1  LinearElimination     — GLOBAL (cells determined by cage-sum algebra)
   1  HiddenSingle          — COUNT_HIT_ONE
+  2  CageCandidateFilter   — COUNT_DECREASED / SOLUTION_PRUNED (CAGE)
   2  CageIntersection      — COUNT_DECREASED / SOLUTION_PRUNED (CAGE)
   3  SolutionMapFilter     — COUNT_DECREASED / SOLUTION_PRUNED (CAGE)
   4  MustContain           — COUNT_DECREASED (all units)
@@ -27,6 +28,7 @@ Rules are ordered by priority (ascending = higher priority = fired first):
 """
 
 from killer_sudoku.solver.engine.rule import SolverRule
+from killer_sudoku.solver.engine.rules.cage_candidate_filter import CageCandidateFilter
 from killer_sudoku.solver.engine.rules.cage_intersection import CageIntersection
 from killer_sudoku.solver.engine.rules.delta_constraint import DeltaConstraint
 from killer_sudoku.solver.engine.rules.hidden_pair import HiddenPair
@@ -61,6 +63,7 @@ def default_rules() -> list[SolverRule]:
         SolvedCellElimination(),
         LinearElimination(),
         HiddenSingle(),
+        CageCandidateFilter(),
         CageIntersection(),
         SolutionMapFilter(),
         MustContain(),

@@ -9,11 +9,11 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-# Default set of rules applied automatically on every state change.
-# MustContainOutie and the fish/colouring rules are hint-only by default.
+# Cold-start default: only the basic cage candidate constraint is always-apply.
+# Further rules (SolvedCellElimination, CageIntersection, etc.) are enabled
+# progressively as their hints are designed and tested.
 DEFAULT_ALWAYS_APPLY_RULES: list[str] = [
-    "CageIntersection",
-    "SolvedCellElimination",
+    "CageCandidateFilter",
 ]
 
 

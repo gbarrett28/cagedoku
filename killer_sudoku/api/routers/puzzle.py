@@ -934,12 +934,11 @@ def make_router(
             ]
         engine.solve()
 
-        # Narrow each cell's candidates to the union of its cage's remaining
-        # solutions.  This mirrors the display-time filter in
-        # _compute_candidate_grid so that hint rules (e.g. MustContainOutie)
-        # see the same candidate sets as the UI.  For example, a 3-cell cage
-        # with single solution {6,8,9} constrains its cells to {6,8,9} here,
-        # allowing an outie-pattern hint to recognise r1c3 as a qualifying cell.
+        # Re-apply cage candidate narrowing after user solution eliminations.
+        # User-eliminated cage solutions are applied directly to board.cage_solns
+        # above, bypassing the engine event system, so CageCandidateFilter did
+        # not see them.  This pass ensures board.candidates reflects the
+        # user-filtered solution sets before hint detection runs.
         cage_narrow: list[Elimination] = []
         for cage_idx in range(len(state.cages)):
             solns = board.cage_solns[cage_idx]
