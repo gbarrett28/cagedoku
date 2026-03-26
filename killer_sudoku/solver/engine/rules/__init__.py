@@ -1,7 +1,8 @@
 """Default rule set for the solver engine.
 
 Rules are ordered by priority (ascending = higher priority = fired first):
-  0  NakedSingle           — CELL_DETERMINED
+  0  NakedSingle           — CELL_DETERMINED (recognition only, no eliminations)
+  0  SolvedCellElimination — CELL_DETERMINED (eliminate confirmed digit from unit peers)
   1  HiddenSingle          — COUNT_HIT_ONE
   2  CageIntersection      — COUNT_DECREASED / SOLUTION_PRUNED (CAGE)
   3  SolutionMapFilter     — COUNT_DECREASED / SOLUTION_PRUNED (CAGE)
@@ -40,6 +41,9 @@ from killer_sudoku.solver.engine.rules.naked_single import NakedSingle
 from killer_sudoku.solver.engine.rules.pointing_pairs import PointingPairs
 from killer_sudoku.solver.engine.rules.simple_colouring import SimpleColouring
 from killer_sudoku.solver.engine.rules.solution_map_filter import SolutionMapFilter
+from killer_sudoku.solver.engine.rules.solved_cell_elimination import (
+    SolvedCellElimination,
+)
 from killer_sudoku.solver.engine.rules.sum_pair_constraint import SumPairConstraint
 from killer_sudoku.solver.engine.rules.swordfish import Swordfish
 from killer_sudoku.solver.engine.rules.unique_rectangle import UniqueRectangle
@@ -52,6 +56,7 @@ def default_rules() -> list[SolverRule]:
     """Return the full default rule set in priority order."""
     return [
         NakedSingle(),
+        SolvedCellElimination(),
         HiddenSingle(),
         CageIntersection(),
         SolutionMapFilter(),

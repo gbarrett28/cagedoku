@@ -1,8 +1,12 @@
-"""R1 NakedSingle — when a cell has one candidate, eliminate it from peers.
+"""R1a NakedSingle — recognise a cell reduced to a single candidate.
 
-Fires on CELL_DETERMINED. Receives cell=(r,c) and hint_digit=d.
-Returns Eliminations removing d from all cells sharing a row, col, or box
-(cage peers are handled by R3/R4 cage rules, not here).
+Fires on CELL_DETERMINED.  Returns no eliminations — the engine has
+already promoted the sole remaining candidate to the cell's solution.
+
+This rule exists as a named concept so the coaching layer can generate
+a hint: "cell (r,c) has only one remaining candidate (d), so it must
+hold d."  The actual peer eliminations that follow are handled by
+SolvedCellElimination (R1b).
 """
 
 from __future__ import annotations
@@ -12,7 +16,7 @@ from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
 
 
 class NakedSingle:
-    """R1: eliminate a determined digit from all row/col/box peers."""
+    """R1a: named recognition of a cell determined by a single candidate."""
 
     name = "NakedSingle"
     priority = 0
@@ -20,17 +24,5 @@ class NakedSingle:
     unit_kinds: frozenset[UnitKind] = frozenset()  # cell-scoped
 
     def apply(self, ctx: RuleContext) -> list[Elimination]:
-        """Eliminate hint_digit from all row/col/box peers of ctx.cell."""
-        assert ctx.cell is not None
-        assert ctx.hint_digit is not None
-        r, c = ctx.cell
-        d = ctx.hint_digit
-        elims: list[Elimination] = []
-        for uid in ctx.board.cell_unit_ids(r, c):
-            unit = ctx.board.units[uid]
-            if unit.kind == UnitKind.CAGE:
-                continue  # cage peers handled by R3/R4
-            for pr, pc in unit.cells:
-                if (pr, pc) != (r, c) and d in ctx.board.candidates[pr][pc]:
-                    elims.append(Elimination(cell=(pr, pc), digit=d))
-        return elims
+        """No eliminations — promotion is handled unconditionally by the engine."""
+        return []

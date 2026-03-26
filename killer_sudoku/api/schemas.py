@@ -13,9 +13,7 @@ from pydantic import BaseModel
 # MustContainOutie and the fish/colouring rules are hint-only by default.
 DEFAULT_ALWAYS_APPLY_RULES: list[str] = [
     "CageIntersection",
-    "SolutionMapFilter",
-    "NakedSingle",
-    "DeltaConstraint",
+    "SolvedCellElimination",
 ]
 
 
