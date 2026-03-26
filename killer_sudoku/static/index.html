@@ -84,12 +84,12 @@
 
     <!-- Playing mode actions — hidden until user confirms layout -->
     <div id="playing-actions" hidden>
-      <div class="form-actions">
+      <div class="form-actions hints-anchor">
         <button id="undo-btn" class="btn-secondary" disabled>Undo</button>
         <button id="hints-btn" class="btn-secondary" disabled>Hints</button>
+        <div id="hints-dropdown" class="hints-dropdown" hidden></div>
         <button id="candidates-btn" class="btn-secondary" disabled>Show candidates</button>
         <button id="edit-candidates-btn" class="btn-secondary" hidden>Edit candidates</button>
-        <button id="candidates-mode-btn" class="btn-secondary" hidden>Auto</button>
         <button id="help-candidates-btn" class="btn-secondary" hidden>?</button>
         <button id="inspect-cage-btn" class="btn-secondary" hidden>Inspect cage</button>
       </div>
@@ -140,6 +140,16 @@
   <p>When you enter a digit into a cell, its candidates are hidden but not lost. If you undo or clear the digit, the candidates reappear exactly as you left them.</p>
 
   <button id="close-help-btn">Close</button>
+</dialog>
+
+<dialog id="hint-modal">
+  <h2 id="hint-modal-title"></h2>
+  <p id="hint-modal-explanation" class="hint-modal-explanation"></p>
+  <p id="hint-modal-summary" class="hint-modal-summary"></p>
+  <div class="form-actions">
+    <button id="hint-apply-btn">Apply automatically</button>
+    <button id="hint-close-btn" class="btn-secondary">Close &amp; apply by hand</button>
+  </div>
 </dialog>
 
 <script src="/static/main.js" type="module"></script>

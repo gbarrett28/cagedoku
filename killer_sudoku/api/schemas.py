@@ -9,6 +9,15 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+# Default set of rules applied automatically on every state change.
+# MustContainOutie and the fish/colouring rules are hint-only by default.
+DEFAULT_ALWAYS_APPLY_RULES: list[str] = [
+    "CageIntersection",
+    "SolutionMapFilter",
+    "NakedSingle",
+    "DeltaConstraint",
+]
+
 
 class CellPosition(BaseModel):
     """A grid cell position, 1-based (row 1–9, col 1–9)."""
@@ -125,7 +134,7 @@ class PuzzleState(BaseModel):
 
     candidate_grid: CandidateGrid | None = None
     # None → pre-confirm. Set at /confirm; updated after /cell, /undo,
-    # /candidates/cell, and /candidates/mode.
+    # and /candidates/cell.
 
 
 class UploadResponse(BaseModel):
@@ -180,16 +189,14 @@ class CandidateCell(BaseModel):
 
 
 class CandidateGrid(BaseModel):
-    """Full 9×9 grid of per-cell candidate state plus the current mode."""
+    """Full 9×9 grid of per-cell candidate state."""
 
     cells: list[list[CandidateCell]]  # 9 rows × 9 cols, 0-based
-    mode: Literal["auto", "manual"] = "auto"
 
 
 class CandidateCycleRequest(BaseModel):
     """Cycle one digit in one cell, or reset the whole cell (digit=0).
 
-    Mode is read from candidate_grid.mode in the session — not sent by client.
     row and col are 1-based (1–9). digit is 1–9 to cycle, or 0 to reset.
     """
 
@@ -198,10 +205,17 @@ class CandidateCycleRequest(BaseModel):
     digit: int
 
 
-class CandidateModeRequest(BaseModel):
-    """Switch candidate grid between auto and manual modes."""
+class CoachSettings(BaseModel):
+    """Persistent user preferences for the coaching app.
 
-    mode: Literal["auto", "manual"]
+    always_apply_rules: names of solver rules applied automatically on every
+        state change.  Rules not in this list are hint-only — they appear in
+        the hints dropdown when they fire but are never applied automatically.
+        Defaults to a conservative set covering core cage-sum constraints
+        and naked singles without revealing advanced deductions.
+    """
+
+    always_apply_rules: list[str] = DEFAULT_ALWAYS_APPLY_RULES
 
 
 class EliminateSolutionRequest(BaseModel):
@@ -228,3 +242,36 @@ class CageSolutionsResponse(BaseModel):
     all_solutions: list[list[int]]
     auto_impossible: list[list[int]]
     user_eliminated: list[list[int]]
+
+
+class EliminationItem(BaseModel):
+    """A single candidate elimination: remove digit from cell."""
+
+    cell: tuple[int, int]  # (row, col), 0-based
+    digit: int
+
+
+class HintItem(BaseModel):
+    """One applicable solver rule, with context for the coaching UI.
+
+    Attributes:
+        rule_name:       Internal identifier (e.g. "MustContainOutie").
+        display_name:    Short label shown in the hints dropdown.
+        explanation:     Plain-English explanation of why the rule fires.
+        highlight_cells: Cells to highlight on the canvas, 0-based (row, col).
+        eliminations:    Candidate removals the rule would make.
+        elimination_count: Convenience copy of len(eliminations).
+    """
+
+    rule_name: str
+    display_name: str
+    explanation: str
+    highlight_cells: list[tuple[int, int]]
+    eliminations: list[EliminationItem]
+    elimination_count: int
+
+
+class HintsResponse(BaseModel):
+    """All applicable hints for the current board state, ordered by impact."""
+
+    hints: list[HintItem]

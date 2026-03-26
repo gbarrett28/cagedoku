@@ -52,7 +52,6 @@ interface CandidateCell {
 
 interface CandidateGrid {
   cells: CandidateCell[][];   // 9 rows × 9 cols, 0-based
-  mode:  "auto" | "manual";
 }
 
 interface PuzzleSpecData {
@@ -85,6 +84,24 @@ interface SolveResponse {
   error: string | null;
 }
 
+interface EliminationItem {
+  cell: [number, number];  // [row, col] 0-based
+  digit: number;
+}
+
+interface HintItem {
+  rule_name: string;
+  display_name: string;
+  explanation: string;
+  highlight_cells: [number, number][];  // 0-based [row, col]
+  eliminations: EliminationItem[];
+  elimination_count: number;
+}
+
+interface HintsResponse {
+  hints: HintItem[];
+}
+
 // ── Grid canvas constants ────────────────────────────────────────────────────
 
 const CELL = 50;   // pixels per sudoku cell
@@ -101,6 +118,8 @@ let showCandidates: boolean = false;
 let candidateEditMode: boolean = false;
 let inspectCageMode: boolean = false;
 let inspectedCageLabel: string | null = null;
+let hintHighlightCells: Set<string> = new Set(); // "r,c" keys, 0-based
+let activeHintItem: HintItem | null = null;
 
 // ── UI helpers ──────────────────────────────────────────────────────────────
 
@@ -150,7 +169,8 @@ function drawGrid(
   canvas: HTMLCanvasElement,
   state: PuzzleState,
   selected: { row: number; col: number } | null = null,
-  showCands: boolean = false
+  showCands: boolean = false,
+  highlightKeys: Set<string> | null = null  // "r,c" keys, 0-based
 ): void {
   canvas.width = GRID_PX;
   canvas.height = GRID_PX;
@@ -161,7 +181,18 @@ function drawGrid(
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, GRID_PX, GRID_PX);
 
-  // 1b. Selected-cell highlight (before cage underlay so red lines render on top)
+  // 1b. Hint highlight cells (amber, drawn before cage underlay)
+  if (highlightKeys !== null && highlightKeys.size > 0) {
+    ctx.fillStyle = "rgba(251, 191, 36, 0.45)";
+    for (const key of highlightKeys) {
+      const parts = key.split(",");
+      const r = Number(parts[0]);
+      const c = Number(parts[1]);
+      ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
+    }
+  }
+
+  // 1c. Selected-cell highlight (before cage underlay so red lines render on top)
   if (selected !== null) {
     ctx.fillStyle = "#dbeafe";
     ctx.fillRect(
@@ -304,7 +335,7 @@ function drawGrid(
         const essSet = new Set([...cell.user_essential, ...cell.auto_essential]);
         for (let n = 1; n <= 9; n++) {
           if (removedSet.has(n)) continue;
-          if (cg.mode === "auto" && !autoSet.has(n)) continue;
+          if (!autoSet.has(n)) continue;
           const subRow = Math.floor((n - 1) / 3);
           const subCol = (n - 1) % 3;
           const cx = MARGIN + c * CELL + (subCol + 0.5) * SUB_W;
@@ -477,9 +508,21 @@ async function eliminateSolution(
   }
 }
 
+function redrawGrid(): void {
+  if (currentState === null) return;
+  const highlights = hintHighlightCells.size > 0 ? hintHighlightCells : null;
+  drawGrid(
+    el<HTMLCanvasElement>("grid-canvas"),
+    currentState,
+    selectedCell,
+    showCandidates,
+    highlights,
+  );
+}
+
 function renderPlayingMode(state: PuzzleState): void {
   currentState = state;
-  drawGrid(el<HTMLCanvasElement>("grid-canvas"), state, selectedCell, showCandidates);
+  redrawGrid();
   el<HTMLElement>("review-actions").hidden = true;
   el<HTMLElement>("editor-section").hidden = true;
   el<HTMLElement>("original-col").hidden = true;
@@ -487,6 +530,7 @@ function renderPlayingMode(state: PuzzleState): void {
   el<HTMLElement>("solution-panel").hidden = true;
   updateUndoButton(state);
   el<HTMLButtonElement>("candidates-btn").disabled = false;
+  el<HTMLButtonElement>("hints-btn").disabled = false;
 }
 
 function updateUndoButton(state: PuzzleState): void {
@@ -599,7 +643,7 @@ async function handleCellEntry(digit: number): Promise<void> {
     if (!res.ok) return;
     const state = (await res.json()) as PuzzleState;
     currentState = state;
-    drawGrid(el<HTMLCanvasElement>("grid-canvas"), state, selectedCell, showCandidates);
+    redrawGrid();
     updateUndoButton(state);
   } catch {
     // Cell entry is best-effort; network errors are silently ignored
@@ -615,7 +659,7 @@ async function handleUndo(): Promise<void> {
     if (!res.ok) return;
     const state = (await res.json()) as PuzzleState;
     currentState = state;
-    drawGrid(el<HTMLCanvasElement>("grid-canvas"), state, selectedCell, showCandidates);
+    redrawGrid();
     updateUndoButton(state);
   } catch {
     // Undo is best-effort; network errors are silently ignored
@@ -640,43 +684,9 @@ async function handleCandidateCycle(
     if (!res.ok) return;
     const state = (await res.json()) as PuzzleState;
     currentState = state;
-    drawGrid(
-      el<HTMLCanvasElement>("grid-canvas"),
-      state,
-      selectedCell,
-      showCandidates
-    );
+    redrawGrid();
   } catch {
     // Candidate cycle is best-effort; network errors silently ignored
-  }
-}
-
-async function handleCandidateMode(): Promise<void> {
-  if (!currentSessionId || currentState?.candidate_grid == null) return;
-  const newMode =
-    currentState.candidate_grid.mode === "auto" ? "manual" : "auto";
-  try {
-    const res = await fetch(
-      `/api/puzzle/${currentSessionId}/candidates/mode`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: newMode }),
-      }
-    );
-    if (!res.ok) return;
-    const state = (await res.json()) as PuzzleState;
-    currentState = state;
-    el<HTMLButtonElement>("candidates-mode-btn").textContent =
-      state.candidate_grid?.mode === "auto" ? "Auto" : "Manual";
-    drawGrid(
-      el<HTMLCanvasElement>("grid-canvas"),
-      state,
-      selectedCell,
-      showCandidates
-    );
-  } catch {
-    // Best-effort
   }
 }
 
@@ -771,12 +781,7 @@ el<HTMLCanvasElement>("grid-canvas").addEventListener("mousedown", (e) => {
       void handleCandidateCycle(row, col, digit);
     } else {
       selectedCell = { row, col };
-      drawGrid(
-        el<HTMLCanvasElement>("grid-canvas"),
-        currentState,
-        selectedCell,
-        showCandidates
-      );
+      redrawGrid();
     }
     if (inspectCageMode && currentState) {
       const clickedCage = currentState.cages.find((cage) =>
@@ -818,7 +823,6 @@ el<HTMLButtonElement>("candidates-btn").addEventListener("click", () => {
   const btn = el<HTMLButtonElement>("candidates-btn");
   btn.textContent = showCandidates ? "Hide candidates" : "Show candidates";
   el<HTMLButtonElement>("edit-candidates-btn").hidden = !showCandidates;
-  el<HTMLButtonElement>("candidates-mode-btn").hidden = !showCandidates;
   el<HTMLButtonElement>("help-candidates-btn").hidden = !showCandidates;
   el<HTMLButtonElement>("inspect-cage-btn").hidden = !showCandidates;
   if (!showCandidates) {
@@ -830,14 +834,7 @@ el<HTMLButtonElement>("candidates-btn").addEventListener("click", () => {
     el<HTMLElement>("inspector-col").hidden = true;
     inspectedCageLabel = null;
   }
-  if (currentState) {
-    drawGrid(
-      el<HTMLCanvasElement>("grid-canvas"),
-      currentState,
-      selectedCell,
-      showCandidates
-    );
-  }
+  redrawGrid();
 });
 
 el<HTMLButtonElement>("edit-candidates-btn").addEventListener("click", () => {
@@ -845,10 +842,6 @@ el<HTMLButtonElement>("edit-candidates-btn").addEventListener("click", () => {
   el<HTMLButtonElement>("edit-candidates-btn").textContent = candidateEditMode
     ? "Done editing"
     : "Edit candidates";
-});
-
-el<HTMLButtonElement>("candidates-mode-btn").addEventListener("click", () => {
-  void handleCandidateMode();
 });
 
 el<HTMLButtonElement>("help-candidates-btn").addEventListener("click", () => {
@@ -871,4 +864,78 @@ el<HTMLButtonElement>("close-help-btn").addEventListener("click", () => {
 
 el<HTMLButtonElement>("quit-btn").addEventListener("click", () => {
   void handleQuit();
+});
+
+// ── Hints ────────────────────────────────────────────────────────────────────
+
+function clearHintHighlight(): void {
+  hintHighlightCells = new Set();
+  activeHintItem = null;
+  redrawGrid();
+}
+
+function showHintModal(hint: HintItem): void {
+  activeHintItem = hint;
+  hintHighlightCells = new Set(hint.highlight_cells.map(([r, c]) => `${r},${c}`));
+  redrawGrid();
+  el<HTMLElement>("hint-modal-title").textContent = hint.display_name;
+  el<HTMLElement>("hint-modal-explanation").textContent = hint.explanation;
+  const elim = hint.eliminations;
+  const summary = elim.length === 1
+    ? `Eliminates 1 candidate.`
+    : `Eliminates ${elim.length} candidates.`;
+  el<HTMLElement>("hint-modal-summary").textContent = summary;
+  (el<HTMLDialogElement>("hint-modal") as HTMLDialogElement).showModal();
+}
+
+el<HTMLButtonElement>("hints-btn").addEventListener("click", () => {
+  if (!currentSessionId) return;
+  const dropdown = el<HTMLElement>("hints-dropdown");
+  if (!dropdown.hidden) {
+    dropdown.hidden = true;
+    return;
+  }
+  void (async () => {
+    const res = await fetch(`/api/puzzle/${currentSessionId}/hints`);
+    if (!res.ok) return;
+    const data = (await res.json()) as HintsResponse;
+    clearChildren(dropdown);
+    if (data.hints.length === 0) {
+      const p = document.createElement("p");
+      p.className = "hints-empty";
+      p.textContent = "No hints available for the current state.";
+      dropdown.appendChild(p);
+    } else {
+      for (const hint of data.hints) {
+        const btn = document.createElement("button");
+        btn.className = "hint-item";
+        btn.textContent = `${hint.display_name} (${hint.elimination_count} elimination${hint.elimination_count === 1 ? "" : "s"})`;
+        btn.addEventListener("click", () => {
+          dropdown.hidden = true;
+          showHintModal(hint);
+        });
+        dropdown.appendChild(btn);
+      }
+    }
+    dropdown.hidden = false;
+  })();
+});
+
+// Close hints dropdown when clicking outside it
+document.addEventListener("click", (e) => {
+  const dropdown = el<HTMLElement>("hints-dropdown");
+  const hintsBtn = el<HTMLButtonElement>("hints-btn");
+  if (!dropdown.hidden && !dropdown.contains(e.target as Node) && e.target !== hintsBtn) {
+    dropdown.hidden = true;
+  }
+});
+
+el<HTMLButtonElement>("hint-apply-btn").addEventListener("click", () => {
+  (el<HTMLDialogElement>("hint-modal") as HTMLDialogElement).close();
+  clearHintHighlight();
+});
+
+el<HTMLButtonElement>("hint-close-btn").addEventListener("click", () => {
+  (el<HTMLDialogElement>("hint-modal") as HTMLDialogElement).close();
+  clearHintHighlight();
 });

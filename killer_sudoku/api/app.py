@@ -31,7 +31,9 @@ from fastapi.staticfiles import StaticFiles
 
 from killer_sudoku.api.config import CoachConfig
 from killer_sudoku.api.routers.puzzle import make_router
+from killer_sudoku.api.routers.settings import make_settings_router
 from killer_sudoku.api.session import SessionStore
+from killer_sudoku.api.settings import SettingsStore
 
 _STATIC_DIR = Path(__file__).parent.parent / "static"
 
@@ -51,7 +53,9 @@ def create_app(config: CoachConfig | None = None) -> FastAPI:
         config = CoachConfig()
 
     store = SessionStore(config.sessions_dir)
-    puzzle_router = make_router(config, store)
+    settings_store = SettingsStore(config.settings_file)
+    puzzle_router = make_router(config, store, settings_store)
+    settings_router = make_settings_router(settings_store)
 
     application = FastAPI(
         title="COACH — Killer Sudoku Coaching App",
@@ -67,6 +71,7 @@ def create_app(config: CoachConfig | None = None) -> FastAPI:
     )
 
     application.include_router(puzzle_router)
+    application.include_router(settings_router)
 
     @application.post("/api/quit")
     async def quit_server() -> dict[str, str]:

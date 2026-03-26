@@ -26,10 +26,12 @@ from killer_sudoku.api.schemas import (
     CandidateCell,
     CandidateCycleRequest,
     CandidateGrid,
-    CandidateModeRequest,
     CellEntryRequest,
     CellPosition,
     EliminateSolutionRequest,
+    EliminationItem,
+    HintItem,
+    HintsResponse,
     MoveRecord,
     PuzzleSpecData,
     PuzzleState,
@@ -38,9 +40,11 @@ from killer_sudoku.api.schemas import (
     UploadResponse,
 )
 from killer_sudoku.api.session import SessionStore
+from killer_sudoku.api.settings import SettingsStore
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.inp_image import InpImage
 from killer_sudoku.solver.engine import BoardState, SolverEngine, default_rules
+from killer_sudoku.solver.engine.rules.must_contain_outie import MustContainOutie
 from killer_sudoku.solver.engine.types import Elimination
 from killer_sudoku.solver.equation import sol_sums
 from killer_sudoku.solver.grid import (  # Grid used in solve endpoint
@@ -227,35 +231,35 @@ def _user_eliminations(
 def _compute_candidate_grid(
     state: PuzzleState,
     existing_grid: CandidateGrid | None,
+    always_apply: frozenset[str],
 ) -> CandidateGrid:
-    """Compute pre-solve candidates for all unsolved cells.
+    """Compute candidates for all unsolved cells using always-apply solver rules.
 
-    Builds a fresh BoardState and applies only the linear-system initial
-    eliminations (structural cage-sum constraints) plus eliminations for
-    digits already placed by the user.  The full solver is deliberately NOT
-    run — candidates reflect what is possible from cage constraints alone,
-    not the unique solution.
+    Builds a fresh BoardState, applies structural constraints (linear system),
+    user placements, and user-eliminated cage solutions, then runs the solver
+    engine with only the always-apply rules to convergence.
 
-    For example, a 2-cell cage totalling 6 will show {1,2,4,5} as possible
-    in each cell (combinations {1,5} and {2,4}).  A 2-cell cage totalling 16
-    will show {7,9} as possible and both digits as essential (they appear in
-    the only valid combination {7,9}).
+    auto_candidates reflects what the always-apply rules consider still possible.
+    auto_essential is the intersection of all remaining cage solutions for a cell's
+    cage — digits that must appear in the cage regardless of which combination is
+    chosen.
 
-    Solved cells (user_grid[r][c] != 0) have their CandidateCell copied
-    unchanged from existing_grid (freeze rule). If existing_grid is None
-    (initial call at /confirm), all user_essential and user_removed start empty.
+    Solved cells (user_grid[r][c] != 0) have their CandidateCell copied unchanged
+    from existing_grid (freeze rule). If existing_grid is None (initial call at
+    /confirm), all user_essential and user_removed start empty.
 
-    Rule A is applied for unsolved cells in auto mode: digits no longer in
-    auto_candidates are silently removed from user_essential.
+    Rule A: digits no longer in auto_candidates are silently removed from
+    user_essential on every recomputation.
     """
     assert state.user_grid is not None
     spec = _data_to_spec(state.spec_data)
     board = BoardState(spec)
-    engine: SolverEngine = SolverEngine(board, rules=default_rules())
+    engine: SolverEngine = SolverEngine(
+        board, rules=[r for r in default_rules() if r.name in always_apply]
+    )
 
-    # Step 1: apply linear system initial eliminations — these come from the
-    # cage-sum equations and narrow candidates to those that can participate
-    # in a valid cage assignment.  This is the structural pre-solve state.
+    # Step 1: apply linear system initial eliminations — narrows candidates to
+    # those that can participate in a valid cage assignment.
     engine.apply_eliminations(
         [
             e
@@ -268,14 +272,23 @@ def _compute_candidate_grid(
     # and eliminate the placed digit from all peers (same row, col, 3×3 box).
     engine.apply_eliminations(_user_eliminations(board, state.user_grid))
 
-    # Step 3: build per-cell CandidateCell
+    # Step 3: run always-apply rules to convergence.
+    # User-eliminated cage solutions are NOT fed into the solver here — they are
+    # applied as a display-time filter in Step 4.  This prevents an impossible
+    # board state when the solver's row/col/box constraints already narrow a cell
+    # to exactly the digits the user chose to eliminate.
+    engine.solve()
+
+    # Step 4: build per-cell CandidateCell from the post-solve board state.
+    # auto_candidates = solver candidates ∩ cage_possible (user-filtered solns)
+    # auto_essential  = auto_candidates ∩ must-contain set (user-filtered solns)
     cells: list[list[CandidateCell]] = []
     for r in range(9):
         row_cells: list[CandidateCell] = []
         for c in range(9):
             placed = state.user_grid[r][c]
             if placed != 0:
-                # Solved cell: freeze existing state unchanged
+                # Solved cell: freeze existing state unchanged.
                 if existing_grid is not None:
                     row_cells.append(existing_grid.cells[r][c])
                 else:
@@ -288,43 +301,30 @@ def _compute_candidate_grid(
                         )
                     )
             else:
-                # Unsolved cell: derive auto state from cage_solns.
-                # board.candidates only narrows by linear-system equations;
-                # cage-combination filtering (SolutionMapFilter) runs inside
-                # engine.solve() which we deliberately skip.  Build the
-                # candidate set as the union of valid cage combinations
-                # intersected with board.candidates for sudoku constraints.
-                cage_idx = int(board.regions[r, c])  # 0-based
-                # Filter user-eliminated combos before computing possible/essential.
-                _eliminated = {
+                cage_idx = int(board.regions[r, c])
+                user_elim = {
                     frozenset(s) for s in state.cages[cage_idx].user_eliminated_solns
                 }
-                cage_solns: list[frozenset[int]] = [
-                    s for s in board.cage_solns[cage_idx] if s not in _eliminated
+                remaining = [
+                    s for s in board.cage_solns[cage_idx] if s not in user_elim
                 ]
-                cage_possible: set[int] = set()
-                cage_must: set[int] = set(range(1, 10)) if cage_solns else set()
-                for soln in cage_solns:
-                    cage_possible |= soln
-                    cage_must &= soln
+                cage_possible: set[int] = (
+                    set().union(*remaining) if remaining else set()
+                )
+                cage_must: set[int] = set(remaining[0]) if remaining else set()
+                for s in remaining[1:]:
+                    cage_must &= s
 
-                # Intersect with board.candidates to respect sudoku constraints
-                # (row/col/box eliminations applied by linear system).
                 auto_cands_set = board.candidates[r][c] & cage_possible
-                auto_ess = sorted(auto_cands_set & cage_must)
                 auto_cands = sorted(auto_cands_set)
+                auto_ess = sorted(auto_cands_set & cage_must)
 
-                # Preserve overrides; apply Rule A to user_essential in auto mode only.
-                # In manual mode user_essential is user-owned and not filtered here
-                # — Rule A fires only on manual→auto transition via _min_merge_to_auto.
                 if existing_grid is not None:
                     prev = existing_grid.cells[r][c]
-                    if existing_grid.mode == "auto":
-                        user_essential = [
-                            d for d in prev.user_essential if d in auto_cands_set
-                        ]
-                    else:
-                        user_essential = list(prev.user_essential)
+                    # Rule A: auto-impossible digits are cleared from user_essential.
+                    user_essential = [
+                        d for d in prev.user_essential if d in auto_cands_set
+                    ]
                     user_removed = list(prev.user_removed)
                 else:
                     user_essential = []
@@ -340,54 +340,37 @@ def _compute_candidate_grid(
                 )
         cells.append(row_cells)
 
-    mode = existing_grid.mode if existing_grid is not None else "auto"
-    return CandidateGrid(cells=cells, mode=mode)
+    return CandidateGrid(cells=cells)
 
 
 def _cycle_candidate(
     cell: CandidateCell,
     digit: int,
-    mode: Literal["auto", "manual"],
 ) -> CandidateCell:
-    """Advance digit one step through its state cycle in the given mode.
+    """Advance digit one step through its state cycle.
 
-    Auto mode cycle (pre-check: if auto-impossible and not user-removed → no-op):
-      inessential → essential (user)
+    Cycle order (auto-impossible and not user-removed → no-op):
+      impossible (user-removed) → restore
       essential (user) → impossible
       essential (auto only) → impossible
-      impossible (user) → restore (auto_essential determines displayed state)
-
-    Manual mode cycle (all digits cycle freely):
-      inessential → essential → impossible → inessential
+      inessential → promote to user-essential
     """
     auto_set = set(cell.auto_candidates)
     auto_ess = set(cell.auto_essential)
     user_ess = set(cell.user_essential)
     user_rem = set(cell.user_removed)
 
-    if mode == "auto":
-        if digit not in auto_set and digit not in user_rem:
-            return cell  # auto-impossible, not user-removed: no-op
-        if digit in user_rem:
-            user_rem.discard(digit)
-        elif digit in user_ess:
-            user_ess.discard(digit)
-            user_rem.add(digit)
-        elif digit in auto_ess:
-            # auto-essential only (not user_essential): essential → impossible
-            user_rem.add(digit)
-        else:
-            # inessential: promote to essential
-            user_ess.add(digit)
+    if digit not in auto_set and digit not in user_rem:
+        return cell  # auto-impossible, not user-removed: no-op
+    if digit in user_rem:
+        user_rem.discard(digit)
+    elif digit in user_ess:
+        user_ess.discard(digit)
+        user_rem.add(digit)
+    elif digit in auto_ess:
+        user_rem.add(digit)
     else:
-        # manual: full three-state cycle
-        if digit in user_rem:
-            user_rem.discard(digit)
-        elif digit in user_ess:
-            user_ess.discard(digit)
-            user_rem.add(digit)
-        else:
-            user_ess.add(digit)
+        user_ess.add(digit)
 
     return CandidateCell(
         auto_candidates=cell.auto_candidates,
@@ -397,54 +380,18 @@ def _cycle_candidate(
     )
 
 
-def _min_merge_to_auto(
-    existing: CandidateGrid,
-    new_auto: CandidateGrid,
-    user_grid: list[list[int]],
-) -> CandidateGrid:
-    """Merge manual→auto: for each digit, the more restrictive state wins.
-
-    Uses ordering: impossible=0 < essential=1 < inessential=2.
-    - Auto says impossible → clears from user_essential (Rule A).
-    - User removed + auto says possible → stays in user_removed.
-    - User essential + auto says inessential → stays in user_essential.
-    Solved cells are frozen unchanged.
-    """
-    cells: list[list[CandidateCell]] = []
-    for r in range(9):
-        row_cells: list[CandidateCell] = []
-        for c in range(9):
-            if user_grid[r][c] != 0:
-                row_cells.append(existing.cells[r][c])
-            else:
-                auto_cell = new_auto.cells[r][c]
-                manual_cell = existing.cells[r][c]
-                auto_set = set(auto_cell.auto_candidates)
-                # Rule A: auto-impossible beats user_essential
-                merged_ess = [d for d in manual_cell.user_essential if d in auto_set]
-                # User-removed stays removed (manual restriction persists)
-                merged_rem = list(manual_cell.user_removed)
-                row_cells.append(
-                    CandidateCell(
-                        auto_candidates=auto_cell.auto_candidates,
-                        auto_essential=auto_cell.auto_essential,
-                        user_essential=merged_ess,
-                        user_removed=merged_rem,
-                    )
-                )
-        cells.append(row_cells)
-    return CandidateGrid(cells=cells, mode="auto")
-
-
 # ---------------------------------------------------------------------------
 # Router factory
 # ---------------------------------------------------------------------------
 
 
-def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
-    """Create the puzzle API router bound to the given config and session store.
+def make_router(
+    config: CoachConfig, store: SessionStore, settings_store: SettingsStore
+) -> APIRouter:
+    """Create the puzzle API router bound to the given config, session store,
+    and settings store.
 
-    Uses a factory pattern so that config and store are injected once at
+    Uses a factory pattern so that config and stores are injected once at
     startup (in app.py) rather than read from module-level globals, making
     the router straightforwardly testable.
     """
@@ -639,7 +586,10 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
                 "user_grid": [[0] * 9 for _ in range(9)],
             }
         )
-        candidate_grid = _compute_candidate_grid(initial_state_for_cg, None)
+        always_apply = frozenset(settings_store.load().always_apply_rules)
+        candidate_grid = _compute_candidate_grid(
+            initial_state_for_cg, None, always_apply
+        )
         updated = initial_state_for_cg.model_copy(
             update={"candidate_grid": candidate_grid}
         )
@@ -688,7 +638,8 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
             update={"user_grid": new_grid, "move_history": new_history}
         )
         # Recompute candidates after the cell entry
-        new_cg = _compute_candidate_grid(updated, updated.candidate_grid)
+        always_apply = frozenset(settings_store.load().always_apply_rules)
+        new_cg = _compute_candidate_grid(updated, updated.candidate_grid, always_apply)
         updated = updated.model_copy(update={"candidate_grid": new_cg})
         store.save(updated)
         return updated
@@ -722,38 +673,9 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
             update={"user_grid": new_grid, "move_history": new_history}
         )
         # Recompute candidates after restoring the cell
-        new_cg = _compute_candidate_grid(updated, updated.candidate_grid)
+        always_apply = frozenset(settings_store.load().always_apply_rules)
+        new_cg = _compute_candidate_grid(updated, updated.candidate_grid, always_apply)
         updated = updated.model_copy(update={"candidate_grid": new_cg})
-        store.save(updated)
-        return updated
-
-    @router.post("/{session_id}/candidates/mode", response_model=PuzzleState)
-    async def set_candidates_mode(
-        session_id: str,
-        req: CandidateModeRequest,
-    ) -> PuzzleState:
-        """Switch between auto and manual candidate modes.
-
-        auto→manual: update mode field only; no state change.
-        manual→auto: recompute auto state; apply min-merge (more restrictive wins).
-        """
-        try:
-            state = store.load(session_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Session not found") from exc
-
-        if state.candidate_grid is None:
-            raise HTTPException(status_code=409, detail="Session not yet confirmed")
-
-        if req.mode == "manual":
-            new_cg = state.candidate_grid.model_copy(update={"mode": "manual"})
-        else:
-            # manual → auto: recompute then min-merge
-            assert state.user_grid is not None
-            new_auto = _compute_candidate_grid(state, None)
-            new_cg = _min_merge_to_auto(state.candidate_grid, new_auto, state.user_grid)
-
-        updated = state.model_copy(update={"candidate_grid": new_cg})
         store.save(updated)
         return updated
 
@@ -764,8 +686,8 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
     ) -> PuzzleState:
         """Cycle one digit's state in a cell, or reset all overrides (digit=0).
 
-        Reads current mode from candidate_grid.mode. Does not run solver
-        recomputation — only updates user_essential and user_removed overrides.
+        Does not run solver recomputation — only updates user_essential and
+        user_removed overrides.
         """
         try:
             state = store.load(session_id)
@@ -781,7 +703,6 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
             )
 
         r, c = req.row - 1, req.col - 1
-        mode = state.candidate_grid.mode
         old_cell = state.candidate_grid.cells[r][c]
 
         if req.digit == 0:
@@ -793,7 +714,7 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
                 user_removed=[],
             )
         else:
-            new_cell = _cycle_candidate(old_cell, req.digit, mode)
+            new_cell = _cycle_candidate(old_cell, req.digit)
 
         new_rows = [
             [
@@ -804,7 +725,7 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
             ]
             for row in range(9)
         ]
-        new_cg = CandidateGrid(cells=new_rows, mode=mode)
+        new_cg = CandidateGrid(cells=new_rows)
         updated = state.model_copy(update={"candidate_grid": new_cg})
         store.save(updated)
         return updated
@@ -973,9 +894,75 @@ def make_router(config: CoachConfig, store: SessionStore) -> APIRouter:
         ]
         updated = state.model_copy(update={"cages": updated_cages})
         assert updated.user_grid is not None
-        new_cg = _compute_candidate_grid(updated, updated.candidate_grid)
+        always_apply = frozenset(settings_store.load().always_apply_rules)
+        new_cg = _compute_candidate_grid(updated, updated.candidate_grid, always_apply)
         updated = updated.model_copy(update={"candidate_grid": new_cg})
         store.save(updated)
         return updated
+
+    @router.get("/{session_id}/hints", response_model=HintsResponse)
+    async def get_hints(session_id: str) -> HintsResponse:
+        """Return all currently applicable hints, ordered by impact.
+
+        Sets up the board in the same state as candidate computation, then
+        runs each hintable rule to collect HintResult objects.  Results are
+        sorted descending by elimination_count so the most impactful hint
+        appears first.  Returns an empty list before /confirm or if no rules
+        currently fire.
+        """
+        try:
+            state = store.load(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+
+        if state.user_grid is None:
+            return HintsResponse(hints=[])
+
+        always_apply = frozenset(settings_store.load().always_apply_rules)
+        spec = _data_to_spec(state.spec_data)
+        board = BoardState(spec)
+        # Run the solver with always-apply rules only, so hint-only rules
+        # (e.g. MustContainOutie) are not pre-applied and can still fire.
+        engine: SolverEngine = SolverEngine(
+            board, rules=[r for r in default_rules() if r.name in always_apply]
+        )
+        engine.apply_eliminations(
+            [
+                e
+                for e in board.linear_system.initial_eliminations
+                if e.digit in board.candidates[e.cell[0]][e.cell[1]]
+            ]
+        )
+        engine.apply_eliminations(_user_eliminations(board, state.user_grid))
+        # Apply user-eliminated cage solutions so the solver sees the user's
+        # pruning decisions.
+        for cage_idx, cage in enumerate(state.cages):
+            if not cage.user_eliminated_solns:
+                continue
+            eliminated_sets = [frozenset(s) for s in cage.user_eliminated_solns]
+            board.cage_solns[cage_idx] = [
+                s for s in board.cage_solns[cage_idx] if s not in eliminated_sets
+            ]
+        engine.solve()
+
+        raw_hints = MustContainOutie().compute_hints(board)
+        raw_hints.sort(key=lambda h: h.elimination_count, reverse=True)
+
+        return HintsResponse(
+            hints=[
+                HintItem(
+                    rule_name=h.rule_name,
+                    display_name=h.display_name,
+                    explanation=h.explanation,
+                    highlight_cells=sorted(h.highlight_cells),
+                    eliminations=[
+                        EliminationItem(cell=e.cell, digit=e.digit)
+                        for e in h.eliminations
+                    ],
+                    elimination_count=h.elimination_count,
+                )
+                for h in raw_hints
+            ]
+        )
 
     return router

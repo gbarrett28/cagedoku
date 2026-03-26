@@ -19,7 +19,7 @@ from killer_sudoku.api.routers.puzzle import (
     _spec_to_cage_states,
     _spec_to_data,
 )
-from killer_sudoku.api.schemas import PuzzleState
+from killer_sudoku.api.schemas import DEFAULT_ALWAYS_APPLY_RULES, PuzzleState
 from killer_sudoku.api.session import SessionStore
 from tests.fixtures.minimal_puzzle import (
     KNOWN_SOLUTION,
@@ -85,7 +85,11 @@ def two_cell_state(store: SessionStore) -> PuzzleState:
         user_grid=[[0] * 9 for _ in range(9)],
     )
     state = state.model_copy(
-        update={"candidate_grid": _compute_candidate_grid(state, None)}
+        update={
+            "candidate_grid": _compute_candidate_grid(
+                state, None, frozenset(DEFAULT_ALWAYS_APPLY_RULES)
+            )
+        }
     )
     store.save(state)
     return state
@@ -575,14 +579,6 @@ class TestConfirmInitializesCandidates:
         data = res.json()
         assert data["candidate_grid"] is not None
 
-    def test_mode_is_auto(
-        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
-    ) -> None:
-        store.save(trivial_state)
-        res = client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
-        cg = res.json()["candidate_grid"]
-        assert cg["mode"] == "auto"
-
     def test_all_overrides_empty(
         self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
     ) -> None:
@@ -692,17 +688,14 @@ class TestCandidateWithCellEntry:
     def test_freeze_scope(
         self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
     ) -> None:
-        """Place in cell A; cycle peer cell B; undo A; assert B's override preserved."""
+        """Place in cell A; cycle peer cell B to user_removed; undo A; assert B's
+        override preserved."""
         sid = self._confirmed_session(client, store, trivial_state)
-        # Switch to manual so we can cycle any digit in peer cell B = (0,1)
-        client.post(
-            f"/api/puzzle/{sid}/candidates/mode",
-            json={"mode": "manual"},
-        )
-        # Cycle digit 7 in cell B (0,1) [row=1, col=2]: inessential → essential
+        # Cycle the solution digit of cell B = (0,1): auto_essential → user_removed
+        digit_b = KNOWN_SOLUTION[0][1]
         client.patch(
             f"/api/puzzle/{sid}/candidates/cell",
-            json={"row": 1, "col": 2, "digit": 7},
+            json={"row": 1, "col": 2, "digit": digit_b},
         )
         # Place digit in cell A = (0,0)
         client.patch(
@@ -713,8 +706,8 @@ class TestCandidateWithCellEntry:
         res = client.post(f"/api/puzzle/{sid}/undo")
         data = res.json()
         cell_b = data["candidate_grid"]["cells"][0][1]
-        assert 7 in cell_b["user_essential"], (
-            "Cell B's user_essential should still have 7 after undoing cell A"
+        assert digit_b in cell_b["user_removed"], (
+            "Cell B's user_removed should still contain the digit after undoing cell A"
         )
 
 
@@ -725,31 +718,6 @@ class TestCandidateWithCellEntry:
 
 class TestRuleA:
     """Rule A: digits dropped from auto_candidates are removed from user_essential."""
-
-    def test_rule_a_removes_from_user_essential(
-        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
-    ) -> None:
-        """After confirming, manually promote a digit in cell (0,1).
-        Then switch to auto — Rule A removes any digit not in auto_candidates."""
-        store.save(trivial_state)
-        client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
-        sid = trivial_state.session_id
-        # Switch to manual
-        client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "manual"})
-        # In manual mode, cycle digit 3 in cell (0,0): inessential → essential
-        # (digit 3 is NOT in auto_candidates for (0,0), which has auto_candidates=[5])
-        client.patch(
-            f"/api/puzzle/{sid}/candidates/cell",
-            json={"row": 1, "col": 1, "digit": 3},
-        )
-        # Switch to auto: digit 3 not in auto_candidates → cleared from user_essential
-        res = client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "auto"})
-        data = res.json()
-        cell_00 = data["candidate_grid"]["cells"][0][0]
-        assert 3 not in cell_00["user_essential"], (
-            "Rule A: digit 3 should be removed from user_essential"
-            " since auto says impossible"
-        )
 
     def test_user_removed_preserved_when_auto_also_impossible(
         self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
@@ -779,96 +747,6 @@ class TestRuleA:
 
 
 # ---------------------------------------------------------------------------
-# POST /api/puzzle/{session_id}/candidates/mode
-# ---------------------------------------------------------------------------
-
-
-class TestCandidateMode:
-    def _confirmed_sid(
-        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
-    ) -> str:
-        store.save(trivial_state)
-        client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
-        return trivial_state.session_id
-
-    def test_auto_to_manual_preserves_cells(
-        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
-    ) -> None:
-        sid = self._confirmed_sid(client, store, trivial_state)
-        before = store.load(sid)
-        assert before.candidate_grid is not None
-        res = client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "manual"})
-        assert res.status_code == 200
-        data = res.json()
-        assert data["candidate_grid"]["mode"] == "manual"
-        cg = before.candidate_grid
-        assert data["candidate_grid"]["cells"] == [
-            [
-                {
-                    "auto_candidates": cg.cells[r][c].auto_candidates,
-                    "auto_essential": cg.cells[r][c].auto_essential,
-                    "user_essential": cg.cells[r][c].user_essential,
-                    "user_removed": cg.cells[r][c].user_removed,
-                }
-                for c in range(9)
-            ]
-            for r in range(9)
-        ]
-
-    def test_manual_to_auto_user_removed_stays(
-        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
-    ) -> None:
-        """User-removed digit that auto says possible stays in user_removed."""
-        sid = self._confirmed_sid(client, store, trivial_state)
-        client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "manual"})
-        # In manual mode, cycle digit 5 in cell (0,0):
-        # inessential → essential → impossible
-        client.patch(
-            f"/api/puzzle/{sid}/candidates/cell",
-            json={"row": 1, "col": 1, "digit": 5},
-        )
-        client.patch(
-            f"/api/puzzle/{sid}/candidates/cell",
-            json={"row": 1, "col": 1, "digit": 5},
-        )
-        # Now cell (0,0) has digit 5 in user_removed
-        res = client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "auto"})
-        assert res.status_code == 200
-        cell = res.json()["candidate_grid"]["cells"][0][0]
-        # In trivial spec auto_candidates for (0,0) = [5], so auto says possible
-        # user_removed [5] should stay (more restrictive wins)
-        assert 5 in cell["user_removed"]
-
-    def test_manual_to_auto_rule_a_clears_user_essential(
-        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
-    ) -> None:
-        """Digit auto says impossible is cleared from user_essential on merge."""
-        sid = self._confirmed_sid(client, store, trivial_state)
-        client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "manual"})
-        # In manual mode, cycle digit 3 in cell (0,0): inessential→essential
-        # (digit 3 is NOT in auto_candidates for (0,0), which has auto_candidates=[5])
-        client.patch(
-            f"/api/puzzle/{sid}/candidates/cell",
-            json={"row": 1, "col": 1, "digit": 3},
-        )
-        # Switch to auto: digit 3 not in auto_candidates → cleared from user_essential
-        res = client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "auto"})
-        assert res.status_code == 200
-        cell = res.json()["candidate_grid"]["cells"][0][0]
-        assert 3 not in cell["user_essential"]
-
-    def test_409_if_not_confirmed(
-        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
-    ) -> None:
-        store.save(trivial_state)
-        res = client.post(
-            f"/api/puzzle/{trivial_state.session_id}/candidates/mode",
-            json={"mode": "manual"},
-        )
-        assert res.status_code == 409
-
-
-# ---------------------------------------------------------------------------
 # PATCH /api/puzzle/{session_id}/candidates/cell
 # ---------------------------------------------------------------------------
 
@@ -882,59 +760,6 @@ class TestCandidateCycle:
         store.save(trivial_state)
         client.post(f"/api/puzzle/{trivial_state.session_id}/confirm")
         return trivial_state.session_id
-
-    def test_manual_inessential_to_essential(
-        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
-    ) -> None:
-        sid = self._confirmed_sid(client, store, trivial_state)
-        client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "manual"})
-        res = client.patch(
-            f"/api/puzzle/{sid}/candidates/cell",
-            json={"row": 1, "col": 1, "digit": 3},
-        )
-        assert res.status_code == 200
-        cell = res.json()["candidate_grid"]["cells"][0][0]
-        assert 3 in cell["user_essential"]
-        assert 3 not in cell["user_removed"]
-
-    def test_manual_essential_to_impossible(
-        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
-    ) -> None:
-        sid = self._confirmed_sid(client, store, trivial_state)
-        client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "manual"})
-        client.patch(
-            f"/api/puzzle/{sid}/candidates/cell",
-            json={"row": 1, "col": 1, "digit": 3},
-        )
-        res = client.patch(
-            f"/api/puzzle/{sid}/candidates/cell",
-            json={"row": 1, "col": 1, "digit": 3},
-        )
-        assert res.status_code == 200
-        cell = res.json()["candidate_grid"]["cells"][0][0]
-        assert 3 not in cell["user_essential"]
-        assert 3 in cell["user_removed"]
-
-    def test_manual_impossible_to_inessential(
-        self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
-    ) -> None:
-        sid = self._confirmed_sid(client, store, trivial_state)
-        client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "manual"})
-        client.patch(
-            f"/api/puzzle/{sid}/candidates/cell",
-            json={"row": 1, "col": 1, "digit": 3},
-        )
-        client.patch(
-            f"/api/puzzle/{sid}/candidates/cell",
-            json={"row": 1, "col": 1, "digit": 3},
-        )
-        res = client.patch(
-            f"/api/puzzle/{sid}/candidates/cell",
-            json={"row": 1, "col": 1, "digit": 3},
-        )
-        cell = res.json()["candidate_grid"]["cells"][0][0]
-        assert 3 not in cell["user_essential"]
-        assert 3 not in cell["user_removed"]
 
     def test_auto_essential_to_impossible(
         self, client: TestClient, store: SessionStore, trivial_state: PuzzleState
@@ -989,10 +814,10 @@ class TestCandidateCycle:
     ) -> None:
         """digit=0 clears user_essential and user_removed for the cell."""
         sid = self._confirmed_sid(client, store, trivial_state)
-        client.post(f"/api/puzzle/{sid}/candidates/mode", json={"mode": "manual"})
+        # Cycle the solution digit 5 in cell (0,0): auto_essential → user_removed
         client.patch(
             f"/api/puzzle/{sid}/candidates/cell",
-            json={"row": 1, "col": 1, "digit": 3},
+            json={"row": 1, "col": 1, "digit": KNOWN_SOLUTION[0][0]},
         )
         res = client.patch(
             f"/api/puzzle/{sid}/candidates/cell",

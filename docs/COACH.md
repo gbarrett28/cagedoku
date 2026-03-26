@@ -1,5 +1,21 @@
 # Project COACH: Master Functional Specification
 
+[gb] NEW SPEC STARTS
+
+The coach is organised as a set of rules and highlights.  Some rules can be selected to be applied whenever and wherever possible.
+
+The highlighting of essential digits in a cage (in salmon) can be controlled on or off but the user cannot modify essentiality themselves.  This is the only highlight we have for now.
+
+The user may eliminate/replace candidates from cells and eliminate/replace solutions from cages but this is all.
+
+The auto feature for candidates should be removed as it is subsumed by the auto-application of certain rules.  In this case, those rules are:
+1. Narrow the candidates of a cell to the union of solutions of the containing cage
+2. Eliminate candidates that are in conflict with a solved cell
+
+We should start with all the rules disabled and work through all the puzzles to reenable each of the rules once we have designed the hint for that rule.  We should look at the stuck state of each puzzle in turn to see which rule we should add hinting to and enable.  Once that is done, we should set that rule 'always apply' and look at the next stuck state.
+
+[gb] NEW SPEC ENDS
+
 ---
 
 ## Developer Onboarding

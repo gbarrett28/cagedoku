@@ -78,13 +78,6 @@ class TestCandidatesToggle:
         page.click("#candidates-btn")
         expect(page.locator("#edit-candidates-btn")).to_be_visible()
 
-    def test_mode_btn_appears_when_candidates_shown(
-        self, page: Page, live_server_url: str, tiny_jpeg_bytes: bytes
-    ) -> None:
-        _upload_and_confirm(page, live_server_url, tiny_jpeg_bytes)
-        page.click("#candidates-btn")
-        expect(page.locator("#candidates-mode-btn")).to_be_visible()
-
     def test_help_btn_appears_when_candidates_shown(
         self, page: Page, live_server_url: str, tiny_jpeg_bytes: bytes
     ) -> None:
@@ -138,19 +131,6 @@ class TestKeyboardRouting:
         ]
         assert len(candidate_calls) >= 1, "Expected /candidates/cell to be called"
         assert len(cell_calls) == 0, "Expected no /cell call in candidate edit mode"
-
-
-class TestModeToggle:
-    def test_mode_btn_label_changes(
-        self, page: Page, live_server_url: str, tiny_jpeg_bytes: bytes
-    ) -> None:
-        _upload_and_confirm(page, live_server_url, tiny_jpeg_bytes)
-        page.click("#candidates-btn")
-        btn = page.locator("#candidates-mode-btn")
-        expect(btn).to_have_text("Auto")
-        with page.expect_response("**/candidates/mode"):
-            btn.click()
-        expect(btn).to_have_text("Manual")
 
 
 class TestHelpModal:

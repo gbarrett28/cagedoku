@@ -383,3 +383,85 @@ button:hover:not(:disabled) {
   opacity: 0.35;
   cursor: default;
 }
+
+/* ── Dialog / modal base ── */
+
+dialog {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  max-width: 540px;
+  width: 90vw;
+}
+
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+/* ── Hints dropdown ── */
+
+.hints-anchor {
+  position: relative;
+}
+
+.hints-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 100;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  min-width: 260px;
+  max-width: 380px;
+  padding: 0.35rem 0;
+  overflow: hidden;
+}
+
+.hint-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0.55rem 1rem;
+  color: var(--text);
+  font-size: 0.88rem;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.hint-item:hover {
+  background: var(--surface-2);
+  opacity: 1;
+}
+
+.hints-empty {
+  padding: 0.6rem 1rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/* ── Hint explanation modal ── */
+
+#hint-modal {
+  max-width: 520px;
+  width: 90vw;
+}
+
+.hint-modal-explanation {
+  margin: 1rem 0 0.5rem;
+  line-height: 1.6;
+  font-size: 0.9rem;
+}
+
+.hint-modal-summary {
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}

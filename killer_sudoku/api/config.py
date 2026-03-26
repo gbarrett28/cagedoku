@@ -49,3 +49,8 @@ class CoachConfig:
     def puzzle_dir(self, newspaper: Literal["guardian", "observer"]) -> Path:
         """Return the model/puzzle directory for the given newspaper source."""
         return self.guardian_dir if newspaper == "guardian" else self.observer_dir
+
+    @property
+    def settings_file(self) -> Path:
+        """Path to the persistent coaching settings JSON file."""
+        return self.sessions_dir / "settings.json"
