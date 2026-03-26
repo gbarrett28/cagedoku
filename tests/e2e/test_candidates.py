@@ -183,3 +183,63 @@ class TestCageInspector:
         canvas.click(position={"x": 30, "y": 30})
         page.wait_for_timeout(500)
         expect(page.locator("#inspector-col")).to_be_visible()
+
+    def test_original_col_hidden_after_confirm(
+        self, page: Page, live_server_url: str, tiny_jpeg_bytes: bytes
+    ) -> None:
+        """After confirm, the original photo column must be hidden."""
+        _upload_and_confirm(page, live_server_url, tiny_jpeg_bytes)
+        expect(page.locator("#original-col")).to_be_hidden()
+
+    def test_inspect_btn_text_changes_on_toggle(
+        self, page: Page, live_server_url: str, tiny_jpeg_bytes: bytes
+    ) -> None:
+        """Clicking inspect-cage-btn toggles its label between the two states."""
+        _upload_and_confirm(page, live_server_url, tiny_jpeg_bytes)
+        page.click("#candidates-btn")
+        btn = page.locator("#inspect-cage-btn")
+        expect(btn).to_have_text("Inspect cage")
+        btn.click()
+        expect(btn).to_have_text("Stop inspecting")
+        btn.click()
+        expect(btn).to_have_text("Inspect cage")
+
+    def test_inspector_col_hidden_when_inspect_toggled_off(
+        self, page: Page, live_server_url: str, tiny_jpeg_bytes: bytes
+    ) -> None:
+        """Turning inspect mode off hides the inspector panel."""
+        _upload_and_confirm(page, live_server_url, tiny_jpeg_bytes)
+        page.click("#candidates-btn")
+        page.click("#inspect-cage-btn")
+        page.locator("#grid-canvas").click(position={"x": 30, "y": 30})
+        page.wait_for_timeout(500)
+        expect(page.locator("#inspector-col")).to_be_visible()
+        # Toggle off
+        page.click("#inspect-cage-btn")
+        expect(page.locator("#inspector-col")).to_be_hidden()
+
+    def test_cage_inspector_shows_solution_items(
+        self, page: Page, live_server_url: str, tiny_jpeg_bytes: bytes
+    ) -> None:
+        """After clicking a cage, the inspector panel contains soln-item elements."""
+        _upload_and_confirm(page, live_server_url, tiny_jpeg_bytes)
+        page.click("#candidates-btn")
+        page.click("#inspect-cage-btn")
+        page.locator("#grid-canvas").click(position={"x": 30, "y": 30})
+        page.wait_for_timeout(500)
+        expect(page.locator("#cage-inspector .soln-item").first).to_be_visible()
+
+    def test_inspector_hidden_when_candidates_hidden(
+        self, page: Page, live_server_url: str, tiny_jpeg_bytes: bytes
+    ) -> None:
+        """Hiding candidates also hides the inspector panel and resets inspect mode."""
+        _upload_and_confirm(page, live_server_url, tiny_jpeg_bytes)
+        page.click("#candidates-btn")
+        page.click("#inspect-cage-btn")
+        page.locator("#grid-canvas").click(position={"x": 30, "y": 30})
+        page.wait_for_timeout(500)
+        expect(page.locator("#inspector-col")).to_be_visible()
+        # Hide candidates
+        page.click("#candidates-btn")
+        expect(page.locator("#inspector-col")).to_be_hidden()
+        expect(page.locator("#inspect-cage-btn")).to_be_hidden()
