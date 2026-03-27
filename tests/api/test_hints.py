@@ -17,6 +17,7 @@ Guardian puzzle 10 structural context (0-based coordinates):
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 
 import pytest
@@ -117,6 +118,26 @@ def _apply_hint(
     )
     assert resp.status_code == 200, resp.text
     return resp.json()  # type: ignore[no-any-return]
+
+
+def _make_g10_state(store: SessionStore) -> tuple[str, PuzzleState]:
+    """Seed a confirmed guardian-10 state into store; return (session_id, state).
+
+    Extracted from the g10_state fixture so other test modules can reuse it
+    without depending on pytest fixture injection.
+    """
+    spec = make_guardian10_spec()
+    sid = str(uuid.uuid4())
+    state = PuzzleState(
+        session_id=sid,
+        newspaper="guardian",
+        cages=_spec_to_cage_states(spec),
+        spec_data=_spec_to_data(spec),
+        original_image_b64="dGVzdA==",
+        user_grid=[[0] * 9 for _ in range(9)],
+    )
+    store.save(state)
+    return sid, state
 
 
 # ---------------------------------------------------------------------------

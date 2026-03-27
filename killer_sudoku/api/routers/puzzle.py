@@ -1028,4 +1028,26 @@ def make_router(
         store.save(updated)
         return updated
 
+    @router.post("/{session_id}/refresh", response_model=PuzzleState)
+    async def refresh(session_id: str) -> PuzzleState:
+        """Re-apply always-apply rules using current settings; return updated state.
+
+        Called by the frontend after saving settings to reflect newly enabled
+        auto-apply rules on the active board immediately. Preserves all
+        user_essential and user_removed overrides via existing_grid.
+        """
+        try:
+            state = store.load(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+
+        if state.user_grid is None:
+            raise HTTPException(status_code=409, detail="Session not yet confirmed")
+
+        always_apply = frozenset(settings_store.load().always_apply_rules)
+        new_cg = _compute_candidate_grid(state, state.candidate_grid, always_apply)
+        updated = state.model_copy(update={"candidate_grid": new_cg})
+        store.save(updated)
+        return updated
+
     return router
