@@ -102,6 +102,18 @@ interface HintsResponse {
   hints: HintItem[];
 }
 
+interface RuleConfig {
+  name: string;
+  displayName: string;
+}
+
+const HINTABLE_RULES: RuleConfig[] = [
+  { name: "CageCandidateFilter", displayName: "Cage Candidate Filter" },
+  { name: "SolutionMapFilter", displayName: "Solution Map Filter" },
+  { name: "MustContainOutie", displayName: "Must Contain Outie" },
+  { name: "CageConfinement", displayName: "Cage Confinement" },
+];
+
 // ── Grid canvas constants ────────────────────────────────────────────────────
 
 const CELL = 50;   // pixels per sudoku cell
@@ -862,6 +874,51 @@ el<HTMLButtonElement>("close-help-btn").addEventListener("click", () => {
   (el<HTMLDialogElement>("help-candidates-modal") as HTMLDialogElement).close();
 });
 
+el<HTMLButtonElement>("config-btn").addEventListener("click", () => {
+  void openConfigModal();
+});
+
+el<HTMLButtonElement>("config-save-btn").addEventListener("click", async () => {
+  const selects = el<HTMLElement>("config-rules-list")
+    .querySelectorAll<HTMLSelectElement>("select[data-rule-name]");
+  const alwaysApplyRules: string[] = [];
+  for (const select of selects) {
+    if (select.value === "auto" && select.dataset["ruleName"]) {
+      alwaysApplyRules.push(select.dataset["ruleName"]);
+    }
+  }
+
+  const patchResp = await fetch("/api/settings", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ always_apply_rules: alwaysApplyRules }),
+  });
+  if (!patchResp.ok) {
+    throw new Error(
+      `PATCH settings failed: ${patchResp.status} ${await patchResp.text()}`
+    );
+  }
+
+  if (currentSessionId) {
+    const refreshResp = await fetch(`/api/puzzle/${currentSessionId}/refresh`, {
+      method: "POST",
+    });
+    if (!refreshResp.ok) {
+      throw new Error(
+        `POST refresh failed: ${refreshResp.status} ${await refreshResp.text()}`
+      );
+    }
+    currentState = await refreshResp.json();
+    redrawGrid();
+  }
+
+  (el<HTMLDialogElement>("config-modal")).close();
+});
+
+el<HTMLButtonElement>("config-cancel-btn").addEventListener("click", () => {
+  (el<HTMLDialogElement>("config-modal")).close();
+});
+
 el<HTMLButtonElement>("quit-btn").addEventListener("click", () => {
   void handleQuit();
 });
@@ -872,6 +929,47 @@ function clearHintHighlight(): void {
   hintHighlightCells = new Set();
   activeHintItem = null;
   redrawGrid();
+}
+
+async function openConfigModal(): Promise<void> {
+  const res = await fetch("/api/settings");
+  if (!res.ok) {
+    throw new Error(`GET settings failed: ${res.status} ${await res.text()}`);
+  }
+  const settings = (await res.json()) as { always_apply_rules: string[] };
+  const alwaysApplySet = new Set(settings.always_apply_rules);
+
+  const list = el<HTMLElement>("config-rules-list");
+  clearChildren(list);
+
+  for (const rule of HINTABLE_RULES) {
+    const row = document.createElement("div");
+    row.className = "config-rule-row";
+
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "config-rule-name";
+    nameSpan.textContent = rule.displayName;
+
+    const select = document.createElement("select");
+    select.className = "config-rule-select";
+    select.dataset["ruleName"] = rule.name;
+
+    const optAuto = document.createElement("option");
+    optAuto.value = "auto";
+    optAuto.textContent = "Auto-apply";
+    const optHint = document.createElement("option");
+    optHint.value = "hint";
+    optHint.textContent = "Hint-only";
+    select.appendChild(optAuto);
+    select.appendChild(optHint);
+    select.value = alwaysApplySet.has(rule.name) ? "auto" : "hint";
+
+    row.appendChild(nameSpan);
+    row.appendChild(select);
+    list.appendChild(row);
+  }
+
+  (el<HTMLDialogElement>("config-modal")).showModal();
 }
 
 function showHintModal(hint: HintItem): void {
@@ -897,7 +995,7 @@ el<HTMLButtonElement>("hints-btn").addEventListener("click", () => {
   }
   void (async () => {
     const res = await fetch(`/api/puzzle/${currentSessionId}/hints`);
-    if (!res.ok) return;
+    if (!res.ok) throw new Error(`GET hints failed: ${res.status} ${await res.text()}`);
     const data = (await res.json()) as HintsResponse;
     clearChildren(dropdown);
     if (data.hints.length === 0) {
@@ -940,10 +1038,9 @@ el<HTMLButtonElement>("hint-apply-btn").addEventListener("click", async () => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ eliminations }),
   });
-  if (resp.ok) {
-    currentState = await resp.json();
-    redrawGrid();
-  }
+  if (!resp.ok) throw new Error(`POST hints/apply failed: ${resp.status} ${await resp.text()}`);
+  currentState = await resp.json();
+  redrawGrid();
 });
 
 el<HTMLButtonElement>("hint-close-btn").addEventListener("click", () => {
