@@ -12,6 +12,7 @@
   <div class="header-inner">
     <h1>COACH</h1>
     <span class="header-sub">Killer Sudoku Coaching App</span>
+    <button id="config-btn" class="btn-secondary">Config</button>
     <button id="quit-btn" class="btn-secondary btn-quit">Quit server</button>
   </div>
 </header>
@@ -140,6 +141,15 @@
   <p>When you enter a digit into a cell, its candidates are hidden but not lost. If you undo or clear the digit, the candidates reappear exactly as you left them.</p>
 
   <button id="close-help-btn">Close</button>
+</dialog>
+
+<dialog id="config-modal">
+  <h2>Solver Rules</h2>
+  <div id="config-rules-list" class="config-rules-list"></div>
+  <div class="form-actions">
+    <button id="config-save-btn">Save</button>
+    <button id="config-cancel-btn" class="btn-secondary">Cancel</button>
+  </div>
 </dialog>
 
 <dialog id="hint-modal">
