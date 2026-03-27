@@ -5,8 +5,9 @@ For each active pair (p, q, delta) where value[p] - value[q] = delta:
   candidates[q] is narrowed to {m - delta | m in candidates[p], 1 <= m-delta <= 9}
 
 Fires on COUNT_DECREASED for any unit containing either cell of an active pair.
-CELL_DETERMINED is already handled by LinearSystem.substitute_cell (called in
-apply_eliminations), so this rule skips that trigger.
+CELL_DETERMINED is NOT in triggers — LinearSystem.substitute_cell (called in
+apply_eliminations) already handles cell determinations, so registering for
+CELL_DETERMINED would only queue wasted work items that return [].
 """
 
 from __future__ import annotations
@@ -20,18 +21,13 @@ class DeltaConstraint:
 
     name = "DeltaConstraint"
     priority = 5
-    triggers: frozenset[Trigger] = frozenset(
-        {Trigger.COUNT_DECREASED, Trigger.CELL_DETERMINED}
-    )
+    triggers: frozenset[Trigger] = frozenset({Trigger.COUNT_DECREASED})
     unit_kinds: frozenset[UnitKind] = frozenset(
         {UnitKind.ROW, UnitKind.COL, UnitKind.BOX, UnitKind.CAGE}
     )
 
     def apply(self, ctx: RuleContext) -> list[Elimination]:
         """Narrow candidate sets using active delta pairs touching this unit."""
-        if ctx.hint == Trigger.CELL_DETERMINED:
-            # substitute_cell in apply_eliminations already handles this
-            return []
 
         assert ctx.unit is not None
         board = ctx.board

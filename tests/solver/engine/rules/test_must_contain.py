@@ -2,7 +2,7 @@
 
 from killer_sudoku.solver.engine.board_state import BoardState
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.rules.must_contain import MustContain
+from killer_sudoku.solver.engine.rules.incomplete.must_contain import MustContain
 from killer_sudoku.solver.engine.types import Trigger
 from tests.fixtures.minimal_puzzle import make_trivial_spec
 

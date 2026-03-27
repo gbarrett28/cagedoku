@@ -2,7 +2,9 @@
 
 from killer_sudoku.solver.engine.board_state import BoardState
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.rules.cage_intersection import CageIntersection
+from killer_sudoku.solver.engine.rules.incomplete.cage_intersection import (
+    CageIntersection,
+)
 from killer_sudoku.solver.engine.rules.solution_map_filter import (
     SolutionMapFilter,
     _per_cell_possible,

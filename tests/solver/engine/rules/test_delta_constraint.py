@@ -2,7 +2,9 @@
 
 from killer_sudoku.solver.engine.board_state import BoardState
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.rules.delta_constraint import DeltaConstraint
+from killer_sudoku.solver.engine.rules.incomplete.delta_constraint import (
+    DeltaConstraint,
+)
 from killer_sudoku.solver.engine.types import Trigger
 from tests.fixtures.minimal_puzzle import make_trivial_spec
 
@@ -37,15 +39,7 @@ def test_delta_constraint_narrows_candidates() -> None:
     assert {8, 9} <= elim_map.get((0, 1), set())
 
 
-def test_delta_constraint_skips_cell_determined() -> None:
-    """CELL_DETERMINED trigger is handled by LinearSystem — rule returns empty."""
-    spec = make_trivial_spec()
-    bs = BoardState(spec)
-    ctx = RuleContext(
-        unit=None,
-        cell=(0, 0),
-        board=bs,
-        hint=Trigger.CELL_DETERMINED,
-        hint_digit=5,
-    )
-    assert DeltaConstraint().apply(ctx) == []
+def test_delta_constraint_does_not_subscribe_to_cell_determined() -> None:
+    """CELL_DETERMINED is handled by LinearSystem.substitute_cell — not needed here."""
+    assert Trigger.CELL_DETERMINED not in DeltaConstraint.triggers
+    assert Trigger.COUNT_DECREASED in DeltaConstraint.triggers

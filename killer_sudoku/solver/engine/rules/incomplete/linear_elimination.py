@@ -15,6 +15,8 @@ firings return nothing.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
 
@@ -26,6 +28,10 @@ class LinearElimination:
     priority = 1
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()
+    # BoardState must be constructed with include_virtual_cages=True for the
+    # linear system to function.  _make_board_and_engine() reads this flag so
+    # the rule name never needs to be hardcoded outside DEFAULT_ALWAYS_APPLY_RULES.
+    requires_virtual_cages: ClassVar[bool] = True
 
     def apply(self, ctx: RuleContext) -> list[Elimination]:
         """Return initial_eliminations still present in the candidate sets."""

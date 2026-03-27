@@ -45,6 +45,7 @@ from killer_sudoku.api.settings import SettingsStore
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.inp_image import InpImage
 from killer_sudoku.solver.engine import BoardState, SolverEngine, default_rules
+from killer_sudoku.solver.engine.board_state import NoSolnError
 from killer_sudoku.solver.engine.hint import HintableRule, collect_hints
 from killer_sudoku.solver.engine.types import Elimination
 from killer_sudoku.solver.equation import sol_sums
@@ -229,6 +230,27 @@ def _user_eliminations(
     ]
 
 
+def _make_board_and_engine(
+    spec: PuzzleSpec, always_apply: frozenset[str]
+) -> tuple[BoardState, SolverEngine]:
+    """Create a BoardState and SolverEngine for the given always-apply rule set.
+
+    Derives whether virtual cages are required from each rule's
+    ``requires_virtual_cages`` class attribute rather than hardcoding any rule
+    name.  Rules that need virtual cages (currently LinearElimination) declare
+    this on themselves, so the routing layer never needs to know their names.
+    """
+    active_rules = [r for r in default_rules() if r.name in always_apply]
+    linear_active = any(
+        getattr(r, "requires_virtual_cages", False) for r in active_rules
+    )
+    board = BoardState(spec, include_virtual_cages=linear_active)
+    engine: SolverEngine = SolverEngine(
+        board, rules=active_rules, linear_system_active=linear_active
+    )
+    return board, engine
+
+
 def _compute_candidate_grid(
     state: PuzzleState,
     existing_grid: CandidateGrid | None,
@@ -254,13 +276,7 @@ def _compute_candidate_grid(
     """
     assert state.user_grid is not None
     spec = _data_to_spec(state.spec_data)
-    linear_active = "LinearElimination" in always_apply
-    board = BoardState(spec, include_virtual_cages=linear_active)
-    engine: SolverEngine = SolverEngine(
-        board,
-        rules=[r for r in default_rules() if r.name in always_apply],
-        linear_system_active=linear_active,
-    )
+    board, engine = _make_board_and_engine(spec, always_apply)
 
     # Step 1: pin user placements — eliminate other digits from each solved cell
     # and eliminate the placed digit from all peers (same row, col, 3×3 box).
@@ -271,7 +287,13 @@ def _compute_candidate_grid(
     # applied as a display-time filter in Step 4.  This prevents an impossible
     # board state when the solver's row/col/box constraints already narrow a cell
     # to exactly the digits the user chose to eliminate.
-    engine.solve()
+    try:
+        engine.solve()
+    except NoSolnError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Board is in a contradictory state: {exc}",
+        ) from exc
 
     # Step 3: build per-cell CandidateCell from the post-solve board state.
     # auto_candidates = solver candidates ∩ cage_possible (user-filtered solns)
@@ -802,15 +824,15 @@ def make_router(
 
         always_apply = frozenset(settings_store.load().always_apply_rules)
         spec = _data_to_spec(state.spec_data)
-        linear_active = "LinearElimination" in always_apply
-        board = BoardState(spec, include_virtual_cages=linear_active)
-        engine: SolverEngine = SolverEngine(
-            board,
-            rules=[r for r in default_rules() if r.name in always_apply],
-            linear_system_active=linear_active,
-        )
+        board, engine = _make_board_and_engine(spec, always_apply)
         engine.apply_eliminations(_user_eliminations(board, state.user_grid))
-        engine.solve()
+        try:
+            engine.solve()
+        except NoSolnError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Board is in a contradictory state: {exc}",
+            ) from exc
 
         all_solutions = sorted(
             sorted(s) for s in sol_sums(len(cage.cells), 0, cage.total)
@@ -914,15 +936,9 @@ def make_router(
 
         always_apply = frozenset(settings_store.load().always_apply_rules)
         spec = _data_to_spec(state.spec_data)
-        linear_active = "LinearElimination" in always_apply
-        board = BoardState(spec, include_virtual_cages=linear_active)
         # Run the solver with always-apply rules only, so hint-only rules
         # (e.g. MustContainOutie) are not pre-applied and can still fire.
-        engine: SolverEngine = SolverEngine(
-            board,
-            rules=[r for r in default_rules() if r.name in always_apply],
-            linear_system_active=linear_active,
-        )
+        board, engine = _make_board_and_engine(spec, always_apply)
         engine.apply_eliminations(_user_eliminations(board, state.user_grid))
         # Apply user-eliminated cage solutions so the solver sees the user's
         # pruning decisions.
@@ -933,7 +949,13 @@ def make_router(
             board.cage_solns[cage_idx] = [
                 s for s in board.cage_solns[cage_idx] if s not in eliminated_sets
             ]
-        engine.solve()
+        try:
+            engine.solve()
+        except NoSolnError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Board is in a contradictory state: {exc}",
+            ) from exc
 
         # Re-apply cage candidate narrowing after user solution eliminations.
         # User-eliminated cage solutions are applied directly to board.cage_solns
@@ -952,7 +974,13 @@ def make_router(
                         cage_narrow.append(Elimination(cell=(cr, cc), digit=d))
         if cage_narrow:
             engine.apply_eliminations(cage_narrow)
-            engine.solve()
+            try:
+                engine.solve()
+            except NoSolnError as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Board is in a contradictory state: {exc}",
+                ) from exc
 
         # Apply user-accepted hint eliminations (user_removed from the stored
         # candidate grid) so that downstream hints see the board state as it
@@ -967,7 +995,13 @@ def make_router(
             ]
             if accepted:
                 engine.apply_eliminations(accepted)
-                engine.solve()
+                try:
+                    engine.solve()
+                except NoSolnError as exc:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Board is in a contradictory state: {exc}",
+                    ) from exc
 
         hint_rules: list[HintableRule] = [
             r for r in default_rules() if isinstance(r, HintableRule)
@@ -987,6 +1021,7 @@ def make_router(
                         for e in h.eliminations
                     ],
                     elimination_count=h.elimination_count,
+                    placement=h.placement,
                 )
                 for h in raw_hints
             ]

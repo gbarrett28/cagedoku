@@ -207,9 +207,12 @@ class SolverEngine:
                             )
                             if sum_elims:
                                 self.apply_eliminations(sum_elims)
-                # Route to CELL_DETERMINED rules
+                # Route to CELL_DETERMINED rules (recognition, e.g. NakedSingle)
                 for rule in self._trigger_map[Trigger.CELL_DETERMINED]:
                     self.queue.enqueue_cell(0, rule, cell, Trigger.CELL_DETERMINED, val)
+                # Route to CELL_SOLVED rules (peer cleanup)
+                for rule in self._trigger_map[Trigger.CELL_SOLVED]:
+                    self.queue.enqueue_cell(0, rule, cell, Trigger.CELL_SOLVED, val)
             elif event.trigger == Trigger.SOLUTION_PRUNED:
                 uid = event.payload
                 assert isinstance(uid, int)

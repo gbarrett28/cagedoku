@@ -1,15 +1,15 @@
-"""Tests for R1b SolvedCellElimination."""
+"""Tests for R1b CellSolutionElimination."""
 
 from killer_sudoku.solver.engine.board_state import BoardState
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.rules.solved_cell_elimination import (
-    SolvedCellElimination,
+from killer_sudoku.solver.engine.rules.cell_solution_elimination import (
+    CellSolutionElimination,
 )
 from killer_sudoku.solver.engine.types import Trigger, UnitKind
 from tests.fixtures.minimal_puzzle import make_trivial_spec
 
 
-def test_solved_cell_elimination_eliminates_from_row_peers() -> None:
+def test_cell_solution_elimination_eliminates_from_row_peers() -> None:
     spec = make_trivial_spec()
     bs = BoardState(spec)
     bs.candidates[0][0] = {5}
@@ -17,10 +17,10 @@ def test_solved_cell_elimination_eliminates_from_row_peers() -> None:
         unit=None,
         cell=(0, 0),
         board=bs,
-        hint=Trigger.CELL_DETERMINED,
+        hint=Trigger.CELL_SOLVED,
         hint_digit=5,
     )
-    elims = SolvedCellElimination().apply(ctx)
+    elims = CellSolutionElimination().apply(ctx)
     elim_cells = {e.cell for e in elims}
     assert all(e.digit == 5 for e in elims)
     # Row peers
@@ -36,8 +36,8 @@ def test_solved_cell_elimination_eliminates_from_row_peers() -> None:
                 assert (r, c) in elim_cells
 
 
-def test_solved_cell_elimination_excludes_cage_peers() -> None:
-    """SolvedCellElimination skips cage units — cage logic belongs to R3/R4."""
+def test_cell_solution_elimination_excludes_cage_peers() -> None:
+    """CellSolutionElimination skips cage units — cage logic belongs to R3/R4."""
     spec = make_trivial_spec()
     bs = BoardState(spec)
     bs.candidates[0][0] = {5}
@@ -45,10 +45,10 @@ def test_solved_cell_elimination_excludes_cage_peers() -> None:
         unit=None,
         cell=(0, 0),
         board=bs,
-        hint=Trigger.CELL_DETERMINED,
+        hint=Trigger.CELL_SOLVED,
         hint_digit=5,
     )
-    elims = SolvedCellElimination().apply(ctx)
+    elims = CellSolutionElimination().apply(ctx)
     # Trivial spec: each cell is its own cage, so no cage-based eliminations
     # are generated. The result should only cover row/col/box cells.
     for e in elims:
@@ -59,3 +59,9 @@ def test_solved_cell_elimination_excludes_cage_peers() -> None:
         }
         shared = any((r, c) in bs.units[uid].cells for uid in non_cage_uids)
         assert shared, f"Cell {e.cell} not in any non-cage unit of (0,0)"
+
+
+def test_cell_solution_elimination_fires_on_cell_solved() -> None:
+    """CellSolutionElimination must declare CELL_SOLVED as its trigger."""
+    assert Trigger.CELL_SOLVED in CellSolutionElimination.triggers
+    assert Trigger.CELL_DETERMINED not in CellSolutionElimination.triggers

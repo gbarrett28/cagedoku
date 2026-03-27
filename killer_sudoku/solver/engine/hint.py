@@ -27,6 +27,11 @@ class HintResult:
                          canvas highlighting.  Cage cells, the external
                          qualifying cell, and the outie are all included.
         eliminations:    The candidate removals this rule would make.
+        placement:       (row, col, digit) if this hint is a placement hint
+                         rather than an elimination hint.  Placement hints
+                         instruct the user to enter a digit in a cell rather
+                         than remove a candidate.  When set, eliminations is
+                         typically empty.
     """
 
     rule_name: str
@@ -34,6 +39,7 @@ class HintResult:
     explanation: str
     highlight_cells: frozenset[Cell]
     eliminations: list[Elimination]
+    placement: tuple[int, int, int] | None = None
 
     @property
     def elimination_count(self) -> int:
@@ -64,6 +70,11 @@ def collect_hints(
     produced by multiple rules only the first explanation is kept.  If a hint's
     eliminations are entirely covered by earlier rules it is dropped.
 
+    Placement hints (hint.placement is not None) are passed through even when
+    their eliminations list is empty — they instruct the user to enter a digit
+    rather than remove a candidate.  Duplicate placements (same row/col/digit)
+    are deduplicated across rules.
+
     Args:
         rules:      Ordered list of hint-producing rules to query.
         board:      Current board state.
@@ -74,17 +85,26 @@ def collect_hints(
         Deduplicated list of HintResult, preserving original hint order.
     """
     skip = skip_names or set()
-    seen: set[tuple[Cell, int]] = set()
+    seen_elims: set[tuple[Cell, int]] = set()
+    seen_placements: set[tuple[int, int, int]] = set()
     results: list[HintResult] = []
     for rule in rules:
         if rule.name in skip:
             continue
         for h in rule.compute_hints(board):
-            new_elims = [e for e in h.eliminations if (e.cell, e.digit) not in seen]
-            if not new_elims:
+            new_elims = [
+                e for e in h.eliminations if (e.cell, e.digit) not in seen_elims
+            ]
+            is_placement = h.placement is not None
+            if not new_elims and not is_placement:
                 continue
+            if is_placement:
+                assert h.placement is not None
+                if h.placement in seen_placements:
+                    continue
+                seen_placements.add(h.placement)
             for e in new_elims:
-                seen.add((e.cell, e.digit))
+                seen_elims.add((e.cell, e.digit))
             results.append(
                 HintResult(
                     rule_name=h.rule_name,
@@ -92,6 +112,7 @@ def collect_hints(
                     explanation=h.explanation,
                     highlight_cells=h.highlight_cells,
                     eliminations=new_elims,
+                    placement=h.placement,
                 )
             )
     return results

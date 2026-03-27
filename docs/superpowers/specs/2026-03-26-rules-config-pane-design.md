@@ -10,6 +10,8 @@ Available at any time — including before a puzzle is loaded.
 
 ## Scope
 
+[gb] Bear in mind that all rules will either be enhanced to be hintable or deleted.
+
 Only rules that implement `HintableRule` (i.e. have `compute_hints()`) are shown.
 The frontend hardcodes this list as a deliberate simplification — if rules are added
 or removed, the frontend display names table below must be updated alongside.

@@ -10,10 +10,11 @@ from typing import Literal
 from pydantic import BaseModel
 
 # Cold-start default: only the basic cage candidate constraint is always-apply.
-# Further rules (SolvedCellElimination, CageIntersection, etc.) are enabled
+# Further rules (CellSolutionElimination, CageIntersection, etc.) are enabled
 # progressively as their hints are designed and tested.
 DEFAULT_ALWAYS_APPLY_RULES: list[str] = [
     "CageCandidateFilter",
+    "CellSolutionElimination",
 ]
 
 
@@ -216,6 +217,25 @@ class CoachSettings(BaseModel):
     always_apply_rules: list[str] = DEFAULT_ALWAYS_APPLY_RULES
 
 
+class RuleInfo(BaseModel):
+    """Name and display label for a single hintable solver rule."""
+
+    name: str
+    display_name: str
+
+
+class SettingsResponse(CoachSettings):
+    """Response model for GET /api/settings.
+
+    Extends CoachSettings with a computed catalogue of every rule that
+    implements HintableRule, in default_rules() order.  The frontend uses
+    this list to build the config modal dynamically — no hardcoded rule
+    list on the client side.
+    """
+
+    hintable_rules: list[RuleInfo]
+
+
 class EliminateSolutionRequest(BaseModel):
     """Request body for toggling a cage solution as user-eliminated.
 
@@ -253,12 +273,15 @@ class HintItem(BaseModel):
     """One applicable solver rule, with context for the coaching UI.
 
     Attributes:
-        rule_name:       Internal identifier (e.g. "MustContainOutie").
-        display_name:    Short label shown in the hints dropdown.
-        explanation:     Plain-English explanation of why the rule fires.
-        highlight_cells: Cells to highlight on the canvas, 0-based (row, col).
-        eliminations:    Candidate removals the rule would make.
+        rule_name:         Internal identifier (e.g. "MustContainOutie").
+        display_name:      Short label shown in the hints dropdown.
+        explanation:       Plain-English explanation of why the rule fires.
+        highlight_cells:   Cells to highlight on the canvas, 0-based (row, col).
+        eliminations:      Candidate removals the rule would make.
         elimination_count: Convenience copy of len(eliminations).
+        placement:         (row, col, digit) for placement hints; None otherwise.
+                           Placement hints instruct the user to enter a digit
+                           in a cell rather than remove a candidate.
     """
 
     rule_name: str
@@ -267,6 +290,7 @@ class HintItem(BaseModel):
     highlight_cells: list[tuple[int, int]]
     eliminations: list[EliminationItem]
     elimination_count: int
+    placement: tuple[int, int, int] | None = None
 
 
 class HintsResponse(BaseModel):

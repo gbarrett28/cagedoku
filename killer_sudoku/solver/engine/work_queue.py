@@ -1,9 +1,9 @@
 """WorkItem and SolverQueue — priority queue with deduplication and version tracking.
 
 WorkItem has three forms:
-- Unit-scoped (all triggers except CELL_DETERMINED and GLOBAL):
+- Unit-scoped (all triggers except CELL_DETERMINED, CELL_SOLVED, and GLOBAL):
     carries unit_id and unit_version for staleness detection
-- Cell-scoped (CELL_DETERMINED only):
+- Cell-scoped (CELL_DETERMINED and CELL_SOLVED):
     carries cell; never version-skipped
 - GLOBAL (no unit or cell):
     never version-skipped
@@ -38,7 +38,7 @@ class WorkItem:
 
     def dedup_key(self) -> tuple[Any, ...]:
         """Key used to identify duplicate items in the queue."""
-        if self.trigger == Trigger.CELL_DETERMINED:
+        if self.trigger in (Trigger.CELL_DETERMINED, Trigger.CELL_SOLVED):
             return (id(self.rule), self.cell)
         if self.trigger == Trigger.GLOBAL:
             return (id(self.rule),)
@@ -47,10 +47,12 @@ class WorkItem:
     def is_stale(self, unit_versions: list[int]) -> bool:
         """True if no candidate was removed in this unit since enqueue.
 
-        CELL_DETERMINED and GLOBAL items are never stale — they represent a
-        specific event (not a unit state) and must always be processed.
+        Cell-scoped (CELL_DETERMINED, CELL_SOLVED) and GLOBAL items are never
+        stale — they represent a specific event (not a unit state) and must
+        always be processed.
         """
-        if self.trigger in (Trigger.CELL_DETERMINED, Trigger.GLOBAL):
+        cell_scoped = (Trigger.CELL_DETERMINED, Trigger.CELL_SOLVED)
+        if self.trigger in cell_scoped or self.trigger == Trigger.GLOBAL:
             return False
         if self.unit_id is None or self.unit_version is None:
             return False
@@ -101,7 +103,7 @@ class SolverQueue:
         trigger: Trigger,
         hint_digit: int | None,
     ) -> None:
-        """Enqueue a cell-scoped work item (CELL_DETERMINED) with deduplication."""
+        """Enqueue a cell-scoped work item with deduplication."""
         key = (id(rule), cell)
         if key in self._best:
             return  # already queued for this cell

@@ -96,23 +96,17 @@ interface HintItem {
   highlight_cells: [number, number][];  // 0-based [row, col]
   eliminations: EliminationItem[];
   elimination_count: number;
+  placement: [number, number, number] | null;  // [row, col, digit] or null
 }
 
 interface HintsResponse {
   hints: HintItem[];
 }
 
-interface RuleConfig {
+interface RuleInfo {
   name: string;
-  displayName: string;
+  display_name: string;
 }
-
-const HINTABLE_RULES: RuleConfig[] = [
-  { name: "CageCandidateFilter", displayName: "Cage Candidate Filter" },
-  { name: "SolutionMapFilter", displayName: "Solution Map Filter" },
-  { name: "MustContainOutie", displayName: "Must Contain Outie" },
-  { name: "CageConfinement", displayName: "Cage Confinement" },
-];
 
 // ── Grid canvas constants ────────────────────────────────────────────────────
 
@@ -936,19 +930,19 @@ async function openConfigModal(): Promise<void> {
   if (!res.ok) {
     throw new Error(`GET settings failed: ${res.status} ${await res.text()}`);
   }
-  const settings = (await res.json()) as { always_apply_rules: string[] };
+  const settings = (await res.json()) as { always_apply_rules: string[]; hintable_rules: RuleInfo[] };
   const alwaysApplySet = new Set(settings.always_apply_rules);
 
   const list = el<HTMLElement>("config-rules-list");
   clearChildren(list);
 
-  for (const rule of HINTABLE_RULES) {
+  for (const rule of settings.hintable_rules) {
     const row = document.createElement("div");
     row.className = "config-rule-row";
 
     const nameSpan = document.createElement("span");
     nameSpan.className = "config-rule-name";
-    nameSpan.textContent = rule.displayName;
+    nameSpan.textContent = rule.display_name;
 
     const select = document.createElement("select");
     select.className = "config-rule-select";
@@ -978,11 +972,18 @@ function showHintModal(hint: HintItem): void {
   redrawGrid();
   el<HTMLElement>("hint-modal-title").textContent = hint.display_name;
   el<HTMLElement>("hint-modal-explanation").textContent = hint.explanation;
-  const elim = hint.eliminations;
-  const summary = elim.length === 1
-    ? `Eliminates 1 candidate.`
-    : `Eliminates ${elim.length} candidates.`;
-  el<HTMLElement>("hint-modal-summary").textContent = summary;
+
+  const applyBtn = el<HTMLButtonElement>("hint-apply-btn");
+  if (hint.placement !== null) {
+    const [, , d] = hint.placement;
+    el<HTMLElement>("hint-modal-summary").textContent = `Places digit ${d}.`;
+    applyBtn.textContent = "Place";
+  } else {
+    const n = hint.eliminations.length;
+    el<HTMLElement>("hint-modal-summary").textContent =
+      n === 1 ? "Eliminates 1 candidate." : `Eliminates ${n} candidates.`;
+    applyBtn.textContent = "Apply";
+  }
   (el<HTMLDialogElement>("hint-modal") as HTMLDialogElement).showModal();
 }
 
@@ -1007,7 +1008,13 @@ el<HTMLButtonElement>("hints-btn").addEventListener("click", () => {
       for (const hint of data.hints) {
         const btn = document.createElement("button");
         btn.className = "hint-item";
-        btn.textContent = `${hint.display_name} (${hint.elimination_count} elimination${hint.elimination_count === 1 ? "" : "s"})`;
+        if (hint.placement !== null) {
+          const [r, c, d] = hint.placement;
+          btn.textContent = `${hint.display_name} — place ${d} at r${r + 1}c${c + 1}`;
+        } else {
+          const n = hint.elimination_count;
+          btn.textContent = `${hint.display_name} (${n} elimination${n === 1 ? "" : "s"})`;
+        }
         btn.addEventListener("click", () => {
           dropdown.hidden = true;
           showHintModal(hint);
@@ -1030,16 +1037,30 @@ document.addEventListener("click", (e) => {
 
 el<HTMLButtonElement>("hint-apply-btn").addEventListener("click", async () => {
   if (!activeHintItem || !currentSessionId) return;
-  const eliminations = activeHintItem.eliminations;
   (el<HTMLDialogElement>("hint-modal") as HTMLDialogElement).close();
   clearHintHighlight();
-  const resp = await fetch(`/api/puzzle/${currentSessionId}/hints/apply`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ eliminations }),
-  });
-  if (!resp.ok) throw new Error(`POST hints/apply failed: ${resp.status} ${await resp.text()}`);
-  currentState = await resp.json();
+
+  if (activeHintItem.placement !== null) {
+    // Placement hint: enter the digit via the cell endpoint
+    const [row, col, digit] = activeHintItem.placement;
+    const resp = await fetch(`/api/puzzle/${currentSessionId}/cell`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ row, col, digit }),
+    });
+    if (!resp.ok) throw new Error(`POST cell failed: ${resp.status} ${await resp.text()}`);
+    currentState = await resp.json();
+  } else {
+    // Elimination hint: mark candidates as user_removed
+    const eliminations = activeHintItem.eliminations;
+    const resp = await fetch(`/api/puzzle/${currentSessionId}/hints/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eliminations }),
+    });
+    if (!resp.ok) throw new Error(`POST hints/apply failed: ${resp.status} ${await resp.text()}`);
+    currentState = await resp.json();
+  }
   redrawGrid();
 });
 

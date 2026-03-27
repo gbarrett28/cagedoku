@@ -54,6 +54,7 @@ class Trigger(Enum):
     COUNT_DECREASED = 3  # counts[unit][digit] decreased (any amount)
     SOLUTION_PRUNED = 4  # a cage solution was eliminated
     GLOBAL = 5  # fires when unit queue is otherwise empty
+    CELL_SOLVED = 6  # cell solution officially committed (fires after CELL_DETERMINED)
 
 
 @dataclasses.dataclass(frozen=True)
