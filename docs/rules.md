@@ -20,12 +20,17 @@ Two separate phases use rules:
 
 | Phase | How rules run |
 |---|---|
-| **Solve** | `SolverEngine.solve()` — event-driven, rules fire reactively |
-| **Hint** | `collect_hints()` — board scan, rules called once on frozen board state |
+| **Batch solve** | `SolverEngine.solve()` with `all_rules()` — event-driven, rules fire reactively |
+| **Coaching** | `SolverEngine.solve()` with `default_rules()` — always-apply rules drain; hint-only rules call `compute_hints()` on the converged board |
 
-In hint mode the engine has already converged; `compute_hints` receives a
-snapshot and returns all currently applicable deductions as `HintResult` objects
-for the UI to display.
+In coaching mode the engine has already converged on always-apply rules;
+`compute_hints` receives a snapshot and returns all currently applicable
+deductions as `HintResult` objects for the UI to display.
+
+**`default_rules()` vs `all_rules()`:** The coaching engine uses `default_rules()`
+(six hintable rules). The batch solver uses `all_rules()` which adds
+`incomplete_rules()` — 19 additional rules that have `apply()` but no
+`compute_hints`. See `rules/incomplete/__init__.py`.
 
 ---
 
@@ -42,11 +47,15 @@ killer_sudoku/
         ├── solver_engine.py      # Main loop, trigger routing, apply_eliminations()
         ├── work_queue.py         # Priority min-heap with deduplication
         └── rules/
-            ├── __init__.py       # default_rules() — the canonical ordered rule list
-            ├── naked_single.py   # one file per rule class
-            ├── solved_cell_elimination.py
+            ├── __init__.py           # default_rules(), all_rules() — canonical rule lists
+            ├── naked_single.py       # one file per rule class
+            ├── cell_solution_elimination.py
             ├── cage_candidate_filter.py
-            └── ...
+            ├── ...
+            └── incomplete/
+                ├── __init__.py       # incomplete_rules() — batch-solver-only rules
+                ├── delta_constraint.py
+                └── ...               # 19 rules total; none have compute_hints
 
 killer_sudoku/
 └── api/
@@ -90,17 +99,10 @@ class MyRule:
 ```
 
 **Critical constraint from `collect_hints`:** any `HintResult` whose
-`eliminations` list is entirely empty — or entirely covered by hints from
-higher-priority rules — is silently dropped. Every `HintResult` you return must
-have at least one elimination that no earlier rule in `default_rules()` would also
-produce.
-
-**Known limitation:** when `SolvedCellElimination` is always-apply, it pre-empts
-all naked-single peer eliminations before `compute_hints` runs. `NakedSingle.
-compute_hints` therefore finds no new eliminations and returns empty. NakedSingle
-hints only surface when `SolvedCellElimination` is demoted to hint-only. This is
-an architectural issue: NakedSingle should be a placement hint, not an elimination
-hint. See Known Design Issues in `docs/COACH.md`.
+`eliminations` list is entirely empty *and* `placement` is None — or whose
+eliminations are entirely covered by hints from higher-priority rules — is
+silently dropped. A `HintResult` with a non-None `placement` (e.g. NakedSingle)
+is always kept even if `eliminations` is empty.
 
 ### Step 2 — Build each `HintResult`
 
@@ -111,8 +113,13 @@ HintResult(
     explanation="Cell r3c5 ...",   # plain English; use rNcM 1-based notation
     highlight_cells=frozenset({(r, c), ...}),  # 0-based cells to highlight
     eliminations=[Elimination(cell=(r, c), digit=d), ...],
+    # placement=(r, c, d),         # set for placement hints; leave None for elimination hints
 )
 ```
+
+For **placement hints** (e.g. NakedSingle), set `placement=(r, c, d)` (0-based row/col,
+digit 1–9) and leave `eliminations=[]`. The UI shows a "Place" button instead of
+"Apply" and calls `POST /puzzle/{id}/cell` rather than `POST /puzzle/{id}/hints/apply`.
 
 Explanation conventions:
 - Use `r{r+1}c{c+1}` for cell labels (convert from 0-based to 1-based)
@@ -184,10 +191,13 @@ class MyNewRule:
         ...
 ```
 
-### Step 3 — Register in `default_rules()`
+### Step 3 — Register in `default_rules()` or `incomplete_rules()`
 
-In `killer_sudoku/solver/engine/rules/__init__.py`:
+A rule belongs in **`default_rules()`** (`rules/__init__.py`) if it has a
+`compute_hints` implementation. A rule belongs in **`incomplete_rules()`**
+(`rules/incomplete/__init__.py`) if it only has `apply()` (batch solver only).
 
+For `default_rules()`:
 1. Add a top-level import: `from killer_sudoku.solver.engine.rules.my_new_rule import MyNewRule`
 2. Update the priority comment block at the top of the file
 3. Insert `MyNewRule()` in the correct priority position inside `default_rules()`
@@ -242,7 +252,13 @@ class Trigger(Enum):
     COUNT_DECREASED = 3  # counts[unit][digit] decreased by any amount
     SOLUTION_PRUNED = 4  # a cage solution was eliminated
     GLOBAL          = 5  # fires when the unit queue is otherwise empty
+    CELL_SOLVED      = 6  # fired immediately after CELL_DETERMINED, for peer cleanup
 ```
+
+`CELL_SOLVED` fires in `_route_events` immediately after `CELL_DETERMINED` for the
+same cell. It exists so peer-cleanup rules (e.g. `CellSolutionElimination`) can
+subscribe separately from recognition rules (e.g. `NakedSingle`): this lets the
+user hint on NakedSingle without triggering automatic peer cleanup.
 
 `GLOBAL` rules are re-enqueued after every board change so they get a fresh pass
 after cheaper rules have narrowed candidates. Use GLOBAL for expensive scans
@@ -285,8 +301,8 @@ To get `cage_idx` from a cage unit: `cage_idx = unit.unit_id - 27`.
 ```python
 @dataclasses.dataclass
 class RuleContext:
-    unit:       Unit | None    # the triggering unit; None for CELL_DETERMINED and GLOBAL
-    cell:       Cell | None    # set only for CELL_DETERMINED
+    unit:       Unit | None    # the triggering unit; None for CELL_DETERMINED, CELL_SOLVED, GLOBAL
+    cell:       Cell | None    # set for CELL_DETERMINED and CELL_SOLVED
     board:      BoardState
     hint:       Trigger        # the trigger that fired
     hint_digit: int | None     # digit that triggered; None for SOLUTION_PRUNED and GLOBAL
@@ -297,6 +313,7 @@ class RuleContext:
 | Trigger | `ctx.unit` | `ctx.cell` | `ctx.hint_digit` |
 |---|---|---|---|
 | `CELL_DETERMINED` | None | `(r, c)` | the sole remaining digit |
+| `CELL_SOLVED`     | None | `(r, c)` | the digit placed |
 | `COUNT_HIT_ONE`   | the unit | None | the digit that hit 1 |
 | `COUNT_HIT_TWO`   | the unit | None | the digit that hit 2 |
 | `COUNT_DECREASED` | the unit | None | the digit that decreased |
@@ -381,15 +398,23 @@ for uid in board.cell_unit_ids(r, c):
 ```python
 @dataclasses.dataclass(frozen=True)
 class HintResult:
-    rule_name:       str               # internal ID = self.name
-    display_name:    str               # shown in the hint list
-    explanation:     str               # plain English, rNcM 1-based notation
-    highlight_cells: frozenset[Cell]   # 0-based cells to highlight on canvas
-    eliminations:    list[Elimination] # candidate removals this hint would make
+    rule_name:       str                        # internal ID = self.name
+    display_name:    str                        # shown in the hint list
+    explanation:     str                        # plain English, rNcM 1-based notation
+    highlight_cells: frozenset[Cell]            # 0-based cells to highlight on canvas
+    eliminations:    list[Elimination]          # candidate removals this hint would make
+    placement:       tuple[int, int, int] | None = None  # (row, col, digit) 0-based; placement hints only
 ```
 
-`collect_hints` drops any `HintResult` whose `eliminations` are entirely covered
-by earlier rules. Always return non-empty `eliminations` that are genuinely new.
+Two kinds of hint:
+
+| Kind | `eliminations` | `placement` | UI effect |
+|---|---|---|---|
+| Elimination hint | non-empty | None | "Apply" button calls `POST /hints/apply` |
+| Placement hint | `[]` | `(r, c, d)` | "Place" button calls `POST /cell` with the digit |
+
+`collect_hints` drops a `HintResult` only if `eliminations` are entirely covered
+by earlier rules **and** `placement` is None. Placement hints are never dropped.
 
 ---
 
@@ -487,12 +512,12 @@ ctx = RuleContext(
     hint_digit=5,
 )
 
-# For CELL_DETERMINED rules (ctx.unit is None):
+# For CELL_DETERMINED / CELL_SOLVED rules (ctx.unit is None):
 ctx = RuleContext(
     unit=None,
     cell=(0, 0),
     board=bs,
-    hint=Trigger.CELL_DETERMINED,
+    hint=Trigger.CELL_DETERMINED,   # or Trigger.CELL_SOLVED
     hint_digit=5,
 )
 ```
@@ -549,6 +574,68 @@ a docstring or a test — if you change behaviour, you change the doc.
 
 ---
 
+## Event flow reference
+
+### What emits what
+
+`BoardState.remove_candidate(r, c, d)` emits events depending on what changed:
+
+| Condition | Event emitted | `payload` | `hint_digit` |
+|---|---|---|---|
+| Always (digit removed) | `COUNT_DECREASED` | each unit ID containing (r,c) | `d` |
+| `counts[uid][d]` reaches 1 | `COUNT_HIT_ONE` | that unit ID | `d` |
+| `counts[uid][d]` reaches 2 | `COUNT_HIT_TWO` | that unit ID | `d` |
+| `candidates[r][c]` becomes singleton | `CELL_DETERMINED` | `(r, c)` | remaining digit |
+| `cage_solns[cage_idx]` shrinks | `SOLUTION_PRUNED` | cage unit ID | None |
+
+`SolverEngine._route_events` then emits additional derived events:
+
+| Condition | Event emitted | Notes |
+|---|---|---|
+| `CELL_DETERMINED` fires | `CELL_SOLVED` (same cell) | for peer-cleanup rules |
+| `CELL_DETERMINED` fires | `LinearSystem.substitute_cell` | may emit more eliminations |
+| Any board change | re-enqueues all `GLOBAL` rules | deduplicated — at most one per rule |
+
+### Rule subscription table (`default_rules()`)
+
+| Rule | Priority | Trigger(s) | `unit_kinds` | Default |
+|---|---|---|---|---|
+| `NakedSingle` | 0 | `CELL_DETERMINED` | ∅ (cell-scoped) | hint-only |
+| `CellSolutionElimination` | 0 | `CELL_SOLVED` | ∅ (cell-scoped) | always-apply |
+| `CageCandidateFilter` | 2 | `COUNT_DECREASED`, `SOLUTION_PRUNED` | CAGE | always-apply |
+| `SolutionMapFilter` | 3 | `COUNT_DECREASED`, `SOLUTION_PRUNED` | CAGE | hint-only |
+| `MustContainOutie` | 4 | `COUNT_DECREASED`, `SOLUTION_PRUNED` | all | hint-only |
+| `CageConfinement` | 12 | `GLOBAL` | ∅ (global) | hint-only |
+
+### Incomplete rules subscription table (`incomplete_rules()`)
+
+These rules are used only by the batch solver (`all_rules()`). They have no
+`compute_hints` and cannot appear in the coaching app config modal.
+
+| Rule | Priority | Trigger(s) | `unit_kinds` |
+|---|---|---|---|
+| `LinearElimination` | 1 | `GLOBAL` | ∅ |
+| `HiddenSingle` | 5 | `COUNT_HIT_ONE` | ROW/COL/BOX |
+| `CageIntersection` | 6 | `SOLUTION_PRUNED` | CAGE |
+| `MustContain` | 7 | `COUNT_DECREASED`, `SOLUTION_PRUNED` | CAGE |
+| `DeltaConstraint` | 5 | `COUNT_DECREASED` | all |
+| `SumPairConstraint` | 9 | `COUNT_HIT_ONE` | CAGE |
+| `NakedPair` | 10 | `COUNT_HIT_TWO` | ROW/COL/BOX |
+| `HiddenPair` | 10 | `COUNT_HIT_TWO` | ROW/COL/BOX |
+| `NakedHiddenTriple` | 11 | `COUNT_DECREASED` | ROW/COL/BOX |
+| `NakedHiddenQuad` | 11 | `COUNT_DECREASED` | ROW/COL/BOX |
+| `PointingPairs` | 12 | `GLOBAL` | ∅ |
+| `LockedCandidates` | 12 | `GLOBAL` | ∅ |
+| `UnitPartitionFilter` | 12 | `GLOBAL` | ∅ |
+| `XWing` | 13 | `GLOBAL` | ∅ |
+| `Swordfish` | 14 | `GLOBAL` | ∅ |
+| `Jellyfish` | 15 | `GLOBAL` | ∅ |
+| `XYWing` | 16 | `GLOBAL` | ∅ |
+| `UniqueRectangle` | 17 | `GLOBAL` | ∅ |
+| `SimpleColouring` | 18 | `GLOBAL` | ∅ |
+
+---
+
 ## Rule catalogue
 
 Rules are listed in `default_rules()` priority order. **Default** shows the
@@ -562,44 +649,44 @@ cold-start behaviour; users can change any rule's mode via the config modal.
 
 **Spec:**
 A cell with only one remaining candidate must hold that digit. Recognition-only:
-`apply()` returns no eliminations — the engine already handled the promotion.
-Exists as a named rule so the hint layer can surface it.
+`apply()` returns no eliminations — the engine has already promoted the cell.
+Exists as a named rule so the hint layer can surface placement suggestions.
 
 **Hint behaviour:**
-Finds all cells with exactly one remaining candidate, bundles them into one hint,
-and reports the row/col/box peer digit-eliminations that placing those digits
-would produce. These eliminations are only present on the board when
-`SolvedCellElimination` is demoted to hint-only — otherwise it has already applied
-them and no hint fires.
+`compute_hints` scans the board for cells with exactly one candidate and returns
+one `HintResult` per such cell with `placement=(r, c, d)` and `eliminations=[]`.
+The UI shows a "Place" button that calls `POST /puzzle/{id}/cell`.
+`CellSolutionElimination` (always-apply by default) automatically cleans up peers
+once the digit is placed.
 
-**Hint template (single):**
-> Cell r*N*c*M* has only one remaining candidate: *D*. It must be *D*.
-
-**Hint template (multiple):**
-> *K* naked singles: r*N*c*M* must be *D*; …
+**Hint template:**
+> Cell r*N*c*M* has only one remaining candidate: *D*. Place *D* there.
 
 ---
 
-### SolvedCellElimination
+### CellSolutionElimination
 
-**Priority:** 0 · **Trigger:** `CELL_DETERMINED` · **Default:** always-apply
+**Priority:** 0 · **Trigger:** `CELL_SOLVED` · **Default:** always-apply
 
 **Spec:**
-Once a cell is determined to hold digit *d*, *d* cannot appear in any other cell
-of the same row, column, or 3×3 box. All peer candidates are eliminated. (Cage
-peers are handled by separate cage rules.)
+Once a cell's solution is committed (digit *d* placed), *d* cannot appear in any
+other cell of the same row, column, or 3×3 box. All peer candidates are
+eliminated. (Cage peers are handled by separate cage rules.)
+
+Subscribes to `CELL_SOLVED` rather than `CELL_DETERMINED` so it fires *after*
+`NakedSingle` recognition. This allows NakedSingle to surface a placement hint
+before peer cleanup happens.
 
 **Hint behaviour:**
-Identical logic to `NakedSingle.compute_hints`. This method exists so the rule
-can serve as hint-only when the user demotes it via the config modal. When it is
-always-apply (the default), `collect_hints` skips it and `NakedSingle` covers
-the hint side.
+`compute_hints` scans for determined cells and returns elimination hints for their
+peers. These hints are only visible when `CellSolutionElimination` is demoted to
+hint-only via the config modal.
 
 **Hint template (single):**
-> Cell r*N*c*M* has only one remaining candidate: *D*. It must be *D*.
+> Cell r*N*c*M* is *D*. Eliminating *D* from peers: …
 
 **Hint template (multiple):**
-> *K* naked singles: r*N*c*M* must be *D*; …
+> *K* cells determined: r*N*c*M* is *D*; … Eliminating peers accordingly.
 
 ---
 
@@ -718,33 +805,16 @@ eliminated. Skips non-distinct virtual cages (handled by `MustContain`).
 
 ---
 
-## Rules not yet hintable
+## Incomplete rules (`rules/incomplete/`)
 
-The following rules exist in `default_rules()` but have no `compute_hints`
-implementation. They **cannot** be added to always-apply via the config modal
-(the modal only lists `HintableRule` instances) and produce no hints. They are
-effectively inactive in the coaching app until given hint implementations.
+Rules in `killer_sudoku/solver/engine/rules/incomplete/` have `apply()` but no
+`compute_hints`. They are used exclusively by the batch solver via `all_rules()`
+and are invisible to the coaching app. The coaching config modal only lists
+`HintableRule` instances from `default_rules()`.
 
-Rules are listed in priority order:
+To promote a rule from incomplete to hintable: add `compute_hints`, move the
+file to `rules/`, import it in `rules/__init__.py`, and add it to `default_rules()`.
+Remove it from `rules/incomplete/__init__.py`.
 
-| Rule | Priority | Trigger | Notes |
-|---|---|---|---|
-| `LinearElimination` | 1 | `GLOBAL` | Algebraic cage-sum linear system. Requires `include_virtual_cages=True` on `BoardState`. |
-| `HiddenSingle` | 5 | `COUNT_HIT_ONE` (ROW/COL/BOX) | Digit appears in exactly one cell in a unit. |
-| `CageIntersection` | 6 | `SOLUTION_PRUNED` (CAGE) | Cage must-contain digit confined to one row/col/box. |
-| `MustContain` | 7 | `COUNT_DECREASED`, `SOLUTION_PRUNED` (CAGE) | Cage must-contain digit cannot appear in non-cage cells of that unit. |
-| `DeltaConstraint` | 8 | `CELL_DETERMINED` | Propagates `x - y = k` difference constraints from the linear system. |
-| `SumPairConstraint` | 9 | `COUNT_HIT_ONE` (CAGE) | Two cage cells summing to a fixed value restrict each other's candidates. |
-| `NakedPair` | 10 | `COUNT_HIT_TWO` (ROW/COL/BOX) | Two cells share the same two candidates; eliminates from rest of unit. |
-| `HiddenPair` | 10 | `COUNT_HIT_TWO` (ROW/COL/BOX) | Two digits appear in only the same two cells; eliminates other candidates from those cells. |
-| `NakedHiddenTriple` | 11 | `COUNT_DECREASED` (ROW/COL/BOX) | Three-cell naked/hidden triple generalisation. |
-| `NakedHiddenQuad` | 11 | `COUNT_DECREASED` (ROW/COL/BOX) | Four-cell naked/hidden quad generalisation. |
-| `PointingPairs` | 12 | `GLOBAL` | Digit in a box confined to one row/col eliminates from rest of that row/col. |
-| `LockedCandidates` | 12 | `GLOBAL` | Digit in a row/col confined to one box eliminates from rest of that box. |
-| `UnitPartitionFilter` | 12 | `GLOBAL` | Digit group occupies a subset of a unit, eliminating from the rest. |
-| `XWing` | 13 | `GLOBAL` | Digit in two rows confined to same two columns (or vice versa). |
-| `Swordfish` | 14 | `GLOBAL` | Three-row/column generalisation of X-Wing. |
-| `Jellyfish` | 15 | `GLOBAL` | Four-row/column generalisation of X-Wing. |
-| `XYWing` | 16 | `GLOBAL` | Three-cell chain where pivot shares a candidate with each wing; eliminates from cells seeing both wings. |
-| `UniqueRectangle` | 17 | `GLOBAL` | Uniqueness-based elimination: a rectangle of four cells cannot have the same two candidates in all four. |
-| `SimpleColouring` | 18 | `GLOBAL` | Single-digit chain colouring to identify forced placements or contradictions. |
+See the **Incomplete rules subscription table** above for the full list of these
+rules with their triggers and priorities.
