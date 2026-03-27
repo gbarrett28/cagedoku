@@ -210,10 +210,22 @@ flowchart TD
 
 ## Stage 5: Solving
 
-The solver receives `cage_totals` (a 9×9 array where non-zero cells are cage heads) and
-`brdrs` (a 9×9×4 boolean array of [up, right, down, left] borders per cell). It first
-identifies connected regions (cages) using flood-fill through open borders, then applies
-constraint propagation, and falls back to a generic CSP solver if propagation stalls.
+The image pipeline output (`PuzzleSpec` — cage layout + totals) is consumed by two
+independent solvers that serve different purposes:
+
+**Batch solver** (`solver/grid.py`, `solver/equation.py`): used for the original
+command-line workflow and as the golden-solution oracle for the coaching app. Runs
+constraint propagation to completion and falls back to a CSP solver if it stalls.
+
+**Coaching engine** (`solver/engine/`): used by the coaching app for interactive
+candidate tracking and hint generation. Event-driven, rule-based, designed for partial
+application and incremental updates. Does not solve to completion. See `docs/rules.md`.
+
+The batch solver receives `cage_totals` (a 9×9 array where non-zero cells are cage
+heads) and `brdrs` (a 9×9×4 boolean array of [up, right, down, left] borders per
+cell). It first identifies connected regions (cages) using flood-fill through open
+borders, then applies constraint propagation, and falls back to a generic CSP solver if
+propagation stalls.
 
 Each cage becomes an `Equation` with a known sum and number of cells. `Equation.solve`
 eliminates impossible digit combinations; `Equation.avoid` propagates exclusions from
@@ -520,3 +532,28 @@ digit images (for the number recogniser) or in the raw border strips (for the bo
 detector stage 1). This is a conventional value; it can be tuned by cross-validation:
 train KNN (or BorderPCA1D) at 90%, 95%, 99%, 99.5%, and plot accuracy on a held-out
 set. The optimal value is typically 99% for this kind of data but may differ.
+
+---
+
+## Coaching Layer
+
+The image pipeline output (`PuzzleSpec`) feeds into a browser-based coaching app that
+guides the user through solving interactively. The coaching layer is a separate system
+built on top of the image pipeline and sits alongside (not inside) the batch solver.
+
+```mermaid
+flowchart LR
+    A[PuzzleSpec\ncage layout + totals] --> B[Batch Solver\nsolver/grid.py]
+    A --> C[Coaching Engine\nsolver/engine/]
+    B --> D[Golden Solution\n9×9 grid]
+    C --> E[Candidates + Hints\nCoaching App API]
+    D --> E
+    E --> F[Browser Frontend\nstatic/main.ts]
+```
+
+The coaching layer has its own architecture documentation. See:
+
+- **`docs/COACH.md`** — session lifecycle, state model, API reference, frontend,
+  known design issues
+- **`docs/rules.md`** — coaching engine rules, hint system, trigger types,
+  how to add or upgrade rules

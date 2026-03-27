@@ -8,46 +8,37 @@ that are not necessary for the task, and verbose output where concise output suf
 
 ---
 
-# Current State & Next Steps
+# Project Overview
 
 ## What This Project Is
 
-A killer sudoku solver that reads newspaper puzzle images (Guardian or Observer),
-uses OpenCV + PCA to locate the grid, detect cage borders, and read cage totals,
-then solves the puzzle using a constraint-based engine with a generic CSP fallback.
+A browser-based coaching companion for killer sudoku. The system reads newspaper
+puzzle images (Guardian or Observer), uses OpenCV + PCA to locate the grid, detect
+cage borders, and read cage totals, then guides the user through solving with
+candidates, logical hints, and rule-based deductions.
 
-Run with: `python inp_image.py --rag guardian|observer [--rework]`
+## Codebase Map
+
+| Subsystem | Package | Reference |
+|---|---|---|
+| Puzzle discovery | `training/scrape_puzzles.py`, `training/status.py` | code |
+| Image pipeline | `image/` | `docs/architecture.md` |
+| Training pipeline | `training/` | `docs/architecture.md` |
+| Batch solver | `solver/grid.py`, `solver/equation.py`, `output/`, `main.py` | code |
+| Coaching engine | `solver/engine/` | `docs/rules.md` |
+| Coaching app | `api/`, `static/` | `docs/COACH.md` |
+
+## Key Reference Documents
+
+- **`docs/rules.md`** — read before touching any rule, hint, or coaching engine component (`solver/engine/`)
+- **`docs/COACH.md`** — read before working on the coaching API, session lifecycle, or frontend (`api/`, `static/`)
+- **`docs/architecture.md`** — read before working on the image pipeline or training pipeline (`image/`, `training/`)
 
 ## Predecessor Project
 
 `../kill_sudoku` is an older, unpackaged predecessor with no git history. It contains
 code that was **not** carried over into this rewrite and should be reviewed before
 being discarded. Do not delete `kill_sudoku` until that review is complete.
-
-## Current State (as of 2026-03-16)
-
-The codebase has not yet been restructured into the target package layout.
-Current files at the project root:
-
-| File | Target location | Notes |
-|---|---|---|
-| `inp_image.py` | `killer_sudoku/image/inp_image.py` | Monolithic — split as it grows |
-| `grid.py` | `killer_sudoku/solver/grid.py` | |
-| `equation.py` | `killer_sudoku/solver/equation.py` | |
-| `sol_image.py` | `killer_sudoku/output/sol_image.py` | |
-| `main.py` | `killer_sudoku/main.py` or entry point | Orchestration + test harness |
-| `archive.py` | **Excluded from quality gates** | Dead/experimental code, pending review against `kill_sudoku` |
-| `no_gutter.py` | **Excluded from quality gates** | Unrelated one-off script (Taylor Swift PDF), not part of the solver |
-
-## Immediate Next Steps
-
-1. Create `pyproject.toml` with dependencies and ruff/mypy configuration
-2. Create the `killer_sudoku/` package tree with `image/`, `solver/`, `output/` subpackages
-3. Move source files to their target locations and update all imports to use `killer_sudoku.` prefix
-4. Eliminate all star imports (`from inp_image import *` etc.)
-5. Move module-level side effects into explicit entry points / factory functions
-6. Create `tests/` and establish a baseline test suite
-7. Verify bronze gate passes end-to-end
 
 ---
 
@@ -56,27 +47,37 @@ Current files at the project root:
 ## Directory Structure
 
 ```
-killer_sudoku/            # Project root
-├── killer_sudoku/        # Package: Python solver + image pipeline
-│   ├── image/            # Package: grid location, border detection, number recognition
-│   │   └── inp_image.py  # Currently monolithic — split into focused modules as it grows
-│   ├── solver/           # Package: constraint-based sudoku solving
-│   │   ├── grid.py
-│   │   └── equation.py
-│   └── output/           # Package: solution image rendering
-│       └── sol_image.py
-├── tests/                # Test code (at root level, standard practice)
-│   └── fixtures/         # Test fixtures and utilities
+killer_sudoku/                  # Project root
+├── killer_sudoku/              # Package
+│   ├── api/                    # FastAPI coaching app
+│   │   ├── routers/            # puzzle.py, settings.py — API route handlers
+│   │   ├── app.py              # Application factory + coach entry point
+│   │   ├── config.py           # CoachConfig (COACH_* env vars)
+│   │   ├── schemas.py          # Pydantic models; DEFAULT_ALWAYS_APPLY_RULES
+│   │   ├── session.py          # JSON session store
+│   │   └── settings.py         # SettingsStore (always-apply rule config)
+│   ├── image/                  # OCR pipeline: grid location, border detection, number recognition
+│   ├── output/                 # Solution image rendering (batch solver)
+│   ├── solver/
+│   │   ├── engine/             # Event-driven coaching engine
+│   │   │   └── rules/          # One .py file per rule
+│   │   ├── grid.py             # Batch solver — constraint propagation
+│   │   ├── equation.py         # Batch solver — cage equations + sol_sums()
+│   │   └── puzzle_spec.py      # Shared: cage layout → PuzzleSpec
+│   ├── static/                 # Frontend assets
+│   │   ├── main.ts             # TypeScript source (committed)
+│   │   ├── main.js             # Compiled output (NOT committed — run tsc)
+│   │   └── index.html, styles.css
+│   ├── training/               # Puzzle scraping + ML model training
+│   └── main.py                 # Batch solver entry point
+├── tests/
 ├── docs/
-│   └── plans/            # Design documents
-├── guardian/             # Puzzle image data — Guardian newspaper (gitignored)
-├── observer/             # Puzzle image data — Observer newspaper (gitignored)
-└── pyproject.toml        # Configuration
+└── pyproject.toml
 ```
 
-**Note on current files:** `archive.py` and `no_gutter.py` in the project root are
-excluded from all quality gates. They are pending review when incorporating material
-from the `kill_sudoku` predecessor project.
+**Legacy root-level files** (`grid.py`, `equation.py`, `sol_image.py`, `no_gutter.py`)
+are superseded by the package but not yet deleted. They are excluded from all quality
+gates. Do not import from them.
 
 ## Import Statement Rules
 
@@ -103,23 +104,12 @@ This rule applies to **all** code: package modules, tests, and scripts.
 
 ---
 
-## Web API (Future)
+## Web API
 
-A FastAPI layer may be added to serve the solver as an HTTP API, following the same
-pattern used in the companion `caboodle` project.
-
-**Planned structure (when added):**
-```
-killer_sudoku/
-└── static/          # Served as static files by FastAPI
-    ├── index.html
-    ├── main.ts      # TypeScript source
-    ├── main.js      # Compiled output (not committed — generated by tsc)
-    └── styles.css
-```
-
-**The OpenAPI spec (when added) will live in `shared/openapi/spec.yaml`** and will be
-the source of truth for the API contract. TypeScript types should be generated from it.
+The coaching app is fully implemented in `killer_sudoku/api/`. See `docs/COACH.md`
+for the complete architecture. The TypeScript frontend source is in
+`killer_sudoku/static/main.ts`; compile with `tsc` before running (output `main.js`
+is not committed). Interactive API docs at `http://127.0.0.1:8000/docs` when running.
 
 ---
 
