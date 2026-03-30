@@ -235,6 +235,42 @@ class BoardState:
         to_remove = [s for s in self.cage_solns[cage_idx] if d in s]
         return [self.remove_cage_solution(cage_idx, s) for s in to_remove]
 
+    def add_virtual_cage(
+        self,
+        cells: frozenset[Cell],
+        total: int,
+        eliminated_solns: list[frozenset[int]],
+        *,
+        distinct: bool = True,
+    ) -> None:
+        """Add a user-acknowledged virtual cage as a new cage unit.
+
+        Computes initial solutions via sol_sums, removes eliminated_solns,
+        and updates units, cage_solns, counts, unit_versions, and
+        _cell_unit_ids to include the new unit.
+
+        Args:
+            cells:           0-based (row, col) pairs for the cage cells.
+            total:           The cage sum constraint.
+            eliminated_solns: Solution sets to exclude from cage_solns.
+            distinct:        Whether the cage requires distinct digits (default True).
+        """
+        vunit_id = len(self.units)
+        self.units.append(Unit(vunit_id, UnitKind.CAGE, cells, distinct))
+
+        elim_sets = {frozenset(s) for s in eliminated_solns}
+        solns = sol_sums(len(cells), 0, total)
+        self.cage_solns.append([s for s in solns if s not in elim_sets])
+
+        counts_row = [0] * 10
+        for d in range(1, 10):
+            counts_row[d] = sum(1 for r, c in cells if d in self.candidates[r][c])
+        self.counts.append(counts_row)
+        self.unit_versions.append(0)
+
+        for r, c in cells:
+            self._cell_unit_ids[r][c].append(vunit_id)
+
 
 def validate_solution(bs: BoardState) -> list[str]:
     """Validate a fully-solved board against all killer sudoku rules.

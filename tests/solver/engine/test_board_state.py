@@ -164,3 +164,38 @@ def test_remove_candidate_triggers_cage_pruning() -> None:
     events = bs._prune_cage_solutions(cage_idx, 0, 0, 3)
     pruned = [e for e in events if e.trigger == Trigger.SOLUTION_PRUNED]
     assert len(pruned) == 1
+
+
+# --- add_virtual_cage tests ---
+
+
+def test_add_virtual_cage_creates_cage_unit() -> None:
+    """add_virtual_cage() appends a CAGE unit and cage_solns entry."""
+    bs = BoardState(make_trivial_spec(), include_virtual_cages=False)
+    n_units_before = len(bs.units)
+    n_solns_before = len(bs.cage_solns)
+    cells: frozenset[tuple[int, int]] = frozenset({(0, 0), (0, 1)})
+    bs.add_virtual_cage(cells, total=8, eliminated_solns=[])
+    assert len(bs.units) == n_units_before + 1
+    assert len(bs.cage_solns) == n_solns_before + 1
+    new_unit = bs.units[-1]
+    assert new_unit.kind == UnitKind.CAGE
+    assert new_unit.cells == cells
+
+
+def test_add_virtual_cage_eliminated_solns_excluded() -> None:
+    """Eliminated solutions are removed from cage_solns on creation."""
+    bs = BoardState(make_trivial_spec(), include_virtual_cages=False)
+    cells: frozenset[tuple[int, int]] = frozenset({(0, 0), (0, 1)})
+    bs.add_virtual_cage(cells, total=3, eliminated_solns=[frozenset({1, 2})])
+    # total=3 with 2 cells: only solution is {1,2}; eliminating it leaves empty
+    assert bs.cage_solns[-1] == []
+
+
+def test_add_virtual_cage_cell_unit_ids_updated() -> None:
+    """add_virtual_cage() registers the new unit in per-cell lookup."""
+    bs = BoardState(make_trivial_spec(), include_virtual_cages=False)
+    cells: frozenset[tuple[int, int]] = frozenset({(0, 0), (0, 1)})
+    n_uids_before = len(bs.cell_unit_ids(0, 0))
+    bs.add_virtual_cage(cells, total=8, eliminated_solns=[])
+    assert len(bs.cell_unit_ids(0, 0)) == n_uids_before + 1
