@@ -99,6 +99,84 @@ class PuzzleSpecData(BaseModel):
     border_y: list[list[bool]]
 
 
+class UserAction(BaseModel):
+    """One atomic user-initiated change to the board."""
+
+    type: Literal[
+        "place_digit",
+        "remove_digit",
+        "remove_candidate",
+        "eliminate_cage_soln",
+        "eliminate_virtual_cage_soln",
+        "add_virtual_cage",
+        "apply_hint",
+    ]
+    row: int | None = None
+    col: int | None = None
+    digit: int | None = None
+    cage_idx: int | None = None
+    virtual_cage_key: str | None = None
+    # e.g. "0,0:0,1:1,2:17" — canonical cell:total identifier
+    solution: list[int] | None = None
+    # frozenset serialised as sorted list
+    virtual_cage_cells: list[tuple[int, int]] | None = None
+    virtual_cage_total: int | None = None
+    hint_eliminations: list[tuple[int, int, int]] | None = None
+    # (row, col, digit)
+    hint_placement: tuple[int, int, int] | None = None
+    source: str
+    # "user:manual" | "user:hint:<RuleName>"
+
+
+class AutoMutation(BaseModel):
+    """One candidate or solution change produced by an always-apply rule."""
+
+    rule_name: str
+    type: Literal["candidate_removed", "solution_eliminated"]
+    row: int | None = None
+    col: int | None = None
+    digit: int | None = None
+    cage_idx: int | None = None
+    solution: list[int] | None = None
+
+
+class BoardSnapshot(BaseModel):
+    """Compact serialisation of board state at the end of a Turn.
+
+    Attributes:
+        candidates:  Per-cell candidate lists (9×9). Full sets {1..9} are stored
+                     as-is; reduced sets capture solver progress.
+        cage_solns:  Per-cage solution sets (real cages + user virtual cages),
+                     each solution serialised as a sorted digit list.
+    """
+
+    candidates: list[list[list[int]]]
+    # [9][9][*] — sorted digit lists per cell
+    cage_solns: list[list[list[int]]]
+    # [n_cages][n_solns][n_digits]
+
+
+class VirtualCage(BaseModel):
+    """A user-acknowledged derived sum equation."""
+
+    key: str
+    # canonical cell:total identifier, e.g. "0,0:0,1:17"
+    cells: list[tuple[int, int]]
+    # 0-based (row, col) pairs
+    total: int
+    eliminated_solns: list[list[int]] = []
+    # user-eliminated solution sets, each serialised as sorted digit list
+
+
+class Turn(BaseModel):
+    """One user action and all auto-apply rule cascades it triggered."""
+
+    user_action: UserAction
+    auto_mutations: list[AutoMutation]
+    snapshot: BoardSnapshot | None = None
+    # None until engine populates it; set after _build_engine runs
+
+
 class PuzzleState(BaseModel):
     """Complete mutable state of a puzzle coaching session.
 
@@ -111,7 +189,9 @@ class PuzzleState(BaseModel):
         golden_solution:     None before /confirm; 9×9 solver solution after.
         user_grid:           None before /confirm; 9×9 user-entered digits after.
         move_history:        Chronological record of every cell entry or clear.
-        candidate_grid:      None before /confirm; CandidateGrid after.
+        history:             Turn-based event history; undo = pop last turn.
+        virtual_cages:       User-added derived sum constraints.
+        candidate_grid:      DEPRECATED — remove after migration to Turn history.
     """
 
     session_id: str
@@ -131,9 +211,14 @@ class PuzzleState(BaseModel):
     move_history: list[MoveRecord] = []
     # Ordered record of every digit entry or clear, newest last.
 
+    history: list[Turn] = []
+    # Turn-based event history, newest last.  Undo = pop last turn.
+
+    virtual_cages: list[VirtualCage] = []
+    # User-added derived sum constraints, keyed by canonical cell:total string.
+
     candidate_grid: CandidateGrid | None = None
-    # None → pre-confirm. Set at /confirm; updated after /cell, /undo,
-    # and /candidates/cell.
+    # DEPRECATED — None → pre-confirm. Kept for migration; remove after Task 15.
 
 
 class UploadResponse(BaseModel):
