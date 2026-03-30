@@ -11,7 +11,6 @@ Peer eliminations that follow placement are handled by CellSolutionElimination
 
 from __future__ import annotations
 
-from killer_sudoku.solver.engine.board_state import BoardState
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
@@ -32,34 +31,25 @@ class NakedSingle:
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]
     ) -> list[HintResult]:
-        """Placeholder — replaced with full implementation in Task 3."""
-        return []
+        """Return a placement hint for the determined cell.
 
-    def compute_hints(self, board: BoardState) -> list[HintResult]:
-        """Return one placement hint per naked single on the board.
-
-        A placement hint tells the user to enter the sole remaining candidate
-        in a cell.  Unlike elimination hints, placement hints do not require
-        SolvedCellElimination to be hint-only — they remain useful even when
-        peer eliminations have already been applied automatically.
+        NakedSingle fires on CELL_DETERMINED (ctx.cell set, ctx.hint_digit set).
+        The placement hint instructs the user to place the digit — no eliminations.
         """
-        hints: list[HintResult] = []
-        for r in range(9):
-            for c in range(9):
-                if len(board.candidates[r][c]) != 1:
-                    continue
-                d = next(iter(board.candidates[r][c]))
-                hints.append(
-                    HintResult(
-                        rule_name=self.name,
-                        display_name="Naked Single",
-                        explanation=(
-                            f"Cell r{r + 1}c{c + 1} has only one remaining"
-                            f" candidate: {d}. Place {d} there."
-                        ),
-                        highlight_cells=frozenset({(r, c)}),
-                        eliminations=[],
-                        placement=(r, c, d),
-                    )
-                )
-        return hints
+        assert ctx.cell is not None
+        assert ctx.hint_digit is not None
+        r, c = ctx.cell
+        d = ctx.hint_digit
+        return [
+            HintResult(
+                rule_name=self.name,
+                display_name="Naked Single",
+                explanation=(
+                    f"Cell r{r + 1}c{c + 1} has only one remaining candidate:"
+                    f" {d}. Place {d} there."
+                ),
+                highlight_cells=frozenset({(r, c)}),
+                eliminations=[],
+                placement=(r, c, d),
+            )
+        ]
