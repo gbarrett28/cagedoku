@@ -5,11 +5,10 @@ all_rules() (coaching rules + incomplete rules including LinearElimination),
 and returns the final BoardState. The caller checks whether the board is fully solved.
 
 For the coaching app, use default_rules() which contains only rules that have
-hint implementations and can be surfaced via the config modal.
+as_hints() implementations and can be surfaced via the config modal.
 """
 
 from killer_sudoku.solver.engine.board_state import BoardState, validate_solution
-from killer_sudoku.solver.engine.hint import HintableRule, collect_hints
 from killer_sudoku.solver.engine.rule import SolverRule
 from killer_sudoku.solver.engine.rules import default_rules
 from killer_sudoku.solver.engine.rules.incomplete import incomplete_rules
@@ -18,10 +17,8 @@ from killer_sudoku.solver.puzzle_spec import PuzzleSpec
 
 __all__ = [
     "BoardState",
-    "HintableRule",
     "SolverEngine",
     "all_rules",
-    "collect_hints",
     "default_rules",
     "incomplete_rules",
     "solve",

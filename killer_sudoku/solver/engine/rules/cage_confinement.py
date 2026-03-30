@@ -153,11 +153,18 @@ class CageConfinement:
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]
     ) -> list[HintResult]:
-        """Placeholder — replaced with full implementation in Task 8."""
-        return []
+        """Return one HintResult per confinement found on the board.
 
-    def compute_hints(self, board: BoardState) -> list[HintResult]:
-        """Return one HintResult per distinct firing (cage-group, unit-group, digit)."""
+        GLOBAL rule: ctx.unit is None. Scans the entire board for n-cage
+        confinements and returns independent hints for each.
+        eliminations (from apply()) is used only to short-circuit when empty.
+        """
+        if not eliminations:
+            return []
+        return self._scan_for_hints(ctx.board)
+
+    def _scan_for_hints(self, board: BoardState) -> list[HintResult]:
+        """Scan the full board and return one HintResult per distinct confinement."""
         seen: set[tuple[Cell, int]] = set()
         results: list[HintResult] = []
         for m in self._find_all_matches(board):

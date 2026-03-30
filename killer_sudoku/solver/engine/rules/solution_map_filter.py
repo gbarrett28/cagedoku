@@ -16,7 +16,6 @@ Fires on COUNT_DECREASED and SOLUTION_PRUNED for CAGE units.
 
 from __future__ import annotations
 
-from killer_sudoku.solver.engine.board_state import BoardState
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, UnitKind
@@ -133,82 +132,33 @@ class SolutionMapFilter:
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]
     ) -> list[HintResult]:
-        """Placeholder — replaced with full implementation in Task 6."""
-        return []
+        """Hint describing candidate-cell pairs ruled out by cage solution mapping.
 
-    def compute_hints(self, board: BoardState) -> list[HintResult]:
-        """Return one HintResult per cage where solution mapping eliminates candidates.
-
-        For each distinct cage, runs the same feasibility check as apply().
-        A hint is produced whenever at least one (cell, digit) pair is unreachable
-        across all surviving solutions.
+        SolutionMapFilter fires once per cage unit; ctx.unit is that cage.
         """
-        results: list[HintResult] = []
-        for unit in board.units:
-            if unit.kind != UnitKind.CAGE or not unit.distinct_digits:
-                continue
-            cage_idx = unit.unit_id - 27
-            solns = list(board.cage_solns[cage_idx])
-            if not solns:
-                continue
-
-            cage_cells: list[Cell] = list(unit.cells)
-            sorted_cells = sorted(
-                cage_cells,
-                key=lambda rc: len(
-                    board.candidates[rc[0]][rc[1]] & frozenset().union(*solns)
-                ),
+        if not eliminations:
+            return []
+        assert ctx.unit is not None
+        board = ctx.board
+        cage_idx = ctx.unit.unit_id - 27
+        solns = board.cage_solns[cage_idx]
+        soln_strs = ["{" + ",".join(str(d) for d in sorted(s)) + "}" for s in solns[:4]]
+        soln_display = ", ".join(soln_strs) + ("..." if len(solns) > 4 else "")
+        elim_parts = sorted(
+            f"{e.digit} from r{e.cell[0] + 1}c{e.cell[1] + 1}" for e in eliminations
+        )
+        explanation = (
+            f"Cage solutions: {soln_display}. "
+            f"Mapping feasible per-cell assignments eliminates: "
+            f"{'; '.join(elim_parts)}."
+        )
+        return [
+            HintResult(
+                rule_name=self.name,
+                display_name="Solution map filter",
+                explanation=explanation,
+                highlight_cells=frozenset(e.cell for e in eliminations)
+                | ctx.unit.cells,
+                eliminations=eliminations,
             )
-
-            per_cell_possible: dict[Cell, set[int]] = {c: set() for c in cage_cells}
-            n_infeasible = 0
-            for soln in solns:
-                cell_poss = _per_cell_possible(sorted_cells, soln, board.candidates)
-                if all(cell_poss[c] for c in cage_cells):
-                    for c, digits in cell_poss.items():
-                        per_cell_possible[c] |= digits
-                else:
-                    n_infeasible += 1
-
-            elims: list[Elimination] = []
-            for cell in cage_cells:
-                for d in sorted(board.candidates[cell[0]][cell[1]]):
-                    if d not in per_cell_possible.get(cell, set()):
-                        elims.append(Elimination(cell=cell, digit=d))
-
-            if not elims:
-                continue
-
-            head = min(cage_cells)
-            cage_lbl = f"r{head[0] + 1}c{head[1] + 1}"
-            cage_total = next(
-                int(board.spec.cage_totals[r, c])
-                for r, c in cage_cells
-                if board.spec.cage_totals[r, c] != 0
-            )
-            soln_strs = " or ".join(
-                "{" + ",".join(str(d) for d in sorted(s)) + "}" for s in solns
-            )
-            s = "s" if n_infeasible != 1 else ""
-            pruned_str = f"{n_infeasible} solution{s} pruned. " if n_infeasible else ""
-            elim_parts = [
-                f"{d} from r{cell[0] + 1}c{cell[1] + 1}"
-                for cell, d in ((e.cell, e.digit) for e in elims)
-            ]
-            explanation = (
-                f"Cage {cage_lbl} (sum={cage_total}) has solutions {soln_strs}. "
-                f"{pruned_str}"
-                f"Mapping feasible solutions to cells eliminates: "
-                f"{', '.join(elim_parts)}."
-            )
-
-            results.append(
-                HintResult(
-                    rule_name="SolutionMapFilter",
-                    display_name="Solution Map Filter",
-                    explanation=explanation,
-                    highlight_cells=frozenset(cage_cells),
-                    eliminations=elims,
-                )
-            )
-        return results
+        ]

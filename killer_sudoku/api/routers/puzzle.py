@@ -46,7 +46,6 @@ from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.inp_image import InpImage
 from killer_sudoku.solver.engine import BoardState, SolverEngine, default_rules
 from killer_sudoku.solver.engine.board_state import NoSolnError
-from killer_sudoku.solver.engine.hint import HintableRule, collect_hints
 from killer_sudoku.solver.engine.types import Elimination
 from killer_sudoku.solver.equation import sol_sums
 from killer_sudoku.solver.grid import (  # Grid used in solve endpoint
@@ -231,22 +230,35 @@ def _user_eliminations(
 
 
 def _make_board_and_engine(
-    spec: PuzzleSpec, always_apply: frozenset[str]
+    spec: PuzzleSpec,
+    always_apply: frozenset[str],
+    hint_rules: frozenset[str] = frozenset(),
 ) -> tuple[BoardState, SolverEngine]:
     """Create a BoardState and SolverEngine for the given always-apply rule set.
+
+    When hint_rules is non-empty, all default_rules() are loaded and rules
+    whose names are in hint_rules buffer HintResults into engine.pending_hints
+    rather than draining eliminations.  When hint_rules is empty, only
+    always_apply rules are loaded (normal coaching solve mode).
 
     Derives whether virtual cages are required from each rule's
     ``requires_virtual_cages`` class attribute rather than hardcoding any rule
     name.  Rules that need virtual cages (currently LinearElimination) declare
     this on themselves, so the routing layer never needs to know their names.
     """
-    active_rules = [r for r in default_rules() if r.name in always_apply]
+    if hint_rules:
+        active_rules = list(default_rules())
+    else:
+        active_rules = [r for r in default_rules() if r.name in always_apply]
     linear_active = any(
         getattr(r, "requires_virtual_cages", False) for r in active_rules
     )
     board = BoardState(spec, include_virtual_cages=linear_active)
     engine: SolverEngine = SolverEngine(
-        board, rules=active_rules, linear_system_active=linear_active
+        board,
+        rules=active_rules,
+        linear_system_active=linear_active,
+        hint_rules=hint_rules,
     )
     return board, engine
 
@@ -921,10 +933,11 @@ def make_router(
         """Return all currently applicable hints, ordered by impact.
 
         Sets up the board in the same state as candidate computation, then
-        runs each hintable rule to collect HintResult objects.  Results are
-        sorted descending by elimination_count so the most impactful hint
-        appears first.  Returns an empty list before /confirm or if no rules
-        currently fire.
+        runs the full default rule set: always-apply rules drain eliminations
+        as normal; hint-only rules buffer HintResults into engine.pending_hints.
+        Results are sorted descending by elimination_count so the most impactful
+        hint appears first.  Returns an empty list before /confirm or if no
+        rules currently fire.
         """
         try:
             state = store.load(session_id)
@@ -936,9 +949,12 @@ def make_router(
 
         always_apply = frozenset(settings_store.load().always_apply_rules)
         spec = _data_to_spec(state.spec_data)
-        # Run the solver with always-apply rules only, so hint-only rules
-        # (e.g. MustContainOutie) are not pre-applied and can still fire.
-        board, engine = _make_board_and_engine(spec, always_apply)
+        # hint_rule_names: rules not in always_apply buffer hints instead of
+        # draining eliminations, so the engine accumulates HintResults.
+        hint_rule_names = frozenset(
+            r.name for r in default_rules() if r.name not in always_apply
+        )
+        board, engine = _make_board_and_engine(spec, always_apply, hint_rule_names)
         engine.apply_eliminations(_user_eliminations(board, state.user_grid))
         # Apply user-eliminated cage solutions so the solver sees the user's
         # pruning decisions.
@@ -1003,11 +1019,9 @@ def make_router(
                         detail=f"Board is in a contradictory state: {exc}",
                     ) from exc
 
-        hint_rules: list[HintableRule] = [
-            r for r in default_rules() if isinstance(r, HintableRule)
-        ]
-        raw_hints = collect_hints(hint_rules, board, skip_names=set(always_apply))
-        raw_hints.sort(key=lambda h: h.elimination_count, reverse=True)
+        raw_hints = sorted(
+            engine.pending_hints, key=lambda h: h.elimination_count, reverse=True
+        )
 
         return HintsResponse(
             hints=[

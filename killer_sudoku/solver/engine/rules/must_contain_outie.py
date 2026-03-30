@@ -231,62 +231,67 @@ class MustContainOutie:
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]
     ) -> list[HintResult]:
-        """Placeholder — replaced with full implementation in Task 7."""
-        return []
+        """Return one HintResult per distinct (cage, unit) match for the trigger unit.
 
-    def compute_hints(self, board: BoardState) -> list[HintResult]:
-        """Return a HintResult for every distinct firing instance on this board.
-
-        Iterates over all distinct cages and all non-cage units that partially
-        overlap each cage, collecting every (cage, unit) pair where the rule
-        fires.  Duplicate (outie, digit) pairs are suppressed.
+        For a CAGE trigger: checks all non-cage units partially overlapping this cage.
+        For a ROW/COL/BOX trigger: checks all cages partially overlapping this unit.
+        Mirrors the apply() traversal but collects HintResults via _build_hint().
         """
-        bs = board
-        results: list[HintResult] = []
-        seen_elim_keys: set[tuple[Cell, int]] = set()
+        if not eliminations:
+            return []
+        assert ctx.unit is not None
+        board = ctx.board
+        hints: list[HintResult] = []
+        seen_elim_keys: set[tuple[tuple[int, int], int]] = set()
 
-        for unit in bs.units:
-            if unit.kind != UnitKind.CAGE or not unit.distinct_digits:
-                continue
-            cage_idx = unit.unit_id - 27
-            solns = bs.cage_solns[cage_idx]
+        def _collect(cage_cells: frozenset[Cell], must: set[int], unit: Unit) -> None:
+            m = self._find_match(cage_cells, must, unit, board)
+            if m is None:
+                return
+            new_keys = {(e.cell, e.digit) for e in m.eliminations} - seen_elim_keys
+            if new_keys:
+                seen_elim_keys.update(new_keys)
+                hints.append(self._build_hint(m))
+
+        if ctx.unit.kind == UnitKind.CAGE:
+            if not ctx.unit.distinct_digits:
+                return []
+            cage_cells = ctx.unit.cells
+            cage_idx = ctx.unit.unit_id - 27
+            solns = board.cage_solns[cage_idx]
             if not solns:
-                continue
+                return []
             must: set[int] = set(solns[0])
             for s in solns[1:]:
                 must &= s
             if not must:
-                continue
-            cage_cells = unit.cells
+                return []
             seen_unit_ids: set[int] = set()
             for r, c in cage_cells:
-                for uid in bs.cell_unit_ids(r, c):
-                    other = bs.units[uid]
-                    if other.kind == UnitKind.CAGE or uid in seen_unit_ids:
+                for uid in board.cell_unit_ids(r, c):
+                    unit = board.units[uid]
+                    if unit.kind == UnitKind.CAGE or uid in seen_unit_ids:
                         continue
                     seen_unit_ids.add(uid)
-                    m = self._find_match(cage_cells, must, other, bs)
-                    if m is None:
+                    _collect(cage_cells, must, unit)
+        else:
+            seen_cage_ids: set[int] = set()
+            for r, c in ctx.unit.cells:
+                for uid in board.cell_unit_ids(r, c):
+                    other = board.units[uid]
+                    if other.kind != UnitKind.CAGE or not other.distinct_digits:
                         continue
-                    # Deduplicate: only emit hints whose eliminations are new
-                    new_elims = [
-                        e
-                        for e in m.eliminations
-                        if (e.cell, e.digit) not in seen_elim_keys
-                    ]
-                    if not new_elims:
+                    cage_idx = other.unit_id - 27
+                    if cage_idx in seen_cage_ids:
                         continue
-                    for e in new_elims:
-                        seen_elim_keys.add((e.cell, e.digit))
-                    deduped = _Match(
-                        cage_cells=m.cage_cells,
-                        must=m.must,
-                        unit=m.unit,
-                        outie=m.outie,
-                        external_cell=m.external_cell,
-                        x_cands=m.x_cands,
-                        eliminations=new_elims,
-                    )
-                    results.append(self._build_hint(deduped))
-
-        return results
+                    seen_cage_ids.add(cage_idx)
+                    solns = board.cage_solns[cage_idx]
+                    if not solns:
+                        continue
+                    cage_must: set[int] = set(solns[0])
+                    for s in solns[1:]:
+                        cage_must &= s
+                    if not cage_must:
+                        continue
+                    _collect(other.cells, cage_must, ctx.unit)
+        return hints

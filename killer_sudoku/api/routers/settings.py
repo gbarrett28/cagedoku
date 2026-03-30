@@ -8,7 +8,6 @@ from fastapi import APIRouter
 
 from killer_sudoku.api.schemas import CoachSettings, RuleInfo, SettingsResponse
 from killer_sudoku.api.settings import SettingsStore
-from killer_sudoku.solver.engine.hint import HintableRule
 from killer_sudoku.solver.engine.rules import default_rules
 
 
@@ -37,7 +36,6 @@ def make_settings_router(settings_store: SettingsStore) -> APIRouter:
         hintable_rules = [
             RuleInfo(name=r.name, display_name=_display_name(r.name))
             for r in default_rules()
-            if isinstance(r, HintableRule)
         ]
         return SettingsResponse(
             always_apply_rules=settings.always_apply_rules,
