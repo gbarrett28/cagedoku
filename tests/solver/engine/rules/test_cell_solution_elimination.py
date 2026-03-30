@@ -65,3 +65,20 @@ def test_cell_solution_elimination_fires_on_cell_solved() -> None:
     """CellSolutionElimination must declare CELL_SOLVED as its trigger."""
     assert Trigger.CELL_SOLVED in CellSolutionElimination.triggers
     assert Trigger.CELL_DETERMINED not in CellSolutionElimination.triggers
+
+
+def test_cell_solution_elimination_as_hints_returns_peer_elims() -> None:
+    """as_hints describes peer eliminations for the solved cell."""
+    spec = make_trivial_spec()
+    bs = BoardState(spec)
+    bs.candidates[0][0] = {5}
+    ctx = RuleContext(
+        unit=None, cell=(0, 0), board=bs, hint=Trigger.CELL_SOLVED, hint_digit=5
+    )
+    rule = CellSolutionElimination()
+    elims = rule.apply(ctx)
+    hints = rule.as_hints(ctx, elims)
+    assert len(hints) == 1
+    assert hints[0].placement is None
+    assert len(hints[0].eliminations) > 0
+    assert "r1c1" in hints[0].explanation
