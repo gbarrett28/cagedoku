@@ -16,6 +16,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
+from killer_sudoku.api.schemas import AutoMutation
 from killer_sudoku.solver.engine.board_state import BoardState
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext, RuleStats, SolverRule
@@ -189,6 +190,7 @@ class SolverEngine:
         self._linear_system_active = linear_system_active
         self._hint_rules = hint_rules
         self.pending_hints: list[HintResult] = []
+        self.applied_mutations: list[AutoMutation] = []
         for rule in rules:
             for trigger in rule.triggers:
                 self._trigger_map[trigger].append(rule)
@@ -327,6 +329,8 @@ class SolverEngine:
 
     def solve(self) -> BoardState:
         """Run the main loop until no progress remains. Return the board state."""
+        self.applied_mutations = []
+        self.pending_hints = []
         # Seed all rules for all matching units (initial state propagation)
         self._seed_initial_state()
         # Enqueue GLOBAL sentinel for initial pass
@@ -356,6 +360,16 @@ class SolverEngine:
                 hints = item.rule.as_hints(ctx, eliminations)
                 self.pending_hints.extend(hints)
             elif eliminations:
+                for e in eliminations:
+                    self.applied_mutations.append(
+                        AutoMutation(
+                            rule_name=item.rule.name,
+                            type="candidate_removed",
+                            row=e.cell[0],
+                            col=e.cell[1],
+                            digit=e.digit,
+                        )
+                    )
                 self.apply_eliminations(eliminations)
 
         self.pending_hints = _dedup_hints(self.pending_hints)
