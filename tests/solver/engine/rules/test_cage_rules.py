@@ -2,6 +2,7 @@
 
 from killer_sudoku.solver.engine.board_state import BoardState
 from killer_sudoku.solver.engine.rule import RuleContext
+from killer_sudoku.solver.engine.rules.cage_candidate_filter import CageCandidateFilter
 from killer_sudoku.solver.engine.rules.incomplete.cage_intersection import (
     CageIntersection,
 )
@@ -10,7 +11,11 @@ from killer_sudoku.solver.engine.rules.solution_map_filter import (
     _per_cell_possible,
 )
 from killer_sudoku.solver.engine.types import Trigger
-from tests.fixtures.minimal_puzzle import make_three_cell_cage_spec, make_trivial_spec
+from tests.fixtures.minimal_puzzle import (
+    make_three_cell_cage_spec,
+    make_trivial_spec,
+    make_two_cell_cage_spec,
+)
 
 
 def _cage_ctx(
@@ -129,3 +134,16 @@ def test_solution_map_filter_eliminates_per_cell_infeasible_digits() -> None:
     assert elims_c == {1, 2, 3, 4, 5, 6, 7, 8}, (
         f"Expected digits 1-8 eliminated from (0,2), got {elims_c}"
     )
+
+
+def test_cage_candidate_filter_as_hints() -> None:
+    """as_hints returns elimination hints for a two-cell cage."""
+    spec = make_two_cell_cage_spec()
+    bs = BoardState(spec)
+    cage_uid = bs.cage_unit_id(0, 0)
+    ctx = _cage_ctx(bs, cage_uid)
+    rule = CageCandidateFilter()
+    elims = rule.apply(ctx)
+    hints = rule.as_hints(ctx, elims)
+    assert len(hints) >= 1
+    assert all(h.placement is None for h in hints)
