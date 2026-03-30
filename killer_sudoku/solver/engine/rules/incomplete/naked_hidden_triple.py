@@ -1,4 +1,4 @@
-"""R9 Naked/Hidden Triple — three cells form a closed triple in a unit.
+"""R9 Naked/Hidden Triple â three cells form a closed triple in a unit.
 
 Naked triple: three cells contain candidates only from a set of three digits.
   Eliminate those three digits from all other cells in the unit.
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import itertools
 
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
 
@@ -71,3 +72,9 @@ class NakedHiddenTriple:
                         elims.append(Elimination(cell=(r, c), digit=d))
 
         return elims
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder - incomplete rule, no coaching hint yet."""
+        return []

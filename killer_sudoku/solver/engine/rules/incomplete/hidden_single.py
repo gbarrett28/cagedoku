@@ -1,4 +1,4 @@
-"""R2 HiddenSingle — a digit with count=1 in a unit must go in that one cell.
+"""R2 HiddenSingle â a digit with count=1 in a unit must go in that one cell.
 
 Fires on COUNT_HIT_ONE. hint_digit narrows search to the triggered digit.
 Returns Eliminations removing all other candidates from the sole remaining cell.
@@ -6,6 +6,7 @@ Returns Eliminations removing all other candidates from the sole remaining cell.
 
 from __future__ import annotations
 
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
 
@@ -17,7 +18,7 @@ class HiddenSingle:
     count=1 for digit d forces the sole remaining cell to d.
 
     For CAGE units: the rule is stricter. count=1 is necessary but not
-    sufficient — d must also appear in EVERY feasible cage solution. If any
+    sufficient â d must also appear in EVERY feasible cage solution. If any
     solution omits d, d is not required in the cage and cannot be forced.
     """
 
@@ -59,3 +60,9 @@ class HiddenSingle:
             for other in ctx.board.candidates[r][c]
             if other != d
         ]
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder - incomplete rule, no coaching hint yet."""
+        return []

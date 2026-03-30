@@ -130,6 +130,12 @@ class SolutionMapFilter:
 
     # ── Hint interface ───────────────────────────────────────────────────────
 
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder — replaced with full implementation in Task 6."""
+        return []
+
     def compute_hints(self, board: BoardState) -> list[HintResult]:
         """Return one HintResult per cage where solution mapping eliminates candidates.
 

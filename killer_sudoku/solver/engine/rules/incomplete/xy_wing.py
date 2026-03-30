@@ -1,4 +1,4 @@
-"""R15 XY-Wing — three-cell bivalue chain elimination.
+"""R15 XY-Wing â three-cell bivalue chain elimination.
 
 A pivot cell P with exactly two candidates {x, y} sees two pincer cells:
   - Pincer A with candidates {x, z}  (shares a unit with P)
@@ -12,19 +12,20 @@ Fires on GLOBAL trigger.
 
 from __future__ import annotations
 
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, UnitKind
 
 
 def _sees(r1: int, c1: int, r2: int, c2: int) -> bool:
-    """Return True if the two cells share a row, column, or 3×3 box."""
+    """Return True if the two cells share a row, column, or 3Ã3 box."""
     if r1 == r2 or c1 == c2:
         return True
     return (r1 // 3, c1 // 3) == (r2 // 3, c2 // 3)
 
 
 class XYWing:
-    """R15: XY-Wing — three bivalue cells forming a chain."""
+    """R15: XY-Wing â three bivalue cells forming a chain."""
 
     name = "XYWing"
     priority = 16
@@ -87,3 +88,9 @@ class XYWing:
                                     elims.append(Elimination(cell=(r, c), digit=z))
 
         return list(dict.fromkeys(elims))
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder - incomplete rule, no coaching hint yet."""
+        return []

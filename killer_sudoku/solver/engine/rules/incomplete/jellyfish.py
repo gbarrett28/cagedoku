@@ -1,4 +1,4 @@
-"""R14 Jellyfish — 4-unit basic fish pattern (row and column variants).
+"""R14 Jellyfish â 4-unit basic fish pattern (row and column variants).
 
 When digit d appears in 2, 3, or 4 positions within each of exactly 4
 rows and those positions collectively span only 4 columns, d can be
@@ -13,12 +13,13 @@ from __future__ import annotations
 
 import itertools
 
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
 
 
 class Jellyfish:
-    """R14: Jellyfish — 4-row or 4-column basic fish."""
+    """R14: Jellyfish â 4-row or 4-column basic fish."""
 
     name = "Jellyfish"
     priority = 15
@@ -74,3 +75,9 @@ class Jellyfish:
                             elims.append(Elimination(cell=(row, c), digit=d))
 
         return list(dict.fromkeys(elims))
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder - incomplete rule, no coaching hint yet."""
+        return []

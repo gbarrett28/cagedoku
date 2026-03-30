@@ -17,6 +17,7 @@ import time
 from typing import TYPE_CHECKING
 
 from killer_sudoku.solver.engine.board_state import BoardState
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext, RuleStats, SolverRule
 from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, UnitKind
 from killer_sudoku.solver.engine.work_queue import SolverQueue
@@ -113,6 +114,23 @@ def _unit_kind(unit_id: int) -> UnitKind:
     if unit_id < 27:
         return UnitKind.BOX
     return UnitKind.CAGE
+
+
+def _default_as_hints(
+    rule: SolverRule, eliminations: list[Elimination]
+) -> list[HintResult]:
+    """Fallback hint for rules without meaningful as_hints() implementations."""
+    if not eliminations:
+        return []
+    return [
+        HintResult(
+            rule_name=rule.name,
+            display_name=rule.name,
+            explanation=f"{rule.name} eliminated {len(eliminations)} candidate(s).",
+            highlight_cells=frozenset(e.cell for e in eliminations),
+            eliminations=eliminations,
+        )
+    ]
 
 
 class SolverEngine:

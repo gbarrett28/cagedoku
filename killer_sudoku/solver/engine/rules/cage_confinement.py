@@ -150,6 +150,12 @@ class CageConfinement:
 
     # ── Hint interface ───────────────────────────────────────────────────────
 
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder — replaced with full implementation in Task 8."""
+        return []
+
     def compute_hints(self, board: BoardState) -> list[HintResult]:
         """Return one HintResult per distinct firing (cage-group, unit-group, digit)."""
         seen: set[tuple[Cell, int]] = set()

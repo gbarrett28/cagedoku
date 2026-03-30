@@ -1,14 +1,14 @@
-"""R16 UniqueRectangle — exploit puzzle uniqueness to eliminate candidates.
+"""R16 UniqueRectangle â exploit puzzle uniqueness to eliminate candidates.
 
 A Unique Rectangle (UR) is formed by four cells at the corners of a rectangle
 spanning exactly two rows and two columns, where each pair of corners lies in
-the same 3×3 box (i.e. both rows are in the same band and both columns are in
-the same stack — or they cross box boundaries, but the two-box constraint is
+the same 3Ã3 box (i.e. both rows are in the same band and both columns are in
+the same stack â or they cross box boundaries, but the two-box constraint is
 sufficient).
 
 Type 1 (most common): Three corners contain only the same two candidates {a, b}.
   The fourth corner (the "floor") must not be {a, b} alone, so one of {a, b}
-  can be eliminated from it — specifically any candidate that appears in all
+  can be eliminated from it â specifically any candidate that appears in all
   three "roof" cells.
 
 Type 2: All four corners contain {a, b} plus exactly one extra candidate x in
@@ -25,12 +25,13 @@ from __future__ import annotations
 
 import itertools
 
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, UnitKind
 
 
 def _sees(r1: int, c1: int, r2: int, c2: int) -> bool:
-    """Return True if two cells share a row, column, or 3×3 box."""
+    """Return True if two cells share a row, column, or 3Ã3 box."""
     if r1 == r2 or c1 == c2:
         return True
     return (r1 // 3, c1 // 3) == (r2 // 3, c2 // 3)
@@ -109,3 +110,9 @@ class UniqueRectangle:
                                             )
 
         return list(dict.fromkeys(elims))
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder - incomplete rule, no coaching hint yet."""
+        return []

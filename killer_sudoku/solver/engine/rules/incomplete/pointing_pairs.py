@@ -1,6 +1,6 @@
-"""R10 PointingPairs — a digit in a box confined to one row or column.
+"""R10 PointingPairs â a digit in a box confined to one row or column.
 
-When all cells within a 3×3 box that carry digit d lie in the same row
+When all cells within a 3Ã3 box that carry digit d lie in the same row
 (or same column), eliminate d from the rest of that row (or column)
 outside the box.
 
@@ -9,12 +9,13 @@ Fires on COUNT_DECREASED for BOX units.
 
 from __future__ import annotations
 
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
 
 
 class PointingPairs:
-    """R10: digit confined to one row/col within a box — eliminate from the rest."""
+    """R10: digit confined to one row/col within a box â eliminate from the rest."""
 
     name = "PointingPairs"
     priority = 9
@@ -47,3 +48,9 @@ class PointingPairs:
                     if (r, c) not in box_cells and d in board.candidates[r][c]:
                         elims.append(Elimination(cell=(r, c), digit=d))
         return elims
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder - incomplete rule, no coaching hint yet."""
+        return []

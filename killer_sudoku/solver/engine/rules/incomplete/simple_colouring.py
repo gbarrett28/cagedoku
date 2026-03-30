@@ -1,12 +1,12 @@
-"""R13 Simple Colouring — single-digit chain eliminations.
+"""R13 Simple Colouring â single-digit chain eliminations.
 
 For each digit d, build a graph of conjugate pairs: pairs of cells in a unit
-(row, column, or 3×3 box) where d appears in exactly those two cells.  Colour
+(row, column, or 3Ã3 box) where d appears in exactly those two cells.  Colour
 the graph with two colours via BFS.  Two inference patterns follow:
 
   Wrap (colour conflict):
     If two cells of the same colour see each other, one of them must be wrong
-    — so every cell of that colour can have d eliminated.
+    â so every cell of that colour can have d eliminated.
 
   Trap:
     Any uncoloured cell that sees at least one cell of each colour can have d
@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from collections import deque
 
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
 
@@ -27,14 +28,14 @@ Cell = tuple[int, int]
 
 
 def _sees(r1: int, c1: int, r2: int, c2: int) -> bool:
-    """Return True if the two cells share a row, column, or 3×3 box."""
+    """Return True if the two cells share a row, column, or 3Ã3 box."""
     if r1 == r2 or c1 == c2:
         return True
     return (r1 // 3, c1 // 3) == (r2 // 3, c2 // 3)
 
 
 class SimpleColouring:
-    """R13: Simple colouring — eliminate a digit via single-digit chain reasoning."""
+    """R13: Simple colouring â eliminate a digit via single-digit chain reasoning."""
 
     name = "SimpleColouring"
     priority = 18
@@ -154,3 +155,9 @@ class SimpleColouring:
                             elims.append(Elimination(cell=(r, c), digit=d))
 
         return list(dict.fromkeys(elims))
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder - incomplete rule, no coaching hint yet."""
+        return []

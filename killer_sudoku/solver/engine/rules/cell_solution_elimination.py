@@ -48,6 +48,12 @@ class CellSolutionElimination:
                     elims.append(Elimination(cell=(pr, pc), digit=d))
         return elims
 
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder — replaced with full implementation in Task 4."""
+        return []
+
     def compute_hints(self, board: BoardState) -> list[HintResult]:
         """Return elimination hints for naked singles when demoted to hint-only.
 

@@ -228,6 +228,12 @@ class MustContainOutie:
 
     # ── Hint interface ──────────────────────────────────────────────────────
 
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder — replaced with full implementation in Task 7."""
+        return []
+
     def compute_hints(self, board: BoardState) -> list[HintResult]:
         """Return a HintResult for every distinct firing instance on this board.
 

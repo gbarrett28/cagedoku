@@ -1,17 +1,18 @@
-"""R6 DeltaConstraint — apply difference pairs from LinearSystem.
+"""R6 DeltaConstraint â apply difference pairs from LinearSystem.
 
 For each active pair (p, q, delta) where value[p] - value[q] = delta:
   candidates[p] is narrowed to {m + delta | m in candidates[q], 1 <= m+delta <= 9}
   candidates[q] is narrowed to {m - delta | m in candidates[p], 1 <= m-delta <= 9}
 
 Fires on COUNT_DECREASED for any unit containing either cell of an active pair.
-CELL_DETERMINED is NOT in triggers — LinearSystem.substitute_cell (called in
+CELL_DETERMINED is NOT in triggers â LinearSystem.substitute_cell (called in
 apply_eliminations) already handles cell determinations, so registering for
 CELL_DETERMINED would only queue wasted work items that return [].
 """
 
 from __future__ import annotations
 
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
 
@@ -57,3 +58,9 @@ class DeltaConstraint:
                     if d not in valid_q:
                         elims.append(Elimination(cell=q, digit=d))
         return elims
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder - incomplete rule, no coaching hint yet."""
+        return []

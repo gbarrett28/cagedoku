@@ -1,8 +1,8 @@
-"""R13 Swordfish — 3-unit basic fish pattern (row and column variants).
+"""R13 Swordfish â 3-unit basic fish pattern (row and column variants).
 
 When digit d appears in 2 or 3 positions within each of exactly 3 rows,
 and those positions collectively span only 3 columns, d can be eliminated
-from all other cells in those 3 columns (and vice versa for columns→rows).
+from all other cells in those 3 columns (and vice versa for columnsârows).
 
 This is the size-3 generalisation of X-Wing; it catches cases where no
 single pair of rows forms an X-Wing but three rows together cover only 3
@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import itertools
 
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
 
 
 class Swordfish:
-    """R13: Swordfish — 3-row or 3-column basic fish."""
+    """R13: Swordfish â 3-row or 3-column basic fish."""
 
     name = "Swordfish"
     priority = 14
@@ -76,3 +77,9 @@ class Swordfish:
                             elims.append(Elimination(cell=(row, c), digit=d))
 
         return list(dict.fromkeys(elims))
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder - incomplete rule, no coaching hint yet."""
+        return []

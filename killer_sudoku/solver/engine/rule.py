@@ -9,12 +9,11 @@ mutators directly; they return list[Elimination] only.
 from __future__ import annotations
 
 import dataclasses
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
+from killer_sudoku.solver.engine.board_state import BoardState
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, Unit, UnitKind
-
-if TYPE_CHECKING:
-    from killer_sudoku.solver.engine.board_state import BoardState
 
 
 @dataclasses.dataclass
@@ -72,4 +71,18 @@ class SolverRule(Protocol):
 
     def apply(self, ctx: RuleContext) -> list[Elimination]:
         """Apply the rule and return candidate eliminations."""
+        ...
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Convert a rule firing to coaching hints (called when rule is hint-only).
+
+        ctx provides the triggering context (unit, cell, board, trigger, hint_digit).
+        eliminations is the output of apply() for the same ctx.
+        Rules that produce placement hints (e.g. NakedSingle) may ignore eliminations.
+        Rules that produce multiple independent hints (e.g. CageConfinement) return
+        one HintResult per finding.
+        Default: wrap eliminations in one HintResult with a generic explanation.
+        """
         ...

@@ -53,6 +53,12 @@ class CageCandidateFilter:
             if d not in cage_possible
         ]
 
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder — replaced with full implementation in Task 5."""
+        return []
+
     def compute_hints(self, board: BoardState) -> list[HintResult]:
         """Return one HintResult per cage that has eliminable digits."""
         results: list[HintResult] = []

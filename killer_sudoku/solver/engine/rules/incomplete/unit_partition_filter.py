@@ -1,4 +1,4 @@
-"""R12 UnitPartitionFilter — cross-cage compatibility within a complete unit partition.
+"""R12 UnitPartitionFilter â cross-cage compatibility within a complete unit partition.
 
 When all cells of a row, column, or box are covered by a disjoint set of
 sub-cages (real or virtual), the digit assignments across those cages must
@@ -7,14 +7,14 @@ in any valid cross-cage combination is eliminated.
 
 Elimination proceeds in two phases:
 
-  Phase 1 — cage-set DFS: find which digit *sets* are valid for each partition
+  Phase 1 â cage-set DFS: find which digit *sets* are valid for each partition
   cage, using constraint propagation (fixing one cage's digit set immediately
   filters conflicting solutions from remaining cages).  Forced singletons
   propagate for free; genuine branch points consume a node from the budget.
   When the budget is exhausted remaining branches are treated conservatively
   (potentially valid) so no correct solution is ever discarded.
 
-  Phase 2 — cell-level expansion: for each valid digit-set combination, enumerate
+  Phase 2 â cell-level expansion: for each valid digit-set combination, enumerate
   all assignments of those digits to the specific cells within each cage, filtered
   by cell candidates.  Non-partition cages that lie entirely within the unit but
   span multiple partition cages (cross-cages, e.g. virtual cages derived by the
@@ -24,8 +24,8 @@ Elimination proceeds in two phases:
 
 Example: box (rows 0-2, cols 6-8) partitioned by D={r0c6,r1c6,r2c6}=22,
 E={r0c7,r0c8}=11, H={r1c7,r1c8}=5, J={r2c7,r2c8}=7.  Phase 1 finds 2 valid
-cage-set combinations.  The virtual cross-cage {r0c8,r1c8,r2c8}=12 — derived
-from the column total minus P and V — has cells spanning E, H and J.  Phase 2
+cage-set combinations.  The virtual cross-cage {r0c8,r1c8,r2c8}=12 â derived
+from the column total minus P and V â has cells spanning E, H and J.  Phase 2
 finds exactly one valid cell assignment per combination consistent with this
 cross-cage sum, pinning each cell in E, H and J to at most 2 candidate digits
 and propagating strongly into the column cages below.
@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import itertools
 
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, UnitKind
 
@@ -115,6 +116,12 @@ class UnitPartitionFilter:
 
         return list(dict.fromkeys(elims))
 
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder - incomplete rule, no coaching hint yet."""
+        return []
+
 
 def _find_partition(
     remaining: frozenset[Cell],
@@ -182,11 +189,11 @@ def _cross_valid_combos(
         node budget runs out (caller treats remaining branches conservatively).
         """
         if idx == n:
-            return True  # complete assignment — no digit conflicts anywhere
+            return True  # complete assignment â no digit conflicts anywhere
 
         solns = filtered[idx]
         if not solns:
-            return False  # contradiction — no valid solution for this cage
+            return False  # contradiction â no valid solution for this cage
 
         # Forced singleton: propagate for free without consuming a node.
         # Multiple choices: count each as a branch node.
@@ -197,7 +204,7 @@ def _cross_valid_combos(
             if not is_forced:
                 nodes[0] += 1
                 if nodes[0] > max_nodes:
-                    # Budget exhausted — record remaining solns as conservatively
+                    # Budget exhausted â record remaining solns as conservatively
                     # valid for this cage and all downstream cages.
                     for remaining_soln in solns:
                         valid_per_cage[idx].add(remaining_soln)
@@ -215,7 +222,7 @@ def _cross_valid_combos(
             try:
                 sub = dfs(idx + 1, new_filtered)
             except _CapHitError:
-                # Budget hit deeper down — this solution is conservatively valid.
+                # Budget hit deeper down â this solution is conservatively valid.
                 valid_per_cage[idx].add(soln)
                 raise  # propagate the cap upward
 
@@ -256,7 +263,7 @@ def _expand_cell_level(
         partition: ordered list of (cells, _) for each cage in the partition.
         valid_per_cage: valid digit sets per cage from Phase 1.
         cross_cages: non-partition cages entirely within the unit.
-        candidates: board.candidates — current candidate set per cell.
+        candidates: board.candidates â current candidate set per cell.
     """
     result: dict[Cell, set[int]] = {
         cell: set() for cells, _ in partition for cell in cells

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, UnitKind
 
@@ -13,7 +14,7 @@ class SumPairConstraint:
     complementary RREF rows), any candidate d for a is invalid if (total - d)
     is not in b's candidate set, and vice versa.
 
-    Unlike delta pairs, sum pairs do not enforce digit distinctness — the two
+    Unlike delta pairs, sum pairs do not enforce digit distinctness â the two
     cells are typically non-burb (not in the same row/col/box), so repeated
     digits are permitted by the puzzle rules.  The standard uniqueness rules
     handle distinctness for burb cells independently.
@@ -64,3 +65,9 @@ class SumPairConstraint:
                     if d not in valid_b:
                         elims.append(Elimination(cell=b, digit=d))
         return elims
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder - incomplete rule, no coaching hint yet."""
+        return []

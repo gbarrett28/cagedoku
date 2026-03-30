@@ -1,4 +1,4 @@
-"""LinearElimination — apply cells determined algebraically by the linear system.
+"""LinearElimination â apply cells determined algebraically by the linear system.
 
 The LinearSystem solves the cage-sum equations by Gaussian elimination.
 Where the system uniquely determines a cell's value (a single-variable row),
@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
 
@@ -40,3 +41,9 @@ class LinearElimination:
             for e in ctx.board.linear_system.initial_eliminations
             if e.digit in ctx.board.candidates[e.cell[0]][e.cell[1]]
         ]
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder - incomplete rule, no coaching hint yet."""
+        return []

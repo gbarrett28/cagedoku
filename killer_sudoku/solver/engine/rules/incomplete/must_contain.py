@@ -1,4 +1,4 @@
-"""R5 MustContain — cage must-contain digits confined to an overlap region.
+"""R5 MustContain â cage must-contain digits confined to an overlap region.
 
 When a cage's must-contain digits can only be placed in cells that all lie
 within a shared row/col/box, those digits are eliminated from the rest of
@@ -9,12 +9,13 @@ Fires on COUNT_DECREASED for all unit kinds.
 
 from __future__ import annotations
 
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
 
 
 class MustContain:
-    """R5: cage must-contain intersection — eliminate from external shared cells."""
+    """R5: cage must-contain intersection â eliminate from external shared cells."""
 
     name = "MustContain"
     priority = 4
@@ -30,7 +31,7 @@ class MustContain:
         triggering unit: eliminating from their cells via real-cage must-sets
         is unsound because those cells span multiple units and can share digits.
         Non-burb cages still contribute as the *overlapping* cage when a real
-        unit fires — in that direction the logic is safe.
+        unit fires â in that direction the logic is safe.
         """
         assert ctx.unit is not None
         if not ctx.unit.distinct_digits:
@@ -78,3 +79,9 @@ class MustContain:
                         if d in board.candidates[er][ec]:
                             elims.append(Elimination(cell=(er, ec), digit=d))
         return elims
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder - incomplete rule, no coaching hint yet."""
+        return []

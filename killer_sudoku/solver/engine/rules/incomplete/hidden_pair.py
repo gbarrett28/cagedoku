@@ -1,4 +1,4 @@
-"""R8 HiddenPair — two digits each confined to the same two cells in a unit.
+"""R8 HiddenPair â two digits each confined to the same two cells in a unit.
 
 Fires on COUNT_HIT_TWO. hint_digit identifies one of the pair digits.
 If a second digit d2 also appears in exactly the same two cells, restrict
@@ -7,12 +7,13 @@ those cells to {d1, d2} by eliminating all other candidates.
 
 from __future__ import annotations
 
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
 
 
 class HiddenPair:
-    """R8: two digits locked to the same two cells — restrict those cells."""
+    """R8: two digits locked to the same two cells â restrict those cells."""
 
     name = "HiddenPair"
     priority = 7
@@ -49,10 +50,16 @@ class HiddenPair:
             ]
             if sorted(d2_cells) != sorted(pair_cells):
                 continue
-            # Hidden pair {d1, d2} in pair_cells — restrict to only these two digits
+            # Hidden pair {d1, d2} in pair_cells â restrict to only these two digits
             for r, c in pair_cells:
                 for d in list(board.candidates[r][c]):
                     if d not in (d1, d2):
                         elims.append(Elimination(cell=(r, c), digit=d))
             break  # one hidden pair per invocation is sufficient
         return elims
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder - incomplete rule, no coaching hint yet."""
+        return []

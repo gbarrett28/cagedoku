@@ -1,4 +1,4 @@
-"""R3 CageIntersection — must-contain intersection with row/col/box.
+"""R3 CageIntersection â must-contain intersection with row/col/box.
 
 When all remaining cage solutions require certain digits, and all cells that
 could carry those digits within the cage share a row, col, or box with cells
@@ -9,6 +9,7 @@ This mirrors Grid.elim_must intersection propagation.
 
 from __future__ import annotations
 
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
 
@@ -28,7 +29,7 @@ class CageIntersection:
         eliminate that digit from the rest of that unit.
 
         Non-burb virtual cages (distinct_digits=False) are skipped: their
-        must-sets come from sol_sums which assumes distinct digits — not
+        must-sets come from sol_sums which assumes distinct digits â not
         guaranteed for cells spanning multiple units.  An overestimated must
         set would eliminate valid candidates from real rows/cols/boxes.
         """
@@ -73,3 +74,9 @@ class CageIntersection:
                     if (r, c) not in cage_cells and d in board.candidates[r][c]:
                         elims.append(Elimination(cell=(r, c), digit=d))
         return elims
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder - incomplete rule, no coaching hint yet."""
+        return []

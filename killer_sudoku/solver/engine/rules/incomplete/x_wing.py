@@ -1,4 +1,4 @@
-"""R12 X-Wing — digit confined to the same two columns in two rows (or vice versa).
+"""R12 X-Wing â digit confined to the same two columns in two rows (or vice versa).
 
 GLOBAL rule: scans all rows (and columns) simultaneously.
 When digit d appears in exactly two columns in row r1 and in the same two
@@ -12,12 +12,13 @@ from __future__ import annotations
 
 import itertools
 
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
 
 
 class XWing:
-    """R12: X-Wing pattern — eliminate from column/row peers outside the rectangle."""
+    """R12: X-Wing pattern â eliminate from column/row peers outside the rectangle."""
 
     name = "XWing"
     priority = 13
@@ -66,3 +67,9 @@ class XWing:
 
         # Deduplicate while preserving order
         return list(dict.fromkeys(elims))
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder - incomplete rule, no coaching hint yet."""
+        return []

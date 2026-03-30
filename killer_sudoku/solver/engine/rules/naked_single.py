@@ -29,6 +29,12 @@ class NakedSingle:
         """No eliminations — recognition only.  Peer cleanup is R1b's job."""
         return []
 
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder — replaced with full implementation in Task 3."""
+        return []
+
     def compute_hints(self, board: BoardState) -> list[HintResult]:
         """Return one placement hint per naked single on the board.
 

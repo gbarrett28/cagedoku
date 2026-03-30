@@ -1,31 +1,32 @@
-"""R10b LockedCandidates — digit in a unit confined to one cage or box.
+"""R10b LockedCandidates â digit in a unit confined to one cage or box.
 
 Two patterns:
 
-  Unit → Cage (Cage-Line Reduction):
+  Unit â Cage (Cage-Line Reduction):
     When all cells in a row/col/box that carry digit d lie within a single
-    cage, d is locked to the unit–cage intersection.  Eliminate d from cage
+    cage, d is locked to the unitâcage intersection.  Eliminate d from cage
     cells outside the unit.
 
-  Unit → Box (Box-Line Reduction):
+  Unit â Box (Box-Line Reduction):
     When all cells in a row or column that carry digit d lie within a single
-    3×3 box, d is locked to the unit–box intersection.  Eliminate d from box
+    3Ã3 box, d is locked to the unitâbox intersection.  Eliminate d from box
     cells outside the row/column.
 
-These are the symmetric counterparts to CageIntersection (cage→unit) and
-PointingPairs (box→row/col).
+These are the symmetric counterparts to CageIntersection (cageâunit) and
+PointingPairs (boxârow/col).
 
 Fires on COUNT_DECREASED for ROW, COL, and BOX units.
 """
 
 from __future__ import annotations
 
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
 
 
 class LockedCandidates:
-    """R10b: digit in a unit confined to one cage or box — eliminate from container."""
+    """R10b: digit in a unit confined to one cage or box â eliminate from container."""
 
     name = "LockedCandidates"
     priority = 11
@@ -49,7 +50,7 @@ class LockedCandidates:
             if len(cells_with_d) < 2:
                 continue
 
-            # --- Unit → Cage: all d-cells in this unit share a cage ---
+            # --- Unit â Cage: all d-cells in this unit share a cage ---
             common_cage_ids: set[int] | None = None
             for r, c in cells_with_d:
                 cell_cages = {
@@ -70,7 +71,7 @@ class LockedCandidates:
                         if (r, c) not in unit_cells and d in board.candidates[r][c]:
                             elims.append(Elimination(cell=(r, c), digit=d))
 
-            # --- Unit → Box: row/col d-cells all in one box (Box-Line Reduction) ---
+            # --- Unit â Box: row/col d-cells all in one box (Box-Line Reduction) ---
             if unit_kind in (UnitKind.ROW, UnitKind.COL):
                 rows = {r for r, _ in cells_with_d}
                 cols = {c for _, c in cells_with_d}
@@ -78,7 +79,7 @@ class LockedCandidates:
                 box_cols = {c // 3 for c in cols}
                 if len(box_rows) == 1 and len(box_cols) == 1:
                     br, bc = next(iter(box_rows)), next(iter(box_cols))
-                    # br/bc are box-grid indices (0–2); box_unit_id expects cell
+                    # br/bc are box-grid indices (0â2); box_unit_id expects cell
                     # coordinates, so multiply back to get the top-left cell.
                     box_uid = board.box_unit_id(br * 3, bc * 3)
                     for r, c in board.units[box_uid].cells:
@@ -86,3 +87,9 @@ class LockedCandidates:
                             elims.append(Elimination(cell=(r, c), digit=d))
 
         return list(dict.fromkeys(elims))
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder - incomplete rule, no coaching hint yet."""
+        return []

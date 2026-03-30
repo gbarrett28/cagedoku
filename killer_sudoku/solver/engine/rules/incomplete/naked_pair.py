@@ -1,4 +1,4 @@
-"""R7 NakedPair — two cells in a unit share exactly the same two candidates.
+"""R7 NakedPair â two cells in a unit share exactly the same two candidates.
 
 Fires on COUNT_HIT_TWO. hint_digit identifies one of the pair digits.
 If two cells both have exactly {d1, d2} as candidates, eliminate d1 and d2
@@ -7,12 +7,13 @@ from all other cells in the unit.
 
 from __future__ import annotations
 
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
 
 
 class NakedPair:
-    """R7: two cells locked to the same two candidates — eliminate from peers."""
+    """R7: two cells locked to the same two candidates â eliminate from peers."""
 
     name = "NakedPair"
     priority = 6
@@ -50,3 +51,9 @@ class NakedPair:
                 if d in board.candidates[r][c]:
                     elims.append(Elimination(cell=(r, c), digit=d))
         return elims
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Placeholder - incomplete rule, no coaching hint yet."""
+        return []
