@@ -117,3 +117,23 @@ def test_engine_bootstraps_without_initial_eliminations() -> None:
             assert result.candidates[r][c] == {KNOWN_SOLUTION[r][c]}, (
                 f"Cell ({r},{c}) not determined: {result.candidates[r][c]}"
             )
+
+
+def test_hint_rules_buffer_pending_hints() -> None:
+    """Rules in hint_rules should populate pending_hints, not apply eliminations."""
+    spec = make_trivial_spec()
+    board = BoardState(spec)
+    rules = default_rules()
+    hint_rule_names = frozenset(r.name for r in rules)
+    engine = SolverEngine(board, rules=rules, hint_rules=hint_rule_names)
+    engine.solve()
+    assert isinstance(engine.pending_hints, list)
+
+
+def test_hint_rules_empty_means_all_drain() -> None:
+    """With hint_rules=frozenset(), the engine behaves as before — no pending hints."""
+    spec = make_trivial_spec()
+    board = BoardState(spec)
+    engine = SolverEngine(board, rules=default_rules(), hint_rules=frozenset())
+    engine.solve()
+    assert engine.pending_hints == []

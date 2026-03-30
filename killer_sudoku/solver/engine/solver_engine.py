@@ -133,6 +133,38 @@ def _default_as_hints(
     ]
 
 
+def _dedup_hints(hints: list[HintResult]) -> list[HintResult]:
+    """Remove hints whose eliminations are entirely covered by earlier hints.
+
+    Placement hints (placement is not None) are always kept.
+    Preserves original order; first hint wins for any (cell, digit) pair.
+    """
+    seen_elims: set[tuple[Cell, int]] = set()
+    seen_placements: set[tuple[int, int, int]] = set()
+    result: list[HintResult] = []
+    for h in hints:
+        if h.placement is not None:
+            if h.placement not in seen_placements:
+                seen_placements.add(h.placement)
+                result.append(h)
+            continue
+        new_elims = [e for e in h.eliminations if (e.cell, e.digit) not in seen_elims]
+        if new_elims:
+            for e in new_elims:
+                seen_elims.add((e.cell, e.digit))
+            result.append(
+                HintResult(
+                    rule_name=h.rule_name,
+                    display_name=h.display_name,
+                    explanation=h.explanation,
+                    highlight_cells=h.highlight_cells,
+                    eliminations=new_elims,
+                    placement=h.placement,
+                )
+            )
+    return result
+
+
 class SolverEngine:
     """Pull-with-dirty-tracking propagation engine.
 
@@ -148,12 +180,15 @@ class SolverEngine:
         rules: list[SolverRule],
         *,
         linear_system_active: bool = True,
+        hint_rules: frozenset[str] = frozenset(),
     ) -> None:
         self.board = board
         self.queue: SolverQueue = SolverQueue()
         self.stats: dict[str, RuleStats] = {r.name: RuleStats() for r in rules}
         self._trigger_map: dict[Trigger, list[SolverRule]] = {t: [] for t in Trigger}
         self._linear_system_active = linear_system_active
+        self._hint_rules = hint_rules
+        self.pending_hints: list[HintResult] = []
         for rule in rules:
             for trigger in rule.triggers:
                 self._trigger_map[trigger].append(rule)
@@ -316,7 +351,12 @@ class SolverEngine:
             eliminations = item.rule.apply(ctx)
             elapsed = time.monotonic_ns() - t0
             self.stats[item.rule.name].record(eliminations, elapsed)
-            if eliminations:
+
+            if item.rule.name in self._hint_rules:
+                hints = item.rule.as_hints(ctx, eliminations)
+                self.pending_hints.extend(hints)
+            elif eliminations:
                 self.apply_eliminations(eliminations)
 
+        self.pending_hints = _dedup_hints(self.pending_hints)
         return self.board
