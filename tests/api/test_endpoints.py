@@ -15,7 +15,8 @@ from starlette.testclient import TestClient
 from killer_sudoku.api.app import create_app
 from killer_sudoku.api.config import CoachConfig
 from killer_sudoku.api.routers.puzzle import (
-    _compute_candidate_grid,
+    _build_candidate_grid,
+    _build_engine,
     _spec_to_cage_states,
     _spec_to_data,
 )
@@ -84,12 +85,9 @@ def two_cell_state(store: SessionStore) -> PuzzleState:
         golden_solution=KNOWN_SOLUTION,
         user_grid=[[0] * 9 for _ in range(9)],
     )
+    board, _engine = _build_engine(state, frozenset(DEFAULT_ALWAYS_APPLY_RULES))
     state = state.model_copy(
-        update={
-            "candidate_grid": _compute_candidate_grid(
-                state, None, frozenset(DEFAULT_ALWAYS_APPLY_RULES)
-            )
-        }
+        update={"candidate_grid": _build_candidate_grid(state, board)}
     )
     store.save(state)
     return state

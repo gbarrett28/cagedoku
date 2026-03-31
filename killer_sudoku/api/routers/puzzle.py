@@ -21,6 +21,7 @@ from fastapi import APIRouter, HTTPException, UploadFile
 from killer_sudoku.api.config import CoachConfig
 from killer_sudoku.api.schemas import (
     ApplyHintRequest,
+    BoardSnapshot,
     CagePatchRequest,
     CageSolutionsResponse,
     CageState,
@@ -38,7 +39,10 @@ from killer_sudoku.api.schemas import (
     PuzzleState,
     SolveResponse,
     SubdivideRequest,
+    Turn,
     UploadResponse,
+    UserAction,
+    VirtualCage,
 )
 from killer_sudoku.api.session import SessionStore
 from killer_sudoku.api.settings import SettingsStore
@@ -229,76 +233,127 @@ def _user_eliminations(
     ]
 
 
-def _make_board_and_engine(
-    spec: PuzzleSpec,
-    always_apply: frozenset[str],
-    hint_rules: frozenset[str] = frozenset(),
-) -> tuple[BoardState, SolverEngine]:
-    """Create a BoardState and SolverEngine for the given always-apply rule set.
+def _user_virtual_cages(state: PuzzleState) -> list[VirtualCage]:
+    """Extract VirtualCage entries from Turn history.
 
-    When hint_rules is non-empty, all default_rules() are loaded and rules
-    whose names are in hint_rules buffer HintResults into engine.pending_hints
-    rather than draining eliminations.  When hint_rules is empty, only
-    always_apply rules are loaded (normal coaching solve mode).
-
-    Derives whether virtual cages are required from each rule's
-    ``requires_virtual_cages`` class attribute rather than hardcoding any rule
-    name.  Rules that need virtual cages (currently LinearElimination) declare
-    this on themselves, so the routing layer never needs to know their names.
+    Processes add_virtual_cage and eliminate_virtual_cage_soln actions in
+    order so that per-key eliminated solutions are populated correctly.
     """
-    if hint_rules:
-        active_rules = list(default_rules())
-    else:
-        active_rules = [r for r in default_rules() if r.name in always_apply]
-    linear_active = any(
-        getattr(r, "requires_virtual_cages", False) for r in active_rules
-    )
-    board = BoardState(spec, include_virtual_cages=linear_active)
-    engine: SolverEngine = SolverEngine(
-        board,
-        rules=active_rules,
-        linear_system_active=linear_active,
-        hint_rules=hint_rules,
-    )
-    return board, engine
+    result: list[VirtualCage] = []
+    eliminated: dict[str, list[list[int]]] = {}
+    for turn in state.history:
+        a = turn.user_action
+        if (
+            a.type == "add_virtual_cage"
+            and a.virtual_cage_key is not None
+            and a.virtual_cage_cells is not None
+            and a.virtual_cage_total is not None
+        ):
+            result.append(
+                VirtualCage(
+                    key=a.virtual_cage_key,
+                    cells=a.virtual_cage_cells,
+                    total=a.virtual_cage_total,
+                    eliminated_solns=eliminated.get(a.virtual_cage_key, []),
+                )
+            )
+        elif (
+            a.type == "eliminate_virtual_cage_soln"
+            and a.virtual_cage_key is not None
+            and a.solution is not None
+        ):
+            eliminated.setdefault(a.virtual_cage_key, []).append(a.solution)
+    return result
 
 
-def _compute_candidate_grid(
+def _user_removed(state: PuzzleState) -> list[tuple[int, int, int]]:
+    """Extract (row, col, digit) removals from Turn history.
+
+    Processes remove_candidate, restore_candidate, reset_cell_candidates, and
+    apply_hint (hint_eliminations) actions in order to compute the final set
+    of user-removed candidates.  All indices are 0-based.
+    """
+    result: list[tuple[int, int, int]] = []
+    for turn in state.history:
+        a = turn.user_action
+        if (
+            a.type == "remove_candidate"
+            and a.row is not None
+            and a.col is not None
+            and a.digit is not None
+        ):
+            result.append((a.row, a.col, a.digit))
+        elif (
+            a.type == "restore_candidate"
+            and a.row is not None
+            and a.col is not None
+            and a.digit is not None
+        ):
+            result = [
+                (r, c, d)
+                for r, c, d in result
+                if not (r == a.row and c == a.col and d == a.digit)
+            ]
+        elif (
+            a.type == "reset_cell_candidates"
+            and a.row is not None
+            and a.col is not None
+        ):
+            result = [(r, c, d) for r, c, d in result if (r, c) != (a.row, a.col)]
+        elif a.type == "apply_hint" and a.hint_eliminations:
+            result.extend(a.hint_eliminations)
+    return result
+
+
+def _build_engine(
     state: PuzzleState,
-    existing_grid: CandidateGrid | None,
     always_apply: frozenset[str],
-) -> CandidateGrid:
-    """Compute candidates for all unsolved cells using always-apply solver rules.
+) -> tuple[BoardState, SolverEngine]:
+    """Build a fresh BoardState and run it to convergence from user decisions.
 
-    Builds a fresh BoardState, applies structural constraints (linear system),
-    user placements, and user-eliminated cage solutions, then runs the solver
-    engine with only the always-apply rules to convergence.
+    Replaces _compute_candidate_grid and _make_board_and_engine.
+    BoardState is always reconstructed from spec + Turn history — never
+    stored as serialised solver state.
 
-    auto_candidates reflects what the always-apply rules consider still possible.
-    auto_essential is the intersection of all remaining cage solutions for a cell's
-    cage — digits that must appear in the cage regardless of which combination is
-    chosen.
+    Hint-only rules (those not in always_apply) buffer HintResults into
+    engine.pending_hints rather than draining eliminations.
 
-    Solved cells (user_grid[r][c] != 0) have their CandidateCell copied unchanged
-    from existing_grid (freeze rule). If existing_grid is None (initial call at
-    /confirm), all user_essential and user_removed start empty.
-
-    Rule A: digits no longer in auto_candidates are silently removed from
-    user_essential on every recomputation.
+    Raises HTTPException 422 if the board is in a contradictory state.
     """
-    assert state.user_grid is not None
     spec = _data_to_spec(state.spec_data)
-    board, engine = _make_board_and_engine(spec, always_apply)
+    board = BoardState(spec, include_virtual_cages=False)
 
-    # Step 1: pin user placements — eliminate other digits from each solved cell
-    # and eliminate the placed digit from all peers (same row, col, 3×3 box).
-    engine.apply_eliminations(_user_eliminations(board, state.user_grid))
+    for vc in _user_virtual_cages(state):
+        board.add_virtual_cage(
+            frozenset((int(c[0]), int(c[1])) for c in vc.cells),
+            vc.total,
+            [frozenset(s) for s in vc.eliminated_solns],
+        )
 
-    # Step 2: run always-apply rules to convergence.
-    # User-eliminated cage solutions are NOT fed into the solver here — they are
-    # applied as a display-time filter in Step 4.  This prevents an impossible
-    # board state when the solver's row/col/box constraints already narrow a cell
-    # to exactly the digits the user chose to eliminate.
+    hint_rule_names = frozenset(
+        r.name for r in default_rules() if r.name not in always_apply
+    )
+    engine = SolverEngine(
+        board,
+        rules=list(default_rules()),
+        linear_system_active=False,
+        hint_rules=hint_rule_names,
+    )
+
+    if state.user_grid is not None:
+        engine.apply_eliminations(_user_eliminations(board, state.user_grid))
+
+    for r, c, d in _user_removed(state):
+        if d in board.candidates[r][c] and len(board.candidates[r][c]) > 1:
+            engine.apply_eliminations([Elimination(cell=(r, c), digit=d)])
+
+    # Apply user-eliminated real cage solutions (legacy CageState storage)
+    for cage_idx, cage in enumerate(state.cages):
+        for soln in cage.user_eliminated_solns:
+            fs = frozenset(soln)
+            if fs in board.cage_solns[cage_idx]:
+                board.cage_solns[cage_idx].remove(fs)
+
     try:
         engine.solve()
     except NoSolnError as exc:
@@ -307,104 +362,105 @@ def _compute_candidate_grid(
             detail=f"Board is in a contradictory state: {exc}",
         ) from exc
 
-    # Step 3: build per-cell CandidateCell from the post-solve board state.
-    # auto_candidates = solver candidates ∩ cage_possible (user-filtered solns)
-    # auto_essential  = auto_candidates ∩ must-contain set (user-filtered solns)
+    return board, engine
+
+
+def _build_candidate_grid(state: PuzzleState, board: BoardState) -> CandidateGrid:
+    """Build CandidateGrid from solved board state and Turn history.
+
+    auto_candidates: engine-determined candidates, including user_removed digits
+        (user_removed are user overrides on top of the engine's view, not engine
+        conclusions; they are added back so the frontend can render them with a
+        strikethrough rather than hiding them entirely).
+    auto_essential:  digits present in every remaining cage solution.
+    user_essential:  always empty (deprecated since Turn history replaces it).
+    user_removed:    digits explicitly removed by the user (from Turn history).
+
+    board.cage_solns already reflects all user cage-solution eliminations
+    applied by _build_engine, so no additional filtering is needed here.
+    """
+    assert state.user_grid is not None
+    removed_by_cell: dict[tuple[int, int], set[int]] = {}
+    for r, c, d in _user_removed(state):
+        removed_by_cell.setdefault((r, c), set()).add(d)
+
     cells: list[list[CandidateCell]] = []
     for r in range(9):
         row_cells: list[CandidateCell] = []
         for c in range(9):
-            placed = state.user_grid[r][c]
-            if placed != 0:
-                # Solved cell: freeze existing state unchanged.
-                if existing_grid is not None:
-                    row_cells.append(existing_grid.cells[r][c])
-                else:
-                    row_cells.append(
-                        CandidateCell(
-                            auto_candidates=[],
-                            auto_essential=[],
-                            user_essential=[],
-                            user_removed=[],
-                        )
-                    )
-            else:
-                cage_idx = int(board.regions[r, c])
-                user_elim = {
-                    frozenset(s) for s in state.cages[cage_idx].user_eliminated_solns
-                }
-                remaining = [
-                    s for s in board.cage_solns[cage_idx] if s not in user_elim
-                ]
-                cage_possible: set[int] = (
-                    set().union(*remaining) if remaining else set()
+            cage_idx = int(board.regions[r, c])
+            remaining = board.cage_solns[cage_idx]
+            cage_possible: set[int] = set().union(*remaining) if remaining else set()
+            cage_must: set[int] = set(remaining[0]) if remaining else set()
+            for s in remaining[1:]:
+                cage_must &= s
+            removed_here = removed_by_cell.get((r, c), set())
+            # Reconstruct solver view by adding back user_removed: those digits
+            # were removed as a user override, not a solver conclusion, so they
+            # should still appear in auto_candidates (frontend renders them struck).
+            solver_cands = board.candidates[r][c] | removed_here
+            auto_cands = solver_cands & cage_possible
+            row_cells.append(
+                CandidateCell(
+                    auto_candidates=sorted(auto_cands),
+                    auto_essential=sorted(auto_cands & cage_must),
+                    user_essential=[],
+                    user_removed=sorted(removed_here),
                 )
-                cage_must: set[int] = set(remaining[0]) if remaining else set()
-                for s in remaining[1:]:
-                    cage_must &= s
-
-                auto_cands_set = board.candidates[r][c] & cage_possible
-                auto_cands = sorted(auto_cands_set)
-                auto_ess = sorted(auto_cands_set & cage_must)
-
-                if existing_grid is not None:
-                    prev = existing_grid.cells[r][c]
-                    # Rule A: auto-impossible digits are cleared from user_essential.
-                    user_essential = [
-                        d for d in prev.user_essential if d in auto_cands_set
-                    ]
-                    user_removed = list(prev.user_removed)
-                else:
-                    user_essential = []
-                    user_removed = []
-
-                row_cells.append(
-                    CandidateCell(
-                        auto_candidates=auto_cands,
-                        auto_essential=auto_ess,
-                        user_essential=user_essential,
-                        user_removed=user_removed,
-                    )
-                )
+            )
         cells.append(row_cells)
-
     return CandidateGrid(cells=cells)
 
 
-def _cycle_candidate(
-    cell: CandidateCell,
-    digit: int,
-) -> CandidateCell:
-    """Advance digit one step through its state cycle.
+def _record_turn(
+    state: PuzzleState,
+    user_action: UserAction,
+    engine: SolverEngine,
+    board: BoardState,
+) -> PuzzleState:
+    """Append a Turn (user action + auto mutations + snapshot) to history."""
+    snapshot = BoardSnapshot(
+        candidates=[
+            [sorted(board.candidates[r][c]) for c in range(9)] for r in range(9)
+        ],
+        cage_solns=[
+            [sorted(s) for s in board.cage_solns[i]]
+            for i in range(len(board.cage_solns))
+        ],
+    )
+    turn = Turn(
+        user_action=user_action,
+        auto_mutations=engine.applied_mutations,
+        snapshot=snapshot,
+    )
+    return state.model_copy(update={"history": [*state.history, turn]})
 
-    Cycle order (auto-impossible and not user-removed → no-op):
-      impossible (user-removed) → restore
-      essential (user) → impossible
-      essential (auto only) → impossible
-      inessential → promote to user-essential
-    """
-    auto_set = set(cell.auto_candidates)
-    auto_ess = set(cell.auto_essential)
-    user_ess = set(cell.user_essential)
-    user_rem = set(cell.user_removed)
 
-    if digit not in auto_set and digit not in user_rem:
-        return cell  # auto-impossible, not user-removed: no-op
-    if digit in user_rem:
-        user_rem.discard(digit)
-    elif digit in user_ess:
-        user_ess.discard(digit)
-        user_rem.add(digit)
-    elif digit in auto_ess:
-        user_rem.add(digit)
-    else:
-        user_ess.add(digit)
-
-    return CandidateCell(
-        auto_candidates=cell.auto_candidates,
-        auto_essential=cell.auto_essential,
-        user_essential=sorted(user_ess),
-        user_removed=sorted(user_rem),
+def _rebuild_user_grid(state: PuzzleState) -> PuzzleState:
+    """Recompute user_grid and move_history from place_digit/remove_digit in history."""
+    grid = [[0] * 9 for _ in range(9)]
+    new_move_history: list[MoveRecord] = []
+    for turn in state.history:
+        a = turn.user_action
+        if (
+            a.type == "place_digit"
+            and a.row is not None
+            and a.col is not None
+            and a.digit is not None
+        ):
+            prev = grid[a.row][a.col]
+            grid[a.row][a.col] = a.digit
+            new_move_history.append(
+                MoveRecord(row=a.row + 1, col=a.col + 1, digit=a.digit, prev_digit=prev)
+            )
+        elif a.type == "remove_digit" and a.row is not None and a.col is not None:
+            prev = grid[a.row][a.col]
+            grid[a.row][a.col] = 0
+            new_move_history.append(
+                MoveRecord(row=a.row + 1, col=a.col + 1, digit=0, prev_digit=prev)
+            )
+    return state.model_copy(
+        update={"user_grid": grid, "move_history": new_move_history}
     )
 
 
@@ -608,18 +664,16 @@ def make_router(
             ]
             for r in range(9)
         ]
-        initial_state_for_cg = state.model_copy(
+        initial_state = state.model_copy(
             update={
                 "golden_solution": golden,
                 "user_grid": [[0] * 9 for _ in range(9)],
             }
         )
         always_apply = frozenset(settings_store.load().always_apply_rules)
-        candidate_grid = _compute_candidate_grid(
-            initial_state_for_cg, None, always_apply
-        )
-        updated = initial_state_for_cg.model_copy(
-            update={"candidate_grid": candidate_grid}
+        board, engine = _build_engine(initial_state, always_apply)
+        updated = initial_state.model_copy(
+            update={"candidate_grid": _build_candidate_grid(initial_state, board)}
         )
         store.save(updated)
         return updated
@@ -631,8 +685,8 @@ def make_router(
     ) -> PuzzleState:
         """Place or clear a digit in the user's playing grid.
 
-        Records every change as a MoveRecord (including clears) so the full
-        history can be reversed by repeated calls to /undo.
+        Records every change as a Turn in history and a MoveRecord for
+        backward compatibility. Rebuilds candidates from solver state.
         """
         try:
             state = store.load(session_id)
@@ -653,7 +707,7 @@ def make_router(
         new_grid = [row[:] for row in state.user_grid]
         new_grid[r][c] = req.digit
 
-        new_history = list(state.move_history) + [
+        new_move_history = list(state.move_history) + [
             MoveRecord(
                 row=req.row,
                 col=req.col,
@@ -662,21 +716,32 @@ def make_router(
             )
         ]
 
-        updated = state.model_copy(
-            update={"user_grid": new_grid, "move_history": new_history}
+        user_action = UserAction(
+            type="place_digit" if req.digit != 0 else "remove_digit",
+            row=r,
+            col=c,
+            digit=req.digit if req.digit != 0 else None,
+            source="user:manual",
         )
-        # Recompute candidates after the cell entry
+
+        updated = state.model_copy(
+            update={"user_grid": new_grid, "move_history": new_move_history}
+        )
         always_apply = frozenset(settings_store.load().always_apply_rules)
-        new_cg = _compute_candidate_grid(updated, updated.candidate_grid, always_apply)
-        updated = updated.model_copy(update={"candidate_grid": new_cg})
+        board, engine = _build_engine(updated, always_apply)
+        updated = _record_turn(updated, user_action, engine, board)
+        updated = updated.model_copy(
+            update={"candidate_grid": _build_candidate_grid(updated, board)}
+        )
         store.save(updated)
         return updated
 
     @router.post("/{session_id}/undo", response_model=PuzzleState)
     async def undo_move(session_id: str) -> PuzzleState:
-        """Reverse the most recent cell entry or clear.
+        """Reverse the most recent user action and all its auto-apply cascades.
 
-        Pops the last MoveRecord and restores the previous digit in user_grid.
+        Pops the last Turn from history, rebuilds user_grid and move_history
+        from the remaining Turns, then re-runs the solver.
         Returns 409 if there is nothing to undo.
         """
         try:
@@ -684,26 +749,16 @@ def make_router(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Session not found") from exc
 
-        if not state.move_history:
+        if not state.history:
             raise HTTPException(status_code=409, detail="Nothing to undo")
 
-        # user_grid is guaranteed non-None here: move_history is only non-empty
-        # after /confirm, which sets user_grid at the same time.
-        assert state.user_grid is not None
-
-        last = state.move_history[-1]
-        new_history = list(state.move_history[:-1])
-
-        new_grid = [row[:] for row in state.user_grid]
-        new_grid[last.row - 1][last.col - 1] = last.prev_digit
-
-        updated = state.model_copy(
-            update={"user_grid": new_grid, "move_history": new_history}
-        )
-        # Recompute candidates after restoring the cell
+        trimmed = state.model_copy(update={"history": state.history[:-1]})
+        updated = _rebuild_user_grid(trimmed)
         always_apply = frozenset(settings_store.load().always_apply_rules)
-        new_cg = _compute_candidate_grid(updated, updated.candidate_grid, always_apply)
-        updated = updated.model_copy(update={"candidate_grid": new_cg})
+        board, engine = _build_engine(updated, always_apply)
+        updated = updated.model_copy(
+            update={"candidate_grid": _build_candidate_grid(updated, board)}
+        )
         store.save(updated)
         return updated
 
@@ -714,15 +769,16 @@ def make_router(
     ) -> PuzzleState:
         """Cycle one digit's state in a cell, or reset all overrides (digit=0).
 
-        Does not run solver recomputation — only updates user_essential and
-        user_removed overrides.
+        Records the change as a Turn in history, then rebuilds the board and
+        candidate grid from scratch.  Cycle is a 2-state toggle: normal ↔
+        user_removed.  digit=0 clears all user_removed for the cell.
         """
         try:
             state = store.load(session_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Session not found") from exc
 
-        if state.candidate_grid is None:
+        if state.user_grid is None:
             raise HTTPException(status_code=409, detail="Session not yet confirmed")
 
         if not (1 <= req.row <= 9 and 1 <= req.col <= 9 and 0 <= req.digit <= 9):
@@ -731,30 +787,42 @@ def make_router(
             )
 
         r, c = req.row - 1, req.col - 1
-        old_cell = state.candidate_grid.cells[r][c]
+        always_apply = frozenset(settings_store.load().always_apply_rules)
+        board, engine = _build_engine(state, always_apply)
 
         if req.digit == 0:
-            # Reset: clear all overrides for this cell
-            new_cell = CandidateCell(
-                auto_candidates=old_cell.auto_candidates,
-                auto_essential=old_cell.auto_essential,
-                user_essential=[],
-                user_removed=[],
+            user_action: UserAction = UserAction(
+                type="reset_cell_candidates", row=r, col=c, source="user:manual"
             )
         else:
-            new_cell = _cycle_candidate(old_cell, req.digit)
+            cell_removed = {
+                d for (rr, cc, d) in _user_removed(state) if rr == r and cc == c
+            }
+            if req.digit in cell_removed:
+                user_action = UserAction(
+                    type="restore_candidate",
+                    row=r,
+                    col=c,
+                    digit=req.digit,
+                    source="user:manual",
+                )
+            elif req.digit in board.candidates[r][c]:
+                user_action = UserAction(
+                    type="remove_candidate",
+                    row=r,
+                    col=c,
+                    digit=req.digit,
+                    source="user:manual",
+                )
+            else:
+                # Auto-impossible and not user-removed: no-op
+                return state
 
-        new_rows = [
-            [
-                new_cell
-                if (row == r and col == c)
-                else state.candidate_grid.cells[row][col]
-                for col in range(9)
-            ]
-            for row in range(9)
-        ]
-        new_cg = CandidateGrid(cells=new_rows)
-        updated = state.model_copy(update={"candidate_grid": new_cg})
+        updated = _record_turn(state, user_action, engine, board)
+        board2, engine2 = _build_engine(updated, always_apply)
+        updated = updated.model_copy(
+            update={"candidate_grid": _build_candidate_grid(updated, board2)}
+        )
         store.save(updated)
         return updated
 
@@ -805,8 +873,8 @@ def make_router(
         """Return all valid digit combinations for a cage, split by status.
 
         all_solutions: complete set from sol_sums, each as a sorted digit list.
-        auto_impossible: solutions absent from board.cage_solns after linear-system
-            eliminations — consistent with _compute_candidate_grid.
+        auto_impossible: solutions absent from board.cage_solns after engine
+            eliminations — consistent with _build_candidate_grid.
         user_eliminated: stored from CageState.user_eliminated_solns.
         Returns 404 if session/label unknown; 409 if not yet confirmed;
         400 if cage has subdivisions.
@@ -835,16 +903,7 @@ def make_router(
             )
 
         always_apply = frozenset(settings_store.load().always_apply_rules)
-        spec = _data_to_spec(state.spec_data)
-        board, engine = _make_board_and_engine(spec, always_apply)
-        engine.apply_eliminations(_user_eliminations(board, state.user_grid))
-        try:
-            engine.solve()
-        except NoSolnError as exc:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Board is in a contradictory state: {exc}",
-            ) from exc
+        board, _engine = _build_engine(state, always_apply)
 
         all_solutions = sorted(
             sorted(s) for s in sol_sums(len(cage.cells), 0, cage.total)
@@ -871,6 +930,8 @@ def make_router(
         """Toggle a cage combination as user-eliminated (or restore it).
 
         Validates digits are in 1-9, distinct, and count matches cage size.
+        Records the change in CageState.user_eliminated_solns (legacy path —
+        not a Turn action) then rebuilds board and candidate grid.
         Returns the full updated PuzzleState with recomputed candidate_grid.
         """
         try:
@@ -921,10 +982,11 @@ def make_router(
             for c in state.cages
         ]
         updated = state.model_copy(update={"cages": updated_cages})
-        assert updated.user_grid is not None
         always_apply = frozenset(settings_store.load().always_apply_rules)
-        new_cg = _compute_candidate_grid(updated, updated.candidate_grid, always_apply)
-        updated = updated.model_copy(update={"candidate_grid": new_cg})
+        board, engine = _build_engine(updated, always_apply)
+        updated = updated.model_copy(
+            update={"candidate_grid": _build_candidate_grid(updated, board)}
+        )
         store.save(updated)
         return updated
 
@@ -932,12 +994,12 @@ def make_router(
     async def get_hints(session_id: str) -> HintsResponse:
         """Return all currently applicable hints, ordered by impact.
 
-        Sets up the board in the same state as candidate computation, then
-        runs the full default rule set: always-apply rules drain eliminations
-        as normal; hint-only rules buffer HintResults into engine.pending_hints.
-        Results are sorted descending by elimination_count so the most impactful
-        hint appears first.  Returns an empty list before /confirm or if no
-        rules currently fire.
+        Rebuilds the board from Turn history via _build_engine, which replays
+        all user actions (placements, candidate removals, accepted hints) and
+        runs always-apply rules. Hint-only rules (not in always_apply) buffer
+        HintResults into engine.pending_hints instead of draining eliminations.
+        Results are sorted descending by elimination_count.
+        Returns an empty list before /confirm or if no rules currently fire.
         """
         try:
             state = store.load(session_id)
@@ -948,76 +1010,7 @@ def make_router(
             return HintsResponse(hints=[])
 
         always_apply = frozenset(settings_store.load().always_apply_rules)
-        spec = _data_to_spec(state.spec_data)
-        # hint_rule_names: rules not in always_apply buffer hints instead of
-        # draining eliminations, so the engine accumulates HintResults.
-        hint_rule_names = frozenset(
-            r.name for r in default_rules() if r.name not in always_apply
-        )
-        board, engine = _make_board_and_engine(spec, always_apply, hint_rule_names)
-        engine.apply_eliminations(_user_eliminations(board, state.user_grid))
-        # Apply user-eliminated cage solutions so the solver sees the user's
-        # pruning decisions.
-        for cage_idx, cage in enumerate(state.cages):
-            if not cage.user_eliminated_solns:
-                continue
-            eliminated_sets = [frozenset(s) for s in cage.user_eliminated_solns]
-            board.cage_solns[cage_idx] = [
-                s for s in board.cage_solns[cage_idx] if s not in eliminated_sets
-            ]
-        try:
-            engine.solve()
-        except NoSolnError as exc:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Board is in a contradictory state: {exc}",
-            ) from exc
-
-        # Re-apply cage candidate narrowing after user solution eliminations.
-        # User-eliminated cage solutions are applied directly to board.cage_solns
-        # above, bypassing the engine event system, so CageCandidateFilter did
-        # not see them.  This pass ensures board.candidates reflects the
-        # user-filtered solution sets before hint detection runs.
-        cage_narrow: list[Elimination] = []
-        for cage_idx in range(len(state.cages)):
-            solns = board.cage_solns[cage_idx]
-            if not solns:
-                continue
-            cage_possible: set[int] = set().union(*solns)
-            for cr, cc in board.units[27 + cage_idx].cells:
-                for d in list(board.candidates[cr][cc]):
-                    if d not in cage_possible:
-                        cage_narrow.append(Elimination(cell=(cr, cc), digit=d))
-        if cage_narrow:
-            engine.apply_eliminations(cage_narrow)
-            try:
-                engine.solve()
-            except NoSolnError as exc:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Board is in a contradictory state: {exc}",
-                ) from exc
-
-        # Apply user-accepted hint eliminations (user_removed from the stored
-        # candidate grid) so that downstream hints see the board state as it
-        # exists after all hints the player has already accepted.
-        if state.candidate_grid is not None:
-            accepted: list[Elimination] = [
-                Elimination(cell=(r, c), digit=d)
-                for r in range(9)
-                for c in range(9)
-                for d in state.candidate_grid.cells[r][c].user_removed
-                if d in board.candidates[r][c]
-            ]
-            if accepted:
-                engine.apply_eliminations(accepted)
-                try:
-                    engine.solve()
-                except NoSolnError as exc:
-                    raise HTTPException(
-                        status_code=422,
-                        detail=f"Board is in a contradictory state: {exc}",
-                    ) from exc
+        _board, engine = _build_engine(state, always_apply)
 
         raw_hints = sorted(
             engine.pending_hints, key=lambda h: h.elimination_count, reverse=True
@@ -1045,34 +1038,32 @@ def make_router(
     async def apply_hint(session_id: str, req: ApplyHintRequest) -> PuzzleState:
         """Apply a hint's eliminations by marking each digit as user_removed.
 
-        Records the player's acceptance of the deduction.  Candidate grids
-        are recomputed so the display reflects the updated user_removed sets.
+        Records the player's acceptance of the deduction as an apply_hint Turn
+        in history, then rebuilds board and candidate grid from scratch.
         """
         try:
             state = store.load(session_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Session not found") from exc
 
-        if state.candidate_grid is None:
+        if state.user_grid is None:
             raise HTTPException(
                 status_code=400, detail="No candidate grid — confirm puzzle first"
             )
 
-        cells = [list(row) for row in state.candidate_grid.cells]
-        for elim in req.eliminations:
-            r, c = elim.cell
-            d = elim.digit
-            cell = cells[r][c]
-            if d in cell.auto_candidates and d not in cell.user_removed:
-                cells[r][c] = CandidateCell(
-                    auto_candidates=cell.auto_candidates,
-                    auto_essential=cell.auto_essential,
-                    user_essential=cell.user_essential,
-                    user_removed=sorted(set(cell.user_removed) | {d}),
-                )
+        always_apply = frozenset(settings_store.load().always_apply_rules)
+        board, engine = _build_engine(state, always_apply)
 
-        updated = state.model_copy(
-            update={"candidate_grid": CandidateGrid(cells=cells)}
+        hint_elims = [(e.cell[0], e.cell[1], e.digit) for e in req.eliminations]
+        user_action = UserAction(
+            type="apply_hint",
+            hint_eliminations=hint_elims,
+            source="user:hint",
+        )
+        updated = _record_turn(state, user_action, engine, board)
+        board2, _engine2 = _build_engine(updated, always_apply)
+        updated = updated.model_copy(
+            update={"candidate_grid": _build_candidate_grid(updated, board2)}
         )
         store.save(updated)
         return updated
@@ -1082,8 +1073,8 @@ def make_router(
         """Re-apply always-apply rules using current settings; return updated state.
 
         Called by the frontend after saving settings to reflect newly enabled
-        auto-apply rules on the active board immediately. Preserves all
-        user_essential and user_removed overrides via existing_grid.
+        auto-apply rules on the active board immediately. Rebuilds board and
+        candidate grid from scratch via _build_engine.
         """
         try:
             state = store.load(session_id)
@@ -1094,8 +1085,10 @@ def make_router(
             raise HTTPException(status_code=409, detail="Session not yet confirmed")
 
         always_apply = frozenset(settings_store.load().always_apply_rules)
-        new_cg = _compute_candidate_grid(state, state.candidate_grid, always_apply)
-        updated = state.model_copy(update={"candidate_grid": new_cg})
+        board, _engine = _build_engine(state, always_apply)
+        updated = state.model_copy(
+            update={"candidate_grid": _build_candidate_grid(state, board)}
+        )
         store.save(updated)
         return updated
 

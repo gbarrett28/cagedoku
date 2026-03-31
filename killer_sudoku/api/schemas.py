@@ -106,6 +106,8 @@ class UserAction(BaseModel):
         "place_digit",
         "remove_digit",
         "remove_candidate",
+        "restore_candidate",
+        "reset_cell_candidates",
         "eliminate_cage_soln",
         "eliminate_virtual_cage_soln",
         "add_virtual_cage",
