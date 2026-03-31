@@ -67,12 +67,12 @@ class TestRefreshEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["session_id"] == sid
-        assert data["candidate_grid"] is not None
 
     def test_refresh_reflects_settings(
         self, client: TestClient, store: SessionStore
     ) -> None:
-        """Enabling a new always-apply rule via settings then refreshing succeeds."""
+        """Enabling a new always-apply rule via settings then refreshing succeeds;
+        /candidates returns a valid response after the settings change."""
         sid, _state = _make_g10_state(store)
         client.patch(
             "/api/settings",
@@ -80,4 +80,5 @@ class TestRefreshEndpoint:
         )
         resp = client.post(f"/api/puzzle/{sid}/refresh")
         assert resp.status_code == 200
-        assert resp.json()["candidate_grid"] is not None
+        cands = client.get(f"/api/puzzle/{sid}/candidates")
+        assert cands.status_code == 200

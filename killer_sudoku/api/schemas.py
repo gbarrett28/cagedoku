@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 # Cold-start default: only the basic cage candidate constraint is always-apply.
 # Further rules (CellSolutionElimination, CageIntersection, etc.) are enabled
@@ -193,8 +193,9 @@ class PuzzleState(BaseModel):
         move_history:        Chronological record of every cell entry or clear.
         history:             Turn-based event history; undo = pop last turn.
         virtual_cages:       User-added derived sum constraints.
-        candidate_grid:      DEPRECATED — remove after migration to Turn history.
     """
+
+    model_config = ConfigDict(extra="ignore")
 
     session_id: str
     newspaper: Literal["guardian", "observer"]
@@ -218,9 +219,6 @@ class PuzzleState(BaseModel):
 
     virtual_cages: list[VirtualCage] = []
     # User-added derived sum constraints, keyed by canonical cell:total string.
-
-    candidate_grid: CandidateGrid | None = None
-    # DEPRECATED — None → pre-confirm. Kept for migration; remove after Task 15.
 
 
 class UploadResponse(BaseModel):
@@ -256,28 +254,50 @@ class SolveResponse(BaseModel):
     error: str | None = None
 
 
-class CandidateCell(BaseModel):
-    """Candidate state for one cell.
+class CellInfo(BaseModel):
+    """Per-cell candidate info for the candidates response.
 
-    auto_candidates: digits solver considers possible, from BoardState.candidates.
-    auto_essential: auto_candidates ∩ cage must-set (cage-level property stored
-        per-cell for frontend convenience).
-    user_essential: user-promoted digits (overrides auto inessential).
-    user_removed: user-eliminated digits (overrides auto present).
-    Rule A: digits dropped from auto_candidates are silently removed from
-        user_essential on recomputation.
+    candidates: solver-determined possible digits, including user_removed ones
+        (user_removed are user overrides, not solver conclusions; they are
+        included here so the frontend can render them struck-through).
+    user_removed: digits explicitly removed by the user via cycle or hint apply.
     """
 
-    auto_candidates: list[int]
-    auto_essential: list[int]
-    user_essential: list[int]
+    candidates: list[int]
     user_removed: list[int]
 
 
-class CandidateGrid(BaseModel):
-    """Full 9×9 grid of per-cell candidate state."""
+class CageInfo(BaseModel):
+    """Real cage metadata for the candidates response."""
 
-    cells: list[list[CandidateCell]]  # 9 rows × 9 cols, 0-based
+    cage_idx: int
+    cells: list[tuple[int, int]]  # 0-based (row, col)
+    total: int
+    solutions: list[list[int]]  # remaining solutions, each sorted
+    must_contain: list[int]  # intersection of all solutions, sorted
+
+
+class VirtualCageInfo(BaseModel):
+    """User-acknowledged derived sum constraint for the candidates response."""
+
+    key: str
+    cells: list[tuple[int, int]]  # 0-based (row, col)
+    total: int
+    solutions: list[list[int]]  # remaining solutions after user eliminations
+    must_contain: list[int]  # intersection of all solutions, sorted
+
+
+class CandidatesResponse(BaseModel):
+    """Response from GET /puzzle/{id}/candidates.
+
+    cells: 9×9 per-cell candidate info.
+    cages: one entry per real cage with must_contain for essential highlighting.
+    virtual_cages: user-acknowledged derived sum constraints.
+    """
+
+    cells: list[list[CellInfo]]  # 9 rows × 9 cols
+    cages: list[CageInfo]
+    virtual_cages: list[VirtualCageInfo]
 
 
 class CandidateCycleRequest(BaseModel):

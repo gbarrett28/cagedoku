@@ -26,12 +26,10 @@ from starlette.testclient import TestClient
 from killer_sudoku.api.app import create_app
 from killer_sudoku.api.config import CoachConfig
 from killer_sudoku.api.routers.puzzle import (
-    _build_candidate_grid,
-    _build_engine,
     _spec_to_cage_states,
     _spec_to_data,
 )
-from killer_sudoku.api.schemas import DEFAULT_ALWAYS_APPLY_RULES, PuzzleState
+from killer_sudoku.api.schemas import PuzzleState
 from killer_sudoku.api.session import SessionStore
 from tests.fixtures.guardian10_puzzle import make_guardian10_spec
 
@@ -90,10 +88,6 @@ def g10_state(store: SessionStore) -> PuzzleState:
         original_image_b64="dGVzdA==",
         golden_solution=GUARDIAN10_SOLUTION,
         user_grid=[[0] * 9 for _ in range(9)],
-    )
-    board, _engine = _build_engine(state, frozenset(DEFAULT_ALWAYS_APPLY_RULES))
-    state = state.model_copy(
-        update={"candidate_grid": _build_candidate_grid(state, board)}
     )
     store.save(state)
     return state
@@ -210,35 +204,33 @@ class TestApplyMustContainOutie:
     ) -> None:
         hints = _get_hints(client, g10_state.session_id)
         mco = next(h for h in hints if h["rule_name"] == "MustContainOutie")
-        state = _apply_hint(client, g10_state.session_id, mco["eliminations"])
+        _apply_hint(client, g10_state.session_id, mco["eliminations"])
 
-        cg = state["candidate_grid"]
+        cg = client.get(f"/api/puzzle/{g10_state.session_id}/candidates").json()
         r2c8 = cg["cells"][1][7]  # 0-based (row=1, col=7)
         assert 7 in r2c8["user_removed"]
 
-    def test_digit_7_still_in_auto_candidates_of_r2c8(
+    def test_digit_7_still_in_candidates_of_r2c8(
         self, client: TestClient, g10_state: PuzzleState
     ) -> None:
-        """user_removed does not retroactively shrink auto_candidates."""
-        hints = _get_hints(client, g10_state.session_id)
-        mco = next(h for h in hints if h["rule_name"] == "MustContainOutie")
-        state = _apply_hint(client, g10_state.session_id, mco["eliminations"])
-
-        cg = state["candidate_grid"]
-        r2c8 = cg["cells"][1][7]
-        assert 7 in r2c8["auto_candidates"]
-
-    def test_state_is_persisted_after_apply(
-        self, client: TestClient, g10_state: PuzzleState
-    ) -> None:
-        """GET after POST reflects the applied elimination."""
+        """user_removed does not remove digit from candidates (still visible struck)."""
         hints = _get_hints(client, g10_state.session_id)
         mco = next(h for h in hints if h["rule_name"] == "MustContainOutie")
         _apply_hint(client, g10_state.session_id, mco["eliminations"])
 
-        resp = client.get(f"/api/puzzle/{g10_state.session_id}")
-        assert resp.status_code == 200
-        cg = resp.json()["candidate_grid"]
+        cg = client.get(f"/api/puzzle/{g10_state.session_id}/candidates").json()
+        r2c8 = cg["cells"][1][7]
+        assert 7 in r2c8["candidates"]
+
+    def test_state_is_persisted_after_apply(
+        self, client: TestClient, g10_state: PuzzleState
+    ) -> None:
+        """GET /candidates after POST reflects the applied elimination."""
+        hints = _get_hints(client, g10_state.session_id)
+        mco = next(h for h in hints if h["rule_name"] == "MustContainOutie")
+        _apply_hint(client, g10_state.session_id, mco["eliminations"])
+
+        cg = client.get(f"/api/puzzle/{g10_state.session_id}/candidates").json()
         r2c8 = cg["cells"][1][7]
         assert 7 in r2c8["user_removed"]
 
@@ -248,9 +240,9 @@ class TestApplyMustContainOutie:
         """Only the targeted cell has user_removed updated."""
         hints = _get_hints(client, g10_state.session_id)
         mco = next(h for h in hints if h["rule_name"] == "MustContainOutie")
-        state = _apply_hint(client, g10_state.session_id, mco["eliminations"])
+        _apply_hint(client, g10_state.session_id, mco["eliminations"])
 
-        cg = state["candidate_grid"]
+        cg = client.get(f"/api/puzzle/{g10_state.session_id}/candidates").json()
         # r1c1 (0,0) should have no user_removed
         assert cg["cells"][0][0]["user_removed"] == []
 
@@ -336,9 +328,9 @@ class TestApplyCageConfinement:
             if h["rule_name"] == "CageConfinement"
             and h["display_name"] == "Essential digit confined (1 cage)"
         )
-        state = _apply_hint(client, g10_state.session_id, n1["eliminations"])
+        _apply_hint(client, g10_state.session_id, n1["eliminations"])
 
-        cg = state["candidate_grid"]
+        cg = client.get(f"/api/puzzle/{g10_state.session_id}/candidates").json()
         for elim in n1["eliminations"]:
             r, c = elim["cell"]
             d = elim["digit"]
@@ -366,8 +358,8 @@ class TestApplyCageConfinement:
         assert n2_hints, "No n=2 CageConfinement hints available"
 
         # Apply the first n=2 hint and verify all its eliminations are recorded
-        state = _apply_hint(client, g10_state.session_id, n2_hints[0]["eliminations"])
-        cg = state["candidate_grid"]
+        _apply_hint(client, g10_state.session_id, n2_hints[0]["eliminations"])
+        cg = client.get(f"/api/puzzle/{g10_state.session_id}/candidates").json()
         for elim in n2_hints[0]["eliminations"]:
             r, c = elim["cell"]
             d = elim["digit"]
@@ -390,9 +382,9 @@ class TestApplyHintEdgeCases:
         hints = _get_hints(client, g10_state.session_id)
         mco = next(h for h in hints if h["rule_name"] == "MustContainOutie")
         _apply_hint(client, g10_state.session_id, mco["eliminations"])
-        state = _apply_hint(client, g10_state.session_id, mco["eliminations"])
+        _apply_hint(client, g10_state.session_id, mco["eliminations"])
 
-        cg = state["candidate_grid"]
+        cg = client.get(f"/api/puzzle/{g10_state.session_id}/candidates").json()
         r2c8 = cg["cells"][1][7]
         # user_removed should contain 7 exactly once
         assert r2c8["user_removed"].count(7) == 1
@@ -423,8 +415,8 @@ class TestApplyHintEdgeCases:
     def test_empty_eliminations_is_no_op(
         self, client: TestClient, g10_state: PuzzleState
     ) -> None:
-        state = _apply_hint(client, g10_state.session_id, [])
-        cg = state["candidate_grid"]
+        _apply_hint(client, g10_state.session_id, [])
+        cg = client.get(f"/api/puzzle/{g10_state.session_id}/candidates").json()
         # No cell should have any user_removed entry
         for row in cg["cells"]:
             for cell in row:

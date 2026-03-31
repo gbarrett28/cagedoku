@@ -43,15 +43,31 @@ interface MoveRecord {
   prev_digit: number; // 0–9
 }
 
-interface CandidateCell {
-  auto_candidates: number[];
-  auto_essential:  number[];
-  user_essential:  number[];
-  user_removed:    number[];
+interface CellInfo {
+  candidates: number[];   // solver-deduced candidates (includes user_removed for struck-through render)
+  user_removed: number[]; // digits explicitly removed by the user
 }
 
-interface CandidateGrid {
-  cells: CandidateCell[][];   // 9 rows × 9 cols, 0-based
+interface CageInfo {
+  cage_idx: number;
+  cells: [number, number][];  // 0-based [row, col] pairs
+  total: number;
+  solutions: number[][];
+  must_contain: number[];     // intersection of remaining solutions
+}
+
+interface VirtualCageInfo {
+  key: string;
+  cells: [number, number][];
+  total: number;
+  solutions: number[][];
+  must_contain: number[];
+}
+
+interface CandidatesResponse {
+  cells: CellInfo[][];         // 9 rows × 9 cols, 0-based
+  cages: CageInfo[];
+  virtual_cages: VirtualCageInfo[];
 }
 
 interface PuzzleSpecData {
@@ -70,7 +86,6 @@ interface PuzzleState {
   golden_solution: number[][] | null;
   user_grid: number[][] | null;
   move_history: MoveRecord[];
-  candidate_grid: CandidateGrid | null;
 }
 
 interface UploadResponse {
@@ -118,6 +133,7 @@ const GRID_PX = MARGIN * 2 + 9 * CELL;  // total canvas size (= 458px)
 
 let currentSessionId: string | null = null;
 let currentState: PuzzleState | null = null;
+let currentCandidates: CandidatesResponse | null = null;
 let selectedCell: { row: number; col: number } | null = null;
 // row and col are 1-based (1–9), matching the API convention
 let showCandidates: boolean = false;
@@ -176,7 +192,8 @@ function drawGrid(
   state: PuzzleState,
   selected: { row: number; col: number } | null = null,
   showCands: boolean = false,
-  highlightKeys: Set<string> | null = null  // "r,c" keys, 0-based
+  highlightKeys: Set<string> | null = null,  // "r,c" keys, 0-based
+  candidatesData: CandidatesResponse | null = null,
 ): void {
   canvas.width = GRID_PX;
   canvas.height = GRID_PX;
@@ -323,8 +340,15 @@ function drawGrid(
   // 8. Candidate sub-grid (only when showCands && candidate data available)
   //    Reserve CAND_TOP px at the top of each cell so digit 1 does not
   //    collide with the cage-total label (drawn at y+2 with 11px font).
-  if (showCands && state.candidate_grid !== null && state.user_grid !== null) {
-    const cg = state.candidate_grid;
+  if (showCands && candidatesData !== null && state.user_grid !== null) {
+    // Build per-cell must_contain lookup from cage info (0-based row,col key)
+    const mustContainByCell = new Map<string, Set<number>>();
+    for (const cage of candidatesData.cages) {
+      const mc = new Set(cage.must_contain);
+      for (const [r, c] of cage.cells) {
+        mustContainByCell.set(`${r},${c}`, mc);
+      }
+    }
     const CAND_TOP = 13; // px reserved for cage-total label at top of cell
     const SUB_W = CELL / 3;
     const SUB_H = (CELL - CAND_TOP) / 3;
@@ -334,14 +358,13 @@ function drawGrid(
     for (let r = 0; r < 9; r++) {
       for (let c = 0; c < 9; c++) {
         if ((state.user_grid[r]?.[c] ?? 0) !== 0) continue;  // skip solved cells
-        const cell = cg.cells[r]?.[c];
+        const cell = candidatesData.cells[r]?.[c];
         if (cell === undefined) continue;
-        const autoSet = new Set(cell.auto_candidates);
+        const candSet = new Set(cell.candidates);
         const removedSet = new Set(cell.user_removed);
-        const essSet = new Set([...cell.user_essential, ...cell.auto_essential]);
+        const essSet = mustContainByCell.get(`${r},${c}`) ?? new Set<number>();
         for (let n = 1; n <= 9; n++) {
-          if (removedSet.has(n)) continue;
-          if (!autoSet.has(n)) continue;
+          if (!candSet.has(n) || removedSet.has(n)) continue;
           const subRow = Math.floor((n - 1) / 3);
           const subCol = (n - 1) % 3;
           const cx = MARGIN + c * CELL + (subCol + 0.5) * SUB_W;
@@ -523,12 +546,33 @@ function redrawGrid(): void {
     selectedCell,
     showCandidates,
     highlights,
+    currentCandidates,
   );
+}
+
+async function fetchCandidates(): Promise<void> {
+  if (!currentSessionId) return;
+  try {
+    const res = await fetch(`/api/puzzle/${currentSessionId}/candidates`);
+    if (!res.ok) return;
+    currentCandidates = (await res.json()) as CandidatesResponse;
+    redrawGrid();
+  } catch {
+    // best effort — candidates are non-critical; grid still renders without them
+  }
+}
+
+function refreshDisplay(): void {
+  if (showCandidates) {
+    void fetchCandidates();
+  } else {
+    redrawGrid();
+  }
 }
 
 function renderPlayingMode(state: PuzzleState): void {
   currentState = state;
-  redrawGrid();
+  refreshDisplay();
   el<HTMLElement>("review-actions").hidden = true;
   el<HTMLElement>("editor-section").hidden = true;
   el<HTMLElement>("original-col").hidden = true;
@@ -649,7 +693,7 @@ async function handleCellEntry(digit: number): Promise<void> {
     if (!res.ok) return;
     const state = (await res.json()) as PuzzleState;
     currentState = state;
-    redrawGrid();
+    refreshDisplay();
     updateUndoButton(state);
   } catch {
     // Cell entry is best-effort; network errors are silently ignored
@@ -665,7 +709,7 @@ async function handleUndo(): Promise<void> {
     if (!res.ok) return;
     const state = (await res.json()) as PuzzleState;
     currentState = state;
-    redrawGrid();
+    refreshDisplay();
     updateUndoButton(state);
   } catch {
     // Undo is best-effort; network errors are silently ignored
@@ -690,7 +734,7 @@ async function handleCandidateCycle(
     if (!res.ok) return;
     const state = (await res.json()) as PuzzleState;
     currentState = state;
-    redrawGrid();
+    refreshDisplay();
   } catch {
     // Candidate cycle is best-effort; network errors silently ignored
   }
@@ -832,6 +876,7 @@ el<HTMLButtonElement>("candidates-btn").addEventListener("click", () => {
   el<HTMLButtonElement>("help-candidates-btn").hidden = !showCandidates;
   el<HTMLButtonElement>("inspect-cage-btn").hidden = !showCandidates;
   if (!showCandidates) {
+    currentCandidates = null;
     candidateEditMode = false;
     el<HTMLButtonElement>("edit-candidates-btn").textContent =
       "Edit candidates";
@@ -839,8 +884,10 @@ el<HTMLButtonElement>("candidates-btn").addEventListener("click", () => {
     el<HTMLButtonElement>("inspect-cage-btn").textContent = "Inspect cage";
     el<HTMLElement>("inspector-col").hidden = true;
     inspectedCageLabel = null;
+    redrawGrid();
+  } else {
+    void fetchCandidates();
   }
-  redrawGrid();
 });
 
 el<HTMLButtonElement>("edit-candidates-btn").addEventListener("click", () => {
@@ -903,7 +950,7 @@ el<HTMLButtonElement>("config-save-btn").addEventListener("click", async () => {
       );
     }
     currentState = await refreshResp.json();
-    redrawGrid();
+    refreshDisplay();
   }
 
   (el<HTMLDialogElement>("config-modal")).close();
@@ -1061,7 +1108,7 @@ el<HTMLButtonElement>("hint-apply-btn").addEventListener("click", async () => {
     if (!resp.ok) throw new Error(`POST hints/apply failed: ${resp.status} ${await resp.text()}`);
     currentState = await resp.json();
   }
-  redrawGrid();
+  refreshDisplay();
 });
 
 el<HTMLButtonElement>("hint-close-btn").addEventListener("click", () => {
