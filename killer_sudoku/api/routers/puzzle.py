@@ -38,6 +38,7 @@ from killer_sudoku.api.schemas import (
     MoveRecord,
     PuzzleSpecData,
     PuzzleState,
+    RewindRequest,
     SolveResponse,
     SubdivideRequest,
     Turn,
@@ -416,6 +417,143 @@ def _rebuild_user_grid(state: PuzzleState) -> PuzzleState:
             )
     return state.model_copy(
         update={"user_grid": grid, "move_history": new_move_history}
+    )
+
+
+def _find_last_consistent_turn_idx(state: PuzzleState) -> int | None:
+    """Return the history slice index that makes the state consistent, or None.
+
+    Walks history forward, maintaining a running user_grid and user_removed set.
+    Checks consistency with golden_solution after every turn.  Returns the index
+    N such that history[:N] is the longest consistent prefix — i.e. the caller
+    should rewind to N.
+
+    Returns None when the full history is consistent (no rewind needed).
+
+    Cells where golden_solution[r][c] == 0 (solver could not determine the value)
+    are excluded from the check.
+    """
+    golden = state.golden_solution
+    if golden is None:
+        return None
+
+    grid: list[list[int]] = [[0] * 9 for _ in range(9)]
+    removed: set[tuple[int, int, int]] = set()
+    last_consistent = 0
+
+    for i, turn in enumerate(state.history):
+        a = turn.user_action
+        # Update running grid
+        if (
+            a.type == "place_digit"
+            and a.row is not None
+            and a.col is not None
+            and a.digit is not None
+        ):
+            grid[a.row][a.col] = a.digit
+        elif a.type == "remove_digit" and a.row is not None and a.col is not None:
+            grid[a.row][a.col] = 0
+        # Update running user_removed
+        if (
+            a.type == "remove_candidate"
+            and a.row is not None
+            and a.col is not None
+            and a.digit is not None
+        ):
+            removed.add((a.row, a.col, a.digit))
+        elif (
+            a.type == "restore_candidate"
+            and a.row is not None
+            and a.col is not None
+            and a.digit is not None
+        ):
+            removed.discard((a.row, a.col, a.digit))
+        elif (
+            a.type == "reset_cell_candidates"
+            and a.row is not None
+            and a.col is not None
+        ):
+            removed = {(r, c, d) for r, c, d in removed if (r, c) != (a.row, a.col)}
+        elif a.type == "apply_hint" and a.hint_eliminations:
+            for r, c, d in a.hint_eliminations:
+                removed.add((r, c, d))
+
+        # Check consistency after this turn
+        consistent = True
+        for r in range(9):
+            for c in range(9):
+                g = golden[r][c]
+                if g == 0:
+                    continue  # solver could not determine this cell — skip
+                if grid[r][c] != 0 and grid[r][c] != g:
+                    consistent = False
+                    break
+                if (r, c, g) in removed:
+                    consistent = False
+                    break
+            if not consistent:
+                break
+
+        if consistent:
+            last_consistent = i + 1
+
+    return None if last_consistent == len(state.history) else last_consistent
+
+
+def _describe_first_error(
+    state: PuzzleState,
+    rewind_idx: int,
+) -> tuple[str, list[tuple[int, int]]]:
+    """Return (explanation, highlight_cells) for the first post-rewind error.
+
+    Describes the turn at history[rewind_idx] — the first turn that made the
+    state inconsistent with golden_solution.  All coordinates in the returned
+    highlight_cells are 0-based (row, col).
+    """
+    golden = state.golden_solution
+    assert golden is not None
+    a = state.history[rewind_idx].user_action
+
+    if (
+        a.type == "place_digit"
+        and a.row is not None
+        and a.col is not None
+        and a.digit is not None
+    ):
+        g = golden[a.row][a.col]
+        if g != 0 and a.digit != g:
+            return (
+                f"Digit {a.digit} at r{a.row + 1}c{a.col + 1} conflicts with the "
+                f"solution (correct digit is {g}).",
+                [(a.row, a.col)],
+            )
+
+    if (
+        a.type == "remove_candidate"
+        and a.row is not None
+        and a.col is not None
+        and a.digit is not None
+        and golden[a.row][a.col] == a.digit
+    ):
+        return (
+            f"Digit {a.digit} was removed from r{a.row + 1}c{a.col + 1}, but it "
+            f"is the solution for that cell.",
+            [(a.row, a.col)],
+        )
+
+    if a.type == "apply_hint" and a.hint_eliminations:
+        for r, c, d in a.hint_eliminations:
+            if golden[r][c] == d:
+                return (
+                    f"A hint removed digit {d} from r{r + 1}c{c + 1}, which is "
+                    f"the solution for that cell.  The hint was generated from an "
+                    f"already-incorrect board state.",
+                    [(r, c)],
+                )
+
+    return (
+        "The board contains a move that conflicts with the solution.",
+        [],
     )
 
 
@@ -801,6 +939,39 @@ def make_router(
         store.save(updated)
         return updated
 
+    @router.post("/{session_id}/rewind", response_model=PuzzleState)
+    async def rewind(session_id: str, req: RewindRequest) -> PuzzleState:
+        """Rewind history to a specific turn index, discarding all later turns.
+
+        Designed for use with the Rewind hint: history[:req.turn_idx] is kept,
+        everything after is discarded (including cascaded auto-mutations), then
+        user_grid is rebuilt from the trimmed history and the engine re-runs.
+
+        Returns 409 if no session history exists.
+        Returns 422 if turn_idx is out of range.
+        """
+        try:
+            state = store.load(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+
+        if state.user_grid is None:
+            raise HTTPException(status_code=409, detail="Session not yet confirmed")
+
+        if not (0 <= req.turn_idx <= len(state.history)):
+            raise HTTPException(
+                status_code=422,
+                detail=f"turn_idx {req.turn_idx} out of range "
+                f"[0, {len(state.history)}]",
+            )
+
+        trimmed = state.model_copy(update={"history": state.history[: req.turn_idx]})
+        updated = _rebuild_user_grid(trimmed)
+        always_apply = frozenset(settings_store.load().always_apply_rules)
+        _board, _engine = _build_engine(updated, always_apply)
+        store.save(updated)
+        return updated
+
     @router.patch("/{session_id}/candidates/cell", response_model=PuzzleState)
     async def cycle_candidate(
         session_id: str,
@@ -1039,6 +1210,26 @@ def make_router(
 
         if state.user_grid is None:
             return HintsResponse(hints=[])
+
+        # Inconsistency check: if any move conflicts with the golden solution,
+        # suppress all normal hints and return only a Rewind hint.  This prevents
+        # the coach from offering deductions derived from a corrupt board state.
+        rewind_idx = _find_last_consistent_turn_idx(state)
+        if rewind_idx is not None:
+            explanation, highlight = _describe_first_error(state, rewind_idx)
+            return HintsResponse(
+                hints=[
+                    HintItem(
+                        rule_name="Rewind",
+                        display_name="Rewind to last consistent state",
+                        explanation=explanation,
+                        highlight_cells=highlight,
+                        eliminations=[],
+                        elimination_count=0,
+                        rewind_to_turn_idx=rewind_idx,
+                    )
+                ]
+            )
 
         always_apply = frozenset(settings_store.load().always_apply_rules)
         _board, engine = _build_engine(state, always_apply)

@@ -112,6 +112,7 @@ interface HintItem {
   eliminations: EliminationItem[];
   elimination_count: number;
   placement: [number, number, number] | null;  // [row, col, digit] or null
+  rewind_to_turn_idx: number | null;  // non-null for Rewind hints only
 }
 
 interface HintsResponse {
@@ -1021,7 +1022,11 @@ function showHintModal(hint: HintItem): void {
   el<HTMLElement>("hint-modal-explanation").textContent = hint.explanation;
 
   const applyBtn = el<HTMLButtonElement>("hint-apply-btn");
-  if (hint.placement !== null) {
+  if (hint.rewind_to_turn_idx !== null) {
+    el<HTMLElement>("hint-modal-summary").textContent =
+      "Rewinding will undo all moves back to the last correct state.";
+    applyBtn.textContent = "Rewind";
+  } else if (hint.placement !== null) {
     const [, , d] = hint.placement;
     el<HTMLElement>("hint-modal-summary").textContent = `Places digit ${d}.`;
     applyBtn.textContent = "Place";
@@ -1087,7 +1092,16 @@ el<HTMLButtonElement>("hint-apply-btn").addEventListener("click", async () => {
   (el<HTMLDialogElement>("hint-modal") as HTMLDialogElement).close();
   clearHintHighlight();
 
-  if (activeHintItem.placement !== null) {
+  if (activeHintItem.rewind_to_turn_idx !== null) {
+    // Rewind hint: discard all turns after the last consistent state
+    const resp = await fetch(`/api/puzzle/${currentSessionId}/rewind`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ turn_idx: activeHintItem.rewind_to_turn_idx }),
+    });
+    if (!resp.ok) throw new Error(`POST rewind failed: ${resp.status} ${await resp.text()}`);
+    currentState = await resp.json();
+  } else if (activeHintItem.placement !== null) {
     // Placement hint: enter the digit via the cell endpoint
     const [row, col, digit] = activeHintItem.placement;
     const resp = await fetch(`/api/puzzle/${currentSessionId}/cell`, {

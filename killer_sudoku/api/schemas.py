@@ -380,15 +380,19 @@ class HintItem(BaseModel):
     """One applicable solver rule, with context for the coaching UI.
 
     Attributes:
-        rule_name:         Internal identifier (e.g. "MustContainOutie").
-        display_name:      Short label shown in the hints dropdown.
-        explanation:       Plain-English explanation of why the rule fires.
-        highlight_cells:   Cells to highlight on the canvas, 0-based (row, col).
-        eliminations:      Candidate removals the rule would make.
-        elimination_count: Convenience copy of len(eliminations).
-        placement:         (row, col, digit) for placement hints; None otherwise.
-                           Placement hints instruct the user to enter a digit
-                           in a cell rather than remove a candidate.
+        rule_name:           Internal identifier (e.g. "MustContainOutie").
+        display_name:        Short label shown in the hints dropdown.
+        explanation:         Plain-English explanation of why the rule fires.
+        highlight_cells:     Cells to highlight on the canvas, 0-based (row, col).
+        eliminations:        Candidate removals the rule would make.
+        elimination_count:   Convenience copy of len(eliminations).
+        placement:           (row, col, digit) for placement hints; None otherwise.
+                             Placement hints instruct the user to enter a digit
+                             in a cell rather than remove a candidate.
+        rewind_to_turn_idx:  Non-None only for "Rewind" hints.  The turn history
+                             index to slice to: history[:rewind_to_turn_idx] is
+                             kept and everything after is discarded.  Applying
+                             this hint POSTs to /rewind rather than /hints/apply.
     """
 
     rule_name: str
@@ -398,6 +402,7 @@ class HintItem(BaseModel):
     eliminations: list[EliminationItem]
     elimination_count: int
     placement: tuple[int, int, int] | None = None
+    rewind_to_turn_idx: int | None = None
 
 
 class HintsResponse(BaseModel):
@@ -414,3 +419,13 @@ class ApplyHintRequest(BaseModel):
     """
 
     eliminations: list[EliminationItem]
+
+
+class RewindRequest(BaseModel):
+    """Request to rewind history to a specific turn index.
+
+    history[:turn_idx] is kept; all subsequent turns (and their cascades)
+    are discarded.  turn_idx == 0 rewinds to a blank playing grid.
+    """
+
+    turn_idx: int
