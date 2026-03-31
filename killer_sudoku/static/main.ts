@@ -104,6 +104,11 @@ interface EliminationItem {
   digit: number;
 }
 
+interface VirtualCageSuggestion {
+  cells: [number, number][];  // 0-based (row, col)
+  total: number;
+}
+
 interface HintItem {
   rule_name: string;
   display_name: string;
@@ -113,6 +118,7 @@ interface HintItem {
   elimination_count: number;
   placement: [number, number, number] | null;  // [row, col, digit] or null
   rewind_to_turn_idx: number | null;  // non-null for Rewind hints only
+  virtual_cage_suggestion: VirtualCageSuggestion | null;  // T3 hint
 }
 
 interface HintsResponse {
@@ -1206,6 +1212,10 @@ function showHintModal(hint: HintItem): void {
     const [, , d] = hint.placement;
     el<HTMLElement>("hint-modal-summary").textContent = `Places digit ${d}.`;
     applyBtn.textContent = "Place";
+  } else if (hint.virtual_cage_suggestion !== null) {
+    el<HTMLElement>("hint-modal-summary").textContent =
+      "Adds this constraint as a virtual cage.";
+    applyBtn.textContent = "Add virtual cage";
   } else {
     const n = hint.eliminations.length;
     el<HTMLElement>("hint-modal-summary").textContent =
@@ -1239,6 +1249,8 @@ el<HTMLButtonElement>("hints-btn").addEventListener("click", () => {
         if (hint.placement !== null) {
           const [r, c, d] = hint.placement;
           btn.textContent = `${hint.display_name} — place ${d} at r${r + 1}c${c + 1}`;
+        } else if (hint.virtual_cage_suggestion !== null) {
+          btn.textContent = `${hint.display_name} — add virtual cage`;
         } else {
           const n = hint.elimination_count;
           btn.textContent = `${hint.display_name} (${n} elimination${n === 1 ? "" : "s"})`;
@@ -1286,6 +1298,16 @@ el<HTMLButtonElement>("hint-apply-btn").addEventListener("click", async () => {
       body: JSON.stringify({ row, col, digit }),
     });
     if (!resp.ok) throw new Error(`POST cell failed: ${resp.status} ${await resp.text()}`);
+    currentState = await resp.json();
+  } else if (activeHintItem.virtual_cage_suggestion !== null) {
+    // T3 virtual cage suggestion: register the suggested cage
+    const { cells, total } = activeHintItem.virtual_cage_suggestion;
+    const resp = await fetch(`/api/puzzle/${currentSessionId}/virtual-cages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cells, total }),
+    });
+    if (!resp.ok) throw new Error(`POST virtual-cages failed: ${resp.status} ${await resp.text()}`);
     currentState = await resp.json();
   } else {
     // Elimination hint: mark candidates as user_removed

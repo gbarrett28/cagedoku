@@ -26,6 +26,15 @@ from killer_sudoku.solver.engine.rules.cage_confinement import CageConfinement
 from killer_sudoku.solver.engine.rules.cell_solution_elimination import (
     CellSolutionElimination,
 )
+from killer_sudoku.solver.engine.rules.incomplete.delta_constraint import (
+    DeltaConstraint,
+)
+from killer_sudoku.solver.engine.rules.incomplete.linear_elimination import (
+    LinearElimination,
+)
+from killer_sudoku.solver.engine.rules.incomplete.sum_pair_constraint import (
+    SumPairConstraint,
+)
 from killer_sudoku.solver.engine.rules.must_contain_outie import MustContainOutie
 from killer_sudoku.solver.engine.rules.naked_single import NakedSingle
 from killer_sudoku.solver.engine.rules.solution_map_filter import SolutionMapFilter
@@ -48,4 +57,7 @@ def default_rules() -> list[SolverRule]:
         SolutionMapFilter(),
         MustContainOutie(),
         CageConfinement(),
+        LinearElimination(),
+        DeltaConstraint(),
+        SumPairConstraint(),
     ]

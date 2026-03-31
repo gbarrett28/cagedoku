@@ -137,13 +137,22 @@ def _default_as_hints(
 def _dedup_hints(hints: list[HintResult]) -> list[HintResult]:
     """Remove hints whose eliminations are entirely covered by earlier hints.
 
-    Placement hints (placement is not None) are always kept.
+    Placement hints (placement is not None) are always kept, deduplicated by
+    (row, col, digit).  Virtual cage suggestion hints (virtual_cage_suggestion
+    is not None) are always kept, deduplicated by (cells, total).  Elimination
+    hints are kept only when they introduce new (cell, digit) pairs.
     Preserves original order; first hint wins for any (cell, digit) pair.
     """
     seen_elims: set[tuple[Cell, int]] = set()
     seen_placements: set[tuple[int, int, int]] = set()
+    seen_vc_suggestions: set[tuple[frozenset[Cell], int]] = set()
     result: list[HintResult] = []
     for h in hints:
+        if h.virtual_cage_suggestion is not None:
+            if h.virtual_cage_suggestion not in seen_vc_suggestions:
+                seen_vc_suggestions.add(h.virtual_cage_suggestion)
+                result.append(h)
+            continue
         if h.placement is not None:
             if h.placement not in seen_placements:
                 seen_placements.add(h.placement)

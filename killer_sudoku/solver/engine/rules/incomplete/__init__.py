@@ -19,15 +19,9 @@ from killer_sudoku.solver.engine.rule import SolverRule
 from killer_sudoku.solver.engine.rules.incomplete.cage_intersection import (
     CageIntersection,
 )
-from killer_sudoku.solver.engine.rules.incomplete.delta_constraint import (
-    DeltaConstraint,
-)
 from killer_sudoku.solver.engine.rules.incomplete.hidden_pair import HiddenPair
 from killer_sudoku.solver.engine.rules.incomplete.hidden_single import HiddenSingle
 from killer_sudoku.solver.engine.rules.incomplete.jellyfish import Jellyfish
-from killer_sudoku.solver.engine.rules.incomplete.linear_elimination import (
-    LinearElimination,
-)
 from killer_sudoku.solver.engine.rules.incomplete.locked_candidates import (
     LockedCandidates,
 )
@@ -42,9 +36,6 @@ from killer_sudoku.solver.engine.rules.incomplete.naked_pair import NakedPair
 from killer_sudoku.solver.engine.rules.incomplete.pointing_pairs import PointingPairs
 from killer_sudoku.solver.engine.rules.incomplete.simple_colouring import (
     SimpleColouring,
-)
-from killer_sudoku.solver.engine.rules.incomplete.sum_pair_constraint import (
-    SumPairConstraint,
 )
 from killer_sudoku.solver.engine.rules.incomplete.swordfish import Swordfish
 from killer_sudoku.solver.engine.rules.incomplete.unique_rectangle import (
@@ -62,14 +53,13 @@ def incomplete_rules() -> list[SolverRule]:
 
     These rules are used by the batch solver but are not surfaced in the
     coaching UI. Combine with ``default_rules()`` for a full solving pass.
+    LinearElimination, DeltaConstraint, and SumPairConstraint have been
+    promoted to default_rules() and are no longer listed here.
     """
     return [
-        LinearElimination(),
         HiddenSingle(),
         CageIntersection(),
         MustContain(),
-        DeltaConstraint(),
-        SumPairConstraint(),
         NakedPair(),
         HiddenPair(),
         NakedHiddenTriple(),

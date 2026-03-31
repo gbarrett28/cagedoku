@@ -69,5 +69,61 @@ class SumPairConstraint:
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]
     ) -> list[HintResult]:
-        """Placeholder - incomplete rule, no coaching hint yet."""
-        return []
+        """Return one hint per sum pair that would eliminate candidates.
+
+        Each hint explains the algebraic sum constraint r{a}c{a} + r{b}c{b} = total
+        and shows the resulting candidate eliminations.
+        """
+        if not eliminations:
+            return []
+        if ctx.hint == Trigger.CELL_DETERMINED:
+            return []
+        assert ctx.unit is not None
+        board = ctx.board
+        hints: list[HintResult] = []
+        seen: set[tuple[Cell, Cell, int]] = set()
+
+        for r, c in ctx.unit.cells:
+            for pair in board.linear_system._sum_pairs_by_cell.get((r, c), []):
+                if pair in seen:
+                    continue
+                seen.add(pair)
+                a, b, total = pair
+                ar, ac = a
+                br, bc = b
+
+                pair_elims: list[Elimination] = []
+                valid_a = {
+                    total - m for m in board.candidates[br][bc] if 1 <= total - m <= 9
+                }
+                for d in board.candidates[ar][ac]:
+                    if d not in valid_a:
+                        pair_elims.append(Elimination(cell=a, digit=d))
+                valid_b = {
+                    total - m for m in board.candidates[ar][ac] if 1 <= total - m <= 9
+                }
+                for d in board.candidates[br][bc]:
+                    if d not in valid_b:
+                        pair_elims.append(Elimination(cell=b, digit=d))
+
+                if not pair_elims:
+                    continue
+
+                hints.append(
+                    HintResult(
+                        rule_name=self.name,
+                        display_name=(
+                            f"Sum: r{ar + 1}c{ac + 1} + r{br + 1}c{bc + 1} = {total}"
+                        ),
+                        explanation=(
+                            f"The cage-sum equations show r{ar + 1}c{ac + 1} "
+                            f"+ r{br + 1}c{bc + 1} = {total}. "
+                            f"Each cell's candidates must be consistent with the "
+                            f"other's — any digit d is ruled out if ({total} \u2212 d) "
+                            f"is not a candidate in the partner cell."
+                        ),
+                        highlight_cells=frozenset({a, b}),
+                        eliminations=pair_elims,
+                    )
+                )
+        return hints

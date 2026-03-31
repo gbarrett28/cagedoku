@@ -47,6 +47,7 @@ from killer_sudoku.api.schemas import (
     UserAction,
     VirtualCage,
     VirtualCageInfo,
+    VirtualCageSuggestion,
 )
 from killer_sudoku.api.session import SessionStore
 from killer_sudoku.api.settings import SettingsStore
@@ -54,6 +55,7 @@ from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.inp_image import InpImage
 from killer_sudoku.solver.engine import BoardState, SolverEngine, default_rules
 from killer_sudoku.solver.engine.board_state import NoSolnError
+from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.types import Elimination
 from killer_sudoku.solver.equation import sol_sums
 from killer_sudoku.solver.grid import (  # Grid used in solve endpoint
@@ -1272,13 +1274,19 @@ def make_router(
 
     @router.get("/{session_id}/hints", response_model=HintsResponse)
     async def get_hints(session_id: str) -> HintsResponse:
-        """Return all currently applicable hints, ordered by impact.
+        """Return all currently applicable hints, stratified by tier.
 
         Rebuilds the board from Turn history via _build_engine, which replays
         all user actions (placements, candidate removals, accepted hints) and
-        runs always-apply rules. Hint-only rules (not in always_apply) buffer
-        HintResults into engine.pending_hints instead of draining eliminations.
-        Results are sorted descending by elimination_count.
+        runs always-apply rules. Hint-only rules buffer HintResults into
+        engine.pending_hints instead of draining eliminations.
+
+        Linear hints are stratified: T1 (cell placements) > T2 (delta/sum pairs)
+        > T3 (virtual cage suggestions).  Only the smallest non-empty linear tier
+        is returned, preventing T3 suggestions when T2 deductions remain.
+        Non-linear hints (MustContainOutie, CageConfinement, etc.) are always
+        returned alongside the chosen linear tier.
+
         Returns an empty list before /confirm or if no rules currently fire.
         """
         try:
@@ -1312,27 +1320,70 @@ def make_router(
         always_apply = frozenset(settings_store.load().always_apply_rules)
         _board, engine = _build_engine(state, always_apply)
 
-        raw_hints = sorted(
-            engine.pending_hints, key=lambda h: h.elimination_count, reverse=True
+        raw_hints = engine.pending_hints
+
+        # Stratify linear hints: T1 > T2 > T3.
+        # T1: LinearElimination placement hints
+        # T2: DeltaConstraint or SumPairConstraint elimination hints
+        # T3: LinearElimination virtual cage suggestion hints
+        linear_rule_names = frozenset(
+            {"LinearElimination", "DeltaConstraint", "SumPairConstraint"}
+        )
+        t1 = [
+            h
+            for h in raw_hints
+            if h.rule_name == "LinearElimination" and h.placement is not None
+        ]
+        t2 = [
+            h
+            for h in raw_hints
+            if h.rule_name in {"DeltaConstraint", "SumPairConstraint"}
+        ]
+        t3 = [
+            h
+            for h in raw_hints
+            if h.rule_name == "LinearElimination"
+            and h.virtual_cage_suggestion is not None
+        ]
+        non_linear = [h for h in raw_hints if h.rule_name not in linear_rule_names]
+
+        if t1:
+            linear_hints = t1
+        elif t2:
+            linear_hints = t2
+        elif t3:
+            linear_hints = t3
+        else:
+            linear_hints = []
+
+        selected = sorted(
+            non_linear + linear_hints,
+            key=lambda h: h.elimination_count,
+            reverse=True,
         )
 
-        return HintsResponse(
-            hints=[
-                HintItem(
-                    rule_name=h.rule_name,
-                    display_name=h.display_name,
-                    explanation=h.explanation,
-                    highlight_cells=sorted(h.highlight_cells),
-                    eliminations=[
-                        EliminationItem(cell=e.cell, digit=e.digit)
-                        for e in h.eliminations
-                    ],
-                    elimination_count=h.elimination_count,
-                    placement=h.placement,
+        def _map_hint(h: HintResult) -> HintItem:
+            vc_sug = None
+            if h.virtual_cage_suggestion is not None:
+                vcells, vtotal = h.virtual_cage_suggestion
+                vc_sug = VirtualCageSuggestion(
+                    cells=sorted(vcells),
+                    total=vtotal,
                 )
-                for h in raw_hints
-            ]
-        )
+            return HintItem(
+                rule_name=h.rule_name,
+                display_name=h.display_name,
+                explanation=h.explanation,
+                highlight_cells=sorted(h.highlight_cells),
+                eliminations=[
+                    EliminationItem(cell=e.cell, digit=e.digit) for e in h.eliminations
+                ],
+                elimination_count=h.elimination_count,
+                placement=h.placement,
+                virtual_cage_suggestion=vc_sug,
+            )
+
+        return HintsResponse(hints=[_map_hint(h) for h in selected])
 
     @router.post("/{session_id}/hints/apply", response_model=PuzzleState)
     async def apply_hint(session_id: str, req: ApplyHintRequest) -> PuzzleState:

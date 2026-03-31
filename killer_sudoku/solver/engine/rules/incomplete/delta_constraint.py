@@ -62,5 +62,59 @@ class DeltaConstraint:
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]
     ) -> list[HintResult]:
-        """Placeholder - incomplete rule, no coaching hint yet."""
-        return []
+        """Return one hint per delta pair that would eliminate candidates.
+
+        Each hint explains the algebraic difference constraint and shows the
+        resulting candidate eliminations for the pair.
+        """
+        if not eliminations:
+            return []
+        assert ctx.unit is not None
+        board = ctx.board
+        hints: list[HintResult] = []
+        seen: set[tuple[tuple[int, int], tuple[int, int], int]] = set()
+
+        for r, c in ctx.unit.cells:
+            for pair in board.linear_system.pairs_for_cell((r, c)):
+                if pair in seen:
+                    continue
+                seen.add(pair)
+                p, q, delta = pair
+                pr, pc = p
+                qr, qc = q
+
+                pair_elims: list[Elimination] = []
+                valid_p = {
+                    m + delta for m in board.candidates[qr][qc] if 1 <= m + delta <= 9
+                }
+                for d in board.candidates[pr][pc]:
+                    if d not in valid_p:
+                        pair_elims.append(Elimination(cell=p, digit=d))
+                valid_q = {
+                    m - delta for m in board.candidates[pr][pc] if 1 <= m - delta <= 9
+                }
+                for d in board.candidates[qr][qc]:
+                    if d not in valid_q:
+                        pair_elims.append(Elimination(cell=q, digit=d))
+
+                if not pair_elims:
+                    continue
+
+                sign = "+" if delta >= 0 else "-"
+                abs_delta = abs(delta)
+                name_p = f"r{pr + 1}c{pc + 1}"
+                name_q = f"r{qr + 1}c{qc + 1}"
+                hints.append(
+                    HintResult(
+                        rule_name=self.name,
+                        display_name=f"Delta: {name_p} \u2212 {name_q} = {delta}",
+                        explanation=(
+                            f"The cage-sum equations show {name_p} \u2212 {name_q}"
+                            f" = {delta}. {name_p} must equal {name_q}"
+                            f" {sign} {abs_delta}, which rules out some candidates."
+                        ),
+                        highlight_cells=frozenset({p, q}),
+                        eliminations=pair_elims,
+                    )
+                )
+        return hints

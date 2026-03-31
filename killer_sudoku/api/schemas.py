@@ -376,23 +376,38 @@ class EliminationItem(BaseModel):
     digit: int
 
 
+class VirtualCageSuggestion(BaseModel):
+    """A T3 hint: the linear system suggests adding a virtual cage.
+
+    Attributes:
+        cells:  0-based (row, col) pairs for the suggested cage cells.
+        total:  The cage sum constraint derived algebraically.
+    """
+
+    cells: list[tuple[int, int]]
+    total: int
+
+
 class HintItem(BaseModel):
     """One applicable solver rule, with context for the coaching UI.
 
     Attributes:
-        rule_name:           Internal identifier (e.g. "MustContainOutie").
-        display_name:        Short label shown in the hints dropdown.
-        explanation:         Plain-English explanation of why the rule fires.
-        highlight_cells:     Cells to highlight on the canvas, 0-based (row, col).
-        eliminations:        Candidate removals the rule would make.
-        elimination_count:   Convenience copy of len(eliminations).
-        placement:           (row, col, digit) for placement hints; None otherwise.
-                             Placement hints instruct the user to enter a digit
-                             in a cell rather than remove a candidate.
-        rewind_to_turn_idx:  Non-None only for "Rewind" hints.  The turn history
-                             index to slice to: history[:rewind_to_turn_idx] is
-                             kept and everything after is discarded.  Applying
-                             this hint POSTs to /rewind rather than /hints/apply.
+        rule_name:               Internal identifier (e.g. "MustContainOutie").
+        display_name:            Short label shown in the hints dropdown.
+        explanation:             Plain-English explanation of why the rule fires.
+        highlight_cells:         Cells to highlight on the canvas, 0-based (row, col).
+        eliminations:            Candidate removals the rule would make.
+        elimination_count:       Convenience copy of len(eliminations).
+        placement:               (row, col, digit) for placement hints; None otherwise.
+                                 Placement hints instruct the user to enter a digit
+                                 in a cell rather than remove a candidate.
+        rewind_to_turn_idx:      Non-None only for "Rewind" hints.  The turn history
+                                 index to slice to: history[:rewind_to_turn_idx] is
+                                 kept and everything after is discarded.  Applying
+                                 this hint POSTs to /rewind rather than /hints/apply.
+        virtual_cage_suggestion: Non-None for T3 hints.  The linear system has derived
+                                 a sum constraint over these cells; the user should add
+                                 it as a virtual cage via POST /virtual-cages.
     """
 
     rule_name: str
@@ -403,6 +418,7 @@ class HintItem(BaseModel):
     elimination_count: int
     placement: tuple[int, int, int] | None = None
     rewind_to_turn_idx: int | None = None
+    virtual_cage_suggestion: VirtualCageSuggestion | None = None
 
 
 class HintsResponse(BaseModel):
