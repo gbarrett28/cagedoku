@@ -20,6 +20,7 @@ from fastapi import APIRouter, HTTPException, UploadFile
 
 from killer_sudoku.api.config import CoachConfig
 from killer_sudoku.api.schemas import (
+    AddVirtualCageRequest,
     ApplyHintRequest,
     BoardSnapshot,
     CageInfo,
@@ -418,6 +419,14 @@ def _rebuild_user_grid(state: PuzzleState) -> PuzzleState:
     return state.model_copy(
         update={"user_grid": grid, "move_history": new_move_history}
     )
+
+
+def _virtual_cage_key(cells: list[tuple[int, int]], total: int) -> str:
+    """Canonical key for a virtual cage: sorted cells joined by ':' then total.
+
+    Example: cells [(0,3),(0,0),(1,2)], total=17 → "0,0:0,3:1,2:17".
+    """
+    return ":".join(f"{r},{c}" for r, c in sorted(cells)) + f":{total}"
 
 
 def _find_last_consistent_turn_idx(state: PuzzleState) -> int | None:
@@ -840,9 +849,9 @@ def make_router(
                 )
             )
 
-        # Virtual cage info
+        # Virtual cage info — use _user_virtual_cages (same source as _build_engine)
         virtual_cages: list[VirtualCageInfo] = []
-        for vc_idx, vc in enumerate(state.virtual_cages):
+        for vc_idx, vc in enumerate(_user_virtual_cages(state)):
             vc_solns = board.cage_solns[n_real_cages + vc_idx]
             vc_must = (
                 sorted(set.intersection(*[set(s) for s in vc_solns]))
@@ -969,6 +978,75 @@ def make_router(
         updated = _rebuild_user_grid(trimmed)
         always_apply = frozenset(settings_store.load().always_apply_rules)
         _board, _engine = _build_engine(updated, always_apply)
+        store.save(updated)
+        return updated
+
+    @router.post("/{session_id}/virtual-cages", response_model=PuzzleState)
+    async def add_virtual_cage_endpoint(
+        session_id: str, req: AddVirtualCageRequest
+    ) -> PuzzleState:
+        """Add a user-derived sum constraint as a virtual cage.
+
+        Records an add_virtual_cage Turn in history.  The virtual cage is
+        picked up by _build_engine and _user_virtual_cages on all subsequent
+        requests; GET /candidates includes it in virtual_cages.
+
+        Returns 404 if session unknown, 409 if not confirmed or duplicate key,
+        422 if cells are invalid or total is impossible for distinct digits.
+        """
+        try:
+            state = store.load(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+
+        if state.user_grid is None:
+            raise HTTPException(status_code=409, detail="Session not yet confirmed")
+
+        cells = [(int(r), int(c)) for r, c in req.cells]
+
+        if len(cells) < 2:
+            raise HTTPException(
+                status_code=422, detail="Virtual cage requires at least 2 cells"
+            )
+        if len(set(cells)) != len(cells):
+            raise HTTPException(
+                status_code=422, detail="Duplicate cells in virtual cage"
+            )
+        for r, c in cells:
+            if not (0 <= r <= 8 and 0 <= c <= 8):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Cell ({r},{c}) is out of range — must be 0–8",
+                )
+
+        n = len(cells)
+        min_total = n * (n + 1) // 2  # 1+2+...+n
+        max_total = n * (19 - n) // 2  # (10-n)+...+9
+        if not (min_total <= req.total <= max_total):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Total {req.total} is impossible for {n} distinct digits "
+                f"(valid range: {min_total}–{max_total})",
+            )
+
+        key = _virtual_cage_key(cells, req.total)
+        existing_keys = {vc.key for vc in _user_virtual_cages(state)}
+        if key in existing_keys:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Virtual cage already exists: {key!r}",
+            )
+
+        user_action = UserAction(
+            type="add_virtual_cage",
+            virtual_cage_key=key,
+            virtual_cage_cells=cells,
+            virtual_cage_total=req.total,
+            source="user:manual",
+        )
+        always_apply = frozenset(settings_store.load().always_apply_rules)
+        board, engine = _build_engine(state, always_apply)
+        updated = _record_turn(state, user_action, engine, board)
         store.save(updated)
         return updated
 

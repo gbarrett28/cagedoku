@@ -384,6 +384,37 @@ button:hover:not(:disabled) {
   cursor: default;
 }
 
+/* ── Virtual cage panel ── */
+
+#virtual-cage-col {
+  min-width: 180px;
+  max-width: 260px;
+}
+
+#vc-form {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.vc-item {
+  margin-bottom: 1.25rem;
+}
+
+.vc-item-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.35rem;
+}
+
+.vc-solutions {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9rem;
+}
+
 /* ── Dialog / modal base ── */
 
 dialog {

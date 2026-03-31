@@ -421,6 +421,17 @@ class ApplyHintRequest(BaseModel):
     eliminations: list[EliminationItem]
 
 
+class AddVirtualCageRequest(BaseModel):
+    """Request to add a user-derived sum constraint as a virtual cage.
+
+    cells: 0-based (row, col) pairs identifying the cells.
+    total: The derived sum the user has worked out for this group.
+    """
+
+    cells: list[tuple[int, int]]
+    total: int
+
+
 class RewindRequest(BaseModel):
     """Request to rewind history to a specific turn index.
 

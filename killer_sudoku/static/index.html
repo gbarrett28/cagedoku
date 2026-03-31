@@ -55,6 +55,21 @@
         <h2 id="inspector-heading"></h2>
         <div id="cage-inspector"></div>
       </div>
+      <div class="image-col" id="virtual-cage-col" hidden>
+        <h2>Virtual Cages</h2>
+        <div id="vc-form" hidden>
+          <p id="vc-selection-status" class="hint-text">Click cells on the grid</p>
+          <div class="form-row">
+            <label class="field-label" for="vc-total-input">Total</label>
+            <input type="number" id="vc-total-input" class="total-input" min="3" max="45" placeholder="e.g. 17">
+          </div>
+          <div class="form-actions">
+            <button id="vc-add-btn">Add</button>
+            <button id="vc-cancel-btn" class="btn-secondary">Cancel</button>
+          </div>
+        </div>
+        <div id="virtual-cage-list"></div>
+      </div>
     </div>
 
     <div class="form-actions" id="review-actions">
@@ -93,6 +108,7 @@
         <button id="edit-candidates-btn" class="btn-secondary" hidden>Edit candidates</button>
         <button id="help-candidates-btn" class="btn-secondary" hidden>?</button>
         <button id="inspect-cage-btn" class="btn-secondary" hidden>Inspect cage</button>
+        <button id="virtual-cage-btn" class="btn-secondary" hidden>Virtual cage</button>
       </div>
     </div>
 

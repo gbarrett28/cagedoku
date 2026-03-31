@@ -124,6 +124,11 @@ interface RuleInfo {
   display_name: string;
 }
 
+interface AddVirtualCageRequest {
+  cells: [number, number][];  // 0-based (row, col)
+  total: number;
+}
+
 // ── Grid canvas constants ────────────────────────────────────────────────────
 
 const CELL = 50;   // pixels per sudoku cell
@@ -135,6 +140,8 @@ const GRID_PX = MARGIN * 2 + 9 * CELL;  // total canvas size (= 458px)
 let currentSessionId: string | null = null;
 let currentState: PuzzleState | null = null;
 let currentCandidates: CandidatesResponse | null = null;
+let virtualCageMode: boolean = false;
+let virtualCageSelection: Set<string> = new Set();  // "r,c" keys, 0-based
 let selectedCell: { row: number; col: number } | null = null;
 // row and col are 1-based (1–9), matching the API convention
 let showCandidates: boolean = false;
@@ -195,6 +202,7 @@ function drawGrid(
   showCands: boolean = false,
   highlightKeys: Set<string> | null = null,  // "r,c" keys, 0-based
   candidatesData: CandidatesResponse | null = null,
+  vcSelection: Set<string> | null = null,    // cells being drawn, "r,c" 0-based
 ): void {
   canvas.width = GRID_PX;
   canvas.height = GRID_PX;
@@ -205,7 +213,34 @@ function drawGrid(
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, GRID_PX, GRID_PX);
 
-  // 1b. Hint highlight cells (amber, drawn before cage underlay)
+  // 1b. Existing virtual cage cells (teal underlay, one shade per cage index)
+  if (candidatesData !== null) {
+    const vcColors = [
+      "rgba(20, 184, 166, 0.25)",  // teal
+      "rgba(139, 92, 246, 0.25)",  // violet
+      "rgba(236, 72, 153, 0.25)",  // pink
+      "rgba(251, 146, 60, 0.25)",  // orange
+    ];
+    for (const [vcIdx, vc] of candidatesData.virtual_cages.entries()) {
+      ctx.fillStyle = vcColors[vcIdx % vcColors.length];
+      for (const [r, c] of vc.cells) {
+        ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
+      }
+    }
+  }
+
+  // 1c. Virtual cage selection (indigo underlay while drawing a new cage)
+  if (vcSelection !== null && vcSelection.size > 0) {
+    ctx.fillStyle = "rgba(99, 102, 241, 0.35)";
+    for (const key of vcSelection) {
+      const parts = key.split(",");
+      const r = Number(parts[0]);
+      const c = Number(parts[1]);
+      ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
+    }
+  }
+
+  // 1e. Hint highlight cells (amber, drawn before cage underlay)
   if (highlightKeys !== null && highlightKeys.size > 0) {
     ctx.fillStyle = "rgba(251, 191, 36, 0.45)";
     for (const key of highlightKeys) {
@@ -216,7 +251,7 @@ function drawGrid(
     }
   }
 
-  // 1c. Selected-cell highlight (before cage underlay so red lines render on top)
+  // 1f. Selected-cell highlight (before cage underlay so red lines render on top)
   if (selected !== null) {
     ctx.fillStyle = "#dbeafe";
     ctx.fillRect(
@@ -541,6 +576,7 @@ async function eliminateSolution(
 function redrawGrid(): void {
   if (currentState === null) return;
   const highlights = hintHighlightCells.size > 0 ? hintHighlightCells : null;
+  const vcSel = virtualCageSelection.size > 0 ? virtualCageSelection : null;
   drawGrid(
     el<HTMLCanvasElement>("grid-canvas"),
     currentState,
@@ -548,6 +584,7 @@ function redrawGrid(): void {
     showCandidates,
     highlights,
     currentCandidates,
+    vcSel,
   );
 }
 
@@ -558,8 +595,90 @@ async function fetchCandidates(): Promise<void> {
     if (!res.ok) return;
     currentCandidates = (await res.json()) as CandidatesResponse;
     redrawGrid();
+    renderVirtualCagePanel();
   } catch {
     // best effort — candidates are non-critical; grid still renders without them
+  }
+}
+
+function renderVirtualCagePanel(): void {
+  if (currentCandidates === null) return;
+  const vcs = currentCandidates.virtual_cages;
+  const col = el<HTMLElement>("virtual-cage-col");
+
+  // Show/hide the column: always visible once any virtual cage exists, or when
+  // the user is actively drawing a new one.
+  if (vcs.length > 0 || virtualCageMode) {
+    col.hidden = false;
+  }
+
+  const list = el<HTMLElement>("virtual-cage-list");
+  list.replaceChildren();
+
+  for (const vc of vcs) {
+    const item = document.createElement("div");
+    item.className = "vc-item";
+
+    const header = document.createElement("div");
+    header.className = "vc-item-header";
+    header.textContent =
+      `total ${vc.total} — ${vc.cells.length} cells: ` +
+      vc.cells.map(([r, c]) => `r${r + 1}c${c + 1}`).join(" ");
+    item.appendChild(header);
+
+    const solns = document.createElement("div");
+    solns.className = "vc-solutions";
+    if (vc.solutions.length === 0) {
+      const p = document.createElement("span");
+      p.className = "soln-item auto-impossible";
+      p.textContent = "(no valid solutions)";
+      solns.appendChild(p);
+    } else {
+      for (const soln of vc.solutions) {
+        const span = document.createElement("span");
+        span.className = "soln-item active";
+        span.textContent = `{${soln.join(",")}}`;
+        solns.appendChild(span);
+      }
+    }
+    item.appendChild(solns);
+    list.appendChild(item);
+  }
+}
+
+async function submitVirtualCage(): Promise<void> {
+  if (!currentSessionId || virtualCageSelection.size < 2) return;
+  const totalInput = el<HTMLInputElement>("vc-total-input");
+  const total = Number(totalInput.value);
+  if (!total || total < 3) {
+    totalInput.focus();
+    return;
+  }
+  const cells = [...virtualCageSelection].map((key) => {
+    const parts = key.split(",");
+    return [Number(parts[0]), Number(parts[1])] as [number, number];
+  });
+  try {
+    const res = await fetch(`/api/puzzle/${currentSessionId}/virtual-cages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cells, total } satisfies AddVirtualCageRequest),
+    });
+    if (!res.ok) {
+      const err = (await res.json()) as { detail: string };
+      setStatus(`Virtual cage error: ${err.detail}`, true);
+      return;
+    }
+    currentState = await res.json();
+    // Exit drawing mode and reset form
+    virtualCageMode = false;
+    virtualCageSelection = new Set();
+    el<HTMLElement>("vc-form").hidden = true;
+    totalInput.value = "";
+    el<HTMLButtonElement>("virtual-cage-btn").textContent = "Virtual cage";
+    void fetchCandidates();
+  } catch (e) {
+    setStatus(`Virtual cage error: ${String(e)}`, true);
   }
 }
 
@@ -834,7 +953,21 @@ el<HTMLCanvasElement>("grid-canvas").addEventListener("mousedown", (e) => {
       selectedCell = { row, col };
       redrawGrid();
     }
-    if (inspectCageMode && currentState) {
+    if (virtualCageMode) {
+      // Toggle cell in/out of virtual cage selection (0-based key)
+      const key = `${row - 1},${col - 1}`;
+      if (virtualCageSelection.has(key)) {
+        virtualCageSelection.delete(key);
+      } else {
+        virtualCageSelection.add(key);
+      }
+      const n = virtualCageSelection.size;
+      el<HTMLElement>("vc-selection-status").textContent =
+        n === 0
+          ? "Click cells on the grid"
+          : `${n} cell${n === 1 ? "" : "s"} selected`;
+      redrawGrid();
+    } else if (inspectCageMode && currentState) {
       const clickedCage = currentState.cages.find((cage) =>
         cage.cells.some((cp) => cp.row === row && cp.col === col)
       );
@@ -876,15 +1009,20 @@ el<HTMLButtonElement>("candidates-btn").addEventListener("click", () => {
   el<HTMLButtonElement>("edit-candidates-btn").hidden = !showCandidates;
   el<HTMLButtonElement>("help-candidates-btn").hidden = !showCandidates;
   el<HTMLButtonElement>("inspect-cage-btn").hidden = !showCandidates;
+  el<HTMLButtonElement>("virtual-cage-btn").hidden = !showCandidates;
   if (!showCandidates) {
     currentCandidates = null;
     candidateEditMode = false;
-    el<HTMLButtonElement>("edit-candidates-btn").textContent =
-      "Edit candidates";
+    el<HTMLButtonElement>("edit-candidates-btn").textContent = "Edit candidates";
     inspectCageMode = false;
     el<HTMLButtonElement>("inspect-cage-btn").textContent = "Inspect cage";
     el<HTMLElement>("inspector-col").hidden = true;
     inspectedCageLabel = null;
+    virtualCageMode = false;
+    virtualCageSelection = new Set();
+    el<HTMLButtonElement>("virtual-cage-btn").textContent = "Virtual cage";
+    el<HTMLElement>("vc-form").hidden = true;
+    el<HTMLElement>("virtual-cage-col").hidden = true;
     redrawGrid();
   } else {
     void fetchCandidates();
@@ -910,6 +1048,44 @@ el<HTMLButtonElement>("inspect-cage-btn").addEventListener("click", () => {
     el<HTMLElement>("inspector-col").hidden = true;
     inspectedCageLabel = null;
   }
+});
+
+el<HTMLButtonElement>("virtual-cage-btn").addEventListener("click", () => {
+  virtualCageMode = !virtualCageMode;
+  const btn = el<HTMLButtonElement>("virtual-cage-btn");
+  btn.textContent = virtualCageMode ? "Stop drawing" : "Virtual cage";
+  const form = el<HTMLElement>("vc-form");
+  if (virtualCageMode) {
+    virtualCageSelection = new Set();
+    el<HTMLElement>("vc-selection-status").textContent = "Click cells on the grid";
+    el<HTMLInputElement>("vc-total-input").value = "";
+    form.hidden = false;
+    el<HTMLElement>("virtual-cage-col").hidden = false;
+    redrawGrid();
+  } else {
+    virtualCageSelection = new Set();
+    form.hidden = true;
+    // Keep column visible if there are existing virtual cages
+    if (currentCandidates === null || currentCandidates.virtual_cages.length === 0) {
+      el<HTMLElement>("virtual-cage-col").hidden = true;
+    }
+    redrawGrid();
+  }
+});
+
+el<HTMLButtonElement>("vc-add-btn").addEventListener("click", () => {
+  void submitVirtualCage();
+});
+
+el<HTMLButtonElement>("vc-cancel-btn").addEventListener("click", () => {
+  virtualCageMode = false;
+  virtualCageSelection = new Set();
+  el<HTMLButtonElement>("virtual-cage-btn").textContent = "Virtual cage";
+  el<HTMLElement>("vc-form").hidden = true;
+  if (currentCandidates === null || currentCandidates.virtual_cages.length === 0) {
+    el<HTMLElement>("virtual-cage-col").hidden = true;
+  }
+  redrawGrid();
 });
 
 el<HTMLButtonElement>("close-help-btn").addEventListener("click", () => {
