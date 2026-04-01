@@ -817,9 +817,12 @@ def make_router(
                     set().union(*remaining) if remaining else set()
                 )
                 removed_here = removed_by_cell.get((r, c), set())
-                # Solver view adds back user_removed so frontend can render
-                # them struck-through (user overrides, not solver conclusions).
-                solver_cands = (board.candidates[r][c] | removed_here) & cage_possible
+                # Active candidates: engine's view filtered by remaining cage
+                # solutions.  User-removed digits are unioned in afterwards so
+                # they always appear for strikethrough rendering, even after
+                # SolutionMapFilter prunes cage_solns (which would otherwise
+                # silently drop the hint's promised strikethroughs).
+                solver_cands = (board.candidates[r][c] & cage_possible) | removed_here
                 row.append(
                     CellInfo(
                         candidates=sorted(solver_cands),

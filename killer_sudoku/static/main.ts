@@ -1293,11 +1293,11 @@ el<HTMLButtonElement>("hint-apply-btn").addEventListener("click", async () => {
     // Placement hint: enter the digit via the cell endpoint
     const [row, col, digit] = activeHintItem.placement;
     const resp = await fetch(`/api/puzzle/${currentSessionId}/cell`, {
-      method: "POST",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ row, col, digit }),
+      body: JSON.stringify({ row: row + 1, col: col + 1, digit }),
     });
-    if (!resp.ok) throw new Error(`POST cell failed: ${resp.status} ${await resp.text()}`);
+    if (!resp.ok) throw new Error(`PATCH cell failed: ${resp.status} ${await resp.text()}`);
     currentState = await resp.json();
   } else if (activeHintItem.virtual_cage_suggestion !== null) {
     // T3 virtual cage suggestion: register the suggested cage
