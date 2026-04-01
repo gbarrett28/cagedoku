@@ -1320,7 +1320,12 @@ def make_router(
         always_apply = frozenset(settings_store.load().always_apply_rules)
         _board, engine = _build_engine(state, always_apply)
 
-        raw_hints = engine.pending_hints
+        raw_hints = [
+            h
+            for h in engine.pending_hints
+            if h.placement is None
+            or state.user_grid[h.placement[0]][h.placement[1]] == 0
+        ]
 
         # Stratify linear hints: T1 > T2 > T3.
         # T1: LinearElimination placement hints

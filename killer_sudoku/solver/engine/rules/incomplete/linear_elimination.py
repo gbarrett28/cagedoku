@@ -115,7 +115,9 @@ class LinearElimination:
         }
 
         hints: list[HintResult] = []
-        for vcells, vtotal, _distinct, _solns in ctx.board.linear_system.virtual_cages:
+        for vcells, vtotal, distinct, _solns in ctx.board.linear_system.virtual_cages:
+            if not distinct:
+                continue  # non-burb VCs can't be added as distinct=True cages
             if len(vcells) > 3 or len(vcells) < 2:
                 continue
             if vcells in user_vc_cell_sets:

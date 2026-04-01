@@ -225,6 +225,13 @@ class CageConfinement:
         matches: list[_ConfinementMatch] = []
         for n in range(1, self._max_n + 1):
             for combo in combinations(range(len(cage_info)), n):
+                # Pigeonhole requires disjoint cages: overlapping cells mean one
+                # copy of d can satisfy multiple cages, invalidating the argument.
+                combo_cells = [cage_info[i][0] for i in combo]
+                all_cells_flat = [c for cells in combo_cells for c in cells]
+                if len(all_cells_flat) != len(set(all_cells_flat)):
+                    continue  # overlapping cells — argument unsound
+
                 combined_uid = frozenset().union(*(cage_info[i][1] for i in combo))
                 if len(combined_uid) != n:
                     continue  # cages span fewer or more units than required
