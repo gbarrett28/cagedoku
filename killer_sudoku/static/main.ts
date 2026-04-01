@@ -406,13 +406,25 @@ function drawGrid(
         const removedSet = new Set(cell.user_removed);
         const essSet = mustContainByCell.get(`${r},${c}`) ?? new Set<number>();
         for (let n = 1; n <= 9; n++) {
-          if (!candSet.has(n) || removedSet.has(n)) continue;
           const subRow = Math.floor((n - 1) / 3);
           const subCol = (n - 1) % 3;
           const cx = MARGIN + c * CELL + (subCol + 0.5) * SUB_W;
           const cy = MARGIN + r * CELL + CAND_TOP + (subRow + 0.5) * SUB_H;
-          ctx.fillStyle = essSet.has(n) ? "#ffb5a7" : "#9ca3af";
-          ctx.fillText(String(n), cx, cy);
+          if (removedSet.has(n)) {
+            // Struck-through: draw the digit dimmed with a horizontal line.
+            ctx.fillStyle = "#d1d5db";
+            ctx.fillText(String(n), cx, cy);
+            const hw = SUB_W * 0.35;
+            ctx.strokeStyle = "#6b7280";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(cx - hw, cy);
+            ctx.lineTo(cx + hw, cy);
+            ctx.stroke();
+          } else if (candSet.has(n)) {
+            ctx.fillStyle = essSet.has(n) ? "#ffb5a7" : "#9ca3af";
+            ctx.fillText(String(n), cx, cy);
+          }
         }
       }
     }
@@ -1279,6 +1291,7 @@ el<HTMLButtonElement>("hint-apply-btn").addEventListener("click", async () => {
   if (!activeHintItem || !currentSessionId) return;
   (el<HTMLDialogElement>("hint-modal") as HTMLDialogElement).close();
   clearHintHighlight();
+  try {
 
   if (activeHintItem.rewind_to_turn_idx !== null) {
     // Rewind hint: discard all turns after the last consistent state
@@ -1321,6 +1334,9 @@ el<HTMLButtonElement>("hint-apply-btn").addEventListener("click", async () => {
     currentState = await resp.json();
   }
   refreshDisplay();
+  } catch (e) {
+    setStatus(`Hint apply failed: ${String(e)}`, true);
+  }
 });
 
 el<HTMLButtonElement>("hint-close-btn").addEventListener("click", () => {
