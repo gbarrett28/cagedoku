@@ -128,6 +128,48 @@ class NumberRecognitionConfig:
 
 
 @dataclasses.dataclass(frozen=True)
+class CellScanConfig:
+    """Parameters for Stage 3: lightweight per-cell classification.
+
+    Detects which cells contain cage totals (small contour in top-left quadrant)
+    or pre-filled digits (large centred contour) before border detection runs.
+    Output is used to anchor border clustering in Stage 4.
+    """
+
+    classic_min_size_fraction: float = 1.0 / 3.0
+    """Minimum contour dimension as a fraction of subres for classic digit detection.
+
+    A pre-filled digit occupies at least one-third of the cell in both dimensions.
+    """
+
+    anchor_confidence_threshold: float = 0.5
+    """Minimum cage_total_confidence for a cell to contribute positive border anchors.
+
+    Cells whose cage_total_confidence meets this threshold are treated as cage heads;
+    their top and left inner borders are used as positive anchors for clustering.
+    """
+
+
+@dataclasses.dataclass(frozen=True)
+class BorderClusteringConfig:
+    """Parameters for Stage 4: format-agnostic anchored border clustering.
+
+    Classifies each of the 144 inner borders as cage/non-cage using per-image
+    k-means clustering, anchored by cage-total cells detected in Stage 3.
+    """
+
+    sample_fraction: int = 4
+    """Strip half-width divisor: half_width = subres // sample_fraction pixels."""
+
+    sample_margin: int = 16
+    """Strip end inset divisor: margin = subres // sample_margin pixels from each end.
+
+    Removes pixels at both ends of the strip to avoid sampling digit ink
+    in adjacent cells.
+    """
+
+
+@dataclasses.dataclass(frozen=True)
 class ImagePipelineConfig:
     """Top-level configuration for the image processing pipeline."""
 
@@ -143,6 +185,23 @@ class ImagePipelineConfig:
     number_recognition: NumberRecognitionConfig = dataclasses.field(
         default_factory=NumberRecognitionConfig
     )
+    cell_scan: CellScanConfig = dataclasses.field(default_factory=CellScanConfig)
+    """Stage 3 cell-scan configuration."""
+
+    border_clustering: BorderClusteringConfig = dataclasses.field(
+        default_factory=BorderClusteringConfig
+    )
+    """Stage 4 anchored-clustering configuration."""
+
+    poc_border_clustering: bool = False
+    """Run the new anchored-clustering pipeline in parallel with the existing pipeline.
+
+    When True, InpImage.__init__ also runs Stage 3 (cell scan) and Stage 4
+    (border clustering), converts the soft border assignments to hard ones, compares
+    them with the existing pipeline output, and logs any discrepancies.  The primary
+    pipeline (existing Guardian/Observer detection) is unchanged; this flag enables
+    Phase 1 proof-of-concept comparison only.
+    """
 
     n_jobs: int = -1
     """Number of parallel worker processes for batch operations.
