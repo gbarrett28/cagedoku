@@ -6,6 +6,7 @@ detection pipeline, and populates a PicInfo.
 """
 
 import dataclasses
+import logging
 import pickle as pk
 from pathlib import Path
 from typing import Any
@@ -14,11 +15,13 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 
+from killer_sudoku.image.border_clustering import cluster_borders
 from killer_sudoku.image.border_detection import (
     BorderPCA1D,
     detect_borders_peak_count,
     load_observer_border_detector,
 )
+from killer_sudoku.image.cell_scan import scan_cells
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.grid_location import get_gry_img, locate_grid
 from killer_sudoku.image.number_recognition import (
@@ -31,6 +34,8 @@ from killer_sudoku.image.number_recognition import (
 from killer_sudoku.image.validation import validate_cage_layout
 from killer_sudoku.solver.grid import ProcessingError
 from killer_sudoku.solver.puzzle_spec import PuzzleSpec
+
+_log = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass
@@ -131,6 +136,23 @@ class InpImage:
         self.info.border_x, self.info.border_y = self._identify_borders(
             gry, m, config, border_detector
         )
+
+        if config.poc_border_clustering:
+            poc_bx, poc_by = self._identify_borders_poc(gry, m, config)
+            diff_x = int(np.sum(poc_bx != self.info.border_x))
+            diff_y = int(np.sum(poc_by != self.info.border_y))
+            total = int(self.info.border_x.size + self.info.border_y.size)
+            if diff_x + diff_y == 0:
+                _log.info("poc_border_clustering: MATCH — all %d borders agree", total)
+            else:
+                _log.warning(
+                    "poc_border_clustering: MISMATCH — %d/%d borders differ "
+                    "(border_x: %d, border_y: %d)",
+                    diff_x + diff_y,
+                    total,
+                    diff_x,
+                    diff_y,
+                )
 
         brdrs: npt.NDArray[np.bool_] = np.full(
             shape=(9, 9, 4), fill_value=True, dtype=bool
@@ -280,6 +302,50 @@ class InpImage:
                 brdrsv[row - 1, col] = bool(isbv_val)
 
         return brdrsh, brdrsv
+
+    def _identify_borders_poc(
+        self,
+        gry: npt.NDArray[np.uint8],
+        m: npt.NDArray[np.float64],
+        config: ImagePipelineConfig,
+    ) -> tuple[npt.NDArray[np.bool_], npt.NDArray[np.bool_]]:
+        """Run the PoC format-agnostic pipeline (Stages 3 + 4) for comparison.
+
+        Applies cell scan (Stage 3) followed by anchored border clustering
+        (Stage 4).  Converts soft probabilities to hard border assignments by
+        thresholding at 0.5 (uncertain borders, P==0.5, default to False).
+
+        Args:
+            gry: Grayscale source image.
+            m: Perspective transform matrix from locate_grid.
+            config: Pipeline configuration.
+
+        Returns:
+            (border_x, border_y) hard bool arrays, shapes (9, 8) and (8, 9).
+        """
+        resolution = config.resolution
+        subres = config.subres
+
+        warped_gry: npt.NDArray[np.uint8] = np.asarray(
+            cv2.warpPerspective(
+                gry, m, (resolution, resolution), flags=cv2.INTER_LINEAR
+            ),
+            dtype=np.uint8,
+        )
+
+        cage_conf, _classic_conf = scan_cells(warped_gry, subres, config.cell_scan)
+
+        bx_prob, by_prob = cluster_borders(
+            warped_gry,
+            cage_conf,
+            subres,
+            config.border_clustering,
+            config.cell_scan.anchor_confidence_threshold,
+        )
+
+        border_x: npt.NDArray[np.bool_] = bx_prob > 0.5
+        border_y: npt.NDArray[np.bool_] = by_prob > 0.5
+        return border_x, border_y
 
     @staticmethod
     def _build_cage_totals(
