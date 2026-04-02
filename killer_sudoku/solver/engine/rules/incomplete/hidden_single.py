@@ -11,6 +11,20 @@ from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.types import Elimination, RuleResult, Trigger, UnitKind
 
 
+def _unit_label(ctx: RuleContext) -> str:
+    """Return a human-readable label for the triggering unit."""
+    assert ctx.unit is not None
+    uid = ctx.unit.unit_id
+    if ctx.unit.kind == UnitKind.ROW:
+        return f"row {uid + 1}"
+    if ctx.unit.kind == UnitKind.COL:
+        return f"column {uid - 9 + 1}"
+    if ctx.unit.kind == UnitKind.BOX:
+        return f"box {uid - 18 + 1}"
+    # CAGE: unit_id is 27 + cage_idx; use a generic label
+    return "this cage"
+
+
 class HiddenSingle:
     """R2: when exactly one cell in a unit can hold a digit, place it there.
 
@@ -66,5 +80,37 @@ class HiddenSingle:
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]
     ) -> list[HintResult]:
-        """Placeholder - incomplete rule, no coaching hint yet."""
-        return []
+        """Return a hint identifying the forced cell and explaining why.
+
+        The sole cell is identified from eliminations (all share the same cell).
+        For cage units the explanation notes the essential-digit requirement.
+        """
+        if not eliminations:
+            return []
+        assert ctx.hint_digit is not None
+        d = ctx.hint_digit
+        sole = eliminations[0].cell
+        r, c = sole
+
+        if ctx.unit is not None and ctx.unit.kind == UnitKind.CAGE:
+            explanation = (
+                f"{d} is the only candidate for r{r + 1}c{c + 1} in this cage,"
+                f" and {d} is essential to every remaining cage solution."
+                f" Place {d} there by eliminating all other candidates."
+            )
+        else:
+            explanation = (
+                f"{d} can only go in r{r + 1}c{c + 1} within {_unit_label(ctx)}."
+                f" Eliminate all other candidates from that cell to place {d}."
+            )
+
+        return [
+            HintResult(
+                rule_name=self.name,
+                display_name="Hidden Single",
+                explanation=explanation,
+                highlight_cells=frozenset({sole}),
+                eliminations=eliminations,
+                placement=None,
+            )
+        ]

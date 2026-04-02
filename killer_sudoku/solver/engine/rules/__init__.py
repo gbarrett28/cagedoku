@@ -10,6 +10,7 @@ usable in three ways:
 Priority order (ascending = higher priority = fired first):
   0  NakedSingle              — CELL_DETERMINED (recognition + placement hint)
   0  CellSolutionElimination  — CELL_SOLVED (peer cleanup; DEFAULT_ALWAYS_APPLY)
+  1  HiddenSingle             — COUNT_HIT_ONE (row/col/box/cage)
   1  CageCandidateFilter      — COUNT_DECREASED / SOLUTION_PRUNED (DEFAULT_ALWAYS_APPLY)
   2  SolutionMapFilter        — COUNT_DECREASED / SOLUTION_PRUNED
   3  MustContainOutie         — COUNT_DECREASED / SOLUTION_PRUNED
@@ -30,6 +31,7 @@ from killer_sudoku.solver.engine.rules.cell_solution_elimination import (
 from killer_sudoku.solver.engine.rules.incomplete.delta_constraint import (
     DeltaConstraint,
 )
+from killer_sudoku.solver.engine.rules.incomplete.hidden_single import HiddenSingle
 from killer_sudoku.solver.engine.rules.incomplete.linear_elimination import (
     LinearElimination,
 )
@@ -55,6 +57,7 @@ def default_rules() -> list[SolverRule]:
     return [
         NakedSingle(),
         CellSolutionElimination(),
+        HiddenSingle(),
         CageCandidateFilter(),
         SolutionMapFilter(),
         MustContainOutie(),
