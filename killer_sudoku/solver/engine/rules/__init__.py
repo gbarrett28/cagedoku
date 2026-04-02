@@ -14,6 +14,7 @@ Priority order (ascending = higher priority = fired first):
   2  SolutionMapFilter        — COUNT_DECREASED / SOLUTION_PRUNED
   3  MustContainOutie         — COUNT_DECREASED / SOLUTION_PRUNED
   4  CageConfinement          — GLOBAL
+  6  NakedPair                — COUNT_HIT_TWO (row/col/box)
 
 Rules without hint implementations live in ``rules/incomplete/`` and are used
 only by the batch solver.  See that sub-package's docstring for how to graduate
@@ -32,6 +33,7 @@ from killer_sudoku.solver.engine.rules.incomplete.delta_constraint import (
 from killer_sudoku.solver.engine.rules.incomplete.linear_elimination import (
     LinearElimination,
 )
+from killer_sudoku.solver.engine.rules.incomplete.naked_pair import NakedPair
 from killer_sudoku.solver.engine.rules.incomplete.sum_pair_constraint import (
     SumPairConstraint,
 )
@@ -57,6 +59,7 @@ def default_rules() -> list[SolverRule]:
         SolutionMapFilter(),
         MustContainOutie(),
         CageConfinement(),
+        NakedPair(),
         LinearElimination(),
         DeltaConstraint(),
         SumPairConstraint(),

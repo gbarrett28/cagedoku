@@ -969,7 +969,8 @@ def make_router(
         trimmed = state.model_copy(update={"history": state.history[:-1]})
         updated = _rebuild_user_grid(trimmed)
         always_apply = frozenset(settings_store.load().always_apply_rules)
-        _board, _engine = _build_engine(updated, always_apply)
+        _board, engine = _build_engine(updated, always_apply)
+        updated = _apply_auto_placements(updated, engine)
         store.save(updated)
         return updated
 
@@ -1002,7 +1003,8 @@ def make_router(
         trimmed = state.model_copy(update={"history": state.history[: req.turn_idx]})
         updated = _rebuild_user_grid(trimmed)
         always_apply = frozenset(settings_store.load().always_apply_rules)
-        _board, _engine = _build_engine(updated, always_apply)
+        _board, engine = _build_engine(updated, always_apply)
+        updated = _apply_auto_placements(updated, engine)
         store.save(updated)
         return updated
 
@@ -1293,7 +1295,8 @@ def make_router(
         ]
         updated = state.model_copy(update={"cages": updated_cages})
         always_apply = frozenset(settings_store.load().always_apply_rules)
-        _board, _engine = _build_engine(updated, always_apply)
+        _board, engine = _build_engine(updated, always_apply)
+        updated = _apply_auto_placements(updated, engine)
         store.save(updated)
         return updated
 
@@ -1462,7 +1465,9 @@ def make_router(
             raise HTTPException(status_code=409, detail="Session not yet confirmed")
 
         always_apply = frozenset(settings_store.load().always_apply_rules)
-        _board, _engine = _build_engine(state, always_apply)
+        _board, engine = _build_engine(state, always_apply)
+        state = _apply_auto_placements(state, engine)
+        store.save(state)
         return state
 
     return router

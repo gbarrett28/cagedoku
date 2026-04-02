@@ -9,7 +9,23 @@ from __future__ import annotations
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Elimination, RuleResult, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import (
+    Elimination,
+    RuleResult,
+    Trigger,
+    Unit,
+    UnitKind,
+)
+
+
+def _unit_label(unit: Unit) -> str:
+    """Return a human-readable label for a unit, e.g. 'row 1', 'box 3'."""
+    if unit.kind == UnitKind.ROW:
+        return f"row {unit.unit_id + 1}"
+    if unit.kind == UnitKind.COL:
+        return f"column {unit.unit_id - 9 + 1}"
+    box = unit.unit_id - 18
+    return f"box {box + 1}"
 
 
 class NakedPair:
@@ -55,5 +71,43 @@ class NakedPair:
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]
     ) -> list[HintResult]:
-        """Placeholder - incomplete rule, no coaching hint yet."""
-        return []
+        """Return a hint identifying the pair cells and the eliminations they allow.
+
+        Reconstructs the pair from the board (same logic as apply()) so the hint
+        can name the two cells and the shared digit set in the explanation.
+        """
+        if not eliminations:
+            return []
+        assert ctx.unit is not None
+        assert ctx.hint_digit is not None
+        board = ctx.board
+        cells = list(ctx.unit.cells)
+        d1 = ctx.hint_digit
+
+        d1_cells = [cell for cell in cells if d1 in board.candidates[cell[0]][cell[1]]]
+        if len(d1_cells) != 2:
+            return []
+        c1, c2 = d1_cells
+        cands1 = board.candidates[c1[0]][c1[1]]
+        cands2 = board.candidates[c2[0]][c2[1]]
+        if len(cands1) != 2 or cands1 != cands2:
+            return []
+        d2 = (cands1 - {d1}).pop()
+        d_lo, d_hi = min(d1, d2), max(d1, d2)
+
+        highlight = frozenset({c1, c2} | {e.cell for e in eliminations})
+        return [
+            HintResult(
+                rule_name=self.name,
+                display_name="Naked Pair",
+                explanation=(
+                    f"r{c1[0] + 1}c{c1[1] + 1} and r{c2[0] + 1}c{c2[1] + 1} both have"
+                    f" only {{{d_lo},{d_hi}}} as candidates in"
+                    f" {_unit_label(ctx.unit)}. These digits can be eliminated"
+                    f" from all other cells in that unit."
+                ),
+                highlight_cells=highlight,
+                eliminations=eliminations,
+                placement=None,
+            )
+        ]
