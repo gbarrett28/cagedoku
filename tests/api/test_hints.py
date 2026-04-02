@@ -274,22 +274,36 @@ class TestApplyCageConfinement:
     def test_n1_hint_eliminates_7_from_row1(
         self, client: TestClient, g10_state: PuzzleState
     ) -> None:
-        """n=1: digit 7 in cage D is confined to row 1; eliminated from r1c1, r1c2."""
-        cc_hints = self._apply_mco_and_get_confinement_hints(
-            client, g10_state.session_id
-        )
-        n1 = next(
+        """Digit 7 in cage D is confined to row 1; eliminated from external row-1 cells.
+
+        Since CageIntersection was promoted (priority=2), it now handles the single-cage
+        confinement case before CageConfinement (priority=12).  CageConfinement n=1 is
+        therefore deduplicated away.  The test verifies the elimination outcome regardless
+        of which rule produces it.
+        """
+        # After applying MCO, digit 7 must be eliminated from row 1 cells outside cage D.
+        # CageIntersection now produces this hint (cage D's 7-candidates confined to row 1).
+        hints = _get_hints(client, g10_state.session_id)
+        mco = next(h for h in hints if h["rule_name"] == "MustContainOutie")
+        _apply_hint(client, g10_state.session_id, mco["eliminations"])
+
+        hints2 = _get_hints(client, g10_state.session_id)
+        # Look for any hint that eliminates 7 from row 0 cells (row 1 in 1-based)
+        row1_d7_hint = next(
             (
                 h
-                for h in cc_hints
-                if h["display_name"] == "Essential digit confined (1 cage)"
+                for h in hints2
+                if any(
+                    e["digit"] == 7 and e["cell"][0] == 0
+                    for e in h["eliminations"]
+                )
             ),
             None,
         )
-        assert n1 is not None, "n=1 CageConfinement hint missing"
-        assert n1["eliminations"], "n=1 hint has no eliminations"
-        # Every elimination must be digit 7 in row 0 (1-based row 1)
-        for elim in n1["eliminations"]:
+        assert row1_d7_hint is not None, (
+            "Expected a hint eliminating digit 7 from row 1 after MCO"
+        )
+        for elim in row1_d7_hint["eliminations"]:
             assert elim["digit"] == 7
             assert elim["cell"][0] == 0  # row 0 (0-based) = row 1 (1-based)
 
@@ -314,19 +328,24 @@ class TestApplyCageConfinement:
     def test_applying_n1_confinement_marks_user_removed(
         self, client: TestClient, g10_state: PuzzleState
     ) -> None:
-        """Applying the n=1 CageConfinement hint marks digit 7 as user_removed."""
+        """Applying the row-1 digit-7 elimination hint marks digits as user_removed.
+
+        CageIntersection now handles single-cage confinement (was CageConfinement n=1).
+        The test applies whichever hint eliminates 7 from row 1 and checks user_removed.
+        """
         # Apply MustContainOutie first
         hints = _get_hints(client, g10_state.session_id)
         mco = next(h for h in hints if h["rule_name"] == "MustContainOutie")
         _apply_hint(client, g10_state.session_id, mco["eliminations"])
 
-        # Get CageConfinement n=1 hint and apply it
+        # Get the hint that eliminates 7 from row 1 (now produced by CageIntersection)
         hints2 = _get_hints(client, g10_state.session_id)
         n1 = next(
             h
             for h in hints2
-            if h["rule_name"] == "CageConfinement"
-            and h["display_name"] == "Essential digit confined (1 cage)"
+            if any(
+                e["digit"] == 7 and e["cell"][0] == 0 for e in h["eliminations"]
+            )
         )
         _apply_hint(client, g10_state.session_id, n1["eliminations"])
 
