@@ -1005,6 +1005,8 @@ el<HTMLCanvasElement>("grid-canvas").addEventListener("mousedown", (e) => {
 document.addEventListener("keydown", (e) => {
   if (currentState?.user_grid == null) return;
   if (selectedCell === null) return;
+  // Don't steal keypresses from the virtual-cage total input field.
+  if (document.activeElement === el<HTMLInputElement>("vc-total-input")) return;
   if (showCandidates && candidateEditMode) {
     if (e.key >= "1" && e.key <= "9") {
       void handleCandidateCycle(
