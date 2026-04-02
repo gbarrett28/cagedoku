@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
+from killer_sudoku.solver.engine.rules._registry import hintable_rule
 from killer_sudoku.solver.engine.types import (
     Cell,
     Elimination,
@@ -30,6 +31,7 @@ def _cell_label(cell: Cell) -> str:
     return f"r{r + 1}c{c + 1}"
 
 
+@hintable_rule
 class CageCandidateFilter:
     """Restrict cage cell candidates to digits present in at least one cage solution."""
 

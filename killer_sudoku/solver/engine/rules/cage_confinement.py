@@ -26,6 +26,13 @@ from itertools import combinations
 from killer_sudoku.solver.engine.board_state import BoardState
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
+from killer_sudoku.solver.engine.rules._labels import (
+    cell_label,
+    type_unit_id,
+    unit_label,
+    unit_type_label,
+)
+from killer_sudoku.solver.engine.rules._registry import hintable_rule
 from killer_sudoku.solver.engine.types import (
     Cell,
     Elimination,
@@ -46,52 +53,19 @@ class _ConfinementMatch:
     eliminations: list[Elimination]
 
 
-def _cell_label(cell: Cell) -> str:
-    """Return rNcM notation (1-based) for a cell."""
-    r, c = cell
-    return f"r{r + 1}c{c + 1}"
-
-
-def _unit_label(unit: Unit) -> str:
-    """Return a human-readable label for a unit, e.g. 'row 1', 'column 5'."""
-    if unit.kind == UnitKind.ROW:
-        return f"row {unit.unit_id + 1}"
-    if unit.kind == UnitKind.COL:
-        return f"column {unit.unit_id - 9 + 1}"
-    return f"box {unit.unit_id - 18 + 1}"
-
-
-def _unit_type_label(kind: UnitKind) -> str:
-    """Return the plural noun for a unit type."""
-    if kind == UnitKind.ROW:
-        return "rows"
-    if kind == UnitKind.COL:
-        return "columns"
-    return "boxes"
-
-
-def _type_unit_id(kind: UnitKind, r: int, c: int) -> int:
-    """Return the board unit_id of the same-type unit containing cell (r, c)."""
-    if kind == UnitKind.ROW:
-        return r  # unit_ids 0–8
-    if kind == UnitKind.COL:
-        return 9 + c  # unit_ids 9–17
-    return 18 + (r // 3) * 3 + (c // 3)  # unit_ids 18–26
-
-
 def _build_hint(match: _ConfinementMatch) -> HintResult:
     """Construct a HintResult from a confirmed confinement match."""
     d = match.digit
     n = len(match.units)
     kind = match.units[0].kind
-    unit_labels = " and ".join(_unit_label(u) for u in match.units)
+    unit_labels = " and ".join(unit_label(u) for u in match.units)
     removed_cells = sorted(
-        {_cell_label(e.cell) for e in match.eliminations},
+        {cell_label(e.cell) for e in match.eliminations},
         key=lambda s: (int(s[1 : s.index("c")]), int(s[s.index("c") + 1 :])),
     )
     removed_str = ", ".join(removed_cells)
     cage_descs = [
-        "[" + ", ".join(sorted(_cell_label(c) for c in cells)) + "]"
+        "[" + ", ".join(sorted(cell_label(c) for c in cells)) + "]"
         for cells in match.cage_cells_list
     ]
     cages_str = " and ".join(cage_descs)
@@ -105,7 +79,7 @@ def _build_hint(match: _ConfinementMatch) -> HintResult:
             f"Eliminating {d} from {removed_str}."
         )
     else:
-        unit_type = _unit_type_label(kind)
+        unit_type = unit_type_label(kind)
         explanation = (
             f"Digit {d} is essential to cages {cages_str}. "
             f"Every possible placement of {d} in each cage lies within "
@@ -125,6 +99,7 @@ def _build_hint(match: _ConfinementMatch) -> HintResult:
     )
 
 
+@hintable_rule
 class CageConfinement:
     """CageConfinement(max_n): pigeonhole elimination when n cages fill n units.
 
@@ -224,7 +199,7 @@ class CageConfinement:
             d_unit_ids: set[int] = set()
             for r, c in unit.cells:
                 if d in board.candidates[r][c]:
-                    d_unit_ids.add(_type_unit_id(kind, r, c))
+                    d_unit_ids.add(type_unit_id(kind, r, c))
             if not d_unit_ids:
                 continue  # d already placed or fully removed from this cage
             cage_info.append((unit.cells, frozenset(d_unit_ids)))

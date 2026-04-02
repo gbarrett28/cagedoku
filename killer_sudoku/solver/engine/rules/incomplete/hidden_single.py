@@ -8,23 +8,12 @@ from __future__ import annotations
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
+from killer_sudoku.solver.engine.rules._labels import unit_label
+from killer_sudoku.solver.engine.rules._registry import hintable_rule
 from killer_sudoku.solver.engine.types import Elimination, RuleResult, Trigger, UnitKind
 
 
-def _unit_label(ctx: RuleContext) -> str:
-    """Return a human-readable label for the triggering unit."""
-    assert ctx.unit is not None
-    uid = ctx.unit.unit_id
-    if ctx.unit.kind == UnitKind.ROW:
-        return f"row {uid + 1}"
-    if ctx.unit.kind == UnitKind.COL:
-        return f"column {uid - 9 + 1}"
-    if ctx.unit.kind == UnitKind.BOX:
-        return f"box {uid - 18 + 1}"
-    # CAGE: unit_id is 27 + cage_idx; use a generic label
-    return "this cage"
-
-
+@hintable_rule
 class HiddenSingle:
     """R2: when exactly one cell in a unit can hold a digit, place it there.
 
@@ -99,8 +88,9 @@ class HiddenSingle:
                 f" Place {d} there by eliminating all other candidates."
             )
         else:
+            assert ctx.unit is not None
             explanation = (
-                f"{d} can only go in r{r + 1}c{c + 1} within {_unit_label(ctx)}."
+                f"{d} can only go in r{r + 1}c{c + 1} within {unit_label(ctx.unit)}."
                 f" Eliminate all other candidates from that cell to place {d}."
             )
 

@@ -21,10 +21,13 @@ Fires on COUNT_DECREASED (all unit kinds) and SOLUTION_PRUNED (cage only).
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Iterator
 
 from killer_sudoku.solver.engine.board_state import BoardState
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
+from killer_sudoku.solver.engine.rules._labels import cell_label, unit_label
+from killer_sudoku.solver.engine.rules._registry import hintable_rule
 from killer_sudoku.solver.engine.types import (
     Cell,
     Elimination,
@@ -48,25 +51,7 @@ class _Match:
     eliminations: list[Elimination]
 
 
-def _unit_label(unit: Unit) -> str:
-    """Return a human-readable label for a unit, e.g. 'row 1', 'column 5'."""
-    if unit.kind == UnitKind.ROW:
-        row = unit.unit_id  # 0-based
-        return f"row {row + 1}"
-    if unit.kind == UnitKind.COL:
-        col = unit.unit_id - 9  # 0-based
-        return f"column {col + 1}"
-    # BOX
-    box = unit.unit_id - 18  # 0-based, reading order
-    return f"box {box + 1}"
-
-
-def _cell_label(cell: Cell) -> str:
-    """Return rNcM notation (1-based) for a cell."""
-    r, c = cell
-    return f"r{r + 1}c{c + 1}"
-
-
+@hintable_rule
 class MustContainOutie:
     """R4b: single external cell with candidates ⊆ must-contain restricts the outie."""
 
@@ -134,19 +119,29 @@ class MustContainOutie:
         )
 
     @staticmethod
+    def _cage_must(solns: list[frozenset[int]]) -> set[int] | None:
+        """Return the intersection of all cage solutions, or None if empty."""
+        if not solns:
+            return None
+        must: set[int] = set(solns[0])
+        for s in solns[1:]:
+            must &= s
+        return must if must else None
+
+    @staticmethod
     def _build_hint(match: _Match) -> HintResult:
         """Construct a HintResult from a confirmed match."""
-        cage_labels = ", ".join(sorted(_cell_label(c) for c in match.cage_cells))
-        unit_lbl = _unit_label(match.unit)
-        ext_lbl = _cell_label(match.external_cell)
-        outie_lbl = _cell_label(match.outie)
+        cage_labels = ", ".join(sorted(cell_label(c) for c in match.cage_cells))
+        unit_lbl = unit_label(match.unit)
+        ext_lbl = cell_label(match.external_cell)
+        outie_lbl = cell_label(match.outie)
         must_str = "{" + ", ".join(str(d) for d in sorted(match.must)) + "}"
         x_cands_str = "{" + ", ".join(str(d) for d in sorted(match.x_cands)) + "}"
         removed = sorted({e.digit for e in match.eliminations})
         removed_str = ", ".join(str(d) for d in removed)
 
         inside_cells = sorted(
-            _cell_label(c) for c in match.cage_cells & match.unit.cells
+            cell_label(c) for c in match.cage_cells & match.unit.cells
         )
         inside_str = ", ".join(inside_cells)
 
@@ -171,32 +166,23 @@ class MustContainOutie:
             eliminations=match.eliminations,
         )
 
-    # ── SolverRule protocol ─────────────────────────────────────────────────
+    def _iter_matches(self, ctx: RuleContext) -> Iterator[_Match]:
+        """Yield every _Match for the trigger unit, deduplicating by unit/cage id.
 
-    def apply(self, ctx: RuleContext) -> RuleResult:
-        """Restrict outie candidates when one external cell qualifies.
-
-        When triggered by a cage unit: checks each row/col/box unit the cage
-        partially overlaps.  When triggered by a row/col/box: checks each cage
-        that partially overlaps that unit.  Non-burb cages are skipped.
+        For a CAGE trigger: iterates all non-cage units partially overlapping the cage.
+        For a ROW/COL/BOX trigger: iterates all cages partially overlapping the unit.
         """
         assert ctx.unit is not None
         board = ctx.board
-        elims: list[Elimination] = []
 
         if ctx.unit.kind == UnitKind.CAGE:
             if not ctx.unit.distinct_digits:
-                return RuleResult()
+                return
             cage_cells = ctx.unit.cells
             cage_idx = ctx.unit.unit_id - 27
-            solns = board.cage_solns[cage_idx]
-            if not solns:
-                return RuleResult()
-            must: set[int] = set(solns[0])
-            for s in solns[1:]:
-                must &= s
-            if not must:
-                return RuleResult()
+            must = self._cage_must(board.cage_solns[cage_idx])
+            if must is None:
+                return
             seen_unit_ids: set[int] = set()
             for r, c in cage_cells:
                 for uid in board.cell_unit_ids(r, c):
@@ -206,81 +192,7 @@ class MustContainOutie:
                     seen_unit_ids.add(uid)
                     m = self._find_match(cage_cells, must, unit, board)
                     if m is not None:
-                        elims.extend(m.eliminations)
-        else:
-            unit_cells = ctx.unit.cells
-            seen_cage_ids: set[int] = set()
-            for r, c in unit_cells:
-                for uid in board.cell_unit_ids(r, c):
-                    other = board.units[uid]
-                    if other.kind != UnitKind.CAGE or not other.distinct_digits:
-                        continue
-                    cage_idx = other.unit_id - 27
-                    if cage_idx in seen_cage_ids:
-                        continue
-                    seen_cage_ids.add(cage_idx)
-                    solns = board.cage_solns[cage_idx]
-                    if not solns:
-                        continue
-                    cage_must: set[int] = set(solns[0])
-                    for s in solns[1:]:
-                        cage_must &= s
-                    if not cage_must:
-                        continue
-                    m = self._find_match(other.cells, cage_must, ctx.unit, board)
-                    if m is not None:
-                        elims.extend(m.eliminations)
-
-        return RuleResult(eliminations=elims)
-
-    # ── Hint interface ──────────────────────────────────────────────────────
-
-    def as_hints(
-        self, ctx: RuleContext, eliminations: list[Elimination]
-    ) -> list[HintResult]:
-        """Return one HintResult per distinct (cage, unit) match for the trigger unit.
-
-        For a CAGE trigger: checks all non-cage units partially overlapping this cage.
-        For a ROW/COL/BOX trigger: checks all cages partially overlapping this unit.
-        Mirrors the apply() traversal but collects HintResults via _build_hint().
-        """
-        if not eliminations:
-            return []
-        assert ctx.unit is not None
-        board = ctx.board
-        hints: list[HintResult] = []
-        seen_elim_keys: set[tuple[tuple[int, int], int]] = set()
-
-        def _collect(cage_cells: frozenset[Cell], must: set[int], unit: Unit) -> None:
-            m = self._find_match(cage_cells, must, unit, board)
-            if m is None:
-                return
-            new_keys = {(e.cell, e.digit) for e in m.eliminations} - seen_elim_keys
-            if new_keys:
-                seen_elim_keys.update(new_keys)
-                hints.append(self._build_hint(m))
-
-        if ctx.unit.kind == UnitKind.CAGE:
-            if not ctx.unit.distinct_digits:
-                return []
-            cage_cells = ctx.unit.cells
-            cage_idx = ctx.unit.unit_id - 27
-            solns = board.cage_solns[cage_idx]
-            if not solns:
-                return []
-            must: set[int] = set(solns[0])
-            for s in solns[1:]:
-                must &= s
-            if not must:
-                return []
-            seen_unit_ids: set[int] = set()
-            for r, c in cage_cells:
-                for uid in board.cell_unit_ids(r, c):
-                    unit = board.units[uid]
-                    if unit.kind == UnitKind.CAGE or uid in seen_unit_ids:
-                        continue
-                    seen_unit_ids.add(uid)
-                    _collect(cage_cells, must, unit)
+                        yield m
         else:
             seen_cage_ids: set[int] = set()
             for r, c in ctx.unit.cells:
@@ -292,13 +204,43 @@ class MustContainOutie:
                     if cage_idx in seen_cage_ids:
                         continue
                     seen_cage_ids.add(cage_idx)
-                    solns = board.cage_solns[cage_idx]
-                    if not solns:
+                    must = self._cage_must(board.cage_solns[cage_idx])
+                    if must is None:
                         continue
-                    cage_must: set[int] = set(solns[0])
-                    for s in solns[1:]:
-                        cage_must &= s
-                    if not cage_must:
-                        continue
-                    _collect(other.cells, cage_must, ctx.unit)
+                    m = self._find_match(other.cells, must, ctx.unit, board)
+                    if m is not None:
+                        yield m
+
+    # ── SolverRule protocol ─────────────────────────────────────────────────
+
+    def apply(self, ctx: RuleContext) -> RuleResult:
+        """Restrict outie candidates when one external cell qualifies.
+
+        When triggered by a cage unit: checks each row/col/box unit the cage
+        partially overlaps.  When triggered by a row/col/box: checks each cage
+        that partially overlaps that unit.  Non-burb cages are skipped.
+        """
+        elims = [e for m in self._iter_matches(ctx) for e in m.eliminations]
+        return RuleResult(eliminations=elims)
+
+    # ── Hint interface ──────────────────────────────────────────────────────
+
+    def as_hints(
+        self, ctx: RuleContext, eliminations: list[Elimination]
+    ) -> list[HintResult]:
+        """Return one HintResult per distinct (cage, unit) match for the trigger unit.
+
+        For a CAGE trigger: checks all non-cage units partially overlapping this cage.
+        For a ROW/COL/BOX trigger: checks all cages partially overlapping this unit.
+        Uses _iter_matches() to avoid duplicating the traversal logic from apply().
+        """
+        if not eliminations:
+            return []
+        hints: list[HintResult] = []
+        seen_elim_keys: set[tuple[tuple[int, int], int]] = set()
+        for m in self._iter_matches(ctx):
+            new_keys = {(e.cell, e.digit) for e in m.eliminations} - seen_elim_keys
+            if new_keys:
+                seen_elim_keys.update(new_keys)
+                hints.append(self._build_hint(m))
         return hints

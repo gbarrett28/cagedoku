@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
+from killer_sudoku.solver.engine.rules._registry import hintable_rule
 from killer_sudoku.solver.engine.types import (
     Cell,
     Elimination,
@@ -13,6 +14,7 @@ from killer_sudoku.solver.engine.types import (
 )
 
 
+@hintable_rule
 class SumPairConstraint:
     """R7: narrow candidates using linear sum constraints.
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
+from killer_sudoku.solver.engine.rules._registry import hintable_rule
 from killer_sudoku.solver.engine.types import (
     Cell,
     Elimination,
@@ -61,6 +62,7 @@ def _per_cell_possible(
     return result
 
 
+@hintable_rule
 class SolutionMapFilter:
     """R4: per-cell feasibility filter for cage solutions."""
 

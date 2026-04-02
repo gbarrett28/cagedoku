@@ -19,9 +19,11 @@ from typing import ClassVar
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
+from killer_sudoku.solver.engine.rules._registry import hintable_rule
 from killer_sudoku.solver.engine.types import Elimination, RuleResult, Trigger, UnitKind
 
 
+@hintable_rule
 class LinearElimination:
     """Apply cells determined by the cage-sum linear system.
 
