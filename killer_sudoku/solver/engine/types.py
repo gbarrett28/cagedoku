@@ -66,6 +66,80 @@ class Elimination:
 
 
 @dataclasses.dataclass(frozen=True)
+class Placement:
+    """A digit placement in a cell, returned by apply() for placement rules.
+
+    Signals that the rule has determined the unique digit for a cell (e.g.
+    NakedSingle).  The engine records the placement in applied_placements;
+    the API layer promotes it to user_grid.
+    """
+
+    cell: Cell
+    digit: int
+
+
+@dataclasses.dataclass(frozen=True)
+class SolutionElimination:
+    """Direct removal of a cage solution, returned by apply().
+
+    Used by rules that can prove a specific cage combination is impossible
+    without going through individual candidate removals.  The engine removes
+    the solution from board.cage_solns and re-fires SOLUTION_PRUNED for the
+    affected cage unit.
+    """
+
+    cage_idx: int
+    solution: frozenset[int]
+
+
+@dataclasses.dataclass(frozen=True)
+class VirtualCageAddition:
+    """A derived sum constraint to register as a virtual cage.
+
+    Returned by rules that derive new cell-group sum equations (e.g. from
+    the linear system).  The engine collects these in applied_virtual_cages;
+    the API layer adds them to PuzzleState.virtual_cages.
+    """
+
+    cells: frozenset[Cell]
+    total: int
+
+
+@dataclasses.dataclass
+class RuleResult:
+    """Full return type for SolverRule.apply(), replacing list[Elimination].
+
+    Aggregates all four kinds of change a rule can produce:
+      eliminations        — remove digits from cell candidate sets
+      placements          — confirm a cell's digit (e.g. NakedSingle)
+      solution_eliminations — remove cage solutions directly
+      virtual_cage_additions — add derived sum constraints
+
+    All fields default to empty so rules that only produce one kind of result
+    can construct RuleResult with a single keyword argument.
+    """
+
+    eliminations: list[Elimination] = dataclasses.field(default_factory=list)
+    placements: list[Placement] = dataclasses.field(default_factory=list)
+    solution_eliminations: list[SolutionElimination] = dataclasses.field(
+        default_factory=list
+    )
+    virtual_cage_additions: list[VirtualCageAddition] = dataclasses.field(
+        default_factory=list
+    )
+
+    @property
+    def has_progress(self) -> bool:
+        """True if any result was produced (used by RuleStats)."""
+        return bool(
+            self.eliminations
+            or self.placements
+            or self.solution_eliminations
+            or self.virtual_cage_additions
+        )
+
+
+@dataclasses.dataclass(frozen=True)
 class BoardEvent:
     """Typed event returned by BoardState mutation methods.
 

@@ -25,7 +25,8 @@ def test_hidden_single_places_digit() -> None:
         hint=Trigger.COUNT_HIT_ONE,
         hint_digit=7,
     )
-    elims = HiddenSingle().apply(ctx)
+    result = HiddenSingle().apply(ctx)
+    elims = result.eliminations
     # Should eliminate all other candidates from (0,4)
     assert all(e.cell == (0, 4) for e in elims)
     assert all(e.digit != 7 for e in elims)
@@ -48,4 +49,4 @@ def test_hidden_single_no_sole_cell_returns_empty() -> None:
         hint=Trigger.COUNT_HIT_ONE,
         hint_digit=3,
     )
-    assert HiddenSingle().apply(ctx) == []
+    assert HiddenSingle().apply(ctx).eliminations == []

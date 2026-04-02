@@ -15,7 +15,13 @@ from __future__ import annotations
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import (
+    Cell,
+    Elimination,
+    RuleResult,
+    Trigger,
+    UnitKind,
+)
 
 
 def _cell_label(cell: Cell) -> str:
@@ -34,23 +40,25 @@ class CageCandidateFilter:
     )
     unit_kinds: frozenset[UnitKind] = frozenset({UnitKind.CAGE})
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """Eliminate digits from cage cells that appear in no remaining solution."""
         assert ctx.unit is not None
         if not ctx.unit.distinct_digits:
-            return []
+            return RuleResult()
         board = ctx.board
         cage_idx = ctx.unit.unit_id - 27
         solns = board.cage_solns[cage_idx]
         if not solns:
-            return []
+            return RuleResult()
         cage_possible: set[int] = set().union(*solns)
-        return [
-            Elimination(cell=(r, c), digit=d)
-            for r, c in ctx.unit.cells
-            for d in list(board.candidates[r][c])
-            if d not in cage_possible
-        ]
+        return RuleResult(
+            eliminations=[
+                Elimination(cell=(r, c), digit=d)
+                for r, c in ctx.unit.cells
+                for d in list(board.candidates[r][c])
+                if d not in cage_possible
+            ]
+        )
 
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]

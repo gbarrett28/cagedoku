@@ -7,14 +7,14 @@ For each active pair (p, q, delta) where value[p] - value[q] = delta:
 Fires on COUNT_DECREASED for any unit containing either cell of an active pair.
 CELL_DETERMINED is NOT in triggers â LinearSystem.substitute_cell (called in
 apply_eliminations) already handles cell determinations, so registering for
-CELL_DETERMINED would only queue wasted work items that return [].
+CELL_DETERMINED would only queue wasted work items that return RuleResult().
 """
 
 from __future__ import annotations
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import Elimination, RuleResult, Trigger, UnitKind
 
 
 class DeltaConstraint:
@@ -27,7 +27,7 @@ class DeltaConstraint:
         {UnitKind.ROW, UnitKind.COL, UnitKind.BOX, UnitKind.CAGE}
     )
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """Narrow candidate sets using active delta pairs touching this unit."""
 
         assert ctx.unit is not None
@@ -57,7 +57,7 @@ class DeltaConstraint:
                 for d in list(board.candidates[qr][qc]):
                     if d not in valid_q:
                         elims.append(Elimination(cell=q, digit=d))
-        return elims
+        return RuleResult(eliminations=elims)
 
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]

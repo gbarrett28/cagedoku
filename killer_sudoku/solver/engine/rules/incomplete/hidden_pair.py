@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import Elimination, RuleResult, Trigger, UnitKind
 
 
 class HiddenPair:
@@ -22,7 +22,7 @@ class HiddenPair:
         {UnitKind.ROW, UnitKind.COL, UnitKind.BOX}
     )
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """Find hidden pair using hint_digit; eliminate non-pair digits."""
         assert ctx.unit is not None
         assert ctx.hint_digit is not None
@@ -36,7 +36,7 @@ class HiddenPair:
             cell for cell in cells if d1 in board.candidates[cell[0]][cell[1]]
         ]
         if len(pair_cells) != 2:
-            return []
+            return RuleResult()
 
         # Find a second digit also confined to the same two cells
         elims: list[Elimination] = []
@@ -56,7 +56,7 @@ class HiddenPair:
                     if d not in (d1, d2):
                         elims.append(Elimination(cell=(r, c), digit=d))
             break  # one hidden pair per invocation is sufficient
-        return elims
+        return RuleResult(eliminations=elims)
 
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]

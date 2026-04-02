@@ -27,7 +27,8 @@ def test_hidden_pair_restricts_pair_cells() -> None:
         hint=Trigger.COUNT_HIT_TWO,
         hint_digit=3,
     )
-    elims = HiddenPair().apply(ctx)
+    result = HiddenPair().apply(ctx)
+    elims = result.eliminations
     elim_map: dict[tuple[int, int], set[int]] = {}
     for e in elims:
         elim_map.setdefault(e.cell, set()).add(e.digit)
@@ -61,4 +62,4 @@ def test_hidden_pair_no_match_returns_empty() -> None:
         hint=Trigger.COUNT_HIT_TWO,
         hint_digit=3,
     )
-    assert HiddenPair().apply(ctx) == []
+    assert HiddenPair().apply(ctx).eliminations == []

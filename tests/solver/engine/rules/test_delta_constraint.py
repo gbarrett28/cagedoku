@@ -30,7 +30,8 @@ def test_delta_constraint_narrows_candidates() -> None:
         hint=Trigger.COUNT_DECREASED,
         hint_digit=None,
     )
-    elims = DeltaConstraint().apply(ctx)
+    result = DeltaConstraint().apply(ctx)
+    elims = result.eliminations
     elim_map: dict[tuple[int, int], set[int]] = {}
     for e in elims:
         elim_map.setdefault(e.cell, set()).add(e.digit)

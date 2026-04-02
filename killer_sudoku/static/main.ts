@@ -159,6 +159,10 @@ let activeHintItem: HintItem | null = null;
 
 // ── UI helpers ──────────────────────────────────────────────────────────────
 
+// Show page load time in header so a hard-refresh is immediately visible.
+(document.getElementById("load-time") as HTMLSpanElement).textContent =
+  `loaded ${new Date().toLocaleTimeString()}`;
+
 function el<T extends HTMLElement>(id: string): T {
   const e = document.getElementById(id);
   if (e === null) throw new Error(`Element #${id} not found`);
@@ -1289,52 +1293,52 @@ document.addEventListener("click", (e) => {
 
 el<HTMLButtonElement>("hint-apply-btn").addEventListener("click", async () => {
   if (!activeHintItem || !currentSessionId) return;
+  const hint = activeHintItem; // capture before clearHintHighlight() nullifies it
   (el<HTMLDialogElement>("hint-modal") as HTMLDialogElement).close();
   clearHintHighlight();
   try {
-
-  if (activeHintItem.rewind_to_turn_idx !== null) {
-    // Rewind hint: discard all turns after the last consistent state
-    const resp = await fetch(`/api/puzzle/${currentSessionId}/rewind`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ turn_idx: activeHintItem.rewind_to_turn_idx }),
-    });
-    if (!resp.ok) throw new Error(`POST rewind failed: ${resp.status} ${await resp.text()}`);
-    currentState = await resp.json();
-  } else if (activeHintItem.placement !== null) {
-    // Placement hint: enter the digit via the cell endpoint
-    const [row, col, digit] = activeHintItem.placement;
-    const resp = await fetch(`/api/puzzle/${currentSessionId}/cell`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ row: row + 1, col: col + 1, digit }),
-    });
-    if (!resp.ok) throw new Error(`PATCH cell failed: ${resp.status} ${await resp.text()}`);
-    currentState = await resp.json();
-  } else if (activeHintItem.virtual_cage_suggestion !== null) {
-    // T3 virtual cage suggestion: register the suggested cage
-    const { cells, total } = activeHintItem.virtual_cage_suggestion;
-    const resp = await fetch(`/api/puzzle/${currentSessionId}/virtual-cages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cells, total }),
-    });
-    if (!resp.ok) throw new Error(`POST virtual-cages failed: ${resp.status} ${await resp.text()}`);
-    currentState = await resp.json();
-  } else {
-    // Elimination hint: mark candidates as user_removed
-    const eliminations = activeHintItem.eliminations;
-    const resp = await fetch(`/api/puzzle/${currentSessionId}/hints/apply`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ eliminations }),
-    });
-    if (!resp.ok) throw new Error(`POST hints/apply failed: ${resp.status} ${await resp.text()}`);
-    currentState = await resp.json();
-  }
-  refreshDisplay();
+    if (hint.rewind_to_turn_idx !== null) {
+      // Rewind hint: discard all turns after the last consistent state
+      const resp = await fetch(`/api/puzzle/${currentSessionId}/rewind`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ turn_idx: hint.rewind_to_turn_idx }),
+      });
+      if (!resp.ok) throw new Error(`POST rewind failed: ${resp.status} ${await resp.text()}`);
+      currentState = await resp.json();
+    } else if (hint.placement !== null) {
+      // Placement hint: enter the digit via the cell endpoint
+      const [row, col, digit] = hint.placement;
+      const resp = await fetch(`/api/puzzle/${currentSessionId}/cell`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ row: row + 1, col: col + 1, digit }),
+      });
+      if (!resp.ok) throw new Error(`PATCH cell failed: ${resp.status} ${await resp.text()}`);
+      currentState = await resp.json();
+    } else if (hint.virtual_cage_suggestion !== null) {
+      // T3 virtual cage suggestion: register the suggested cage
+      const { cells, total } = hint.virtual_cage_suggestion;
+      const resp = await fetch(`/api/puzzle/${currentSessionId}/virtual-cages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cells, total }),
+      });
+      if (!resp.ok) throw new Error(`POST virtual-cages failed: ${resp.status} ${await resp.text()}`);
+      currentState = await resp.json();
+    } else {
+      // Elimination hint: mark candidates as user_removed
+      const resp = await fetch(`/api/puzzle/${currentSessionId}/hints/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eliminations: hint.eliminations }),
+      });
+      if (!resp.ok) throw new Error(`POST hints/apply failed: ${resp.status} ${await resp.text()}`);
+      currentState = await resp.json();
+    }
+    refreshDisplay();
   } catch (e) {
+    console.error("Hint apply error:", e);
     setStatus(`Hint apply failed: ${String(e)}`, true);
   }
 });

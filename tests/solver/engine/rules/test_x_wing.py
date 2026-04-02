@@ -25,7 +25,8 @@ def test_x_wing_eliminates_from_columns() -> None:
         hint=Trigger.GLOBAL,
         hint_digit=None,
     )
-    elims = XWing().apply(ctx)
+    result = XWing().apply(ctx)
+    elims = result.eliminations
     elim_cells = {e.cell for e in elims if e.digit == 9}
 
     # Digit 9 should be eliminated from cols 2 and 5 in all rows except 0 and 3
@@ -51,7 +52,8 @@ def test_x_wing_no_false_eliminations() -> None:
     ctx = RuleContext(
         unit=None, cell=None, board=bs, hint=Trigger.GLOBAL, hint_digit=None
     )
-    elims = XWing().apply(ctx)
+    result = XWing().apply(ctx)
+    elims = result.eliminations
 
     for e in elims:
         if e.digit == 9:

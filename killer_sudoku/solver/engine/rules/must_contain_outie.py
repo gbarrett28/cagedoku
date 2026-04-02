@@ -25,7 +25,14 @@ import dataclasses
 from killer_sudoku.solver.engine.board_state import BoardState
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, Unit, UnitKind
+from killer_sudoku.solver.engine.types import (
+    Cell,
+    Elimination,
+    RuleResult,
+    Trigger,
+    Unit,
+    UnitKind,
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -166,7 +173,7 @@ class MustContainOutie:
 
     # ── SolverRule protocol ─────────────────────────────────────────────────
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """Restrict outie candidates when one external cell qualifies.
 
         When triggered by a cage unit: checks each row/col/box unit the cage
@@ -179,17 +186,17 @@ class MustContainOutie:
 
         if ctx.unit.kind == UnitKind.CAGE:
             if not ctx.unit.distinct_digits:
-                return []
+                return RuleResult()
             cage_cells = ctx.unit.cells
             cage_idx = ctx.unit.unit_id - 27
             solns = board.cage_solns[cage_idx]
             if not solns:
-                return []
+                return RuleResult()
             must: set[int] = set(solns[0])
             for s in solns[1:]:
                 must &= s
             if not must:
-                return []
+                return RuleResult()
             seen_unit_ids: set[int] = set()
             for r, c in cage_cells:
                 for uid in board.cell_unit_ids(r, c):
@@ -224,7 +231,7 @@ class MustContainOutie:
                     if m is not None:
                         elims.extend(m.eliminations)
 
-        return elims
+        return RuleResult(eliminations=elims)
 
     # ── Hint interface ──────────────────────────────────────────────────────
 

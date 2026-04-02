@@ -134,7 +134,9 @@ class AutoMutation(BaseModel):
     """One candidate or solution change produced by an always-apply rule."""
 
     rule_name: str
-    type: Literal["candidate_removed", "solution_eliminated"]
+    type: Literal[
+        "candidate_removed", "solution_eliminated", "placement", "virtual_cage_added"
+    ]
     row: int | None = None
     col: int | None = None
     digit: int | None = None

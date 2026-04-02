@@ -3,7 +3,7 @@
 SolverRule is a structural protocol — any object with the required
 attributes and an apply() method qualifies. Rules are stateless;
 all mutable state lives in BoardState. Rules must not call BoardState
-mutators directly; they return list[Elimination] only.
+mutators directly; they return RuleResult.
 """
 
 from __future__ import annotations
@@ -13,7 +13,14 @@ from typing import Protocol
 
 from killer_sudoku.solver.engine.board_state import BoardState
 from killer_sudoku.solver.engine.hint import HintResult
-from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, Unit, UnitKind
+from killer_sudoku.solver.engine.types import (
+    Cell,
+    Elimination,
+    RuleResult,
+    Trigger,
+    Unit,
+    UnitKind,
+)
 
 
 @dataclasses.dataclass
@@ -32,8 +39,8 @@ class RuleStats:
     """Accumulated statistics for a single rule across all solves."""
 
     calls: int = 0
-    progress: int = 0  # times apply() returned at least one Elimination
-    eliminations: int = 0  # total Eliminations returned
+    progress: int = 0  # times apply() produced any result
+    eliminations: int = 0  # total candidate Eliminations returned
     elapsed_ns: int = 0
 
     @property
@@ -47,20 +54,20 @@ class RuleStats:
         cost = self.elapsed_ns / self.calls if self.calls else 1.0
         return (self.eliminations / self.calls if self.calls else 0.0) / cost
 
-    def record(self, eliminations: list[Elimination], elapsed_ns: int) -> None:
+    def record(self, result: RuleResult, elapsed_ns: int) -> None:
         """Record one apply() call's results."""
         self.calls += 1
-        if eliminations:
+        if result.has_progress:
             self.progress += 1
-        self.eliminations += len(eliminations)
+        self.eliminations += len(result.eliminations)
         self.elapsed_ns += elapsed_ns
 
 
 class SolverRule(Protocol):
     """Structural protocol for solver rules.
 
-    Rules are stateless — apply() reads from ctx.board and returns
-    a list of Eliminations. It must not call any BoardState mutator.
+    Rules are stateless — apply() reads from ctx.board and returns a
+    RuleResult.  It must not call any BoardState mutator directly.
     unit_kinds: empty frozenset means GLOBAL/cell-scoped (unit=None in ctx).
     """
 
@@ -69,8 +76,11 @@ class SolverRule(Protocol):
     triggers: frozenset[Trigger]
     unit_kinds: frozenset[UnitKind]
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
-        """Apply the rule and return candidate eliminations."""
+    def apply(self, ctx: RuleContext) -> RuleResult:
+        """Apply the rule; return eliminations, placements, solution prunings, or
+        virtual cage additions.  Rules that only produce candidate eliminations
+        construct RuleResult(eliminations=[...]).
+        """
         ...
 
     def as_hints(
@@ -79,10 +89,9 @@ class SolverRule(Protocol):
         """Convert a rule firing to coaching hints (called when rule is hint-only).
 
         ctx provides the triggering context (unit, cell, board, trigger, hint_digit).
-        eliminations is the output of apply() for the same ctx.
+        eliminations is result.eliminations from apply() for the same ctx.
         Rules that produce placement hints (e.g. NakedSingle) may ignore eliminations.
         Rules that produce multiple independent hints (e.g. CageConfinement) return
         one HintResult per finding.
-        Default: wrap eliminations in one HintResult with a generic explanation.
         """
         ...

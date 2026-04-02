@@ -8,7 +8,7 @@ from killer_sudoku.solver.engine.board_state import (
 from killer_sudoku.solver.engine.rule import RuleContext
 from killer_sudoku.solver.engine.rules import default_rules
 from killer_sudoku.solver.engine.solver_engine import SolverEngine
-from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import Elimination, RuleResult, Trigger, UnitKind
 from tests.fixtures.minimal_puzzle import KNOWN_SOLUTION, make_trivial_spec
 
 
@@ -54,9 +54,9 @@ def test_engine_routes_events_to_rule() -> None:
         triggers: frozenset[Trigger] = frozenset({Trigger.COUNT_DECREASED})
         unit_kinds: frozenset[UnitKind] = frozenset({UnitKind.ROW})
 
-        def apply(self, ctx: RuleContext) -> list[Elimination]:
+        def apply(self, ctx: RuleContext) -> RuleResult:
             calls.append(1)
-            return []
+            return RuleResult()
 
     spec = make_trivial_spec()
     bs = BoardState(spec)
@@ -77,8 +77,8 @@ def test_engine_stats_recorded() -> None:
         triggers: frozenset[Trigger] = frozenset({Trigger.COUNT_DECREASED})
         unit_kinds: frozenset[UnitKind] = frozenset({UnitKind.ROW})
 
-        def apply(self, ctx: RuleContext) -> list[Elimination]:
-            return []
+        def apply(self, ctx: RuleContext) -> RuleResult:
+            return RuleResult()
 
     spec = make_trivial_spec()
     bs = BoardState(spec)

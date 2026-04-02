@@ -1,7 +1,7 @@
 """Tests for RuleStats."""
 
 from killer_sudoku.solver.engine.rule import RuleStats
-from killer_sudoku.solver.engine.types import Elimination
+from killer_sudoku.solver.engine.types import Elimination, RuleResult
 
 
 def test_rulestats_hit_rate_zero_calls() -> None:
@@ -22,7 +22,9 @@ def test_rulestats_utility() -> None:
 
 def test_rulestats_record() -> None:
     s = RuleStats()
-    s.record([Elimination(cell=(0, 0), digit=5)], elapsed_ns=500)
+    # apply() now returns RuleResult; record() takes RuleResult
+    result = RuleResult(eliminations=[Elimination(cell=(0, 0), digit=5)])
+    s.record(result, elapsed_ns=500)
     assert s.calls == 1
     assert s.progress == 1
     assert s.eliminations == 1

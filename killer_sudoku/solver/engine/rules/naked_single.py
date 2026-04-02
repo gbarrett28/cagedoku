@@ -13,7 +13,13 @@ from __future__ import annotations
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import (
+    Elimination,
+    Placement,
+    RuleResult,
+    Trigger,
+    UnitKind,
+)
 
 
 class NakedSingle:
@@ -24,9 +30,16 @@ class NakedSingle:
     triggers: frozenset[Trigger] = frozenset({Trigger.CELL_DETERMINED})
     unit_kinds: frozenset[UnitKind] = frozenset()  # cell-scoped
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
-        """No eliminations — recognition only.  Peer cleanup is R1b's job."""
-        return []
+    def apply(self, ctx: RuleContext) -> RuleResult:
+        """Return a placement for the determined cell.
+
+        When NakedSingle is always-apply, the engine promotes the placement to
+        user_grid automatically.  When hint-only, as_hints() surfaces it as a
+        coaching suggestion instead.
+        """
+        assert ctx.cell is not None
+        assert ctx.hint_digit is not None
+        return RuleResult(placements=[Placement(cell=ctx.cell, digit=ctx.hint_digit)])
 
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]

@@ -20,7 +20,8 @@ def test_cell_solution_elimination_eliminates_from_row_peers() -> None:
         hint=Trigger.CELL_SOLVED,
         hint_digit=5,
     )
-    elims = CellSolutionElimination().apply(ctx)
+    result = CellSolutionElimination().apply(ctx)
+    elims = result.eliminations
     elim_cells = {e.cell for e in elims}
     assert all(e.digit == 5 for e in elims)
     # Row peers
@@ -48,7 +49,8 @@ def test_cell_solution_elimination_excludes_cage_peers() -> None:
         hint=Trigger.CELL_SOLVED,
         hint_digit=5,
     )
-    elims = CellSolutionElimination().apply(ctx)
+    result = CellSolutionElimination().apply(ctx)
+    elims = result.eliminations
     # Trivial spec: each cell is its own cage, so no cage-based eliminations
     # are generated. The result should only cover row/col/box cells.
     for e in elims:
@@ -76,7 +78,8 @@ def test_cell_solution_elimination_as_hints_returns_peer_elims() -> None:
         unit=None, cell=(0, 0), board=bs, hint=Trigger.CELL_SOLVED, hint_digit=5
     )
     rule = CellSolutionElimination()
-    elims = rule.apply(ctx)
+    result = rule.apply(ctx)
+    elims = result.eliminations
     hints = rule.as_hints(ctx, elims)
     assert len(hints) == 1
     assert hints[0].placement is None

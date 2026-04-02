@@ -22,7 +22,7 @@ from collections import deque
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import Elimination, RuleResult, Trigger, UnitKind
 
 Cell = tuple[int, int]
 
@@ -42,7 +42,7 @@ class SimpleColouring:
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """Scan all digits for simple colouring patterns."""
         board = ctx.board
         elims: list[Elimination] = []
@@ -154,7 +154,7 @@ class SimpleColouring:
                         if sees_c0 and sees_c1:
                             elims.append(Elimination(cell=(r, c), digit=d))
 
-        return list(dict.fromkeys(elims))
+        return RuleResult(eliminations=list(dict.fromkeys(elims)))
 
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]

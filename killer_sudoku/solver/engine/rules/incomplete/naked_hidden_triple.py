@@ -15,7 +15,7 @@ import itertools
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import Elimination, RuleResult, Trigger, UnitKind
 
 
 class NakedHiddenTriple:
@@ -28,7 +28,7 @@ class NakedHiddenTriple:
         {UnitKind.ROW, UnitKind.COL, UnitKind.BOX}
     )
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """Scan for naked or hidden triples; return eliminations."""
         assert ctx.unit is not None
         board = ctx.board
@@ -50,7 +50,8 @@ class NakedHiddenTriple:
                         elims.append(Elimination(cell=(r, c), digit=d))
 
         if elims:
-            return elims  # naked triple found; skip hidden check to avoid overlap
+            # naked triple found; skip hidden check to avoid overlap
+            return RuleResult(eliminations=elims)
 
         # --- Hidden triple ---
         uid = ctx.unit.unit_id
@@ -71,7 +72,7 @@ class NakedHiddenTriple:
                     if d not in triple_set:
                         elims.append(Elimination(cell=(r, c), digit=d))
 
-        return elims
+        return RuleResult(eliminations=elims)
 
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]

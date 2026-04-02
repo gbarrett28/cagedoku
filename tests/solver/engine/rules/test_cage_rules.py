@@ -40,7 +40,8 @@ def test_solution_map_filter_no_crash_on_trivial() -> None:
     cage_idx = int(bs.regions[0, 0])
     cage_uid = 27 + cage_idx
     ctx = _cage_ctx(bs, cage_uid)
-    elims = SolutionMapFilter().apply(ctx)
+    result = SolutionMapFilter().apply(ctx)
+    elims = result.eliminations
     assert isinstance(elims, list)
 
 
@@ -57,7 +58,8 @@ def test_solution_map_filter_removes_impossible_digits() -> None:
     bs.candidates[r][c] = {3}
 
     ctx = _cage_ctx(bs, cage_uid)
-    elims = SolutionMapFilter().apply(ctx)
+    result = SolutionMapFilter().apply(ctx)
+    elims = result.eliminations
     # The surviving solutions only contain {3}, so 5 is eliminated from the cage
     # (already not in candidates, so no eliminations produced — that's correct)
     assert isinstance(elims, list)
@@ -70,7 +72,8 @@ def test_cage_intersection_no_crash() -> None:
     cage_idx = int(bs.regions[0, 0])
     cage_uid = 27 + cage_idx
     ctx = _cage_ctx(bs, cage_uid)
-    elims = CageIntersection().apply(ctx)
+    result = CageIntersection().apply(ctx)
+    elims = result.eliminations
     assert isinstance(elims, list)
 
 
@@ -123,7 +126,8 @@ def test_solution_map_filter_eliminates_per_cell_infeasible_digits() -> None:
     # (0,2) still has full candidates {1..9}
 
     ctx = _cage_ctx(bs, cage_uid)
-    elims = SolutionMapFilter().apply(ctx)
+    result = SolutionMapFilter().apply(ctx)
+    elims = result.eliminations
 
     elim_by_cell: dict[tuple[int, int], set[int]] = {}
     for e in elims:
@@ -143,7 +147,8 @@ def test_cage_candidate_filter_as_hints() -> None:
     cage_uid = bs.cage_unit_id(0, 0)
     ctx = _cage_ctx(bs, cage_uid)
     rule = CageCandidateFilter()
-    elims = rule.apply(ctx)
+    result = rule.apply(ctx)
+    elims = result.eliminations
     hints = rule.as_hints(ctx, elims)
     assert len(hints) >= 1
     assert all(h.placement is None for h in hints)

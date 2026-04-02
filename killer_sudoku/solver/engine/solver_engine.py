@@ -20,7 +20,15 @@ from killer_sudoku.api.schemas import AutoMutation
 from killer_sudoku.solver.engine.board_state import BoardState
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext, RuleStats, SolverRule
-from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import (
+    Cell,
+    Elimination,
+    Placement,
+    SolutionElimination,
+    Trigger,
+    UnitKind,
+    VirtualCageAddition,
+)
 from killer_sudoku.solver.engine.work_queue import SolverQueue
 from killer_sudoku.solver.equation import sol_sums
 
@@ -200,6 +208,8 @@ class SolverEngine:
         self._hint_rules = hint_rules
         self.pending_hints: list[HintResult] = []
         self.applied_mutations: list[AutoMutation] = []
+        self.applied_placements: list[Placement] = []
+        self.applied_virtual_cages: list[VirtualCageAddition] = []
         for rule in rules:
             for trigger in rule.triggers:
                 self._trigger_map[trigger].append(rule)
@@ -336,9 +346,46 @@ class SolverEngine:
                             None,
                         )
 
+    def _apply_solution_elimination(
+        self, se: SolutionElimination, rule_name: str
+    ) -> None:
+        """Remove a cage solution directly and re-fire SOLUTION_PRUNED for the cage.
+
+        Mirrors the side-effect of board.remove_candidate() when it prunes a
+        cage solution, but without requiring a candidate removal to trigger it.
+        Increments unit_versions for the cage so staleness checks stay correct.
+        """
+        cage_solns = self.board.cage_solns[se.cage_idx]
+        if se.solution not in cage_solns:
+            return
+        cage_solns.remove(se.solution)
+        cage_unit_id = 27 + se.cage_idx
+        self.board.unit_versions[cage_unit_id] += 1
+        self.applied_mutations.append(
+            AutoMutation(
+                rule_name=rule_name,
+                type="solution_eliminated",
+                cage_idx=se.cage_idx,
+                solution=sorted(se.solution),
+            )
+        )
+        for rule in self._trigger_map[Trigger.SOLUTION_PRUNED]:
+            self.queue.enqueue_unit(
+                rule.priority,
+                rule,
+                cage_unit_id,
+                self.board.unit_versions[cage_unit_id] - 1,
+                Trigger.SOLUTION_PRUNED,
+                None,
+            )
+        for rule in self._trigger_map[Trigger.GLOBAL]:
+            self.queue.enqueue_global(rule.priority, rule)
+
     def solve(self) -> BoardState:
         """Run the main loop until no progress remains. Return the board state."""
         self.applied_mutations = []
+        self.applied_placements = []
+        self.applied_virtual_cages = []
         self.pending_hints = []
         # Seed all rules for all matching units (initial state propagation)
         self._seed_initial_state()
@@ -361,25 +408,47 @@ class SolverEngine:
                 hint_digit=item.hint_digit,
             )
             t0 = time.monotonic_ns()
-            eliminations = item.rule.apply(ctx)
+            result = item.rule.apply(ctx)
             elapsed = time.monotonic_ns() - t0
-            self.stats[item.rule.name].record(eliminations, elapsed)
+            self.stats[item.rule.name].record(result, elapsed)
 
             if item.rule.name in self._hint_rules:
-                hints = item.rule.as_hints(ctx, eliminations)
+                hints = item.rule.as_hints(ctx, result.eliminations)
                 self.pending_hints.extend(hints)
-            elif eliminations:
-                for e in eliminations:
+            else:
+                if result.eliminations:
+                    for e in result.eliminations:
+                        self.applied_mutations.append(
+                            AutoMutation(
+                                rule_name=item.rule.name,
+                                type="candidate_removed",
+                                row=e.cell[0],
+                                col=e.cell[1],
+                                digit=e.digit,
+                            )
+                        )
+                    self.apply_eliminations(result.eliminations)
+                for p in result.placements:
+                    self.applied_placements.append(p)
                     self.applied_mutations.append(
                         AutoMutation(
                             rule_name=item.rule.name,
-                            type="candidate_removed",
-                            row=e.cell[0],
-                            col=e.cell[1],
-                            digit=e.digit,
+                            type="placement",
+                            row=p.cell[0],
+                            col=p.cell[1],
+                            digit=p.digit,
                         )
                     )
-                self.apply_eliminations(eliminations)
+                for se in result.solution_eliminations:
+                    self._apply_solution_elimination(se, item.rule.name)
+                for vca in result.virtual_cage_additions:
+                    self.applied_virtual_cages.append(vca)
+                    self.applied_mutations.append(
+                        AutoMutation(
+                            rule_name=item.rule.name,
+                            type="virtual_cage_added",
+                        )
+                    )
 
         self.pending_hints = _dedup_hints(self.pending_hints)
         return self.board

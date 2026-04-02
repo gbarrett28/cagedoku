@@ -26,7 +26,14 @@ from itertools import combinations
 from killer_sudoku.solver.engine.board_state import BoardState
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, Unit, UnitKind
+from killer_sudoku.solver.engine.types import (
+    Cell,
+    Elimination,
+    RuleResult,
+    Trigger,
+    Unit,
+    UnitKind,
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -136,7 +143,7 @@ class CageConfinement:
 
     # ── SolverRule protocol ──────────────────────────────────────────────────
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """Return all confinement eliminations for the current board state."""
         seen: set[tuple[Cell, int]] = set()
         result: list[Elimination] = []
@@ -146,7 +153,7 @@ class CageConfinement:
                 if key not in seen:
                     seen.add(key)
                     result.append(e)
-        return result
+        return RuleResult(eliminations=result)
 
     # ── Hint interface ───────────────────────────────────────────────────────
 

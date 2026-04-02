@@ -19,7 +19,7 @@ from typing import ClassVar
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import Elimination, RuleResult, Trigger, UnitKind
 
 
 class LinearElimination:
@@ -45,13 +45,15 @@ class LinearElimination:
     # the rule name never needs to be hardcoded outside DEFAULT_ALWAYS_APPLY_RULES.
     requires_virtual_cages: ClassVar[bool] = True
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """Return initial_eliminations still present in the candidate sets."""
-        return [
-            e
-            for e in ctx.board.linear_system.initial_eliminations
-            if e.digit in ctx.board.candidates[e.cell[0]][e.cell[1]]
-        ]
+        return RuleResult(
+            eliminations=[
+                e
+                for e in ctx.board.linear_system.initial_eliminations
+                if e.digit in ctx.board.candidates[e.cell[0]][e.cell[1]]
+            ]
+        )
 
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]

@@ -84,7 +84,8 @@ def test_must_contain_outie_no_crash_trivial() -> None:
         hint=Trigger.COUNT_DECREASED,
         hint_digit=None,
     )
-    assert isinstance(MustContainOutie().apply(ctx), list)
+    # apply() now returns RuleResult; eliminations is the list
+    assert isinstance(MustContainOutie().apply(ctx).eliminations, list)
 
 
 def test_must_contain_outie_restricts_outie_row_trigger() -> None:
@@ -97,7 +98,8 @@ def test_must_contain_outie_restricts_outie_row_trigger() -> None:
         hint=Trigger.COUNT_DECREASED,
         hint_digit=None,
     )
-    elims = MustContainOutie().apply(ctx)
+    result = MustContainOutie().apply(ctx)
+    elims = result.eliminations
 
     elim_set = {(e.cell, e.digit) for e in elims}
 
@@ -120,7 +122,8 @@ def test_must_contain_outie_restricts_outie_cage_trigger() -> None:
         hint=Trigger.SOLUTION_PRUNED,
         hint_digit=None,
     )
-    elims = MustContainOutie().apply(ctx)
+    result = MustContainOutie().apply(ctx)
+    elims = result.eliminations
 
     elim_set = {(e.cell, e.digit) for e in elims}
     for d in range(1, 10):
@@ -143,7 +146,8 @@ def test_must_contain_outie_no_fire_when_two_external_cells() -> None:
         hint=Trigger.COUNT_DECREASED,
         hint_digit=None,
     )
-    elims = MustContainOutie().apply(ctx)
+    result = MustContainOutie().apply(ctx)
+    elims = result.eliminations
     outie_elims = [(e.cell, e.digit) for e in elims if e.cell == (1, 7)]
     assert outie_elims == [], "should not fire with two qualifying external cells"
 
@@ -161,7 +165,8 @@ def test_must_contain_outie_no_fire_when_candidates_not_subset() -> None:
         hint=Trigger.COUNT_DECREASED,
         hint_digit=None,
     )
-    elims = MustContainOutie().apply(ctx)
+    result = MustContainOutie().apply(ctx)
+    elims = result.eliminations
     outie_elims = [e for e in elims if e.cell == (1, 7)]
     assert outie_elims == [], "should not fire when external candidates ⊄ must-contain"
 
@@ -184,7 +189,8 @@ def test_must_contain_outie_no_fire_when_cage_fully_inside_unit() -> None:
         hint=Trigger.COUNT_DECREASED,
         hint_digit=None,
     )
-    elims = MustContainOutie().apply(ctx)
+    result = MustContainOutie().apply(ctx)
+    elims = result.eliminations
     # Column 5 contains only (0,5) from the cage; outside = (0,6),(0,7),(1,7) — 3 outies
     # Rule requires exactly 1 outie, so it should not fire for this direction
     cage_elims = [e for e in elims if e.cell in {(0, 6), (0, 7), (1, 7)}]

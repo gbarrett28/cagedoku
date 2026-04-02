@@ -27,7 +27,8 @@ def test_pointing_pairs_eliminates_from_row() -> None:
         hint=Trigger.COUNT_DECREASED,
         hint_digit=None,
     )
-    elims = PointingPairs().apply(ctx)
+    result = PointingPairs().apply(ctx)
+    elims = result.eliminations
     elim_map = {e.cell: e.digit for e in elims if e.digit == 5}
 
     # 5 should be eliminated from (0,3)..(0,8) — rest of row 0 outside box 0
@@ -53,7 +54,8 @@ def test_pointing_pairs_col_variant() -> None:
         hint=Trigger.COUNT_DECREASED,
         hint_digit=None,
     )
-    elims = PointingPairs().apply(ctx)
+    result = PointingPairs().apply(ctx)
+    elims = result.eliminations
     elim_map = {e.cell: e.digit for e in elims if e.digit == 8}
 
     # 8 should be eliminated from col 0, rows 3-8

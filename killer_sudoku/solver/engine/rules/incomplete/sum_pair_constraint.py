@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import (
+    Cell,
+    Elimination,
+    RuleResult,
+    Trigger,
+    UnitKind,
+)
 
 
 class SumPairConstraint:
@@ -32,10 +38,10 @@ class SumPairConstraint:
         {UnitKind.ROW, UnitKind.COL, UnitKind.BOX, UnitKind.CAGE}
     )
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """Narrow candidate sets using active sum pairs touching this unit."""
         if ctx.hint == Trigger.CELL_DETERMINED:
-            return []
+            return RuleResult()
 
         assert ctx.unit is not None
         board = ctx.board
@@ -64,7 +70,7 @@ class SumPairConstraint:
                 for d in list(board.candidates[br][bc]):
                     if d not in valid_b:
                         elims.append(Elimination(cell=b, digit=d))
-        return elims
+        return RuleResult(eliminations=elims)
 
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]

@@ -17,7 +17,7 @@ import itertools
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import Elimination, RuleResult, Trigger, UnitKind
 
 
 class Swordfish:
@@ -28,7 +28,7 @@ class Swordfish:
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """Scan for row-based and column-based Swordfish patterns."""
         board = ctx.board
         elims: list[Elimination] = []
@@ -76,7 +76,7 @@ class Swordfish:
                         if c not in base_cols and d in board.candidates[row][c]:
                             elims.append(Elimination(cell=(row, c), digit=d))
 
-        return list(dict.fromkeys(elims))
+        return RuleResult(eliminations=list(dict.fromkeys(elims)))
 
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]

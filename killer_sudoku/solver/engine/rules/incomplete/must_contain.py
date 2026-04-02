@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import Elimination, RuleResult, Trigger, UnitKind
 
 
 class MustContain:
@@ -24,7 +24,7 @@ class MustContain:
         {UnitKind.ROW, UnitKind.COL, UnitKind.BOX, UnitKind.CAGE}
     )
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """For each cage overlapping this unit, eliminate its confined digits.
 
         Non-burb virtual cages (distinct_digits=False) are skipped as the
@@ -35,7 +35,7 @@ class MustContain:
         """
         assert ctx.unit is not None
         if not ctx.unit.distinct_digits:
-            return []
+            return RuleResult()
         board = ctx.board
         unit_cells = ctx.unit.cells
         elims: list[Elimination] = []
@@ -78,7 +78,7 @@ class MustContain:
                     for d in confined:
                         if d in board.candidates[er][ec]:
                             elims.append(Elimination(cell=(er, ec), digit=d))
-        return elims
+        return RuleResult(eliminations=elims)
 
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]

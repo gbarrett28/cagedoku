@@ -18,7 +18,13 @@ from __future__ import annotations
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import (
+    Cell,
+    Elimination,
+    RuleResult,
+    Trigger,
+    UnitKind,
+)
 
 
 def _per_cell_possible(
@@ -65,7 +71,7 @@ class SolutionMapFilter:
     )
     unit_kinds: frozenset[UnitKind] = frozenset({UnitKind.CAGE})
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """Prune infeasible cage solutions; eliminate unsupported (cell, digit) pairs.
 
         Skips non-burb virtual cages (distinct_digits=False): per-cell
@@ -89,13 +95,13 @@ class SolutionMapFilter:
         # backtracking would eliminate valid candidates for cells that can share
         # digits across units).  MustContain handles the must-intersection logic.
         if not ctx.unit.distinct_digits:
-            return []
+            return RuleResult()
         cage_cells: list[Cell] = list(ctx.unit.cells)
         board = ctx.board
         cage_idx = ctx.unit.unit_id - 27
         solns = list(board.cage_solns[cage_idx])
         if not solns:
-            return []
+            return RuleResult()
 
         # Sort cells most-constrained first for efficient backtracking pruning
         sorted_cells = sorted(
@@ -125,7 +131,7 @@ class SolutionMapFilter:
             for d in list(board.candidates[cell[0]][cell[1]]):
                 if d not in per_cell_possible.get(cell, set()):
                     elims.append(Elimination(cell=cell, digit=d))
-        return elims
+        return RuleResult(eliminations=elims)
 
     # ── Hint interface ───────────────────────────────────────────────────────
 

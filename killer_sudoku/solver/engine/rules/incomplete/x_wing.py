@@ -14,7 +14,7 @@ import itertools
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import Elimination, RuleResult, Trigger, UnitKind
 
 
 class XWing:
@@ -25,7 +25,7 @@ class XWing:
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """Scan all digits for row-based and column-based X-Wing patterns."""
         board = ctx.board
         elims: list[Elimination] = []
@@ -66,7 +66,7 @@ class XWing:
                             elims.append(Elimination(cell=(row, c), digit=d))
 
         # Deduplicate while preserving order
-        return list(dict.fromkeys(elims))
+        return RuleResult(eliminations=list(dict.fromkeys(elims)))
 
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]

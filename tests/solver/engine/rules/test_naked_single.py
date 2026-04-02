@@ -21,7 +21,7 @@ def test_naked_single_returns_no_eliminations() -> None:
         hint=Trigger.CELL_DETERMINED,
         hint_digit=5,
     )
-    assert NakedSingle().apply(ctx) == []
+    assert NakedSingle().apply(ctx).eliminations == []
 
 
 def test_naked_single_fires_on_cell_determined() -> None:

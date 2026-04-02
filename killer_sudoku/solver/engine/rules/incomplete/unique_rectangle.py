@@ -27,7 +27,13 @@ import itertools
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import (
+    Cell,
+    Elimination,
+    RuleResult,
+    Trigger,
+    UnitKind,
+)
 
 
 def _sees(r1: int, c1: int, r2: int, c2: int) -> bool:
@@ -45,7 +51,7 @@ class UniqueRectangle:
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """Scan for UR type-1 and type-2 patterns."""
         board = ctx.board
         elims: list[Elimination] = []
@@ -109,7 +115,7 @@ class UniqueRectangle:
                                                 Elimination(cell=(r, c), digit=x)
                                             )
 
-        return list(dict.fromkeys(elims))
+        return RuleResult(eliminations=list(dict.fromkeys(elims)))
 
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]

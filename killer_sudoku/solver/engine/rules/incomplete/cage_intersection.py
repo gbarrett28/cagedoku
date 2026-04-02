@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import Elimination, RuleResult, Trigger, UnitKind
 
 
 class CageIntersection:
@@ -24,7 +24,7 @@ class CageIntersection:
     )
     unit_kinds: frozenset[UnitKind] = frozenset({UnitKind.CAGE})
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """For each must-contain digit, if all carrier cells share a non-cage unit,
         eliminate that digit from the rest of that unit.
 
@@ -35,13 +35,13 @@ class CageIntersection:
         """
         assert ctx.unit is not None
         if not ctx.unit.distinct_digits:
-            return []
+            return RuleResult()
         cage_cells = ctx.unit.cells
         board = ctx.board
         cage_idx = ctx.unit.unit_id - 27
         solns = board.cage_solns[cage_idx]
         if not solns:
-            return []
+            return RuleResult()
 
         # must: digits that appear in every remaining cage solution
         must = set(solns[0])
@@ -73,7 +73,7 @@ class CageIntersection:
                 for r, c in board.units[uid].cells:
                     if (r, c) not in cage_cells and d in board.candidates[r][c]:
                         elims.append(Elimination(cell=(r, c), digit=d))
-        return elims
+        return RuleResult(eliminations=elims)
 
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]

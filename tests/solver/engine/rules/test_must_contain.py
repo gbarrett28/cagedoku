@@ -19,7 +19,8 @@ def test_must_contain_no_crash_on_trivial() -> None:
         hint=Trigger.COUNT_DECREASED,
         hint_digit=None,
     )
-    elims = MustContain().apply(ctx)
+    result = MustContain().apply(ctx)
+    elims = result.eliminations
     assert isinstance(elims, list)
 
 
@@ -37,4 +38,5 @@ def test_must_contain_returns_list() -> None:
             hint_digit=None,
         )
         result = MustContain().apply(ctx)
-        assert isinstance(result, list)
+        # apply() now returns RuleResult; eliminations is the list
+        assert isinstance(result.eliminations, list)

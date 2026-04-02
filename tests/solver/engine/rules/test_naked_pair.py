@@ -32,7 +32,8 @@ def test_naked_pair_eliminates_from_rest() -> None:
         hint=Trigger.COUNT_HIT_TWO,
         hint_digit=4,
     )
-    elims = NakedPair().apply(ctx)
+    result = NakedPair().apply(ctx)
+    elims = result.eliminations
     elim_map: dict[tuple[int, int], set[int]] = {}
     for e in elims:
         elim_map.setdefault(e.cell, set()).add(e.digit)
@@ -60,4 +61,4 @@ def test_naked_pair_no_match_returns_empty() -> None:
         hint=Trigger.COUNT_HIT_TWO,
         hint_digit=4,
     )
-    assert NakedPair().apply(ctx) == []
+    assert NakedPair().apply(ctx).eliminations == []

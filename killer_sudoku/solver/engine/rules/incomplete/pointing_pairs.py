@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import Elimination, RuleResult, Trigger, UnitKind
 
 
 class PointingPairs:
@@ -22,7 +22,7 @@ class PointingPairs:
     triggers: frozenset[Trigger] = frozenset({Trigger.COUNT_DECREASED})
     unit_kinds: frozenset[UnitKind] = frozenset({UnitKind.BOX})
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """Eliminate pointing-pair digits from the row/col outside the box."""
         assert ctx.unit is not None
         board = ctx.board
@@ -47,7 +47,7 @@ class PointingPairs:
                 for r, c in board.units[col_uid].cells:
                     if (r, c) not in box_cells and d in board.candidates[r][c]:
                         elims.append(Elimination(cell=(r, c), digit=d))
-        return elims
+        return RuleResult(eliminations=elims)
 
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]

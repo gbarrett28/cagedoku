@@ -14,7 +14,13 @@ from __future__ import annotations
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Cell, Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import (
+    Cell,
+    Elimination,
+    RuleResult,
+    Trigger,
+    UnitKind,
+)
 
 
 def _sees(r1: int, c1: int, r2: int, c2: int) -> bool:
@@ -32,7 +38,7 @@ class XYWing:
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """Find all XY-Wing patterns and return z-eliminations."""
         board = ctx.board
         elims: list[Elimination] = []
@@ -87,7 +93,7 @@ class XYWing:
                                 if _sees(r, c, ar, ac) and _sees(r, c, br, bc):
                                     elims.append(Elimination(cell=(r, c), digit=z))
 
-        return list(dict.fromkeys(elims))
+        return RuleResult(eliminations=list(dict.fromkeys(elims)))
 
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]

@@ -56,7 +56,7 @@ from killer_sudoku.image.inp_image import InpImage
 from killer_sudoku.solver.engine import BoardState, SolverEngine, default_rules
 from killer_sudoku.solver.engine.board_state import NoSolnError
 from killer_sudoku.solver.engine.hint import HintResult
-from killer_sudoku.solver.engine.types import Elimination
+from killer_sudoku.solver.engine.types import Elimination, Placement
 from killer_sudoku.solver.equation import sol_sums
 from killer_sudoku.solver.grid import (  # Grid used in solve endpoint
     Grid,
@@ -393,6 +393,25 @@ def _record_turn(
         snapshot=snapshot,
     )
     return state.model_copy(update={"history": [*state.history, turn]})
+
+
+def _apply_auto_placements(state: PuzzleState, engine: SolverEngine) -> PuzzleState:
+    """Promote NakedSingle (and other placement-rule) results into user_grid.
+
+    After _build_engine runs, engine.applied_placements holds any cells that
+    the engine's always-apply placement rules determined.  This function folds
+    those placements into user_grid so the stored state reflects them.  Only
+    cells that are still empty (0) are updated — explicit user entries win.
+    """
+    if not engine.applied_placements or state.user_grid is None:
+        return state
+    grid = [row[:] for row in state.user_grid]
+    p: Placement
+    for p in engine.applied_placements:
+        r, c = p.cell
+        if grid[r][c] == 0:
+            grid[r][c] = p.digit
+    return state.model_copy(update={"user_grid": grid})
 
 
 def _rebuild_user_grid(state: PuzzleState) -> PuzzleState:
@@ -926,6 +945,7 @@ def make_router(
         )
         always_apply = frozenset(settings_store.load().always_apply_rules)
         board, engine = _build_engine(updated, always_apply)
+        updated = _apply_auto_placements(updated, engine)
         updated = _record_turn(updated, user_action, engine, board)
         store.save(updated)
         return updated
@@ -1051,6 +1071,7 @@ def make_router(
         )
         always_apply = frozenset(settings_store.load().always_apply_rules)
         board, engine = _build_engine(state, always_apply)
+        state = _apply_auto_placements(state, engine)
         updated = _record_turn(state, user_action, engine, board)
         store.save(updated)
         return updated
@@ -1081,6 +1102,7 @@ def make_router(
         r, c = req.row - 1, req.col - 1
         always_apply = frozenset(settings_store.load().always_apply_rules)
         board, engine = _build_engine(state, always_apply)
+        state = _apply_auto_placements(state, engine)
 
         if req.digit == 0:
             user_action: UserAction = UserAction(
@@ -1412,6 +1434,7 @@ def make_router(
 
         always_apply = frozenset(settings_store.load().always_apply_rules)
         board, engine = _build_engine(state, always_apply)
+        state = _apply_auto_placements(state, engine)
 
         hint_elims = [(e.cell[0], e.cell[1], e.digit) for e in req.eliminations]
         user_action = UserAction(

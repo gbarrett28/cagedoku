@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import Elimination, RuleResult, Trigger, UnitKind
 
 
 class CellSolutionElimination:
@@ -31,7 +31,7 @@ class CellSolutionElimination:
     triggers: frozenset[Trigger] = frozenset({Trigger.CELL_SOLVED})
     unit_kinds: frozenset[UnitKind] = frozenset()  # cell-scoped
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """Eliminate hint_digit from all row/col/box peers of ctx.cell."""
         assert ctx.cell is not None
         assert ctx.hint_digit is not None
@@ -45,7 +45,7 @@ class CellSolutionElimination:
             for pr, pc in unit.cells:
                 if (pr, pc) != (r, c) and d in ctx.board.candidates[pr][pc]:
                     elims.append(Elimination(cell=(pr, pc), digit=d))
-        return elims
+        return RuleResult(eliminations=elims)
 
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]

@@ -32,7 +32,8 @@ def test_naked_triple_eliminates_from_rest() -> None:
         hint=Trigger.COUNT_DECREASED,
         hint_digit=None,
     )
-    elims = NakedHiddenTriple().apply(ctx)
+    result = NakedHiddenTriple().apply(ctx)
+    elims = result.eliminations
     elim_cells = {e.cell for e in elims if e.digit in (1, 2, 3)}
 
     # Digits 1, 2, 3 should be eliminated from cells (0,3)..(0,8)
@@ -67,5 +68,6 @@ def test_hidden_triple_restricts_cells() -> None:
         hint=Trigger.COUNT_DECREASED,
         hint_digit=None,
     )
-    elims = NakedHiddenTriple().apply(ctx)
+    result = NakedHiddenTriple().apply(ctx)
+    elims = result.eliminations
     assert isinstance(elims, list)

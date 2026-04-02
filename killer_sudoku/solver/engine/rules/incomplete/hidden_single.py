@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext
-from killer_sudoku.solver.engine.types import Elimination, Trigger, UnitKind
+from killer_sudoku.solver.engine.types import Elimination, RuleResult, Trigger, UnitKind
 
 
 class HiddenSingle:
@@ -29,7 +29,7 @@ class HiddenSingle:
         {UnitKind.ROW, UnitKind.COL, UnitKind.BOX, UnitKind.CAGE}
     )
 
-    def apply(self, ctx: RuleContext) -> list[Elimination]:
+    def apply(self, ctx: RuleContext) -> RuleResult:
         """Find the sole cell that can hold hint_digit; eliminate all others from it."""
         assert ctx.unit is not None
         assert ctx.hint_digit is not None
@@ -42,24 +42,26 @@ class HiddenSingle:
         # sets are unreliable and cannot be used to force cell assignments.
         if ctx.unit.kind == UnitKind.CAGE:
             if not ctx.unit.distinct_digits:
-                return []
+                return RuleResult()
             cage_idx = ctx.unit.unit_id - 27
             solns = ctx.board.cage_solns[cage_idx]
             if not solns or not all(d in soln for soln in solns):
-                return []
+                return RuleResult()
 
         sole = next(
             ((r, c) for r, c in ctx.unit.cells if d in ctx.board.candidates[r][c]),
             None,
         )
         if sole is None:
-            return []
+            return RuleResult()
         r, c = sole
-        return [
-            Elimination(cell=(r, c), digit=other)
-            for other in ctx.board.candidates[r][c]
-            if other != d
-        ]
+        return RuleResult(
+            eliminations=[
+                Elimination(cell=(r, c), digit=other)
+                for other in ctx.board.candidates[r][c]
+                if other != d
+            ]
+        )
 
     def as_hints(
         self, ctx: RuleContext, eliminations: list[Elimination]
