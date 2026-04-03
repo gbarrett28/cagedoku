@@ -224,15 +224,16 @@ def cluster_borders(
     sample_margin_px = subres // config.sample_margin
     anchors = _anchor_set(cage_total_confidence, anchor_confidence_threshold)
 
-    # Collect features and anchor indices for each boundary kind and orientation.
-    # Key: (is_horizontal, BoundaryKind)
-    # Value: list of (gap_idx, along_idx, feature_vector)
-    _edge_entry = tuple[int, int, npt.NDArray[np.float64]]
-    groups: dict[tuple[bool, BoundaryKind], list[_edge_entry]] = {
-        (True, BoundaryKind.CELL): [],
-        (True, BoundaryKind.BOX): [],
-        (False, BoundaryKind.CELL): [],
-        (False, BoundaryKind.BOX): [],
+    # Collect features grouped by BoundaryKind only — horizontal and vertical
+    # borders of the same structural type are clustered together.  This doubles
+    # the anchor count per group (anchors from both axes vote on the same
+    # polarity decision) and halves the number of independent polarity choices.
+    # Key: BoundaryKind
+    # Value: list of (is_horizontal, gap_idx, along_idx, feature_vector)
+    _edge_entry = tuple[bool, int, int, npt.NDArray[np.float64]]
+    groups: dict[BoundaryKind, list[_edge_entry]] = {
+        BoundaryKind.CELL: [],
+        BoundaryKind.BOX: [],
     }
 
     for gap_idx in range(8):
@@ -249,18 +250,18 @@ def cluster_borders(
                     sample_margin_px,
                 )
                 feat = strip_features(strip)
-                groups[(is_h, kind)].append((gap_idx, along_idx, feat))
+                groups[kind].append((is_h, gap_idx, along_idx, feat))
 
     border_x_prob = np.zeros((9, 8), dtype=np.float64)
     border_y_prob = np.zeros((8, 9), dtype=np.float64)
 
-    for (is_h, _kind), entries in groups.items():
-        features = [e[2] for e in entries]
+    for _kind, entries in groups.items():
+        features = [e[3] for e in entries]
         anchor_pos = [
-            i for i, (g, a, _) in enumerate(entries) if (is_h, g, a) in anchors
+            i for i, (is_h, g, a, _) in enumerate(entries) if (is_h, g, a) in anchors
         ]
         probs = _cluster_group(features, anchor_pos)
-        for i, (gap_idx, along_idx, _) in enumerate(entries):
+        for i, (is_h, gap_idx, along_idx, _) in enumerate(entries):
             if is_h:
                 border_x_prob[along_idx, gap_idx] = probs[i]
             else:
