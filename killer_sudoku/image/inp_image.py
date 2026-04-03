@@ -15,7 +15,11 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 
-from killer_sudoku.image.border_clustering import cluster_borders
+from killer_sudoku.image.border_clustering import (
+    BoundaryKind,
+    boundary_kind,
+    cluster_borders,
+)
 from killer_sudoku.image.border_detection import (
     BorderPCA1D,
     detect_borders_peak_count,
@@ -137,8 +141,21 @@ class InpImage:
             gry, m, config, border_detector
         )
 
+        self.info.brdrs = InpImage._borders_to_brdrs(
+            self.info.border_x, self.info.border_y
+        )
+
+        warped_blk: npt.NDArray[np.uint8] = np.asarray(
+            cv2.warpPerspective(
+                blk, m, (resolution, resolution), flags=cv2.INTER_LINEAR
+            ),
+            dtype=np.uint8,
+        )
+
         if config.poc_border_clustering:
-            poc_bx, poc_by = self._identify_borders_poc(gry, m, config)
+            poc_bx, poc_by = self._identify_borders_poc(
+                gry, m, config, warped_blk, num_recogniser
+            )
             diff_x = int(np.sum(poc_bx != self.info.border_x))
             diff_y = int(np.sum(poc_by != self.info.border_y))
             total = int(self.info.border_x.size + self.info.border_y.size)
@@ -153,26 +170,6 @@ class InpImage:
                     diff_x,
                     diff_y,
                 )
-
-        brdrs: npt.NDArray[np.bool_] = np.full(
-            shape=(9, 9, 4), fill_value=True, dtype=bool
-        )
-        for col in range(9):
-            for row in range(8):
-                isbh = bool(self.info.border_x[col, row])
-                isbv = bool(self.info.border_y[row, col])
-                brdrs[row + 0, col][1] = isbh
-                brdrs[row + 1, col][3] = isbh
-                brdrs[col, row + 0][2] = isbv
-                brdrs[col, row + 1][0] = isbv
-        self.info.brdrs = brdrs
-
-        warped_blk: npt.NDArray[np.uint8] = np.asarray(
-            cv2.warpPerspective(
-                blk, m, (resolution, resolution), flags=cv2.INTER_LINEAR
-            ),
-            dtype=np.uint8,
-        )
 
         cage_totals = self._build_cage_totals(
             warped_blk, num_recogniser, subres, self.info.brdrs
@@ -308,17 +305,21 @@ class InpImage:
         gry: npt.NDArray[np.uint8],
         m: npt.NDArray[np.float64],
         config: ImagePipelineConfig,
+        warped_blk: npt.NDArray[np.uint8],
+        num_recogniser: CayenneNumber,
     ) -> tuple[npt.NDArray[np.bool_], npt.NDArray[np.bool_]]:
         """Run the PoC format-agnostic pipeline (Stages 3 + 4) for comparison.
 
         Applies cell scan (Stage 3) followed by anchored border clustering
-        (Stage 4).  Converts soft probabilities to hard border assignments by
-        thresholding at 0.5 (uncertain borders, P==0.5, default to False).
+        (Stage 4).  Tries all 4 combinations of BOX/CELL group polarity and
+        picks the one whose cage-total sum is closest to 405.
 
         Args:
             gry: Grayscale source image.
             m: Perspective transform matrix from locate_grid.
             config: Pipeline configuration.
+            warped_blk: Warped binary digit image (ink=white) for cage-total scoring.
+            num_recogniser: Digit classifier used to score polarity candidates.
 
         Returns:
             (border_x, border_y) hard bool arrays, shapes (9, 8) and (8, 9).
@@ -343,9 +344,128 @@ class InpImage:
             config.cell_scan.anchor_confidence_threshold,
         )
 
-        border_x: npt.NDArray[np.bool_] = bx_prob > 0.5
-        border_y: npt.NDArray[np.bool_] = by_prob > 0.5
-        return border_x, border_y
+        # Compute cage_totals once — it depends only on the image, not on borders.
+        initial_bx: npt.NDArray[np.bool_] = bx_prob > 0.5
+        initial_by: npt.NDArray[np.bool_] = by_prob > 0.5
+        try:
+            cage_totals = InpImage._build_cage_totals(
+                warped_blk,
+                num_recogniser,
+                subres,
+                InpImage._borders_to_brdrs(initial_bx, initial_by),
+            )
+        except Exception:
+            return initial_bx, initial_by
+
+        # Try all 4 BOX/CELL polarity combinations; pick the one with the most
+        # cage regions that contain exactly one printed total (connectivity score).
+        best_bx = initial_bx
+        best_by = initial_by
+        best_score = InpImage._connectivity_score(initial_bx, initial_by, cage_totals)
+
+        for flip_box, flip_cell in ((True, False), (False, True), (True, True)):
+            cx: npt.NDArray[np.float64] = bx_prob.copy()
+            cy: npt.NDArray[np.float64] = by_prob.copy()
+            for gap in range(8):
+                if boundary_kind(gap) == BoundaryKind.BOX and flip_box:
+                    cx[:, gap] = 1.0 - cx[:, gap]
+                    cy[gap, :] = 1.0 - cy[gap, :]
+                elif boundary_kind(gap) == BoundaryKind.CELL and flip_cell:
+                    cx[:, gap] = 1.0 - cx[:, gap]
+                    cy[gap, :] = 1.0 - cy[gap, :]
+            border_x: npt.NDArray[np.bool_] = cx > 0.5
+            border_y: npt.NDArray[np.bool_] = cy > 0.5
+            score = InpImage._connectivity_score(border_x, border_y, cage_totals)
+            _log.debug(
+                "poc polarity flip_box=%s flip_cell=%s: connectivity=%d",
+                flip_box,
+                flip_cell,
+                score,
+            )
+            if score > best_score:
+                best_score = score
+                best_bx = border_x
+                best_by = border_y
+
+        return best_bx, best_by
+
+    @staticmethod
+    def _borders_to_brdrs(
+        border_x: npt.NDArray[np.bool_],
+        border_y: npt.NDArray[np.bool_],
+    ) -> npt.NDArray[np.bool_]:
+        """Convert (9, 8) and (8, 9) border arrays to a (9, 9, 4) brdrs array.
+
+        brdrs[row, col] = [up, right, down, left] where True means the border
+        between this cell and its neighbour is a cage border.
+        """
+        brdrs: npt.NDArray[np.bool_] = np.full((9, 9, 4), True, dtype=bool)
+        for col in range(9):
+            for row in range(8):
+                isbh = bool(border_x[col, row])
+                isbv = bool(border_y[row, col])
+                brdrs[row, col][1] = isbh
+                brdrs[row + 1, col][3] = isbh
+                brdrs[col, row][2] = isbv
+                brdrs[col, row + 1][0] = isbv
+        return brdrs
+
+    @staticmethod
+    def _connectivity_score(
+        border_x: npt.NDArray[np.bool_],
+        border_y: npt.NDArray[np.bool_],
+        cage_totals: npt.NDArray[np.intp],
+    ) -> int:
+        """Count connected cage regions that contain exactly one printed total.
+
+        Flood-fills through open (non-cage) borders using border_x[col, row_gap]
+        (horizontal borders) and border_y[col_gap, row] (vertical borders).
+        A well-formed cage has exactly one non-zero cage_totals cell.  The
+        maximum score equals the number of cages in the puzzle (~20–30 for
+        a typical killer sudoku).
+
+        Args:
+            border_x: Shape (9, 8) — True where cage border lies between rows.
+            border_y: Shape (8, 9) — True where cage border lies between columns.
+            cage_totals: Shape (9, 9), indexed [col, row] — non-zero for cage heads.
+
+        Returns:
+            Number of cage regions with exactly one head.
+        """
+        visited = np.zeros((9, 9), dtype=bool)
+        score = 0
+        for sc in range(9):
+            for sr in range(9):
+                if visited[sc, sr]:
+                    continue
+                region: list[tuple[int, int]] = [(sc, sr)]
+                visited[sc, sr] = True
+                heads = 0
+                i = 0
+                while i < len(region):
+                    c, r = region[i]
+                    i += 1
+                    if cage_totals[c, r] > 0:
+                        heads += 1
+                    # down: row r → r+1, blocked by border_x[c, r]
+                    if r + 1 < 9 and not visited[c, r + 1] and not border_x[c, r]:
+                        visited[c, r + 1] = True
+                        region.append((c, r + 1))
+                    # up: row r → r-1, blocked by border_x[c, r-1]
+                    if r > 0 and not visited[c, r - 1] and not border_x[c, r - 1]:
+                        visited[c, r - 1] = True
+                        region.append((c, r - 1))
+                    # right: col c → c+1, blocked by border_y[c, r]
+                    if c + 1 < 9 and not visited[c + 1, r] and not border_y[c, r]:
+                        visited[c + 1, r] = True
+                        region.append((c + 1, r))
+                    # left: col c → c-1, blocked by border_y[c-1, r]
+                    if c > 0 and not visited[c - 1, r] and not border_y[c - 1, r]:
+                        visited[c - 1, r] = True
+                        region.append((c - 1, r))
+                if heads == 1:
+                    score += 1
+        return score
 
     @staticmethod
     def _build_cage_totals(
