@@ -516,6 +516,17 @@ dialog::backdrop {
   cursor: pointer;
 }
 
+.btn-rule-info {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--accent);
+  padding: 0 0.25rem;
+  line-height: 1;
+}
+.btn-rule-info:hover { opacity: 0.7; }
+
 .hint-modal-explanation {
   margin: 1rem 0 0.5rem;
   line-height: 1.6;

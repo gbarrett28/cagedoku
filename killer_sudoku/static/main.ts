@@ -130,6 +130,13 @@ interface HintsResponse {
 interface RuleInfo {
   name: string;
   display_name: string;
+  description: string;
+}
+
+interface SettingsResponse {
+  always_apply_rules: string[];
+  show_essential: boolean;
+  hintable_rules: RuleInfo[];
 }
 
 interface AddVirtualCageRequest {
@@ -153,6 +160,7 @@ let virtualCageSelection: Set<string> = new Set();  // "r,c" keys, 0-based
 let selectedCell: { row: number; col: number } | null = null;
 // row and col are 1-based (1–9), matching the API convention
 let showCandidates: boolean = false;
+let showEssential: boolean = true;
 let candidateEditMode: boolean = false;
 let inspectCageMode: boolean = false;
 let inspectedCageLabel: string | null = null;
@@ -215,6 +223,7 @@ function drawGrid(
   highlightKeys: Set<string> | null = null,  // "r,c" keys, 0-based
   candidatesData: CandidatesResponse | null = null,
   vcSelection: Set<string> | null = null,    // cells being drawn, "r,c" 0-based
+  showEss: boolean = true,
 ): void {
   canvas.width = GRID_PX;
   canvas.height = GRID_PX;
@@ -428,7 +437,7 @@ function drawGrid(
             ctx.lineTo(cx + hw, cy);
             ctx.stroke();
           } else if (candSet.has(n)) {
-            ctx.fillStyle = essSet.has(n) ? "#ffb5a7" : "#9ca3af";
+            ctx.fillStyle = (essSet.has(n) && showEss) ? "#cc5a45" : "#888";
             ctx.fillText(String(n), cx, cy);
           }
         }
@@ -609,6 +618,7 @@ function redrawGrid(): void {
     highlights,
     currentCandidates,
     vcSel,
+    showEssential,
   );
 }
 
@@ -735,7 +745,6 @@ function updateUndoButton(state: PuzzleState): void {
 
 async function handleProcess(): Promise<void> {
   const fileInput = el<HTMLInputElement>("file-input");
-  const newspaper = el<HTMLSelectElement>("newspaper-select").value;
 
   if (!fileInput.files || fileInput.files.length === 0) {
     setStatus("Please select an image file.", true);
@@ -748,7 +757,7 @@ async function handleProcess(): Promise<void> {
 
   setLoading(true);
   try {
-    const res = await fetch(`/api/puzzle?newspaper=${newspaper}`, {
+    const res = await fetch("/api/puzzle", {
       method: "POST",
       body: formData,
     });
@@ -772,6 +781,10 @@ async function handleProcess(): Promise<void> {
     } else {
       warpedCol.hidden = true;
     }
+
+    // Collapse upload panel so the review layout has more room.
+    el<HTMLElement>("upload-panel").hidden = true;
+    el<HTMLButtonElement>("new-puzzle-btn").hidden = false;
 
     if (data.warning) {
       setStatus(`Warning: ${data.warning}`, false);
@@ -1021,9 +1034,29 @@ el<HTMLCanvasElement>("grid-canvas").addEventListener("mousedown", (e) => {
 
 document.addEventListener("keydown", (e) => {
   if (currentState?.user_grid == null) return;
+  // Don't steal keypresses from any focused input or textarea.
+  const activeEl = document.activeElement;
+  if (activeEl instanceof HTMLInputElement || activeEl instanceof HTMLTextAreaElement) return;
   if (selectedCell === null) return;
-  // Don't steal keypresses from the virtual-cage total input field.
-  if (document.activeElement === el<HTMLInputElement>("vc-total-input")) return;
+
+  // Arrow key navigation (wraps around at grid edges).
+  const arrowDeltas: Record<string, [number, number]> = {
+    ArrowUp:    [-1,  0],
+    ArrowDown:  [ 1,  0],
+    ArrowLeft:  [ 0, -1],
+    ArrowRight: [ 0,  1],
+  };
+  if (e.key in arrowDeltas) {
+    e.preventDefault();
+    const [dr, dc] = arrowDeltas[e.key]!;
+    selectedCell = {
+      row: ((selectedCell.row - 1 + dr + 9) % 9) + 1,
+      col: ((selectedCell.col - 1 + dc + 9) % 9) + 1,
+    };
+    redrawGrid();
+    return;
+  }
+
   if (showCandidates && candidateEditMode) {
     if (e.key >= "1" && e.key <= "9") {
       void handleCandidateCycle(
@@ -1147,10 +1180,15 @@ el<HTMLButtonElement>("config-save-btn").addEventListener("click", async () => {
     }
   }
 
+  showEssential = el<HTMLInputElement>("essential-toggle").checked;
+
   const patchResp = await fetch("/api/settings", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ always_apply_rules: alwaysApplyRules }),
+    body: JSON.stringify({
+      always_apply_rules: alwaysApplyRules,
+      show_essential: showEssential,
+    }),
   });
   if (!patchResp.ok) {
     throw new Error(
@@ -1195,8 +1233,12 @@ async function openConfigModal(): Promise<void> {
   if (!res.ok) {
     throw new Error(`GET settings failed: ${res.status} ${await res.text()}`);
   }
-  const settings = (await res.json()) as { always_apply_rules: string[]; hintable_rules: RuleInfo[] };
+  const settings = (await res.json()) as SettingsResponse;
   const alwaysApplySet = new Set(settings.always_apply_rules);
+
+  // Sync module-level showEssential from persisted settings.
+  showEssential = settings.show_essential;
+  el<HTMLInputElement>("essential-toggle").checked = showEssential;
 
   const list = el<HTMLElement>("config-rules-list");
   clearChildren(list);
@@ -1208,6 +1250,16 @@ async function openConfigModal(): Promise<void> {
     const nameSpan = document.createElement("span");
     nameSpan.className = "config-rule-name";
     nameSpan.textContent = rule.display_name;
+
+    const infoBtn = document.createElement("button");
+    infoBtn.className = "btn-rule-info";
+    infoBtn.textContent = "\u24d8";  // ⓘ
+    infoBtn.title = "About this rule";
+    infoBtn.addEventListener("click", () => {
+      el<HTMLHeadingElement>("rule-info-title").textContent = rule.display_name;
+      el<HTMLParagraphElement>("rule-info-description").textContent = rule.description;
+      el<HTMLDialogElement>("rule-info-modal").showModal();
+    });
 
     const select = document.createElement("select");
     select.className = "config-rule-select";
@@ -1224,12 +1276,17 @@ async function openConfigModal(): Promise<void> {
     select.value = alwaysApplySet.has(rule.name) ? "auto" : "hint";
 
     row.appendChild(nameSpan);
+    row.appendChild(infoBtn);
     row.appendChild(select);
     list.appendChild(row);
   }
 
-  (el<HTMLDialogElement>("config-modal")).showModal();
+  el<HTMLDialogElement>("config-modal").showModal();
 }
+
+el<HTMLButtonElement>("rule-info-close-btn").addEventListener("click", () => {
+  el<HTMLDialogElement>("rule-info-modal").close();
+});
 
 function showHintModal(hint: HintItem): void {
   activeHintItem = hint;
@@ -1365,4 +1422,16 @@ el<HTMLButtonElement>("hint-apply-btn").addEventListener("click", async () => {
 el<HTMLButtonElement>("hint-close-btn").addEventListener("click", () => {
   (el<HTMLDialogElement>("hint-modal") as HTMLDialogElement).close();
   clearHintHighlight();
+});
+
+el<HTMLButtonElement>("help-btn").addEventListener("click", () => {
+  el<HTMLDialogElement>("general-help-modal").showModal();
+});
+
+el<HTMLButtonElement>("general-help-close-btn").addEventListener("click", () => {
+  el<HTMLDialogElement>("general-help-modal").close();
+});
+
+el<HTMLButtonElement>("new-puzzle-btn").addEventListener("click", () => {
+  window.location.reload();
 });

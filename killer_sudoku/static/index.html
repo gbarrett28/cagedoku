@@ -13,6 +13,8 @@
     <h1>COACH</h1>
     <span class="header-sub">Killer Sudoku Coaching App</span>
     <span id="load-time" class="header-sub" style="font-size:0.75em;opacity:0.6;margin-left:auto;margin-right:0.5rem"></span>
+    <button id="new-puzzle-btn" class="btn-secondary" hidden>New puzzle</button>
+    <button id="help-btn" class="btn-secondary">Help</button>
     <button id="config-btn" class="btn-secondary">Config</button>
     <button id="quit-btn" class="btn-secondary btn-quit">Quit server</button>
   </div>
@@ -23,13 +25,6 @@
   <!-- ── Phase 1a: Upload ── -->
   <section id="upload-panel" class="card">
     <h2>Open Puzzle</h2>
-    <div class="form-row">
-      <label class="field-label" for="newspaper-select">Newspaper</label>
-      <select id="newspaper-select">
-        <option value="guardian">Guardian</option>
-        <option value="observer">Observer</option>
-      </select>
-    </div>
     <div class="form-row">
       <label class="field-label" for="file-input">Puzzle image</label>
       <input type="file" id="file-input" accept="image/*">
@@ -166,6 +161,10 @@
 
 <dialog id="config-modal">
   <h2>Solver Rules</h2>
+  <div class="form-row">
+    <label class="field-label" for="essential-toggle">Essential digit highlight</label>
+    <input type="checkbox" id="essential-toggle" checked>
+  </div>
   <div id="config-rules-list" class="config-rules-list"></div>
   <div class="form-actions">
     <button id="config-save-btn">Save</button>
@@ -180,6 +179,68 @@
   <div class="form-actions">
     <button id="hint-apply-btn">Apply automatically</button>
     <button id="hint-close-btn" class="btn-secondary">Close &amp; apply by hand</button>
+  </div>
+</dialog>
+
+<dialog id="rule-info-modal">
+  <h2 id="rule-info-title"></h2>
+  <p id="rule-info-description"></p>
+  <div class="form-actions">
+    <button id="rule-info-close-btn" class="btn-secondary">Close</button>
+  </div>
+</dialog>
+
+<dialog id="general-help-modal">
+  <h2>Using COACH</h2>
+
+  <h3>What COACH does</h3>
+  <p>COACH reads a photo of a killer sudoku puzzle, detects the cage layout and
+  totals, and guides you through solving it using logical deduction rules.
+  It never guesses &mdash; every suggestion is a logically valid elimination or
+  placement.</p>
+
+  <h3>Phases</h3>
+  <ol>
+    <li><strong>Upload</strong> &mdash; Select a photo and press
+    <em>Process image</em>. COACH detects the grid and reads the cage totals.</li>
+    <li><strong>Review</strong> &mdash; Check the detected layout against the photo.
+    Correct any misread cage totals. Press <em>Looks correct &mdash; solve!</em>
+    when ready.</li>
+    <li><strong>Playing</strong> &mdash; Enter digits, use hints, and track
+    candidates until the puzzle is solved.</li>
+  </ol>
+
+  <h3>Candidates</h3>
+  <p>Press <strong>Show candidates</strong> to see which digits remain possible in
+  each unsolved cell. A <span style="color:#cc5a45">salmon</span> digit is
+  <em>essential</em> &mdash; it appears in every valid cage solution. Press
+  <strong>?</strong> for full candidates help.</p>
+
+  <h3>Hints</h3>
+  <p>Press <strong>Hints</strong> to see available logical deductions. Each hint
+  explains the rule it used and what it eliminates. You can apply it automatically
+  or work through it by hand.</p>
+
+  <h3>Always-apply rules</h3>
+  <p>Open <strong>Config</strong> to choose which rules run automatically after
+  every move. Rules left as hint-only appear in the Hints list. Press the
+  <strong>&#9432;</strong> button next to any rule for an explanation.</p>
+
+  <h3>Virtual cages</h3>
+  <p>When you can deduce that a set of cells sums to a known value, press
+  <strong>Virtual cage</strong>, click the cells, and enter the total. The app
+  will track valid solutions for this cage and use it in future hints.</p>
+
+  <h3>Keyboard shortcuts</h3>
+  <table>
+    <tr><th>Key</th><th>Action</th></tr>
+    <tr><td>1&ndash;9</td><td>Place digit in selected cell</td></tr>
+    <tr><td>Delete / Backspace</td><td>Clear selected cell</td></tr>
+    <tr><td>Arrow keys</td><td>Move selection</td></tr>
+  </table>
+
+  <div class="form-actions">
+    <button id="general-help-close-btn" class="btn-secondary">Close</button>
   </div>
 </dialog>
 
