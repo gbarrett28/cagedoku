@@ -58,10 +58,7 @@ from killer_sudoku.solver.engine.board_state import NoSolnError
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.types import Elimination, Placement
 from killer_sudoku.solver.equation import sol_sums
-from killer_sudoku.solver.grid import (  # Grid used in solve endpoint
-    Grid,
-    ProcessingError,
-)
+from killer_sudoku.solver.grid import Grid  # used in solve endpoint
 from killer_sudoku.solver.puzzle_spec import PuzzleSpec
 
 # ---------------------------------------------------------------------------
@@ -121,6 +118,69 @@ def _spec_to_data(spec: PuzzleSpec) -> PuzzleSpecData:
         cage_totals=spec.cage_totals.tolist(),
         border_x=spec.border_x.tolist(),
         border_y=spec.border_y.tolist(),
+    )
+
+
+def _build_diagnostic_spec(
+    cage_totals: npt.NDArray[np.intp],
+    border_x: npt.NDArray[np.bool_],
+    border_y: npt.NDArray[np.bool_],
+) -> PuzzleSpec:
+    """Build an unvalidated PuzzleSpec for diagnostic display.
+
+    Uses the same union-find connected-components logic as validate_cage_layout
+    but skips all cage-validity checks.  The result may contain invalid cages
+    (wrong totals, multiple heads, headless regions) but is safe to render and
+    interact with in the confirmation UI.
+
+    Args:
+        cage_totals: (9,9) int array; non-zero at cage-head cells.
+        border_x: (9,8) horizontal cage-wall flags.
+        border_y: (8,9) vertical cage-wall flags.
+
+    Returns:
+        PuzzleSpec with connected-component regions; cage_totals unchanged.
+    """
+    rmap: dict[tuple[int, int], tuple[int, int]] = {
+        (c, r): (c, r) for c in range(9) for r in range(9)
+    }
+    members: dict[tuple[int, int], set[tuple[int, int]]] = {
+        (c, r): {(c, r)} for c in range(9) for r in range(9)
+    }
+
+    def union(a: tuple[int, int], b: tuple[int, int]) -> None:
+        ra, rb = sorted((rmap[a], rmap[b]))
+        if ra == rb:
+            return
+        for p in members[rb]:
+            rmap[p] = ra
+        members[ra] |= members[rb]
+        del members[rb]
+
+    for col in range(9):
+        for row in range(8):
+            if not border_x[col, row]:
+                union((col, row), (col, row + 1))
+
+    for col in range(8):
+        for row in range(9):
+            if not border_y[col, row]:
+                union((col, row), (col + 1, row))
+
+    rep_to_id: dict[tuple[int, int], int] = {}
+    regions: npt.NDArray[np.intp] = np.zeros((9, 9), dtype=np.intp)
+    for col in range(9):
+        for row in range(9):
+            rep = rmap[(col, row)]
+            if rep not in rep_to_id:
+                rep_to_id[rep] = len(rep_to_id) + 1
+            regions[col, row] = rep_to_id[rep]
+
+    return PuzzleSpec(
+        regions=regions,
+        cage_totals=cage_totals,
+        border_x=border_x,
+        border_y=border_y,
     )
 
 
@@ -654,10 +714,26 @@ def make_router(
 
             try:
                 inp = InpImage(tmp_path, img_config, border_detector, num_recogniser)
-            except (AssertionError, ValueError, ProcessingError) as exc:
+            except AssertionError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-            spec = inp.spec
+            warped_b64: str | None = _encode_image(_resize_for_display(inp.warped_img))
+
+            if inp.spec_error is not None:
+                try:
+                    spec = _build_diagnostic_spec(
+                        inp.info.cage_totals,
+                        inp.info.border_x,
+                        inp.info.border_y,
+                    )
+                except Exception as exc:
+                    raise HTTPException(status_code=422, detail=str(exc)) from exc
+                warning: str | None = inp.spec_error
+            else:
+                assert inp.spec is not None
+                spec = inp.spec
+                warning = None
+
             cages = _spec_to_cage_states(spec)
             spec_data = _spec_to_data(spec)
             original_b64 = _encode_image(_resize_for_display(inp.img))
@@ -671,7 +747,12 @@ def make_router(
                 original_image_b64=original_b64,
             )
             store.save(state)
-            return UploadResponse(session_id=session_id, state=state)
+            return UploadResponse(
+                session_id=session_id,
+                state=state,
+                warning=warning,
+                warped_image_b64=warped_b64,
+            )
 
         finally:
             if tmp_path is not None:
