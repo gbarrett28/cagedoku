@@ -79,7 +79,6 @@ interface PuzzleSpecData {
 
 interface PuzzleState {
   session_id: string;
-  newspaper: "guardian" | "observer";
   cages: CageState[];
   spec_data: PuzzleSpecData;
   original_image_b64: string;

@@ -50,12 +50,6 @@ class TestSessionStoreRoundTrip:
         store.save(state)
         assert store.load("my-unique-id").session_id == "my-unique-id"
 
-    def test_newspaper_preserved(self, tmp_path: Path) -> None:
-        store = SessionStore(tmp_path / "sessions")
-        state = _minimal_state()
-        store.save(state)
-        assert store.load(state.session_id).newspaper == "guardian"
-
     def test_cage_total_preserved(self, tmp_path: Path) -> None:
         store = SessionStore(tmp_path / "sessions")
         state = _minimal_state()

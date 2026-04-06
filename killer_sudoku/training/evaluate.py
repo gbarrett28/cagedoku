@@ -48,7 +48,7 @@ _log = logging.getLogger(__name__)
 
 def write_eval_report(
     puzzle_dir: Path,
-    newspaper: str,
+    newspaper: str | None,
     status: StatusStore,
     solved: int,
     cheated: int,
@@ -66,7 +66,7 @@ def write_eval_report(
 
     Args:
         puzzle_dir: Directory containing puzzle images.
-        newspaper: Newspaper identifier string ('guardian' or 'observer').
+        newspaper: Newspaper identifier string ('guardian' or 'observer'), or None.
         status: StatusStore with current puzzle outcomes.
         solved: Count of SOLVED puzzles.
         cheated: Count of CHEAT puzzles.

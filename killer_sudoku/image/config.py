@@ -174,7 +174,7 @@ class ImagePipelineConfig:
     """Top-level configuration for the image processing pipeline."""
 
     puzzle_dir: Path
-    newspaper: Literal["guardian", "observer"]
+    newspaper: Literal["guardian", "observer"] | None = None
     rework: bool = False
     grid_location: GridLocationConfig = dataclasses.field(
         default_factory=GridLocationConfig

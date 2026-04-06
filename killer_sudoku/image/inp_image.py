@@ -599,15 +599,20 @@ class InpImage:
 
     @staticmethod
     def make_border_detector(config: ImagePipelineConfig) -> BorderPCA1D | None:
-        """Load the Observer border detector, or return None for Guardian.
+        """Load the border detector model, or return None for format-agnostic detection.
+
+        When newspaper is not specified (production), returns None and the pipeline
+        uses format-agnostic peak-count detection.  When newspaper is "observer"
+        (training/batch), loads the trained BorderPCA1D model.  Guardian always
+        uses peak-count.
 
         Args:
             config: Pipeline configuration.
 
         Returns:
-            Loaded BorderPCA1D for Observer, or None for Guardian.
+            Loaded BorderPCA1D model, or None to use peak-count detection.
         """
-        if config.is_guardian:
+        if config.newspaper is None or config.is_guardian:
             return None
         return load_observer_border_detector(config.border_pca1d_model_path)
 

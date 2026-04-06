@@ -11,7 +11,6 @@ import base64
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Literal
 
 import cv2
 import numpy as np
@@ -667,7 +666,6 @@ def make_router(
     @router.post("", response_model=UploadResponse)
     async def upload_puzzle(
         file: UploadFile,
-        newspaper: Literal["guardian", "observer"] = "guardian",
     ) -> UploadResponse:
         """Accept a puzzle image, run the OCR pipeline, and create a session.
 
@@ -686,7 +684,6 @@ def make_router(
             session_id = str(uuid.uuid4())
             mock_state = PuzzleState(
                 session_id=session_id,
-                newspaper=newspaper,
                 cages=cages,
                 spec_data=spec_data,
                 original_image_b64=original_b64,
@@ -703,10 +700,8 @@ def make_router(
                 tmp.write(contents)
                 tmp_path = Path(tmp.name)
 
-            puzzle_dir = config.puzzle_dir(newspaper)
             img_config = ImagePipelineConfig(
-                puzzle_dir=puzzle_dir,
-                newspaper=newspaper,
+                puzzle_dir=config.puzzle_dir,
                 rework=True,
             )
             border_detector = InpImage.make_border_detector(img_config)
@@ -741,7 +736,6 @@ def make_router(
             session_id = str(uuid.uuid4())
             state = PuzzleState(
                 session_id=session_id,
-                newspaper=newspaper,
                 cages=cages,
                 spec_data=spec_data,
                 original_image_b64=original_b64,

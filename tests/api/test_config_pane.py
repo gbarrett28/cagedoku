@@ -30,8 +30,7 @@ def store(sessions_dir: Path) -> SessionStore:
 @pytest.fixture
 def client(sessions_dir: Path, tmp_path: Path) -> TestClient:
     config = CoachConfig(
-        guardian_dir=tmp_path / "guardian",
-        observer_dir=tmp_path / "observer",
+        puzzle_dir=tmp_path / "puzzles",
         sessions_dir=sessions_dir,
     )
     return TestClient(create_app(config))

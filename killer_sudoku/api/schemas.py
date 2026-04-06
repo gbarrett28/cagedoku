@@ -186,7 +186,6 @@ class PuzzleState(BaseModel):
 
     Attributes:
         session_id:          UUID identifying this session.
-        newspaper:           Source newspaper (determines which OCR models to use).
         cages:               Current cage layout, editable by the user.
         spec_data:           Serialized PuzzleSpec arrays (for canvas rendering).
         original_image_b64:  Base64-encoded JPEG of the uploaded photo.
@@ -200,7 +199,6 @@ class PuzzleState(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     session_id: str
-    newspaper: Literal["guardian", "observer"]
     cages: list[CageState]
     spec_data: PuzzleSpecData
     original_image_b64: str
@@ -220,6 +218,7 @@ class PuzzleState(BaseModel):
     # Turn-based event history, newest last.  Undo = pop last turn.
 
     virtual_cages: list[VirtualCage] = []
+    # User-added derived sum constraints, keyed by canonical cell:total string.
     # User-added derived sum constraints, keyed by canonical cell:total string.
 
 
