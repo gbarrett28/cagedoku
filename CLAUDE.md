@@ -26,13 +26,13 @@ candidates, logical hints, and rule-based deductions.
 | Training pipeline | `training/` | `docs/architecture.md` |
 | Batch solver | `solver/grid.py`, `solver/equation.py`, `output/`, `main.py` | code |
 | Coaching engine | `solver/engine/` | `docs/rules.md` |
-| Coaching app | `api/`, `static/` | `docs/COACH.md` |
+| Coaching app | `api/`, `static/` | `docs/architecture.md`, `docs/ui.md` |
 
 ## Key Reference Documents
 
 - **`docs/rules.md`** — read before touching any rule, hint, or coaching engine component (`solver/engine/`)
-- **`docs/COACH.md`** — read before working on the coaching API, session lifecycle, or frontend (`api/`, `static/`)
-- **`docs/architecture.md`** — read before working on the image pipeline or training pipeline (`image/`, `training/`)
+- **`docs/architecture.md`** — read before working on the coaching API, session lifecycle, image pipeline, or training pipeline (`api/`, `static/`, `image/`, `training/`)
+- **`docs/ui.md`** — read before working on the frontend (`static/`)
 
 ## Predecessor Project
 
@@ -106,8 +106,8 @@ This rule applies to **all** code: package modules, tests, and scripts.
 
 ## Web API
 
-The coaching app is fully implemented in `killer_sudoku/api/`. See `docs/COACH.md`
-for the complete architecture. The TypeScript frontend source is in
+The coaching app is fully implemented in `killer_sudoku/api/`. See `docs/architecture.md`
+(Coaching App section) for the complete architecture. The TypeScript frontend source is in
 `killer_sudoku/static/main.ts`; compile with `tsc` before running (output `main.js`
 is not committed). Interactive API docs at `http://127.0.0.1:8000/docs` when running.
 

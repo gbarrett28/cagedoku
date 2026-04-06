@@ -39,17 +39,10 @@ interactive modes in order to assure correctness of the interactive mode.
 
 ---
 
-## UI Updates
+## UI
 
-1. The flow in the UI should remove the puzzle selection widget once a puzzle has
-   been selected and the image processing is successful.
-2. Once a cell is selected, navigate around cells using arrow keys.
-3. Classic sudoku recognition and coaching are in progress; see `docs/image-pipeline.md`
-   for the image pipeline design and the migration plan.
-4. There is a bug in the virtual cage addition — typing the total puts the last digit
-   of the total into the last selected cage cell.
-5. The configuration screen should have an (i) info modal that can be popped out to
-   explain what each rule does.
+See **`docs/ui.md`** for the full UI specification: screen flow, component
+descriptions, interaction design, help facilities, and known UI issues.
 
 ---
 
@@ -121,137 +114,209 @@ The solver has no tunable thresholds — it is exact by construction.
 
 ---
 
-## Solver Rules Reference
+## Coaching App
 
-[gb] This section should be changed at some point...  Each rule should be self-documenting in the config tab of the UI so we shouldn't need a reference in a doc.
+The coaching app (`api/`, `static/`) bridges the image pipeline and coaching engine
+with a browser-based interactive UI.
 
-This section enumerates every rule the solver applies, in the order they are applied
-within `Grid.solve`.  Rules marked **[MISSING]** are standard killer sudoku techniques
-not yet implemented.
+### Design Principles
 
-### Setup: equation generation (`Grid.set_up`)
+The coach is organised around **rules and highlights**:
 
-**R1 — Row sum**: Each of the 9 rows must sum to 45 and contain each digit 1–9 exactly
-once.  One `Equation(row_cells, 45)` is created per row.
+- **Always-apply rules** run automatically on every state change, keeping
+  candidates current without user intervention.
+- **Hint-only rules** are surfaced on demand when the user requests hints.
+  They do not modify the board automatically.
 
-**R2 — Column sum**: Same as R1 for each of the 9 columns.
+**Essential highlight** (salmon colour): digits that must appear in a cage
+regardless of which valid solution is chosen. Computed automatically from cage
+solutions; configurable (show/hide) via the config modal.
 
-**R3 — Box sum**: Same as R1 for each of the nine 3×3 boxes.
+**User actions** are limited to three things:
+1. Enter a digit in a cell (or clear it)
+2. Eliminate or restore a candidate digit in a cell
+3. Eliminate or restore a solution combination for a cage
 
-**R4 — Cage sum**: Each cage must sum to its printed total and contain distinct digits.
-One `Equation(cage_cells, total)` is created per cage.
+**Auto-application** is bootstrapped by two always-apply rules:
+1. `CageCandidateFilter` — narrows each cell's candidates to the union of its
+   cage's remaining solutions
+2. `SolvedCellElimination` — eliminates a determined digit from all row/col/box
+   peers
 
-**R5 — Row/column window equations** (`add_equns`): A sliding window scans each row
-and column to derive partial-sum equations from cage coverage.  When cage cells span
-a contiguous run of rows (or columns), any excess cells that extend beyond a complete
-set of rows/columns form a new equation with a known sum.  This is the "innies and
-outies" rule: e.g. if all cages in rows 1–3 are known except for one cell that bulges
-into row 4, that cell's value equals (sum of those cages) minus 3×45.  The window runs
-in both directions to catch both innie and outie cases.
+All other rules are hint-only by default. Users can promote rules to always-apply
+via the config modal.
 
-**R6 — Box window equations** (`add_equns_r`): A recursive expansion from each 3×3
-box accumulates cage cells and subtracts completed boxes (each summing to 45).  Any
-remaining cells form a new equation.  This generalises innies/outies to box clusters.
-The recursion expands into adjacent boxes that overlap the current cover.
+### Session Lifecycle
 
-**R7 — Difference constraints** (`DFFS`): When `add_equns` finds that two consecutive
-windows differ by exactly one cell on each side, the difference between those two cells
-is fixed.  Formally: if cover_A and cover_B satisfy `|A - B| == 1` and `|B - A| == 1`,
-then `cell_in_A_only - cell_in_B_only = sum_A - sum_B`.  These constraints are stored
-as `(cell_p, cell_q, delta)` triples and applied in `elim_must`.
-
-**R8 — Equation reduction** (`reduce_equns`): Whenever one equation's cell set is a
-strict subset of another's, the smaller equation is subtracted from the larger.  The
-larger equation's cells become the set difference and its sum is reduced accordingly.
-Applied repeatedly until no further reduction is possible.
-
-### Iteration: candidate filtering (`Grid.solve`)
-
-**R9 — Cage candidate intersection**: For each cage equation, a cell's candidate set
-is intersected with `equation.poss` (the union of all digits appearing in any valid
-assignment for that cage).  Prunes candidates that cannot appear in any valid cage
-solution.
-
-**R10 — Naked single**: When a cell has exactly one remaining candidate, that digit is
-placed and removed from all other cells sharing a row, column, box, or cage.
-
-**R11 — Solution map filtering**: For each cage, every remaining complete digit
-assignment is tested against current cell candidates.  Assignments containing a digit
-no longer in a cell's candidate set are pruned from `equation.solns`.  Any digit no
-longer present in any valid assignment is removed from that cell's candidates.
-
-**R12 — Hidden single**: For each row, column, and box, if a digit appears in the
-candidate set of exactly one cell in that unit, that cell must contain that digit.  A
-singleton cage equation is added to propagate the placement.
-
-**R13 — Hidden pair**: For each row, column, and box, if two digits each appear in the
-candidate sets of exactly the same two cells (and no others in the unit), those two
-cells can only contain those two digits.  All other candidates are removed and a new
-2-cell cage equation is added.
-
-**R14 — Must-contain propagation** (`elim_must`): For every pair of overlapping
-equation sets (ei, ej), if ei requires a digit (it appears in every valid assignment
-for ei — the `must` set) but that digit cannot appear in ei's exclusive cells (cells
-in ei but not ej), then it also cannot appear in ej's exclusive cells.  Handles
-"locked candidates": e.g. if a cage's required digit is confined to cells also in a
-particular row, that digit can be eliminated from all other cells in that row.
-
-**R15 — Difference constraint application**: The `DFFS` difference constraints from R7
-are applied in each `elim_must` pass: `cell_p` and `cell_q` are restricted to only
-those values where `cell_p = cell_q + delta` for some `cell_q` value still in
-`cell_q`'s candidate set.
-
-### Rules Not Yet Implemented
-
-**[MISSING] Naked pair**: When exactly two cells in a unit share the same two
-candidates and no others, those candidates can be removed from all other cells in the
-unit.  The current solver detects hidden pairs but not naked pairs.
-
-**[MISSING] Naked triple / quad**: Generalisation of naked pair to three or four cells.
-
-**[MISSING] X-Wing**: When a digit's candidates in two rows are confined to the same
-two columns (or vice versa), that digit can be eliminated from all other cells in those
-columns (or rows).
-
-**[MISSING] Swordfish / Jellyfish**: Generalisations of X-Wing to three or four
-rows/columns.
-
-### Linear equation analysis
-
-The solver builds a rich set of linear equations over cell values.  The `DFFS`
-mechanism handles the 2-variable case (`x - y = k`).
-
-**Multi-variable linear systems**: the full set of equations (R1–R8) defines a linear
-system over 81 variables with integer constraints.  Gaussian elimination over the
-integers could reduce this system to identify cells uniquely determined by linear
-structure alone, before any combinatorial search.
-
-**Sum-range pruning from linear combinations**: given simultaneous equations it may
-be possible to derive tighter bounds on individual cell values by summing subsets and
-applying min/max possible values.  The solver does not currently exploit such
-multi-equation sum relations beyond what equation reduction (R8) provides.
-
----
-
-## Coaching Layer
-
-The image pipeline output (`PuzzleSpec`) feeds into a browser-based coaching app that
-guides the user through solving interactively.  The coaching layer is a separate system
-built on top of the image pipeline and sits alongside (not inside) the batch solver.
-
-```mermaid
-flowchart LR
-    A[PuzzleSpec\ncage layout + totals] --> B[Batch Solver\nsolver/grid.py]
-    A --> C[Coaching Engine\nsolver/engine/]
-    B --> D[Golden Solution\n9x9 grid]
-    C --> E[Candidates + Hints\nCoaching App API]
-    D --> E
-    E --> F[Browser Frontend\nstatic/main.ts]
+```
+POST /api/puzzle?newspaper=guardian  (upload image)
+         │
+         ▼
+   OCR Review Phase
+   ─────────────────────────────────────────────────────
+   User edits cage totals, subdivides cages
+   PATCH /api/puzzle/{id}/cage/{label}
+   POST  /api/puzzle/{id}/cage/{label}/subdivide
+   POST  /api/puzzle/{id}/solve  (optional preview solve)
+         │
+         │  POST /api/puzzle/{id}/confirm
+         ▼
+   Playing Phase
+   ─────────────────────────────────────────────────────
+   Golden solution computed; candidate grid initialised
+   POST /api/puzzle/{id}/cell              enter/clear a digit
+   POST /api/puzzle/{id}/undo              undo last digit entry
+   POST /api/puzzle/{id}/candidates/cell   cycle a candidate
+   GET  /api/puzzle/{id}/cage/{l}/solutions          view solutions
+   POST /api/puzzle/{id}/cage/{l}/solutions/eliminate toggle elimination
+   GET  /api/puzzle/{id}/hints             get applicable hints
+   POST /api/puzzle/{id}/hints/apply       apply a hint's eliminations
+   POST /api/puzzle/{id}/refresh           recompute candidates from settings
 ```
 
-The coaching layer has its own architecture documentation:
+Sessions are identified by UUID and persisted as JSON files in the sessions
+directory (default: `sessions/`). The full session state is `PuzzleState`.
 
-- **`docs/COACH.md`** — session lifecycle, state model, API reference, frontend,
-  known design issues
-- **`docs/rules.md`** — coaching engine rules, hint system, trigger types,
-  how to add or upgrade rules
+### State Model
+
+All types are in `killer_sudoku/api/schemas.py`.
+
+**`PuzzleState`** — complete session state
+
+| Field | Type | Notes |
+|---|---|---|
+| `session_id` | `str` | UUID |
+| `newspaper` | `"guardian"` \| `"observer"` | determines OCR model |
+| `cages` | `list[CageState]` | label, total, cells, subdivisions, user-eliminated solutions |
+| `spec_data` | `PuzzleSpecData` | serialised `PuzzleSpec` arrays for canvas rendering |
+| `original_image_b64` | `str` | base64 JPEG of uploaded photo |
+| `golden_solution` | `list[list[int]] \| None` | None before /confirm; 9×9 after |
+| `user_grid` | `list[list[int]] \| None` | None before /confirm; 0 = unfilled cell |
+| `move_history` | `list[MoveRecord]` | chronological digit entries/clears |
+| `candidate_grid` | `CandidateGrid \| None` | None before /confirm |
+
+**`CoachSettings`** — persisted user preferences
+
+`always_apply_rules: list[str]` — names of rules applied automatically on every
+state change. Stored in `sessions/settings.json` (or `COACH_SESSIONS_DIR`).
+
+`show_essential: bool` — whether to render essential digits in salmon (default
+`true`). Toggled via the config modal.
+
+`DEFAULT_ALWAYS_APPLY_RULES` in `schemas.py` is the cold-start value:
+`["CageCandidateFilter", "SolvedCellElimination"]`.
+
+### Rules and Hints Integration
+
+The coaching app touches the rules engine at three points in
+`api/routers/puzzle.py`:
+
+**1. Candidate computation** (`_build_engine`): called after every state change
+(`/cell`, `/undo`, `/candidates/cell`, `/confirm`, `/refresh`). Builds a fresh
+board, runs always-apply rules to convergence, then derives `auto_candidates`
+and `auto_essential` per cell.
+
+**2. Hint collection** (`GET /{id}/hints`): rebuilds board state, runs
+always-apply rules, then reads `engine.pending_hints` — hint-only rules buffer
+their results here during the solve loop rather than applying them. This ensures
+the coaching and batch solver code paths share the same rule logic.
+
+**3. Config modal** (`GET /api/settings`): returns all hintable rules with their
+`display_name` and `description` fields. No hardcoded rule list anywhere in the
+API or frontend.
+
+For the full rules architecture — triggers, `HintResult`, `BoardState` API,
+how to add or upgrade a rule — see `docs/rules.md`.
+
+### API Reference
+
+All endpoints are under `/api/`. Full request/response schemas at
+`http://127.0.0.1:8000/docs`.
+
+**Settings**
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/settings` | Current settings + catalogue of all hintable rules (with descriptions) |
+| `PATCH` | `/api/settings` | Update `always_apply_rules` and `show_essential` |
+
+**Puzzle — OCR review phase**
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/puzzle?newspaper=...` | Upload image; run OCR; create session |
+| `GET` | `/api/puzzle/{id}` | Get full `PuzzleState` |
+| `PATCH` | `/api/puzzle/{id}/cage/{label}` | Correct cage total |
+| `POST` | `/api/puzzle/{id}/cage/{label}/subdivide` | Split cage into sub-cages |
+| `POST` | `/api/puzzle/{id}/solve` | Run batch solver; return golden solution |
+| `POST` | `/api/puzzle/{id}/confirm` | Confirm layout; transition to playing phase |
+
+**Puzzle — playing phase**
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/puzzle/{id}/cell` | Enter or clear a digit |
+| `POST` | `/api/puzzle/{id}/undo` | Undo last digit entry |
+| `POST` | `/api/puzzle/{id}/candidates/cell` | Cycle one candidate (possible ↔ removed) |
+| `POST` | `/api/puzzle/{id}/refresh` | Recompute candidates from current settings |
+| `GET` | `/api/puzzle/{id}/cage/{label}/solutions` | All/impossible/user-eliminated solutions |
+| `POST` | `/api/puzzle/{id}/cage/{label}/solutions/eliminate` | Toggle a cage solution |
+| `GET` | `/api/puzzle/{id}/hints` | All currently applicable hints, sorted by impact |
+| `POST` | `/api/puzzle/{id}/hints/apply` | Apply a hint's eliminations to candidate grid |
+
+### Frontend
+
+**Source:** `killer_sudoku/static/main.ts` (TypeScript, committed).  
+**Compiled output:** `killer_sudoku/static/main.js` (NOT committed — generate before running).
+
+```bash
+npm install -g typescript   # once
+tsc                         # from project root
+```
+
+The frontend is intentionally thin. It handles:
+- Canvas rendering: grid lines, cage borders, digit entries, candidates,
+  essential highlights
+- User interactions: digit entry, arrow-key navigation, candidate cycling, undo
+- Config modal: reads hintable rules from `GET /api/settings`, POSTs updates
+- Hint dropdown: reads hints from `GET /api/puzzle/{id}/hints`, POSTs applies
+
+All business logic lives on the server.
+
+### Developer Setup
+
+```bash
+pip install -e ".[dev]"
+tsc                     # compile TypeScript (required before first run)
+coach                   # start server + open browser
+coach --no-browser      # start server only
+# API:      http://127.0.0.1:8000
+# OpenAPI:  http://127.0.0.1:8000/docs
+```
+
+Environment overrides:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `COACH_GUARDIAN_DIR` | `guardian` | Guardian model/puzzle directory |
+| `COACH_OBSERVER_DIR` | `observer` | Observer model/puzzle directory |
+| `COACH_SESSIONS_DIR` | `sessions` | JSON session persistence directory |
+| `COACH_HOST` | `127.0.0.1` | Bind address |
+| `COACH_PORT` | `8000` | Port |
+
+### Known Design Issues
+
+1. **NakedSingle hints are vacuous when SolvedCellElimination is always-apply.**
+   NakedSingle needs to be reconceived as a placement hint — highlight the cell,
+   tell the user what digit to place — rather than an elimination hint.
+
+2. **Rule triggers are not sensitive to user candidate changes.** When the user
+   manually removes a candidate, always-apply rules do not re-fire.
+
+3. **Some rules narrow solution sets internally without reflecting this in the
+   candidate view.** A rule may prune `board.cage_solns` during `apply()` without
+   emitting `SOLUTION_PRUNED` events, causing stale candidate display.
+
+4. **19 rules in `default_rules()` have no hint implementations** and cannot be
+   promoted via the config modal. They should either receive hint implementations
+   or be removed from `default_rules()`. See `docs/rules.md`.
