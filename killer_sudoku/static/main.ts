@@ -91,6 +91,8 @@ interface PuzzleState {
 interface UploadResponse {
   session_id: string;
   state: PuzzleState;
+  warning?: string;
+  warped_image_b64?: string;
 }
 
 interface SolveResponse {
@@ -760,7 +762,22 @@ async function handleProcess(): Promise<void> {
     const data = (await res.json()) as UploadResponse;
     currentSessionId = data.session_id;
     renderState(data.state);
-    setStatus("");
+
+    // Show the perspective-corrected grid image when available.
+    const warpedCol = el<HTMLElement>("warped-col");
+    const warpedImg = el<HTMLImageElement>("warped-img");
+    if (data.warped_image_b64) {
+      warpedImg.src = `data:image/jpeg;base64,${data.warped_image_b64}`;
+      warpedCol.hidden = false;
+    } else {
+      warpedCol.hidden = true;
+    }
+
+    if (data.warning) {
+      setStatus(`Warning: ${data.warning}`, false);
+    } else {
+      setStatus("");
+    }
   } catch (e) {
     setStatus(`Network error: ${String(e)}`, true);
   } finally {
