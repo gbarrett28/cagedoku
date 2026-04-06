@@ -224,10 +224,23 @@ class PuzzleState(BaseModel):
 
 
 class UploadResponse(BaseModel):
-    """Response to a successful puzzle image upload."""
+    """Response to a puzzle image upload (successful or partial).
+
+    On a clean pipeline run, warning is None and state is fully usable.
+    When the pipeline extracts borders and cage totals but fails cage-layout
+    validation, warning is set and state contains the best-effort diagnostic
+    layout (still interactive — the user can correct it).
+    """
 
     session_id: str
     state: PuzzleState
+    warning: str | None = None
+    """Validation error message; None on a clean pipeline run."""
+
+    warped_image_b64: str | None = None
+    """Base64-encoded JPEG of the perspective-corrected grid image.
+    Always populated by the upload endpoint; None only for mock responses.
+    """
 
 
 class CagePatchRequest(BaseModel):
