@@ -64,6 +64,7 @@ def main() -> None:
 
         try:
             inp = InpImage(filepath, config, border_detector, num_recogniser)
+            assert inp.spec is not None, inp.spec_error
         except (AssertionError, ValueError, ProcessingError) as exc:
             _log.error("  Skipping %s: image pipeline failed -- %s", filepath, exc)
             continue

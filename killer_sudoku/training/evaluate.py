@@ -202,6 +202,7 @@ def _process_one_image(
     t0 = time.perf_counter()
     try:
         inp = InpImage(f, config, border_detector, num_recogniser)
+        assert inp.spec is not None, inp.spec_error
         grd = Grid()
         grd.set_up(inp.spec)
         alts_sum, _solns_sum = grd.engine_solve()
@@ -389,6 +390,7 @@ def test_border_fun(
             grd = Grid()
 
             if is_border_fn is None:
+                assert inp.spec is not None, inp.spec_error
                 spec = inp.spec
             else:
                 # Experimental border detection — build a custom brdrs array,
