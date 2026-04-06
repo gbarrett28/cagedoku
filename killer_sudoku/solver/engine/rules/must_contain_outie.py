@@ -56,6 +56,10 @@ class MustContainOutie:
     """R4b: single external cell with candidates ⊆ must-contain restricts the outie."""
 
     name = "MustContainOutie"
+    description = (
+        "Extension of must-contain: when a digit required by a cage can only be placed "
+        "in cells shared with an adjacent cage, constrains the adjacent cage."
+    )
     priority = 4
     triggers: frozenset[Trigger] = frozenset(
         {Trigger.COUNT_DECREASED, Trigger.SOLUTION_PRUNED}

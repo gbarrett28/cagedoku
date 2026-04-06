@@ -56,6 +56,10 @@ class LockedCandidates:
     """R10b: digit in a unit confined to one cage or box — eliminate from container."""
 
     name = "LockedCandidates"
+    description = (
+        "When a digit in a row or column is confined to one box, it can be removed "
+        "from other cells in that box."
+    )
     priority = 11
     triggers: frozenset[Trigger] = frozenset({Trigger.COUNT_DECREASED})
     unit_kinds: frozenset[UnitKind] = frozenset(

@@ -23,6 +23,10 @@ class DeltaConstraint:
     """R6: narrow candidates using linear difference constraints."""
 
     name = "DeltaConstraint"
+    description = (
+        "When two cells differ by a known constant (derived from overlapping "
+        "row/column sums), restricts both cells' candidates to valid pairs."
+    )
     priority = 5
     triggers: frozenset[Trigger] = frozenset({Trigger.COUNT_DECREASED})
     unit_kinds: frozenset[UnitKind] = frozenset(

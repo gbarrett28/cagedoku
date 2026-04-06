@@ -278,17 +278,18 @@ class TestApplyCageConfinement:
 
         Since CageIntersection was promoted (priority=2), it now handles the single-cage
         confinement case before CageConfinement (priority=12).  CageConfinement n=1 is
-        therefore deduplicated away.  The test verifies the elimination outcome regardless
-        of which rule produces it.
+        therefore deduplicated away.  The test verifies the elimination outcome
+        regardless of which rule produces it.
         """
-        # After applying MCO, digit 7 must be eliminated from row 1 cells outside cage D.
-        # CageIntersection now produces this hint (cage D's 7-candidates confined to row 1).
+        # After MCO: digit 7 must be eliminated from row 1 cells outside cage D.
+        # CageIntersection now produces this (cage D's 7-candidates confined to row 1).
         hints = _get_hints(client, g10_state.session_id)
         mco = next(h for h in hints if h["rule_name"] == "MustContainOutie")
         _apply_hint(client, g10_state.session_id, mco["eliminations"])
 
         hints2 = _get_hints(client, g10_state.session_id)
         # Look for any hint that eliminates 7 from row 0 cells (row 1 in 1-based)
+        # fmt: off
         row1_d7_hint = next(
             (
                 h
@@ -300,6 +301,7 @@ class TestApplyCageConfinement:
             ),
             None,
         )
+        # fmt: on
         assert row1_d7_hint is not None, (
             "Expected a hint eliminating digit 7 from row 1 after MCO"
         )
@@ -340,13 +342,16 @@ class TestApplyCageConfinement:
 
         # Get the hint that eliminates 7 from row 1 (now produced by CageIntersection)
         hints2 = _get_hints(client, g10_state.session_id)
+        # fmt: off
         n1 = next(
             h
             for h in hints2
             if any(
-                e["digit"] == 7 and e["cell"][0] == 0 for e in h["eliminations"]
+                e["digit"] == 7 and e["cell"][0] == 0
+                for e in h["eliminations"]
             )
         )
+        # fmt: on
         _apply_hint(client, g10_state.session_id, n1["eliminations"])
 
         cg = client.get(f"/api/puzzle/{g10_state.session_id}/candidates").json()

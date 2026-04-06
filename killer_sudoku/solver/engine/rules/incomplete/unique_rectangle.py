@@ -47,6 +47,10 @@ class UniqueRectangle:
     """R16: Unique Rectangle types 1 and 2."""
 
     name = "UniqueRectangle"
+    description = (
+        "When four cells forming a rectangle would create two identical solutions, "
+        "eliminates candidates that would cause the ambiguity."
+    )
     priority = 17
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL

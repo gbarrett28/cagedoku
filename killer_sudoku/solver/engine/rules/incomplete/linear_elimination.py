@@ -39,6 +39,10 @@ class LinearElimination:
     """
 
     name = "LinearElimination"
+    description = (
+        "Uses linear equations derived from cage sums to eliminate impossible digit "
+        "values from cells."
+    )
     priority = 1
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()

@@ -109,6 +109,10 @@ class CageConfinement:
     """
 
     name = "CageConfinement"
+    description = (
+        "Checks all groups of cages that together cover complete rows, columns, or "
+        "boxes, and eliminates digits inconsistent with the resulting sum constraints."
+    )
     priority = 12
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()

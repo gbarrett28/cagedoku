@@ -64,6 +64,10 @@ class UnitPartitionFilter:
     """R12: cross-cage compatibility filter for completely partitioned units."""
 
     name = "UnitPartitionFilter"
+    description = (
+        "When cages partition a row, column, or box into known-sum groups, eliminates "
+        "cage solutions inconsistent with those groups."
+    )
     priority = 12
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL — ctx.unit is always None

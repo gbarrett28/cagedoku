@@ -22,6 +22,10 @@ class NakedHiddenQuad:
     """R9b: naked or hidden quad elimination."""
 
     name = "NakedHiddenQuad"
+    description = (
+        "When four digits are confined to the same four cells in a unit, those cells "
+        "can only contain those four digits."
+    )
     priority = 9
     triggers: frozenset[Trigger] = frozenset({Trigger.COUNT_DECREASED})
     unit_kinds: frozenset[UnitKind] = frozenset(

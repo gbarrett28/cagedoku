@@ -38,6 +38,10 @@ class SimpleColouring:
     """R13: Simple colouring â eliminate a digit via single-digit chain reasoning."""
 
     name = "SimpleColouring"
+    description = (
+        "Uses chains of cells where a digit can only go in one of two places to "
+        "eliminate that digit from cells that see both ends of the chain."
+    )
     priority = 18
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL

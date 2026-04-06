@@ -72,6 +72,7 @@ class SolverRule(Protocol):
     """
 
     name: str
+    description: str
     priority: int
     triggers: frozenset[Trigger]
     unit_kinds: frozenset[UnitKind]

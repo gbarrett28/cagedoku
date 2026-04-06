@@ -22,6 +22,10 @@ class NakedHiddenTriple:
     """R9: naked or hidden triple elimination."""
 
     name = "NakedHiddenTriple"
+    description = (
+        "When three digits are confined to the same three cells in a unit, those cells "
+        "can only contain those three digits."
+    )
     priority = 8
     triggers: frozenset[Trigger] = frozenset({Trigger.COUNT_DECREASED})
     unit_kinds: frozenset[UnitKind] = frozenset(

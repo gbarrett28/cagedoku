@@ -53,6 +53,10 @@ class MustContain:
     """R5: cage must-contain digits confined to overlap → eliminate from unit."""
 
     name = "MustContain"
+    description = (
+        "When a digit must appear in a cage and is confined to cells that overlap "
+        "another unit, it can be eliminated from that unit's other cells."
+    )
     priority = 4
     triggers: frozenset[Trigger] = frozenset({Trigger.COUNT_DECREASED})
     unit_kinds: frozenset[UnitKind] = frozenset(

@@ -334,16 +334,21 @@ class CoachSettings(BaseModel):
         the hints dropdown when they fire but are never applied automatically.
         Defaults to a conservative set covering core cage-sum constraints
         and naked singles without revealing advanced deductions.
+    show_essential: whether to render essential digits in salmon.  When False,
+        essential digits are styled identically to inessential ones (grey).
+        Defaults to True.
     """
 
     always_apply_rules: list[str] = DEFAULT_ALWAYS_APPLY_RULES
+    show_essential: bool = True
 
 
 class RuleInfo(BaseModel):
-    """Name and display label for a single hintable solver rule."""
+    """Name, display label, and description for a single hintable solver rule."""
 
     name: str
     display_name: str
+    description: str
 
 
 class SettingsResponse(CoachSettings):

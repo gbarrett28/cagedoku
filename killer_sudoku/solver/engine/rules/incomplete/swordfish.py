@@ -24,6 +24,7 @@ class Swordfish:
     """R13: Swordfish â 3-row or 3-column basic fish."""
 
     name = "Swordfish"
+    description = "Generalisation of X-Wing across three rows and three columns."
     priority = 14
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL

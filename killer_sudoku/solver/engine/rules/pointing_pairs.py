@@ -52,6 +52,10 @@ class PointingPairs:
     """R10: digit confined to one row/col within a box — eliminate from the rest."""
 
     name = "PointingPairs"
+    description = (
+        "When a digit in a box is confined to one row or column, it can be removed "
+        "from other cells in that row or column outside the box."
+    )
     priority = 9
     triggers: frozenset[Trigger] = frozenset({Trigger.COUNT_DECREASED})
     unit_kinds: frozenset[UnitKind] = frozenset({UnitKind.BOX})

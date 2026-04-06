@@ -25,6 +25,10 @@ class NakedPair:
     """R7: two cells locked to the same two candidates â eliminate from peers."""
 
     name = "NakedPair"
+    description = (
+        "When exactly two cells in a unit share the same two candidates and no others, "
+        "those digits can be removed from all other cells in that unit."
+    )
     priority = 6
     triggers: frozenset[Trigger] = frozenset({Trigger.COUNT_HIT_TWO})
     unit_kinds: frozenset[UnitKind] = frozenset(

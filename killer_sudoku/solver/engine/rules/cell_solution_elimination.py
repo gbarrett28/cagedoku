@@ -29,6 +29,10 @@ class CellSolutionElimination:
     """R1b: eliminate a confirmed digit from all row/col/box peers."""
 
     name = "CellSolutionElimination"
+    description = (
+        "When a cell is solved, removes that digit from all other cells in the same "
+        "row, column, and box."
+    )
     priority = 0
     triggers: frozenset[Trigger] = frozenset({Trigger.CELL_SOLVED})
     unit_kinds: frozenset[UnitKind] = frozenset()  # cell-scoped

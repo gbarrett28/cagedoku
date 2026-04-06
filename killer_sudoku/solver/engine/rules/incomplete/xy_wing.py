@@ -34,6 +34,10 @@ class XYWing:
     """R15: XY-Wing â three bivalue cells forming a chain."""
 
     name = "XYWing"
+    description = (
+        "When three cells form a chain where each shares a candidate with the others, "
+        "a digit that sees both end cells of the chain can be eliminated."
+    )
     priority = 16
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL

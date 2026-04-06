@@ -36,6 +36,10 @@ class CageCandidateFilter:
     """Restrict cage cell candidates to digits present in at least one cage solution."""
 
     name = "CageCandidateFilter"
+    description = (
+        "Narrows each cell's candidates to digits that appear in at least one valid "
+        "solution for that cell's cage."
+    )
     priority = 2
     triggers: frozenset[Trigger] = frozenset(
         {Trigger.COUNT_DECREASED, Trigger.SOLUTION_PRUNED}

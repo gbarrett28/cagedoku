@@ -22,6 +22,7 @@ class Jellyfish:
     """R14: Jellyfish â 4-row or 4-column basic fish."""
 
     name = "Jellyfish"
+    description = "Generalisation of X-Wing across four rows and four columns."
     priority = 15
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL

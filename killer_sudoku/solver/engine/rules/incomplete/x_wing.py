@@ -21,6 +21,11 @@ class XWing:
     """R12: X-Wing pattern â eliminate from column/row peers outside the rectangle."""
 
     name = "XWing"
+    description = (
+        "When a digit appears in only two cells in each of two rows, and those cells "
+        "share the same two columns, the digit can be removed from all other cells in "
+        "those columns."
+    )
     priority = 13
     triggers: frozenset[Trigger] = frozenset({Trigger.GLOBAL})
     unit_kinds: frozenset[UnitKind] = frozenset()  # GLOBAL

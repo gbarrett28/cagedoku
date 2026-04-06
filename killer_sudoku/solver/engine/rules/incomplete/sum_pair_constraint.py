@@ -32,6 +32,10 @@ class SumPairConstraint:
     """
 
     name = "SumPairConstraint"
+    description = (
+        "When two cells sum to a known constant, restricts both to valid complementary "
+        "pairs."
+    )
     priority = 5
     triggers: frozenset[Trigger] = frozenset(
         {Trigger.COUNT_DECREASED, Trigger.CELL_DETERMINED}

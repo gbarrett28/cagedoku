@@ -34,11 +34,16 @@ def make_settings_router(settings_store: SettingsStore) -> APIRouter:
         """
         settings = settings_store.load()
         hintable_rules = [
-            RuleInfo(name=r.name, display_name=_display_name(r.name))
+            RuleInfo(
+                name=r.name,
+                display_name=_display_name(r.name),
+                description=r.description,
+            )
             for r in default_rules()
         ]
         return SettingsResponse(
             always_apply_rules=settings.always_apply_rules,
+            show_essential=settings.show_essential,
             hintable_rules=hintable_rules,
         )
 

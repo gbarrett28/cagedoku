@@ -16,6 +16,10 @@ class HiddenPair:
     """R8: two digits locked to the same two cells â restrict those cells."""
 
     name = "HiddenPair"
+    description = (
+        "When two digits each appear in only the same two cells in a unit, those cells "
+        "must contain those two digits and no others."
+    )
     priority = 7
     triggers: frozenset[Trigger] = frozenset({Trigger.COUNT_HIT_TWO})
     unit_kinds: frozenset[UnitKind] = frozenset(

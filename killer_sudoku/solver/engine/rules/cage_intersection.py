@@ -52,6 +52,10 @@ class CageIntersection:
     """R3: cage must-contain digit confined to one row/col/box — eliminate outside."""
 
     name = "CageIntersection"
+    description = (
+        "When a cage's required digit is confined to cells that all lie in one row, "
+        "column, or box, that digit can be removed from other cells in that unit."
+    )
     priority = 2
     triggers: frozenset[Trigger] = frozenset(
         {Trigger.COUNT_DECREASED, Trigger.SOLUTION_PRUNED}

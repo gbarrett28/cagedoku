@@ -26,6 +26,10 @@ class HiddenSingle:
     """
 
     name = "HiddenSingle"
+    description = (
+        "When a digit can go in only one cell in a row, column, box, or cage, it must "
+        "go there."
+    )
     priority = 1
     triggers: frozenset[Trigger] = frozenset({Trigger.COUNT_HIT_ONE})
     unit_kinds: frozenset[UnitKind] = frozenset(

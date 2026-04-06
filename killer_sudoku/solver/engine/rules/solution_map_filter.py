@@ -67,6 +67,10 @@ class SolutionMapFilter:
     """R4: per-cell feasibility filter for cage solutions."""
 
     name = "SolutionMapFilter"
+    description = (
+        "Removes cage solutions that are now impossible because one of their digits "
+        "has been eliminated from the relevant cell."
+    )
     priority = 3
     triggers: frozenset[Trigger] = frozenset(
         {Trigger.COUNT_DECREASED, Trigger.SOLUTION_PRUNED}

@@ -28,6 +28,10 @@ class NakedSingle:
     """R1a: named recognition of a cell determined by a single candidate."""
 
     name = "NakedSingle"
+    description = (
+        "When a cell has only one remaining candidate, that digit must go there. Also "
+        "removes it from peer cells in the same row, column, and box."
+    )
     priority = 0
     triggers: frozenset[Trigger] = frozenset({Trigger.CELL_DETERMINED})
     unit_kinds: frozenset[UnitKind] = frozenset()  # cell-scoped
