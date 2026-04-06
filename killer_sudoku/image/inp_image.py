@@ -94,6 +94,10 @@ class InpImage:
         is False, loads from cache. Otherwise runs the full pipeline: grid
         location, border identification, and number recognition.
 
+        Validation errors (invalid cage layout, digit extraction failures) are
+        stored in self.spec_error rather than raised; callers must check
+        self.spec_error is None before using self.spec.
+
         Args:
             filepath: Path to the puzzle image file.
             config: Pipeline configuration (newspaper, resolution, thresholds).
@@ -101,9 +105,8 @@ class InpImage:
             num_recogniser: Trained digit classifier.
 
         Raises:
-            AssertionError: if grid lines or intersections cannot be found.
-            ValueError: if digit geometry is inconsistent during number extraction.
-            ProcessingError: if number extraction yields too many values per cell.
+            AssertionError: if grid lines or intersections cannot be found
+                (no useful data has been extracted).
         """
         resolution = config.resolution
         subres = config.subres
@@ -115,9 +118,33 @@ class InpImage:
         jpk = filepath.with_suffix(".jpk")
         if not config.rework and jpk.exists():
             self.info: PicInfo = InpImage.load_cached(jpk)
-            self.spec: PuzzleSpec = validate_cage_layout(
-                self.info.cage_totals, self.info.border_x, self.info.border_y
+            dst_size_cached = np.array(
+                [
+                    [0, 0],
+                    [resolution - 1, 0],
+                    [resolution - 1, resolution - 1],
+                    [0, resolution - 1],
+                ],
+                dtype=np.float32,
             )
+            m_cached: npt.NDArray[np.float64] = np.asarray(
+                cv2.getPerspectiveTransform(self.info.grid, dst_size_cached),
+                dtype=np.float64,
+            )
+            self.warped_img: npt.NDArray[np.uint8] = np.asarray(
+                cv2.warpPerspective(
+                    img, m_cached, (resolution, resolution), flags=cv2.INTER_LINEAR
+                ),
+                dtype=np.uint8,
+            )
+            self.spec: PuzzleSpec | None = None
+            self.spec_error: str | None = None
+            try:
+                self.spec = validate_cage_layout(
+                    self.info.cage_totals, self.info.border_x, self.info.border_y
+                )
+            except (ValueError, ProcessingError) as exc:
+                self.spec_error = str(exc)
             return
 
         self.info = PicInfo()
@@ -152,6 +179,13 @@ class InpImage:
             dtype=np.uint8,
         )
 
+        self.warped_img = np.asarray(
+            cv2.warpPerspective(
+                img, m, (resolution, resolution), flags=cv2.INTER_LINEAR
+            ),
+            dtype=np.uint8,
+        )
+
         if config.poc_border_clustering:
             poc_bx, poc_by = self._identify_borders_poc(
                 gry, m, config, warped_blk, num_recogniser
@@ -171,57 +205,63 @@ class InpImage:
                     diff_y,
                 )
 
-        cage_totals = self._build_cage_totals(
-            warped_blk, num_recogniser, subres, self.info.brdrs
-        )
+        self.spec = None
+        self.spec_error = None
 
-        # Every cell belongs to exactly one cage, so cage totals must sum to 405
-        # (9 rows × (1+2+…+9) = 9 × 45). A sum outside [360, 450] (±10%) almost
-        # always means the number recogniser read a cell incorrectly.
-        # Fallback: if the global-threshold blk binary floods cell interiors (e.g.
-        # when isblack is over-estimated), retry with adaptive thresholding of the
-        # warped grayscale image.  The adaptive C value is tuned so ink pixels are
-        # clearly below the local mean while flat paper background is excluded.
-        total_sum = int(cage_totals.sum())
-        if not (360 <= total_sum <= 450):
-            warped_gry: npt.NDArray[np.uint8] = np.asarray(
-                cv2.warpPerspective(
-                    gry, m, (resolution, resolution), flags=cv2.INTER_LINEAR
-                ),
-                dtype=np.uint8,
-            )
-            fallback_c = config.number_recognition.contour_fallback_adaptive_c
-            warped_blk = np.asarray(
-                cv2.adaptiveThreshold(
-                    warped_gry,
-                    255,
-                    cv2.ADAPTIVE_THRESH_MEAN_C,
-                    cv2.THRESH_BINARY_INV,
-                    config.adaptive_block_size,
-                    fallback_c,
-                ),
-                dtype=np.uint8,
-            )
+        try:
             cage_totals = self._build_cage_totals(
                 warped_blk, num_recogniser, subres, self.info.brdrs
             )
+
+            # Every cell belongs to exactly one cage, so cage totals must sum to 405
+            # (9 rows × (1+2+…+9) = 9 × 45). A sum outside [360, 450] (±10%) almost
+            # always means the number recogniser read a cell incorrectly.
+            # Fallback: if the global-threshold blk binary floods cell interiors (e.g.
+            # when isblack is over-estimated), retry with adaptive thresholding of the
+            # warped grayscale image.  The adaptive C value is tuned so ink pixels are
+            # clearly below the local mean while flat paper background is excluded.
             total_sum = int(cage_totals.sum())
+            if not (360 <= total_sum <= 450):
+                warped_gry: npt.NDArray[np.uint8] = np.asarray(
+                    cv2.warpPerspective(
+                        gry, m, (resolution, resolution), flags=cv2.INTER_LINEAR
+                    ),
+                    dtype=np.uint8,
+                )
+                fallback_c = config.number_recognition.contour_fallback_adaptive_c
+                warped_blk = np.asarray(
+                    cv2.adaptiveThreshold(
+                        warped_gry,
+                        255,
+                        cv2.ADAPTIVE_THRESH_MEAN_C,
+                        cv2.THRESH_BINARY_INV,
+                        config.adaptive_block_size,
+                        fallback_c,
+                    ),
+                    dtype=np.uint8,
+                )
+                cage_totals = self._build_cage_totals(
+                    warped_blk, num_recogniser, subres, self.info.brdrs
+                )
+                total_sum = int(cage_totals.sum())
 
-        self.info.cage_totals = cage_totals
+            self.info.cage_totals = cage_totals
 
-        if total_sum < 360 or total_sum > 450:
-            raise ProcessingError(
-                f"Cage totals sum to {total_sum}, expected 405",
-                cage_totals,
-                self.info.brdrs,
+            if total_sum < 360 or total_sum > 450:
+                raise ProcessingError(
+                    f"Cage totals sum to {total_sum}, expected 405",
+                    cage_totals,
+                    self.info.brdrs,
+                )
+
+            with open(jpk, "wb") as fh:
+                pk.dump(self.info, fh)
+
+            self.spec = validate_cage_layout(
+                self.info.cage_totals, self.info.border_x, self.info.border_y
             )
-
-        with open(jpk, "wb") as fh:
-            pk.dump(self.info, fh)
-
-        self.spec = validate_cage_layout(
-            self.info.cage_totals, self.info.border_x, self.info.border_y
-        )
+        except (ValueError, ProcessingError) as exc:
+            self.spec_error = str(exc)
 
     def _identify_borders(
         self,
