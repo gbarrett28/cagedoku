@@ -143,7 +143,7 @@ def _anchor_set(
                 if row > 0:
                     anchors.add((True, row - 1, col))
                 if col > 0:
-                    anchors.add((False, row, col - 1))
+                    anchors.add((False, col - 1, row))
     return anchors
 
 

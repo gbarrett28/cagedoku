@@ -4,6 +4,7 @@ import numpy as np
 
 from killer_sudoku.image.border_clustering import (
     BoundaryKind,
+    _anchor_set,
     boundary_kind,
     cluster_borders,
     strip_features,
@@ -113,3 +114,45 @@ def test_cluster_borders_no_anchors_returns_uncertain() -> None:
     bx, by = cluster_borders(warped, cage_conf, SUBRES, BorderClusteringConfig())
     assert np.all(bx == 0.5), "No-anchor case should yield all 0.5"
     assert np.all(by == 0.5)
+
+
+# ---------------------------------------------------------------------------
+# _anchor_set — index convention
+# ---------------------------------------------------------------------------
+
+
+def test_anchor_set_horizontal_above() -> None:
+    """Cage total at (row=2, col=3) → horizontal anchor (True, gap=1, along=3)."""
+    conf = np.zeros((9, 9), dtype=np.float64)
+    conf[2, 3] = 1.0
+    anchors = _anchor_set(conf, threshold=0.5)
+    assert (True, 1, 3) in anchors, "Expected horizontal anchor above cell (2,3)"
+
+
+def test_anchor_set_vertical_left() -> None:
+    """Cage total at (row=2, col=3) → vertical anchor (False, gap=2, along=2).
+
+    The vertical anchor convention is (is_h=False, gap_idx=col-1, along_idx=row).
+    A previous bug had gap_idx and along_idx transposed.
+    """
+    conf = np.zeros((9, 9), dtype=np.float64)
+    conf[2, 3] = 1.0
+    anchors = _anchor_set(conf, threshold=0.5)
+    assert (False, 2, 2) in anchors, "Expected vertical anchor left of cell (2,3)"
+    assert (False, 2, 3) not in anchors, "Transposed (buggy) form must not be present"
+
+
+def test_anchor_set_top_left_cell_has_no_anchors() -> None:
+    """Cell (0, 0) is in the top-left corner — no borders above or left."""
+    conf = np.zeros((9, 9), dtype=np.float64)
+    conf[0, 0] = 1.0
+    anchors = _anchor_set(conf, threshold=0.5)
+    assert len(anchors) == 0
+
+
+def test_anchor_set_threshold_respected() -> None:
+    """Cell with confidence below threshold contributes no anchors."""
+    conf = np.zeros((9, 9), dtype=np.float64)
+    conf[2, 3] = 0.4  # below default threshold of 0.5
+    anchors = _anchor_set(conf, threshold=0.5)
+    assert len(anchors) == 0

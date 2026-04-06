@@ -312,7 +312,9 @@ class InpImage:
 
         Applies cell scan (Stage 3) followed by anchored border clustering
         (Stage 4).  Tries all 4 combinations of BOX/CELL group polarity and
-        picks the one whose cage-total sum is closest to 405.
+        picks the one with the highest connectivity score (most cage regions
+        containing exactly one printed cage total).  Returns early when a
+        perfect score is reached (score == number of detected cage heads).
 
         Args:
             gry: Grayscale source image.
@@ -357,11 +359,18 @@ class InpImage:
         except Exception:
             return initial_bx, initial_by
 
+        n_heads = int(np.count_nonzero(cage_totals))
+
         # Try all 4 BOX/CELL polarity combinations; pick the one with the most
         # cage regions that contain exactly one printed total (connectivity score).
+        # Early-out: a perfect score means every detected cage head is uniquely
+        # enclosed — no further combinations can improve on this.
         best_bx = initial_bx
         best_by = initial_by
         best_score = InpImage._connectivity_score(initial_bx, initial_by, cage_totals)
+
+        if best_score == n_heads:
+            return best_bx, best_by
 
         for flip_box, flip_cell in ((True, False), (False, True), (True, True)):
             cx: npt.NDArray[np.float64] = bx_prob.copy()
@@ -377,15 +386,18 @@ class InpImage:
             border_y: npt.NDArray[np.bool_] = cy > 0.5
             score = InpImage._connectivity_score(border_x, border_y, cage_totals)
             _log.debug(
-                "poc polarity flip_box=%s flip_cell=%s: connectivity=%d",
+                "poc polarity flip_box=%s flip_cell=%s: connectivity=%d/%d",
                 flip_box,
                 flip_cell,
                 score,
+                n_heads,
             )
             if score > best_score:
                 best_score = score
                 best_bx = border_x
                 best_by = border_y
+                if best_score == n_heads:
+                    break
 
         return best_bx, best_by
 
