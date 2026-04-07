@@ -206,9 +206,7 @@ class InpImage:
             self.info.brdrs = InpImage._borders_to_brdrs(
                 self.info.border_x, self.info.border_y
             )
-            cage_totals_classic: npt.NDArray[np.intp] = np.zeros(
-                (9, 9), dtype=np.intp
-            )
+            cage_totals_classic: npt.NDArray[np.intp] = np.zeros((9, 9), dtype=np.intp)
             for r_idx in range(9):
                 cage_totals_classic[0, r_idx] = 45
             try:

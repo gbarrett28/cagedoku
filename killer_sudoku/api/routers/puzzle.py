@@ -741,9 +741,7 @@ def make_router(
                 original_image_b64=original_b64,
                 puzzle_type=inp.puzzle_type,
                 given_digits=(
-                    inp.given_digits.tolist()
-                    if inp.given_digits is not None
-                    else None
+                    inp.given_digits.tolist() if inp.given_digits is not None else None
                 ),
             )
             store.save(state)

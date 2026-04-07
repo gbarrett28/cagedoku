@@ -395,10 +395,7 @@ class Grid:
 
         if given_digits is not None:
             for r, c in (
-                (r, c)
-                for r in range(9)
-                for c in range(9)
-                if given_digits[r, c] > 0
+                (r, c) for r in range(9) for c in range(9) if given_digits[r, c] > 0
             ):
                 self.sq_poss[r][c] = {int(given_digits[r, c])}
 
