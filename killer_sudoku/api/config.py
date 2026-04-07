@@ -26,7 +26,7 @@ class CoachConfig:
     """
 
     puzzle_dir: Path = dataclasses.field(
-        default_factory=lambda: Path(os.environ.get("COACH_PUZZLE_DIR", "puzzles"))
+        default_factory=lambda: Path(os.environ.get("COACH_PUZZLE_DIR", "guardian"))
     )
     sessions_dir: Path = dataclasses.field(
         default_factory=lambda: Path(os.environ.get("COACH_SESSIONS_DIR", "sessions"))

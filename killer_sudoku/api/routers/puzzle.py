@@ -704,8 +704,19 @@ def make_router(
                 puzzle_dir=config.puzzle_dir,
                 rework=True,
             )
-            border_detector = InpImage.make_border_detector(img_config)
-            num_recogniser = InpImage.make_num_recogniser(img_config)
+            try:
+                border_detector = InpImage.make_border_detector(img_config)
+                num_recogniser = InpImage.make_num_recogniser(img_config)
+            except FileNotFoundError as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        f"Model files not found in puzzle_dir "
+                        f"'{config.puzzle_dir}'. "
+                        f"Set COACH_PUZZLE_DIR to the directory containing "
+                        f"brdr.pkl and nums_pca_s.pkl. ({exc})"
+                    ),
+                ) from exc
 
             try:
                 inp = InpImage(tmp_path, img_config, border_detector, num_recogniser)
