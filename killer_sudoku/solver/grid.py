@@ -8,7 +8,7 @@ The primary entry points are:
   - Grid.__init__  — create an empty grid (optionally inject SolImage)
   - Grid.set_up    — populate cages/regions from image-processing output
   - Grid.solve     — iteratively reduce candidates until no more progress
-  - Grid.cheat_solve — fall back to a generic CSP solver (python-constraint)
+  - Grid.engine_solve — run the rule-based SolverEngine
 """
 
 from __future__ import annotations
@@ -19,11 +19,6 @@ from collections.abc import Generator
 
 import numpy as np
 import numpy.typing as npt
-from constraint import (  # type: ignore[import-untyped]
-    AllDifferentConstraint,
-    ExactSumConstraint,
-    Problem,
-)
 
 from killer_sudoku.output.sol_image import SolImage
 from killer_sudoku.solver.engine import solve as _engine_solve
@@ -71,9 +66,6 @@ class GridConfig:
 # ---------------------------------------------------------------------------
 # Module-level constants — pure computed values, no I/O or side effects
 # ---------------------------------------------------------------------------
-
-COLLS: str = "abcdefghi"
-ROWLS: str = "123456789"
 
 ROWS: list[set[tuple[int, int]]] = [{(i, j) for j in range(9)} for i in range(9)]
 COLS: list[set[tuple[int, int]]] = [{(j, i) for j in range(9)} for i in range(9)]
@@ -138,17 +130,6 @@ def _all_boxes() -> list[list[set[tuple[int, int]]]]:
 
 
 BOX_SEQS: list[list[set[tuple[int, int]]]] = _all_boxes()
-
-VARNS: list[str] = [c + r for r in ROWLS for c in COLLS]
-COLNS: list[list[str]] = [[c + r for r in ROWLS] for c in COLLS]
-ROWNS: list[list[str]] = [[c + r for c in COLLS] for r in ROWLS]
-BOXNS: list[list[str]] = [
-    [c + r for c in COLLS[i : i + 3] for r in ROWLS[j : j + 3]]
-    for i in range(0, 9, 3)
-    for j in range(0, 9, 3)
-]
-
-BRDR_MV: list[list[int]] = [[0, -1], [1, 0], [0, 1], [-1, 0]]
 
 
 # ---------------------------------------------------------------------------
@@ -675,6 +656,10 @@ class Grid:
         runs the trigger-driven propagation engine, then synchronises sq_poss
         with the engine's final candidates and draws determined digits.
 
+        If sq_poss contains singleton sets (set via set_up(given_digits=...)),
+        those are passed to the engine as pre-fixed given digits so that all
+        rules (HiddenSingle, peer cleanup, etc.) propagate from them.
+
         Returns:
             (alts_sum, solns_sum) matching the existing solve() contract.
             solns_sum is always 0 — the engine fully resolves or leaves
@@ -691,7 +676,18 @@ class Grid:
             border_x=np.zeros((9, 8), dtype=bool),
             border_y=np.zeros((8, 9), dtype=bool),
         )
-        board = _engine_solve(spec)
+
+        # Collect any pre-fixed given digits from sq_poss singletons.
+        given_digits: npt.NDArray[np.intp] | None = None
+        if any(len(self.sq_poss[r][c]) == 1 for r in range(9) for c in range(9)):
+            arr = np.zeros((9, 9), dtype=np.intp)
+            for r in range(9):
+                for c in range(9):
+                    if len(self.sq_poss[r][c]) == 1:
+                        arr[r, c] = next(iter(self.sq_poss[r][c]))
+            given_digits = arr
+
+        board = _engine_solve(spec, given_digits)
 
         for r in range(9):
             for c in range(9):
@@ -712,49 +708,3 @@ class Grid:
                 )
 
         return alts_sum, 0
-
-    # ------------------------------------------------------------------
-    # CSP fallback
-    # ------------------------------------------------------------------
-
-    def cheat_solve(self) -> None:
-        """Solve using a generic CSP solver (python-constraint) as a fallback.
-
-        Constructs a constraint-satisfaction problem with AllDifferent and
-        ExactSum constraints for all rows, columns, boxes, and cages, then
-        extracts the solution and records it in sq_poss and sol_img.
-
-        This method is called when the iterative solver in ``solve`` cannot
-        make further progress.
-        """
-        cagns = [self._make_vars(vs) for vs in self.CAGES]
-        ks: Problem = Problem()
-        for v in VARNS:
-            ks.addVariable(v, range(1, 10))
-        for vs in COLNS + ROWNS + BOXNS + cagns:
-            ks.addConstraint(AllDifferentConstraint(), vs)
-        for cage_val, cage_vars in zip(self.VALS, cagns, strict=False):
-            ks.addConstraint(ExactSumConstraint(cage_val), cage_vars)
-        for vs in COLNS + ROWNS + BOXNS:
-            ks.addConstraint(ExactSumConstraint(45), vs)
-        s = ks.getSolution()
-        for i in range(9):
-            for j in range(9):
-                digit = s[COLNS[i][j]]
-                self.sq_poss[i][j] = {digit}
-                self.sol_img.draw_number(digit, i, j)
-
-    @staticmethod
-    def _make_vars(vs: set[tuple[int, int]]) -> list[str]:
-        """Convert a set of (row, col) pairs to a list of variable name strings.
-
-        The CSP solver uses string variable names of the form column-letter +
-        row-digit (e.g. 'a1', 'b3').
-
-        Args:
-            vs: Set of (row, col) cell coordinates.
-
-        Returns:
-            List of variable name strings, one per cell.
-        """
-        return [COLLS[i] + ROWLS[j] for i, j in vs]

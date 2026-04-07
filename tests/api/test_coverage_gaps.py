@@ -7,9 +7,9 @@ Targets specific uncovered branches identified in the coverage report:
 - _rebuild_user_grid remove_digit branch (lines 494-496)
 - _find_last_consistent_turn_idx reset_cell_candidates branch (line 565)
 - _describe_first_error remove_candidate and apply_hint branches (lines 620-641)
-- confirm_puzzle cheat_solve path (line 856)
+- confirm_puzzle with ambiguous puzzle (partial golden_solution)
 - Error responses: 404/409/422 on various endpoints
-- solve_puzzle error and cheat_solve paths (lines 1237-1242)
+- solve_puzzle error path and partial-solve result
 - get_cage_solutions / eliminate_cage_solution subdivisions guard (lines 1288, 1341)
 - get_hints empty linear tier (line 1465)
 """
@@ -134,15 +134,15 @@ class TestSpecToCageStatesSkipZeroRegion:
 
 
 # ---------------------------------------------------------------------------
-# confirm_puzzle: cheat_solve path (line 856)
+# confirm_puzzle: ambiguous puzzle (partial golden_solution, no CSP fallback)
 # ---------------------------------------------------------------------------
 
 
-class TestConfirmCheatSolve:
-    def test_confirm_uses_cheat_solve_for_ambiguous_puzzle(
+class TestConfirmWithConstrainedCage:
+    def test_confirm_two_cell_cage_produces_full_golden_solution(
         self, client: TestClient, store: SessionStore
     ) -> None:
-        """Puzzles not fully determined by engine_solve trigger cheat_solve."""
+        """Engine resolves 2-cell cage via row/col; golden_solution is full."""
         spec = make_two_cell_cage_spec()
         state = PuzzleState(
             session_id="gap-two-cell-unconfirmed",
@@ -154,7 +154,8 @@ class TestConfirmCheatSolve:
         res = client.post(f"/api/puzzle/{state.session_id}/confirm")
         assert res.status_code == 200
         body = res.json()
-        # cheat_solve should produce a fully-determined golden_solution
+        # All other cells are single-cell cages; column/row constraints uniquely
+        # determine cells (0,0) and (0,1), so golden_solution is fully determined.
         assert all(
             body["golden_solution"][r][c] != 0 for r in range(9) for c in range(9)
         )
@@ -253,15 +254,15 @@ class TestCycleCandidateErrors:
 
 
 # ---------------------------------------------------------------------------
-# solve_puzzle: error and cheat_solve paths (lines 1237-1239, 1242)
+# solve_puzzle: error path and partial-solve result
 # ---------------------------------------------------------------------------
 
 
 class TestSolvePuzzle:
-    def test_solve_endpoint_returns_solution(
+    def test_solve_endpoint_returns_200(
         self, client: TestClient, store: SessionStore
     ) -> None:
-        """solve_puzzle falls back to cheat_solve and returns a full solution."""
+        """solve_puzzle returns 200 for ambiguous puzzles the engine cannot solve."""
         spec = make_two_cell_cage_spec()
         state = PuzzleState(
             session_id="gap-solve-endpoint",
@@ -272,12 +273,14 @@ class TestSolvePuzzle:
         store.save(state)
         res = client.post(f"/api/puzzle/{state.session_id}/solve")
         assert res.status_code == 200
-        assert res.json()["solved"] is True
+        body = res.json()
+        assert "solved" in body
+        assert "grid" in body
 
-    def test_solve_falls_back_to_cheat_solve(
+    def test_solve_with_constrained_cage_returns_solved(
         self, client: TestClient, store: SessionStore
     ) -> None:
-        """solve_puzzle calls cheat_solve when engine_solve cannot fully determine."""
+        """Engine resolves a 2-cell cage when row/column constraints fix both cells."""
         spec = make_two_cell_cage_spec()
         state = PuzzleState(
             session_id="gap-solve-cheat",
@@ -288,7 +291,10 @@ class TestSolvePuzzle:
         store.save(state)
         res = client.post(f"/api/puzzle/{state.session_id}/solve")
         assert res.status_code == 200
-        assert res.json()["solved"] is True
+        # All other cells are single-cell cages; column/row constraints uniquely
+        # determine cells (0,0) and (0,1), so the engine fully solves this.
+        body = res.json()
+        assert body["solved"] is True
 
 
 # ---------------------------------------------------------------------------

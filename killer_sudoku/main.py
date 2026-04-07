@@ -28,8 +28,7 @@ def main() -> None:
 
     Constructs all dependencies lazily (config → border detector → number
     recogniser → InpImage → Grid), solves, and displays the solution image.
-    Falls back to Grid.cheat_solve() when the constraint solver does not
-    reach a unique solution. ProcessingError is caught and reported to stderr.
+    ProcessingError is caught and reported to stderr.
     """
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(
@@ -79,8 +78,7 @@ def main() -> None:
             alts_sum = 0
 
         if alts_sum != 81:
-            _log.info("  Incomplete (alts_sum=%d), falling back to CSP...", alts_sum)
-            grd.cheat_solve()
+            _log.info("  Incomplete (alts_sum=%d) — some cells undetermined", alts_sum)
 
         cv2.imshow("Solution", grd.sol_img.sol_img)
         cv2.waitKey(0)

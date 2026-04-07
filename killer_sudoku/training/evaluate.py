@@ -222,9 +222,8 @@ def collect_status(
     to config.status_path.
 
     Status values written:
-      - 'SOLVED': grid solved uniquely without cheating.
-      - 'CHEAT': grid required cheat_solve() (no unique solution found).
-      - 'CheatTimeout': cheat_solve() exceeded its time limit.
+      - 'SOLVED': grid fully solved by the rule-based engine.
+      - 'UNSOLVED': engine could not fully determine all cells.
       - 'ProcessingError: <msg>': image pipeline raised ProcessingError.
       - 'AssertionError: <msg>': image pipeline raised AssertionError.
       - 'ValueError: <msg>': grid setup raised ValueError.
@@ -238,7 +237,7 @@ def collect_status(
     """
     num_recogniser = InpImage.make_num_recogniser(config)
     status = StatusStore(config.status_path, config.puzzle_dir)
-    solved = cheated = ctimeout = perror = aerror = verror = unsolved = total = 0
+    solved = perror = aerror = verror = unsolved = total = 0
 
     files = list(config.puzzle_dir.glob("*.jpg"))
     n_total = len(files)
@@ -262,10 +261,6 @@ def collect_status(
             solved += 1
         elif stat == "UNSOLVED":
             unsolved += 1
-        elif stat == "CHEAT":
-            cheated += 1
-        elif stat == "CheatTimeout":
-            ctimeout += 1
         elif stat.startswith("ProcessingError"):
             perror += 1
         elif stat.startswith("AssertionError"):
@@ -275,13 +270,11 @@ def collect_status(
 
         if total % 10 == 0 or total == n_total:
             _log.info(
-                "[%d/%d] SOLVED=%d UNSOLVED=%d CHEAT=%d CT=%d PE=%d AE=%d VE=%d",
+                "[%d/%d] SOLVED=%d UNSOLVED=%d PE=%d AE=%d VE=%d",
                 total,
                 n_total,
                 solved,
                 unsolved,
-                cheated,
-                ctimeout,
                 perror,
                 aerror,
                 verror,
@@ -319,8 +312,6 @@ def collect_status(
     status.save()
     _log.info("SOLVED          %3d", solved)
     _log.info("UNSOLVED        %3d", unsolved)
-    _log.info("CHEATED         %3d", cheated)
-    _log.info("CheatTimeout    %3d", ctimeout)
     _log.info("ProcessingError %3d", perror)
     _log.info("AssertionError  %3d", aerror)
     _log.info("ValueError      %3d", verror)
@@ -330,12 +321,12 @@ def collect_status(
         config.newspaper,
         status,
         solved,
-        cheated,
+        0,
         perror,
         aerror,
         verror,
         total,
-        ctimeout=ctimeout,
+        ctimeout=0,
         unsolved=unsolved,
     )
     return status
@@ -363,11 +354,11 @@ def test_border_fun(
             uses the pre-validated spec from InpImage directly.
 
     Returns:
-        (aerror, cheated, perror, solved, total) counts.
+        (aerror, unsolved, perror, solved, total) counts.
     """
     num_recogniser = InpImage.make_num_recogniser(config)
     solved = 0
-    cheated = 0
+    unsolved = 0
     perror = 0
     aerror = 0
     total = 0
@@ -410,10 +401,9 @@ def test_border_fun(
             grd.set_up(spec)
             alts_sum, _solns_sum = grd.solve()
             if alts_sum != 81:
-                _log.info("... cheating")
-                grd.cheat_solve()
-                status[f] = "CHEAT"
-                cheated += 1
+                _log.info("... unsolved (alts_sum=%d)", alts_sum)
+                status[f] = "UNSOLVED"
+                unsolved += 1
             else:
                 status[f] = "SOLVED"
                 solved += 1
@@ -429,7 +419,7 @@ def test_border_fun(
         except ValueError as e:
             _log.error("... failed with ValueError: %s", e)
 
-    return aerror, cheated, perror, solved, total
+    return aerror, unsolved, perror, solved, total
 
 
 def main() -> None:

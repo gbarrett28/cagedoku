@@ -836,9 +836,9 @@ def make_router(
     async def confirm_puzzle(session_id: str) -> PuzzleState:
         """Solve the puzzle and transition the session to playing mode.
 
-        Runs engine_solve() with cheat_solve() fallback. Stores the golden
-        solution (0 for cells the solver cannot determine) and initialises
-        user_grid to all zeros. Returns 409 if already confirmed.
+        Runs engine_solve(). Stores the golden solution (0 for cells the
+        solver cannot fully determine) and initialises user_grid to all zeros.
+        Returns 409 if already confirmed.
         """
         try:
             state = store.load(session_id)
@@ -857,12 +857,9 @@ def make_router(
                 else None
             )
             grd.set_up(spec, given_digits=given)
-            alts_sum, _ = grd.engine_solve()
+            grd.engine_solve()
         except (AssertionError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-        if alts_sum != 81:
-            grd.cheat_solve()
 
         golden: list[list[int]] = [
             [
@@ -1252,13 +1249,11 @@ def make_router(
 
     @router.post("/{session_id}/solve", response_model=SolveResponse)
     async def solve_puzzle(session_id: str) -> SolveResponse:
-        """Solve the puzzle using the constraint engine, with CSP fallback.
+        """Solve the puzzle using the rule-based constraint engine.
 
         Reconstructs a PuzzleSpec from the current (possibly edited) cage
-        states, runs engine_solve(), and falls back to cheat_solve() if the
-        constraint engine cannot reach a full solution.
-
-        Returns a 9×9 grid of digits (0 = unsolved) and a solved flag.
+        states and runs engine_solve(). Returns a 9×9 grid of digits
+        (0 = unsolved cell) and a solved flag.
         """
         try:
             state = store.load(session_id)
@@ -1270,20 +1265,19 @@ def make_router(
         grd.set_up(spec)
 
         try:
-            alts_sum, _ = grd.engine_solve()
+            grd.engine_solve()
         except (AssertionError, ValueError) as exc:
             empty: list[list[int]] = [[0] * 9 for _ in range(9)]
             return SolveResponse(solved=False, grid=empty, error=str(exc))
 
-        if alts_sum != 81:
-            grd.cheat_solve()
-
         solution = [
-            [int(next(iter(grd.sq_poss[r][c]))) for c in range(9)] for r in range(9)
+            [
+                int(next(iter(grd.sq_poss[r][c]))) if len(grd.sq_poss[r][c]) == 1 else 0
+                for c in range(9)
+            ]
+            for r in range(9)
         ]
-        solved = all(
-            len(set(grd.sq_poss[r][c])) == 1 for r in range(9) for c in range(9)
-        )
+        solved = all(len(grd.sq_poss[r][c]) == 1 for r in range(9) for c in range(9))
         return SolveResponse(solved=solved, grid=solution)
 
     @router.get(
