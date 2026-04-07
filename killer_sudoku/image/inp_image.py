@@ -9,7 +9,7 @@ import dataclasses
 import logging
 import pickle as pk
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import cv2
 import numpy as np
@@ -25,7 +25,7 @@ from killer_sudoku.image.border_detection import (
     detect_borders_peak_count,
     load_observer_border_detector,
 )
-from killer_sudoku.image.cell_scan import scan_cells
+from killer_sudoku.image.cell_scan import detect_puzzle_type, scan_cells
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.grid_location import get_gry_img, locate_grid
 from killer_sudoku.image.number_recognition import (
@@ -33,6 +33,7 @@ from killer_sudoku.image.number_recognition import (
     contour_hier,
     get_num_contours,
     load_number_recogniser,
+    read_classic_digits,
     split_num,
 )
 from killer_sudoku.image.validation import validate_cage_layout
@@ -145,6 +146,9 @@ class InpImage:
                 )
             except (ValueError, ProcessingError) as exc:
                 self.spec_error = str(exc)
+            # Cached data is always killer (classic puzzles are not cached).
+            self.puzzle_type: Literal["killer", "classic"] = "killer"
+            self.given_digits: npt.NDArray[np.intp] | None = None
             return
 
         self.info = PicInfo()
@@ -164,26 +168,66 @@ class InpImage:
             cv2.getPerspectiveTransform(self.info.grid, dst_size), dtype=np.float64
         )
 
-        self.info.border_x, self.info.border_y = self._identify_borders(
-            gry, m, config, border_detector
-        )
-
-        self.info.brdrs = InpImage._borders_to_brdrs(
-            self.info.border_x, self.info.border_y
-        )
-
+        # Warp blk, gry, and img before border detection so scan_cells can run first.
         warped_blk: npt.NDArray[np.uint8] = np.asarray(
             cv2.warpPerspective(
                 blk, m, (resolution, resolution), flags=cv2.INTER_LINEAR
             ),
             dtype=np.uint8,
         )
-
+        warped_gry: npt.NDArray[np.uint8] = np.asarray(
+            cv2.warpPerspective(
+                gry, m, (resolution, resolution), flags=cv2.INTER_LINEAR
+            ),
+            dtype=np.uint8,
+        )
         self.warped_img = np.asarray(
             cv2.warpPerspective(
                 img, m, (resolution, resolution), flags=cv2.INTER_LINEAR
             ),
             dtype=np.uint8,
+        )
+
+        # Detect puzzle type before running (potentially expensive) border detection.
+        _cage_conf, classic_conf = scan_cells(warped_gry, subres, config.cell_scan)
+        self.puzzle_type = detect_puzzle_type(
+            classic_conf, config.cell_scan.classic_digit_threshold
+        )
+        self.spec = None
+        self.spec_error = None
+
+        if self.puzzle_type == "classic":
+            # Classic path: borders are deterministic (row cages), no model needed.
+            self.given_digits = read_classic_digits(
+                warped_blk, num_recogniser, subres, classic_conf
+            )
+            self.info.border_x = np.ones((9, 8), dtype=bool)
+            self.info.border_y = np.zeros((8, 9), dtype=bool)
+            self.info.brdrs = InpImage._borders_to_brdrs(
+                self.info.border_x, self.info.border_y
+            )
+            cage_totals_classic: npt.NDArray[np.intp] = np.zeros(
+                (9, 9), dtype=np.intp
+            )
+            for r_idx in range(9):
+                cage_totals_classic[0, r_idx] = 45
+            try:
+                self.spec = validate_cage_layout(
+                    cage_totals_classic,
+                    self.info.border_x,
+                    self.info.border_y,
+                )
+            except (ValueError, ProcessingError) as exc:
+                self.spec_error = str(exc)
+            return
+
+        # Killer path: run border detection and cage-total extraction.
+        self.given_digits = None
+        self.info.border_x, self.info.border_y = self._identify_borders(
+            gry, m, config, border_detector
+        )
+        self.info.brdrs = InpImage._borders_to_brdrs(
+            self.info.border_x, self.info.border_y
         )
 
         if config.poc_border_clustering:
@@ -205,9 +249,6 @@ class InpImage:
                     diff_y,
                 )
 
-        self.spec = None
-        self.spec_error = None
-
         try:
             cage_totals = self._build_cage_totals(
                 warped_blk, num_recogniser, subres, self.info.brdrs
@@ -222,12 +263,6 @@ class InpImage:
             # clearly below the local mean while flat paper background is excluded.
             total_sum = int(cage_totals.sum())
             if not (360 <= total_sum <= 450):
-                warped_gry: npt.NDArray[np.uint8] = np.asarray(
-                    cv2.warpPerspective(
-                        gry, m, (resolution, resolution), flags=cv2.INTER_LINEAR
-                    ),
-                    dtype=np.uint8,
-                )
                 fallback_c = config.number_recognition.contour_fallback_adaptive_c
                 warped_blk = np.asarray(
                     cv2.adaptiveThreshold(
