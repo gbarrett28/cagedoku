@@ -1,8 +1,5 @@
 # Classic Sudoku Recognition Design
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
-> (recommended) or superpowers:executing-plans to implement this plan task-by-task.
-
 **Goal:** Extend the image pipeline so that a photograph of a plain (classic) sudoku
 puzzle is recognised end-to-end: grid located, given digits extracted, and a valid
 `PuzzleSpec` produced — then loaded into the coaching app with given digits locked
@@ -26,9 +23,12 @@ A small set of clean printed classic sudoku images lives in
 records the known given-digit clues and solution so pipeline tests can assert
 correctness without manually inspecting images.
 
-Images are downloaded from openly licensed sources (e.g. the Web Archive of
-newspaper sudoku pages).  Three images covering easy, medium, and hard givens
-density are sufficient to validate the recognition path.
+Images are downloaded from openly licensed sources (e.g. newspaper puzzle archives).
+Three images covering easy, medium, and hard givens density are sufficient to
+validate the recognition path.  **Images are not committed to the repository** —
+`tests/fixtures/sudoku/*.jpg` and `tests/fixtures/sudoku/*.png` are listed in
+`.gitignore`.  A companion `tests/fixtures/sudoku/README.md` explains where to
+obtain them and how to name them to match the test fixtures.
 
 ---
 
@@ -37,14 +37,25 @@ density are sufficient to validate the recognition path.
 `scan_cells` (Stage 3, existing) already returns `classic_digit_confidence[9][9]`
 alongside `cage_total_confidence[9][9]`.
 
+Detection is already size-based — this is the right signal:
+
+- **Cage total** (killer): a small contour in the **top-left quadrant** of the cell
+  (`subres/16 ≤ w < subres/2`, `subres/8 ≤ h < subres/2`).
+- **Classic digit** (classic): a large contour in the **central region** of the cell
+  (contour width or height ≥ `subres/3`).
+
+These two signatures do not overlap: killer cage totals are small corner glyphs;
+classic digits are large centred glyphs.  The existing `scan_cells` implementation
+scores each independently, so the discrimination is already correct.
+
 A new `detect_puzzle_type` function sums `classic_digit_confidence` across all 81
-cells.  A classic puzzle typically has 20–35 givens; a killer puzzle has none.
-A sum above `classic_digit_threshold` (default 10.0, stored in `CellScanConfig`)
-→ `"classic"`.  Below → `"killer"`.
+cells.  A typical classic puzzle has 20–35 givens (each scoring 1.0); a killer
+puzzle has none.  Threshold at `classic_digit_threshold = 10.0` (stored in
+`CellScanConfig`) gives a wide margin above the killer baseline of 0.
 
 ```
-sum(classic_conf) > 10.0  →  classic
-otherwise                 →  killer
+sum(classic_conf) > classic_digit_threshold  →  "classic"
+otherwise                                    →  "killer"
 ```
 
 ---
@@ -131,6 +142,13 @@ class PuzzleState(BaseModel):
     given_digits: list[list[int]] | None = None   # 9×9; 0 = empty
 ```
 
+### Confirm screen
+
+The confirm screen (the preview shown before the user commits to a puzzle) must
+display the detected puzzle type: **"Killer Sudoku"** or **"Classic Sudoku"**.
+This gives the user an early signal if the pipeline has misclassified the image.
+The type is exposed in the GET /puzzle response via `puzzle_type`.
+
 ### Confirm endpoint (`routers/puzzle.py`)
 
 When `puzzle_type == "classic"`, `confirm_puzzle`:
@@ -146,7 +164,7 @@ When `puzzle_type == "classic"`, `confirm_puzzle`:
 
 ## UI changes (`static/main.ts`, `static/index.html`)
 
-The GET /puzzle response now includes `puzzle_type`.
+The GET /puzzle response includes `puzzle_type`.
 
 When `puzzle_type == "classic"`:
 - Suppress the cage-border overlay (the thick lines drawn between cages).

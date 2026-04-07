@@ -56,9 +56,9 @@ model is required.
 See **`docs/image-pipeline.md`** for the full pipeline architecture, stage
 descriptions, training pipeline, threshold derivation guide, and migration plan.
 
-See **`docs/superpowers/specs/2026-04-07-classic-sudoku-design.md`** for the
-classic sudoku recognition feature design (puzzle type detection, center digit
-reading, locked given digits, cage-structure suppression in the UI).
+See **`docs/classic-sudoku.md`** for the classic sudoku recognition feature design
+(puzzle type detection, center digit reading, locked given digits, cage-structure
+suppression in the UI).
 
 ```mermaid
 flowchart LR

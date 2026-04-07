@@ -19,3 +19,8 @@ no_gutter.py
 # Runtime artifacts
 sessions/
 killer_sudoku/static/main.js
+
+# Test fixture images — download locally, do not commit
+tests/fixtures/sudoku/*.jpg
+tests/fixtures/sudoku/*.jpeg
+tests/fixtures/sudoku/*.png
