@@ -67,8 +67,8 @@ constructed deterministically:
 
 This produces 9 connected row-shaped cages, one per row.
 
-**New function `read_classic_digits`** (in `killer_sudoku/image/number_recognition.py`
-or a new `killer_sudoku/image/classic_digits.py`):
+**New function `read_classic_digits`** in `killer_sudoku/image/number_recognition.py`
+(alongside the existing `CayenneNumber` and digit-reading helpers):
 
 ```python
 def read_classic_digits(
