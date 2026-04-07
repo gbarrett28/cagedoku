@@ -149,6 +149,14 @@ class CellScanConfig:
     their top and left inner borders are used as positive anchors for clustering.
     """
 
+    classic_digit_threshold: float = 10.0
+    """Minimum sum of classic_digit_confidence to classify a puzzle as classic.
+
+    A typical classic puzzle has 20-35 given digits (each scoring 1.0); a killer
+    puzzle has none.  A threshold of 10.0 gives wide margin above the killer
+    baseline of 0.
+    """
+
 
 @dataclasses.dataclass(frozen=True)
 class BorderClusteringConfig:

@@ -9,7 +9,7 @@ to add once basic detection is validated.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
 import cv2
 import numpy as np
@@ -111,3 +111,22 @@ def scan_cells(
                     break
 
     return cage_conf, classic_conf
+
+
+def detect_puzzle_type(
+    classic_conf: npt.NDArray[np.float64],
+    threshold: float,
+) -> Literal["killer", "classic"]:
+    """Classify a puzzle as classic or killer from cell-scan confidence.
+
+    Sums classic_digit_confidence across all 81 cells.  A classic puzzle
+    typically has 20-35 given digits (confidence 1.0 each); a killer has none.
+
+    Args:
+        classic_conf: (9, 9) float array from scan_cells.
+        threshold: Minimum sum to classify as classic.
+
+    Returns:
+        "classic" if sum(classic_conf) > threshold, else "killer".
+    """
+    return "classic" if float(classic_conf.sum()) > threshold else "killer"
