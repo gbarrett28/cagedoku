@@ -464,3 +464,59 @@ def load_number_recogniser(model_path: Path) -> CayenneNumber:
         raw.template_threshold = 0.85
     result: CayenneNumber = raw
     return result
+
+
+def read_classic_digits(
+    warped_blk: npt.NDArray[np.uint8],
+    num_recogniser: CayenneNumber,
+    subres: int,
+    classic_conf: npt.NDArray[np.float64],
+) -> npt.NDArray[np.intp]:
+    """Read pre-filled digits from the centre of each cell.
+
+    For each cell flagged by classic_conf, extracts the central half-cell
+    crop of the warped binary image, finds the largest contour, warps its
+    bounding rect to canonical size, and passes it to the digit recogniser.
+
+    Args:
+        warped_blk: Warped binary image (ink=white, background=black).
+        num_recogniser: Loaded digit classifier.
+        subres: Pixels per cell side in warped_blk.
+        classic_conf: (9, 9) array from scan_cells; > 0 means cell has a digit.
+
+    Returns:
+        (9, 9) int array of given digits (0 for empty or unrecognised cells).
+    """
+    half = subres // 2
+    given_digits = np.zeros((9, 9), dtype=np.intp)
+    for r in range(9):
+        for c in range(9):
+            if classic_conf[r, c] == 0.0:
+                continue
+            y0 = r * subres + subres // 4
+            x0 = c * subres + subres // 4
+            patch: npt.NDArray[np.uint8] = warped_blk[y0 : y0 + half, x0 : x0 + half]
+            cnts_raw: Any
+            cnts_raw, _ = cv2.findContours(
+                patch, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
+            if not cnts_raw:
+                continue
+            largest = max(
+                (np.asarray(cnt, dtype=np.int32) for cnt in cnts_raw),
+                key=cv2.contourArea,
+            )
+            bx, by, bw, bh = cv2.boundingRect(largest)
+            if bw == 0 or bh == 0:
+                continue
+            ax, ay = x0 + bx, y0 + by
+            rect = np.array(
+                [[ax, ay], [ax + bw, ay], [ax + bw, ay + bh], [ax, ay + bh]],
+                dtype=np.float32,
+            )
+            thumb = get_warp_from_rect(rect, warped_blk, res=(half, half))
+            labels = num_recogniser.get_sums([thumb])
+            d = int(labels[0])
+            if d > 0:
+                given_digits[r, c] = d
+    return given_digits
