@@ -11,13 +11,9 @@ the puzzle directory, attempts to solve each puzzle, and records the outcome
 test_border_fun() runs the same evaluation but allows injecting a custom
 border classification function, enabling comparison of border detector models.
 
-observer_pca_1d_borders() is a convenience wrapper that trains (or loads) the
-BorderPCA1D model and then evaluates it via test_border_fun().
-
 Usage:
     python -m killer_sudoku.training.evaluate --rag guardian
     python -m killer_sudoku.training.evaluate --rag observer --rework
-    python -m killer_sudoku.training.evaluate --rag observer --mode pca1d
 """
 
 import argparse
@@ -41,7 +37,6 @@ from killer_sudoku.image.number_recognition import CayenneNumber
 from killer_sudoku.image.validation import validate_cage_layout
 from killer_sudoku.solver.grid import Grid, ProcessingError
 from killer_sudoku.training.status import StatusStore
-from killer_sudoku.training.train_border_detector import train_border_pca1d
 
 _log = logging.getLogger(__name__)
 
@@ -437,39 +432,6 @@ def test_border_fun(
     return aerror, cheated, perror, solved, total
 
 
-def observer_pca_1d_borders(
-    config: ImagePipelineConfig,
-    status: StatusStore,
-    rework: bool = False,
-    rework_all: bool = False,
-) -> None:
-    """Train (or load) the BorderPCA1D model and evaluate it on all puzzles.
-
-    A convenience wrapper that calls train_border_pca1d then test_border_fun
-    with a pattern matching all statuses.
-
-    Args:
-        config: Pipeline configuration.
-        status: StatusStore with previously recorded solve outcomes.
-        rework: If True, retrain the model even if it already exists.
-        rework_all: If True, also bypass .jpk cache when collecting samples.
-    """
-    mdb = train_border_pca1d(config, rework=rework, rework_all=rework_all)
-    status_pat = re.compile(r"^")
-    aerror, cheated, perror, solved, total = test_border_fun(
-        config,
-        status,
-        status_pat,
-        mdb,
-        is_border_fn=lambda p: mdb.is_border([p])[0],
-    )
-    _log.info("SOLVED          %3d", solved)
-    _log.info("CHEATED         %3d", cheated)
-    _log.info("ProcessingError %3d", perror)
-    _log.info("AssertionError  %3d", aerror)
-    _log.info("TOTAL           %3d", total)
-
-
 def main() -> None:
     """CLI entry point: evaluate pipeline on all puzzles and record status."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -482,12 +444,6 @@ def main() -> None:
         action="store_true",
         default=False,
         help="Bypass .jpk cache and reprocess all images",
-    )
-    parser.add_argument(
-        "--mode",
-        choices=["status", "pca1d"],
-        default="status",
-        help="Evaluation mode: status=collect_status, pca1d=observer_pca_1d_borders",
     )
     parser.add_argument(
         "--report-only",
@@ -558,15 +514,7 @@ def main() -> None:
         return
 
     border_detector = InpImage.make_border_detector(config)
-
-    if args.mode == "pca1d":
-        if args.rag == "guardian":
-            _log.info("pca1d mode is only applicable to Observer puzzles.")
-            return
-        status = StatusStore(config.status_path, config.puzzle_dir)
-        observer_pca_1d_borders(config, status, rework=args.rework)
-    else:
-        collect_status(config, border_detector)
+    collect_status(config, border_detector)
 
 
 if __name__ == "__main__":
