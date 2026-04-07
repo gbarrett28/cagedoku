@@ -349,7 +349,11 @@ class Grid:
     # Grid setup
     # ------------------------------------------------------------------
 
-    def set_up(self, spec: PuzzleSpec) -> None:
+    def set_up(
+        self,
+        spec: PuzzleSpec,
+        given_digits: npt.NDArray[np.intp] | None = None,
+    ) -> None:
         """Populate cage structure and equations from a validated PuzzleSpec.
 
         Takes the pre-validated PuzzleSpec produced by validate_cage_layout:
@@ -359,6 +363,9 @@ class Grid:
 
         Args:
             spec: Validated puzzle specification from validate_cage_layout.
+            given_digits: Optional (9, 9) array of pre-fixed digits (0 = empty).
+                If provided, each non-zero cell is reduced to a singleton set
+                before solving begins, fixing those cells as givens.
         """
         brdrs = spec.brdrs
         self.sol_img.draw_borders(brdrs)
@@ -385,6 +392,15 @@ class Grid:
         self.equns += self.add_equns(COLS[::-1])
         for b in range(len(BOXS)):
             self.equns += self.add_equns_r(box=b, cvr=set())
+
+        if given_digits is not None:
+            for r, c in (
+                (r, c)
+                for r in range(9)
+                for c in range(9)
+                if given_digits[r, c] > 0
+            ):
+                self.sq_poss[r][c] = {int(given_digits[r, c])}
 
     # ------------------------------------------------------------------
     # Candidate-set manipulation
