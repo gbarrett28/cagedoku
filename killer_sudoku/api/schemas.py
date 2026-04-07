@@ -194,6 +194,8 @@ class PuzzleState(BaseModel):
         move_history:        Chronological record of every cell entry or clear.
         history:             Turn-based event history; undo = pop last turn.
         virtual_cages:       User-added derived sum constraints.
+        puzzle_type:         "killer" or "classic"; suppresses cage overlay for classic.
+        given_digits:        None for killer; 9×9 array of pre-fixed digits for classic.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -218,6 +220,12 @@ class PuzzleState(BaseModel):
     # Turn-based event history, newest last.  Undo = pop last turn.
 
     virtual_cages: list[VirtualCage] = []
+
+    puzzle_type: Literal["killer", "classic"] = "killer"
+    # Detected puzzle format. "classic" suppresses cage overlay and totals in the UI.
+
+    given_digits: list[list[int]] | None = None
+    # None for killer puzzles; 9×9 array (0=empty) of pre-fixed digits for classic.
     # User-added derived sum constraints, keyed by canonical cell:total string.
     # User-added derived sum constraints, keyed by canonical cell:total string.
 
