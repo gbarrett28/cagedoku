@@ -41,6 +41,7 @@ interface MoveRecord {
   col: number;        // 1-based
   digit: number;      // 0–9 (0 = clear)
   prev_digit: number; // 0–9
+  source?: string;    // "given" for pre-filled classic digits
 }
 
 interface CellInfo {
@@ -85,6 +86,7 @@ interface PuzzleState {
   golden_solution: number[][] | null;
   user_grid: number[][] | null;
   move_history: MoveRecord[];
+  puzzle_type: "killer" | "classic";
 }
 
 interface UploadResponse {
@@ -282,37 +284,38 @@ function drawGrid(
     );
   }
 
-  // 2. Cage boundaries in red — drawn first as a wide underlay so the black
-  //    grid lines (dashed cell dividers, box lines, outer border) appear on top.
-  //
-  //    regions[r][c] is the 1-based cage index for cell (r, c).
-  //    A cage wall exists wherever two adjacent cells belong to different cages.
-  ctx.strokeStyle = "#cc0000";
-  ctx.lineWidth = 7.5;
-  const reg = state.spec_data.regions;  // [9][9]
+  // 2. Cage boundaries in red — killer only (classic has no cage overlay).
+  //    Drawn first as a wide underlay so grid lines appear on top.
+  //    regions[r][c] is the 1-based cage index; a wall exists where adjacent
+  //    cells belong to different cages.
+  if (state.puzzle_type !== "classic") {
+    ctx.strokeStyle = "#cc0000";
+    ctx.lineWidth = 7.5;
+    const reg = state.spec_data.regions;  // [9][9]
 
-  // Horizontal walls — between rows r and r+1 in each column
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 9; c++) {
-      if ((reg[r]?.[c] ?? 0) !== (reg[r + 1]?.[c] ?? 0)) {
-        const y = MARGIN + (r + 1) * CELL;
-        ctx.beginPath();
-        ctx.moveTo(MARGIN + c * CELL, y);
-        ctx.lineTo(MARGIN + (c + 1) * CELL, y);
-        ctx.stroke();
+    // Horizontal walls — between rows r and r+1 in each column
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 9; c++) {
+        if ((reg[r]?.[c] ?? 0) !== (reg[r + 1]?.[c] ?? 0)) {
+          const y = MARGIN + (r + 1) * CELL;
+          ctx.beginPath();
+          ctx.moveTo(MARGIN + c * CELL, y);
+          ctx.lineTo(MARGIN + (c + 1) * CELL, y);
+          ctx.stroke();
+        }
       }
     }
-  }
 
-  // Vertical walls — between cols c and c+1 in each row
-  for (let r = 0; r < 9; r++) {
-    for (let c = 0; c < 8; c++) {
-      if ((reg[r]?.[c] ?? 0) !== (reg[r]?.[c + 1] ?? 0)) {
-        const x = MARGIN + (c + 1) * CELL;
-        ctx.beginPath();
-        ctx.moveTo(x, MARGIN + r * CELL);
-        ctx.lineTo(x, MARGIN + (r + 1) * CELL);
-        ctx.stroke();
+    // Vertical walls — between cols c and c+1 in each row
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 8; c++) {
+        if ((reg[r]?.[c] ?? 0) !== (reg[r]?.[c + 1] ?? 0)) {
+          const x = MARGIN + (c + 1) * CELL;
+          ctx.beginPath();
+          ctx.moveTo(x, MARGIN + r * CELL);
+          ctx.lineTo(x, MARGIN + (r + 1) * CELL);
+          ctx.stroke();
+        }
       }
     }
   }
@@ -354,28 +357,39 @@ function drawGrid(
   ctx.lineWidth = 2.5;
   ctx.strokeRect(MARGIN, MARGIN, 9 * CELL, 9 * CELL);
 
-  // 6. Cage totals — position from spec_data.cage_totals (head cell),
-  //    value from state.cages (user-corrected)
-  ctx.fillStyle = "#000";
-  ctx.font = "bold 11px sans-serif";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  const headCells = state.spec_data.cage_totals;
-  const regions = state.spec_data.regions;
-  for (let r = 0; r < 9; r++) {
-    for (let c = 0; c < 9; c++) {
-      if ((headCells[r]?.[c] ?? 0) > 0) {
-        const cageIdx = (regions[r]?.[c] ?? 1) - 1;
-        const cage = state.cages[cageIdx];
-        const total = cage !== undefined ? cage.total : headCells[r][c];
-        ctx.fillText(String(total), MARGIN + c * CELL + 2, MARGIN + r * CELL + 2);
+  // 6. Cage totals — killer only (classic has no cage totals).
+  //    Position from spec_data.cage_totals (head cell), value from state.cages.
+  if (state.puzzle_type !== "classic") {
+    ctx.fillStyle = "#000";
+    ctx.font = "bold 11px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    const headCells = state.spec_data.cage_totals;
+    const regions = state.spec_data.regions;
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        if ((headCells[r]?.[c] ?? 0) > 0) {
+          const cageIdx = (regions[r]?.[c] ?? 1) - 1;
+          const cage = state.cages[cageIdx];
+          const total = cage !== undefined ? cage.total : headCells[r][c];
+          ctx.fillText(String(total), MARGIN + c * CELL + 2, MARGIN + r * CELL + 2);
+        }
       }
     }
   }
 
-  // 7. User-entered digits (playing mode)
+  // 7. User-entered digits (playing mode).
+  //    Classic given digits (source="given") are rendered in black; user
+  //    entries remain blue so the two are visually distinct.
   if (state.user_grid !== null) {
-    ctx.fillStyle = "#2563eb";
+    const givenCells = new Set<string>();
+    if (state.puzzle_type === "classic") {
+      for (const m of state.move_history) {
+        if (m.source === "given") {
+          givenCells.add(`${m.row - 1},${m.col - 1}`);
+        }
+      }
+    }
     ctx.font = "bold 28px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -383,6 +397,7 @@ function drawGrid(
       for (let c = 0; c < 9; c++) {
         const digit = state.user_grid[r]?.[c] ?? 0;
         if (digit > 0) {
+          ctx.fillStyle = givenCells.has(`${r},${c}`) ? "#000" : "#2563eb";
           ctx.fillText(
             String(digit),
             MARGIN + c * CELL + CELL / 2,
@@ -450,6 +465,15 @@ function drawGrid(
 function renderState(state: PuzzleState): void {
   // Draw the detected cage layout onto the canvas
   drawGrid(el<HTMLCanvasElement>("grid-canvas"), state);
+
+  // Update heading to show detected puzzle type
+  const heading = document.getElementById("detected-layout-heading");
+  if (heading !== null) {
+    heading.textContent =
+      state.puzzle_type === "classic"
+        ? "Detected Layout — Classic Sudoku"
+        : "Detected Layout — Killer Sudoku";
+  }
 
   // Show the uploaded photo for comparison
   el<HTMLImageElement>("original-img").src =
