@@ -853,7 +853,12 @@ def make_router(
         spec = _cage_states_to_spec(state.cages, state.spec_data)
         grd = Grid()
         try:
-            grd.set_up(spec)
+            given = (
+                np.array(state.given_digits, dtype=np.intp)
+                if state.given_digits is not None
+                else None
+            )
+            grd.set_up(spec, given_digits=given)
             alts_sum, _ = grd.engine_solve()
         except (AssertionError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -868,10 +873,35 @@ def make_router(
             ]
             for r in range(9)
         ]
+
+        # For classic puzzles, pre-fill user_grid with given digits and record them
+        # in history so _rebuild_user_grid can reconstruct them after undo.
+        user_grid: list[list[int]] = [[0] * 9 for _ in range(9)]
+        given_turns: list[Turn] = []
+        if state.given_digits is not None:
+            for r in range(9):
+                for c in range(9):
+                    d = state.given_digits[r][c]
+                    if d > 0:
+                        user_grid[r][c] = d
+                        given_turns.append(
+                            Turn(
+                                user_action=UserAction(
+                                    type="place_digit",
+                                    row=r,
+                                    col=c,
+                                    digit=d,
+                                    source="given",
+                                ),
+                                auto_mutations=[],
+                            )
+                        )
+
         updated = state.model_copy(
             update={
                 "golden_solution": golden,
-                "user_grid": [[0] * 9 for _ in range(9)],
+                "user_grid": user_grid,
+                "history": given_turns,
             }
         )
         always_apply = frozenset(settings_store.load().always_apply_rules)
@@ -1045,6 +1075,9 @@ def make_router(
             raise HTTPException(status_code=404, detail="Session not found") from exc
 
         if not state.history:
+            raise HTTPException(status_code=409, detail="Nothing to undo")
+
+        if state.history[-1].user_action.source == "given":
             raise HTTPException(status_code=409, detail="Nothing to undo")
 
         trimmed = state.model_copy(update={"history": state.history[:-1]})
