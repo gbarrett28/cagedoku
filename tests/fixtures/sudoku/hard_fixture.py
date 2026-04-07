@@ -21,5 +21,6 @@ GIVEN_DIGITS: list[list[int]] = [
     [0, 0, 0, 4, 0, 0, 0, 0, 9],
 ]
 
-# Solution not independently verified — set to None until confirmed.
+# This puzzle has multiple valid solutions (ambiguous — likely missing a clue
+# in the original transcription).  No canonical SOLUTION can be set.
 SOLUTION: list[list[int]] | None = None

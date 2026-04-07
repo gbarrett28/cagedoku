@@ -11,6 +11,7 @@ as_hints() implementations and can be surfaced via the config modal.
 import numpy as np
 import numpy.typing as npt
 
+from killer_sudoku.solver.engine.backtracker import mrv_backtrack
 from killer_sudoku.solver.engine.board_state import BoardState, validate_solution
 from killer_sudoku.solver.engine.rule import SolverRule
 from killer_sudoku.solver.engine.rules import default_rules
@@ -25,6 +26,7 @@ __all__ = [
     "all_rules",
     "default_rules",
     "incomplete_rules",
+    "mrv_backtrack",
     "solve",
     "validate_solution",
 ]
@@ -78,4 +80,14 @@ def solve(
                             if other != d and other in board.candidates[r][c]
                         ]
                     )
-    return engine.solve()
+    board = engine.solve()
+
+    # If the rule engine stalled, apply MRV backtracking to complete the solution.
+    if any(len(board.candidates[r][c]) != 1 for r in range(9) for c in range(9)):
+        solution = mrv_backtrack(board)
+        if solution is not None:
+            for r in range(9):
+                for c in range(9):
+                    board.candidates[r][c] = {int(solution[r, c])}
+
+    return board
