@@ -36,6 +36,9 @@ ks-evaluate = "killer_sudoku.training.evaluate:main"
 where = ["."]
 include = ["killer_sudoku*"]
 
+[tool.setuptools.package-data]
+"killer_sudoku.data" = ["*.npz"]
+
 [tool.ruff]
 exclude = ["archive.py", "no_gutter.py"]
 
