@@ -60,20 +60,28 @@ def test_strip_features_shape() -> None:
     assert feat.dtype == np.float64
 
 
-def test_flat_strip_has_zero_peaks() -> None:
-    """A completely flat strip produces zero peaks (feature index 0 == 0.0)."""
+def test_flat_strip_has_high_percentiles() -> None:
+    """A flat strip (all same brightness) has all percentiles equal to that value.
+
+    Spec change from peak_count: feat[0] is now p5 (5th-percentile brightness),
+    not peak_count.  A flat strip at value 128 has p5 == mean == 128.
+    """
     strip = np.full(64, 128, dtype=np.uint8)
     feat = strip_features(strip)
-    assert feat[0] == 0.0  # peak_count
+    assert feat[0] == 128.0  # p5 == 128 (no dark dip)
 
 
-def test_dashed_strip_has_multiple_peaks() -> None:
-    """A dashed-line strip (alternating dark/light) produces 3+ peaks."""
-    # Simulate a cage border: three dark dashes
+def test_dark_strip_has_low_p5() -> None:
+    """A strip with dark regions has a low p5 (5th-percentile brightness).
+
+    Spec change from peak_count: feat[0] is now p5 (position-independent),
+    not peak_count.  Three dark dashes (value 20) among lighter pixels give
+    p5 well below 128, distinguishing a cage border from a blank strip.
+    """
     dash = [200] * 10 + [20] * 6
     strip = np.array(dash + dash + dash + [200] * 8, dtype=np.uint8)
     feat = strip_features(strip)
-    assert feat[0] >= 3.0, f"Expected >= 3 peaks for dashed strip, got {feat[0]}"
+    assert feat[0] < 128.0, f"Expected low p5 for dark strip, got {feat[0]}"
 
 
 # ---------------------------------------------------------------------------

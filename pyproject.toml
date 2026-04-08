@@ -46,6 +46,13 @@ exclude = ["archive.py", "no_gutter.py"]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "PLC", "PLW"]
 ignore = ["PLR0912", "PLR0915", "C901"]
 
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+markers = [
+    "pipeline: requires guardian/ and observer/ image directories",
+    "pipeline_full: full pipeline over every image (~30-40 min); implies pipeline",
+]
+
 [tool.mypy]
 strict = true
 exclude = ["archive\\.py", "no_gutter\\.py"]

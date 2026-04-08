@@ -21,7 +21,11 @@ from killer_sudoku.image.border_clustering import (
     boundary_kind,
     cluster_borders,
 )
-from killer_sudoku.image.cell_scan import detect_puzzle_type, scan_cells
+from killer_sudoku.image.cell_scan import (
+    detect_puzzle_type,
+    detect_rotation,
+    scan_cells,
+)
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.grid_location import get_gry_img, locate_grid
 from killer_sudoku.image.number_recognition import (
@@ -184,10 +188,42 @@ class InpImage:
             dtype=np.uint8,
         )
 
+        # Correct for rotated source images (e.g. landscape scans rotated 90°).
+        # Rolling the grid corners by -k makes the dominant ink corner map to the
+        # canonical TL destination, so all subsequent warps use the same corrected
+        # transform and produce a consistently-oriented image.
+        rotation_k = detect_rotation(
+            warped_gry, subres, config.cell_scan.rotation_dominance_threshold
+        )
+        if rotation_k != 0:
+            self.info.grid = np.roll(self.info.grid, -rotation_k, axis=0)
+            m = np.asarray(
+                cv2.getPerspectiveTransform(self.info.grid, dst_size),
+                dtype=np.float64,
+            )
+            warped_blk = np.asarray(
+                cv2.warpPerspective(
+                    blk, m, (resolution, resolution), flags=cv2.INTER_LINEAR
+                ),
+                dtype=np.uint8,
+            )
+            warped_gry = np.asarray(
+                cv2.warpPerspective(
+                    gry, m, (resolution, resolution), flags=cv2.INTER_LINEAR
+                ),
+                dtype=np.uint8,
+            )
+            self.warped_img = np.asarray(
+                cv2.warpPerspective(
+                    img, m, (resolution, resolution), flags=cv2.INTER_LINEAR
+                ),
+                dtype=np.uint8,
+            )
+
         # Detect puzzle type before running (potentially expensive) border detection.
         _cage_conf, classic_conf = scan_cells(warped_gry, subres, config.cell_scan)
         self.puzzle_type = detect_puzzle_type(
-            classic_conf, config.cell_scan.classic_digit_threshold
+            warped_gry, subres, config.cell_scan.tl_fraction_threshold
         )
         self.spec = None
         self.spec_error = None

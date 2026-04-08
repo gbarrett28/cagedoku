@@ -478,9 +478,11 @@ class CayenneNumber:
         Returns:
             Array of predicted digit labels.
         """
-        nums_pca: npt.NDArray[np.float64] = self.pca.transform(
-            [n.flatten() for n in nums]
-        )
+        flat = np.array([n.flatten() for n in nums], dtype=np.float64)
+        # PCA transform: centre then project — avoids sklearn version skew
+        # (bare PCA() reconstructed from .npz lacks explained_variance_).
+        components: npt.NDArray[np.float64] = self.pca.components_
+        nums_pca: npt.NDArray[np.float64] = (flat - self.pca.mean_) @ components.T
         labels: npt.NDArray[np.intp] = self.classifier.predict(
             np.array([v[: self.dims] for v in nums_pca])
         )

@@ -97,6 +97,74 @@ class TestSaveLoadRoundtrip:
         np.testing.assert_array_equal(orig_preds, loaded_preds)
 
 
+def _make_classify_fixture(
+    tmp_path: Path,
+) -> tuple[CayenneNumber, CayenneNumber, list[np.ndarray]]:
+    """Build a CayenneNumber where the SVC is trained on PCA-projected data.
+
+    Mirrors the real training pipeline: PCA is fit on raw images, then the
+    SVC is trained on the reduced-dimension projections.  Returns (original,
+    loaded_from_npz, sample_images) so callers can compare _classify output.
+    """
+    rng = np.random.default_rng(42)
+    n_per_class, img_h, img_w, n_pca_dims = 30, 4, 4, 5
+    n_features = img_h * img_w  # 16 pixels per image
+
+    # Raw flattened image data: 3 well-separated classes
+    x_raw = np.vstack(
+        [
+            rng.normal(loc=float(c) * 3, scale=0.5, size=(n_per_class, n_features))
+            for c in range(3)
+        ]
+    )
+    y = np.repeat(np.arange(3), n_per_class)
+
+    pca = PCA(n_components=n_pca_dims)
+    x_pca = pca.fit_transform(x_raw)
+
+    svc = SVC(kernel="rbf", C=1.0, gamma="scale")
+    svc.fit(x_pca, y)
+    rbf = RBFClassifier.from_svc(svc)
+
+    model = CayenneNumber(
+        pca=pca,
+        dims=n_pca_dims,
+        classifier=rbf,
+        templates=None,
+        template_threshold=0.85,
+    )
+    path = tmp_path / "classify_model.npz"
+    save_number_recogniser(model, path)
+    loaded = load_number_recogniser(path)
+
+    # Sample images: (4, 4) uint8 arrays that flatten to n_features values
+    imgs = [rng.integers(0, 256, size=(img_h, img_w), dtype=np.uint8) for _ in range(6)]
+    return model, loaded, imgs
+
+
+class TestClassifyAfterNpzLoad:
+    """Regression tests for _classify on a model reconstructed from .npz.
+
+    _load_npz builds a bare PCA() with only components_ and mean_ set.
+    Newer sklearn versions access explained_variance_ inside transform(),
+    which was never stored in the .npz.  _classify must not call
+    pca.transform() directly.
+    """
+
+    def test_classify_does_not_raise(self, tmp_path: Path) -> None:
+        """_classify on a .npz-loaded model must not raise AttributeError."""
+        _, loaded, imgs = _make_classify_fixture(tmp_path)
+        result = loaded._classify(imgs)  # type: ignore[attr-defined]
+        assert result.shape == (len(imgs),)
+
+    def test_classify_predictions_match_original(self, tmp_path: Path) -> None:
+        """Loaded model's _classify must return same labels as the original."""
+        model, loaded, imgs = _make_classify_fixture(tmp_path)
+        orig_labels = model._classify(imgs)  # type: ignore[attr-defined]
+        loaded_labels = loaded._classify(imgs)  # type: ignore[attr-defined]
+        np.testing.assert_array_equal(orig_labels, loaded_labels)
+
+
 class TestMakeNumRecogniser:
     def test_loads_bundled_model(self) -> None:
         """make_num_recogniser() with no args loads the bundled .npz."""

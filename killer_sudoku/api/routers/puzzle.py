@@ -708,7 +708,16 @@ def make_router(
             except AssertionError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-            warped_b64: str | None = _encode_image(_resize_for_display(inp.warped_img))
+            # Encode and immediately free large image arrays.
+            # The warped grid is only included in the response when processing
+            # fails — it aids diagnosis but is not needed on the success path.
+            original_b64 = _encode_image(_resize_for_display(inp.img))
+            warped_b64: str | None = (
+                _encode_image(_resize_for_display(inp.warped_img))
+                if inp.spec_error is not None
+                else None
+            )
+            del inp.img, inp.warped_img
 
             if inp.spec_error is not None:
                 try:
@@ -727,7 +736,6 @@ def make_router(
 
             cages = _spec_to_cage_states(spec)
             spec_data = _spec_to_data(spec)
-            original_b64 = _encode_image(_resize_for_display(inp.img))
 
             session_id = str(uuid.uuid4())
             state = PuzzleState(

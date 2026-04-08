@@ -23,7 +23,6 @@ from enum import Enum
 
 import numpy as np
 import numpy.typing as npt
-from scipy.signal import find_peaks
 from sklearn.cluster import KMeans  # type: ignore[import-untyped]
 from sklearn.preprocessing import StandardScaler  # type: ignore[import-untyped]
 
@@ -57,11 +56,22 @@ def boundary_kind(gap_idx: int) -> BoundaryKind:
 
 
 def strip_features(strip: npt.NDArray[np.uint8]) -> npt.NDArray[np.float64]:
-    """Extract 4 summary features from a 1D min-projected border strip.
+    """Extract 4 position-independent features from a 1D min-projected border strip.
 
-    Features: [peak_count, mean_brightness, variance, amplitude].
-    Dark features (cage borders, grid lines) appear as dips in the strip; the
-    inverted strip (~strip) is used for peak finding so dark dips become peaks.
+    Uses order statistics (percentiles) so features depend only on the
+    *distribution* of brightness values, not on where in the strip the ink
+    sits.  Sorting the profile removes spatial ordering entirely — the same
+    dark dip at position 10 or position 50 produces identical features.
+
+    Features: [p5, p25, p50, mean].
+      p5  (≈ minimum): how dark is the darkest part?  Cage border → ~50–150.
+      p25: how broad is the dark region?  Box boundary → low; cage → moderate.
+      p50 (median): is most of the strip dark or light?
+      mean: overall ink level (continuous signal, same metric as before).
+
+    No cage border → all four values close to 255.
+    Cage border (thin dark line) → very low p5, moderate p25, high p50/mean.
+    Box boundary (wide dark band) → low p5, low p25, low p50.
 
     Args:
         strip: 1D array of uint8 pixel values from the border region.
@@ -70,14 +80,12 @@ def strip_features(strip: npt.NDArray[np.uint8]) -> npt.NDArray[np.float64]:
         float64 array of shape (4,).
     """
     f: npt.NDArray[np.float64] = strip.astype(np.float64)
-    inverted: npt.NDArray[np.float64] = 255.0 - f
-    peaks, _ = find_peaks(inverted, height=32.0)
     return np.array(
         [
-            float(len(peaks)),
+            float(np.percentile(f, 5)),
+            float(np.percentile(f, 25)),
+            float(np.percentile(f, 50)),
             float(np.mean(f)),
-            float(np.var(f)),
-            float(np.max(f)) - float(np.min(f)),
         ],
         dtype=np.float64,
     )

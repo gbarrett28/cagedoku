@@ -109,12 +109,22 @@ class CellScanConfig:
     their top and left inner borders are used as positive anchors for clustering.
     """
 
-    classic_digit_threshold: float = 10.0
-    """Minimum sum of classic_digit_confidence to classify a puzzle as classic.
+    tl_fraction_threshold: float = 0.40
+    """Minimum dominant-quadrant ink fraction for killer puzzle classification.
 
-    A typical classic puzzle has 20-35 given digits (each scoring 1.0); a killer
-    puzzle has none.  A threshold of 10.0 gives wide margin above the killer
-    baseline of 0.
+    detect_puzzle_type() computes the fraction of total inner-cell ink in the
+    dominant quadrant across all 81 cells.  Killer puzzles concentrate ink in
+    one corner (measured: 0.65–0.98); classic puzzles distribute it uniformly
+    (expected ~0.25 per quadrant).  0.40 gives comfortable margins on both sides.
+    """
+
+    rotation_dominance_threshold: float = 0.50
+    """Minimum dominant-quadrant fraction to trigger orientation correction.
+
+    detect_rotation() sums cage-total ink across 81 cells into four inner-quadrant
+    buckets.  If the maximum fraction is below this threshold the ink is too
+    uniformly distributed to reliably infer orientation.  Measured genuine-rotation
+    minimum: >0.65; expected classic/blank value: ~0.25.  0.50 gives a safe margin.
     """
 
 
