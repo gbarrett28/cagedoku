@@ -22,14 +22,17 @@ import logging
 import pickle
 from pathlib import Path
 
-import joblib  # type: ignore[import-untyped]
 import numpy as np
 import numpy.typing as npt
 from sklearn.decomposition import PCA  # type: ignore[import-untyped]
 from sklearn.svm import SVC  # type: ignore[import-untyped]
 
 from killer_sudoku.image.config import ImagePipelineConfig
-from killer_sudoku.image.number_recognition import CayenneNumber
+from killer_sudoku.image.number_recognition import (
+    CayenneNumber,
+    RBFClassifier,
+    save_number_recogniser,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -37,29 +40,35 @@ _log = logging.getLogger(__name__)
 def train_number_recogniser(
     config: ImagePipelineConfig,
     bootstrap: bool = False,
+    output_path: Path | None = None,
 ) -> CayenneNumber:
     """Train a CayenneNumber model from labelled digit images.
 
     Reads either numerals.pkl (standard) or bootstrap_numerals.pkl (bootstrap
     mode) from config.puzzle_dir_required, groups digit images by label, computes
-    per-label means, fits PCA on those means, then trains a KNN classifier on
-    the reduced space.
+    per-label means, fits PCA on those means, then trains an SVM classifier on
+    the reduced space.  After fitting, the SVC internals are extracted into an
+    RBFClassifier so the saved model requires only numpy at inference time.
 
     The number of PCA dimensions used is the minimum needed to explain at
     least 99% of variance in the mean images.
 
     Args:
-        config: Pipeline configuration (supplies puzzle_dir and num_recogniser_path).
+        config: Pipeline configuration (supplies puzzle_dir).
         bootstrap: If True, read bootstrap_numerals.pkl instead of numerals.pkl.
             Bootstrap labels are derived directly from cage totals with no
             recogniser dependency; set True for a first-pass clean training run.
+        output_path: Where to write the .npz model.  Default:
+            killer_sudoku/data/num_recogniser.npz (relative to this file).
 
     Returns:
-        Trained CayenneNumber model (also saved to config.num_recogniser_path).
+        Trained CayenneNumber model (also saved to output_path).
 
     Raises:
         FileNotFoundError: if the numerals file does not exist.
     """
+    if output_path is None:
+        output_path = Path(__file__).parent.parent / "data" / "num_recogniser.npz"
     filename = "bootstrap_numerals.pkl" if bootstrap else "numerals.pkl"
     numerals_path = config.puzzle_dir_required / filename
     if not numerals_path.exists():
@@ -114,15 +123,16 @@ def train_number_recogniser(
         "Trained SVC (C=%.1f, gamma=%s) on %d samples", svm_c, svm_gamma, len(vals)
     )
 
+    rbf = RBFClassifier.from_svc(svc)
     model = CayenneNumber(
         pca,
         dims,
-        svc,
+        rbf,
         templates=templates,
         template_threshold=config.number_recognition.template_threshold,
     )
-    joblib.dump(model, config.num_recogniser_path)
-    _log.info("Saved number recogniser to %s", config.num_recogniser_path)
+    save_number_recogniser(model, output_path)
+    _log.info("Saved number recogniser to %s", output_path)
 
     return model
 
@@ -142,13 +152,21 @@ def main() -> None:
         default=False,
         help="Read bootstrap_numerals.pkl instead of numerals.pkl",
     )
+    parser.add_argument(
+        "--output",
+        default=None,
+        help=(
+            "Output path for the .npz model file. "
+            "Default: killer_sudoku/data/num_recogniser.npz"
+        ),
+    )
     args = parser.parse_args()
 
     config = ImagePipelineConfig(
         puzzle_dir=Path(args.puzzle_dir),
     )
-
-    train_number_recogniser(config, bootstrap=args.bootstrap)
+    out = Path(args.output) if args.output else None
+    train_number_recogniser(config, bootstrap=args.bootstrap, output_path=out)
 
 
 if __name__ == "__main__":
