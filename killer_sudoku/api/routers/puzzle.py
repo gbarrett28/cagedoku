@@ -702,24 +702,23 @@ def make_router(
 
             img_config = ImagePipelineConfig(
                 puzzle_dir=config.puzzle_dir,
+                num_recogniser_file=config.num_recogniser_path,
                 rework=True,
             )
             try:
-                border_detector = InpImage.make_border_detector(img_config)
                 num_recogniser = InpImage.make_num_recogniser(img_config)
             except FileNotFoundError as exc:
                 raise HTTPException(
                     status_code=500,
                     detail=(
-                        f"Model files not found in puzzle_dir "
-                        f"'{config.puzzle_dir}'. "
-                        f"Set COACH_PUZZLE_DIR to the directory containing "
-                        f"brdr.pkl and nums_pca_s.pkl. ({exc})"
+                        f"Number recogniser model not found. "
+                        f"Set COACH_NUM_RECOGNISER_PATH to the path of "
+                        f"nums_pca_s.pkl. ({exc})"
                     ),
                 ) from exc
 
             try:
-                inp = InpImage(tmp_path, img_config, border_detector, num_recogniser)
+                inp = InpImage(tmp_path, img_config, num_recogniser)
             except AssertionError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
 

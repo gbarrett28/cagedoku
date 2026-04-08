@@ -19,7 +19,6 @@ def _minimal_state(session_id: str = "test-session-abc") -> PuzzleState:
     """Return a minimal PuzzleState suitable for round-trip testing."""
     return PuzzleState(
         session_id=session_id,
-        newspaper="guardian",
         cages=[
             CageState(
                 label="A",

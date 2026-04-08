@@ -1,4 +1,4 @@
-"""Tests for the hints and hints/apply endpoints on Guardian puzzle 10.
+"""Tests for the hints and hints/apply endpoints on puzzle 10.
 
 Tests verify the full hint → apply cycle end-to-end through the HTTP API:
   1. GET /{session_id}/hints returns the expected rules.
@@ -7,7 +7,7 @@ Tests verify the full hint → apply cycle end-to-end through the HTTP API:
   4. Re-fetching GET /{session_id}/hints after applying one hint surfaces
      downstream hints that required the prior elimination.
 
-Guardian puzzle 10 structural context (0-based coordinates):
+Puzzle 10 structural context (0-based coordinates):
   Cage D  cells (0,5),(0,6),(0,7),(1,7) — total 30, solution {6,7,8,9}.
   MustContainOutie fires: eliminate 7 from (1,7) / r2c8.
   After that elimination CageConfinement fires:
@@ -31,10 +31,10 @@ from killer_sudoku.api.routers.puzzle import (
 )
 from killer_sudoku.api.schemas import PuzzleState
 from killer_sudoku.api.session import SessionStore
-from tests.fixtures.guardian10_puzzle import make_guardian10_spec
+from tests.fixtures.puzzle10_fixture import make_puzzle10_spec
 
 # ---------------------------------------------------------------------------
-# Guardian 10 golden solution (full solve).
+# Puzzle 10 golden solution (full solve).
 # ---------------------------------------------------------------------------
 
 GUARDIAN10_SOLUTION: list[list[int]] = [
@@ -76,12 +76,11 @@ def client(sessions_dir: Path, tmp_path: Path) -> TestClient:
 
 @pytest.fixture
 def g10_state(store: SessionStore) -> PuzzleState:
-    """Confirmed PuzzleState for Guardian puzzle 10, seeded into the store."""
-    spec = make_guardian10_spec()
+    """Confirmed PuzzleState for puzzle 10, seeded into the store."""
+    spec = make_puzzle10_spec()
     cages = _spec_to_cage_states(spec)
     state = PuzzleState(
-        session_id="guardian10-test-001",
-        newspaper="guardian",
+        session_id="puzzle10-test-001",
         cages=cages,
         spec_data=_spec_to_data(spec),
         original_image_b64="dGVzdA==",
@@ -117,16 +116,15 @@ def _apply_hint(
 
 
 def _make_g10_state(store: SessionStore) -> tuple[str, PuzzleState]:
-    """Seed a confirmed guardian-10 state into store; return (session_id, state).
+    """Seed a confirmed puzzle-10 state into store; return (session_id, state).
 
     Extracted from the g10_state fixture so other test modules can reuse it
     without depending on pytest fixture injection.
     """
-    spec = make_guardian10_spec()
+    spec = make_puzzle10_spec()
     sid = str(uuid.uuid4())
     state = PuzzleState(
         session_id=sid,
-        newspaper="guardian",
         cages=_spec_to_cage_states(spec),
         spec_data=_spec_to_data(spec),
         original_image_b64="dGVzdA==",
@@ -169,10 +167,9 @@ class TestGetHints:
         self, client: TestClient, store: SessionStore
     ) -> None:
         """Hints endpoint returns an empty list before /confirm (no user_grid yet)."""
-        spec = make_guardian10_spec()
+        spec = make_puzzle10_spec()
         unconfirmed = PuzzleState(
             session_id="g10-unconfirmed",
-            newspaper="guardian",
             cages=_spec_to_cage_states(spec),
             spec_data=_spec_to_data(spec),
             original_image_b64="dGVzdA==",
@@ -413,10 +410,9 @@ class TestApplyHintEdgeCases:
         assert r2c8["user_removed"].count(7) == 1
 
     def test_400_before_confirm(self, client: TestClient, store: SessionStore) -> None:
-        spec = make_guardian10_spec()
+        spec = make_puzzle10_spec()
         unconfirmed = PuzzleState(
             session_id="g10-apply-unconfirmed",
-            newspaper="guardian",
             cages=_spec_to_cage_states(spec),
             spec_data=_spec_to_data(spec),
             original_image_b64="dGVzdA==",

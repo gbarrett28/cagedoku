@@ -5,15 +5,15 @@ status. Used to measure model quality and identify problematic images.
 
 collect_status() is the main evaluation function: it processes every .jpg in
 the puzzle directory, attempts to solve each puzzle, and records the outcome
-('SOLVED', 'CHEAT', 'ProcessingError: ...', 'AssertionError: ...',
+('SOLVED', 'UNSOLVED', 'ProcessingError: ...', 'AssertionError: ...',
 'ValueError') to status.pkl.
 
 test_border_fun() runs the same evaluation but allows injecting a custom
 border classification function, enabling comparison of border detector models.
 
 Usage:
-    python -m killer_sudoku.training.evaluate --rag guardian
-    python -m killer_sudoku.training.evaluate --rag observer --rework
+    python -m killer_sudoku.training.evaluate --puzzle-dir <dir>
+    python -m killer_sudoku.training.evaluate --puzzle-dir <dir> --rework
 """
 
 import argparse
@@ -30,7 +30,6 @@ import joblib  # type: ignore[import-untyped]
 import numpy as np
 import numpy.typing as npt
 
-from killer_sudoku.image.border_detection import BorderPCA1D
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.inp_image import InpImage
 from killer_sudoku.image.number_recognition import CayenneNumber
@@ -43,15 +42,12 @@ _log = logging.getLogger(__name__)
 
 def write_eval_report(
     puzzle_dir: Path,
-    newspaper: str | None,
     status: StatusStore,
     solved: int,
-    cheated: int,
     perror: int,
     aerror: int,
     verror: int,
     total: int,
-    ctimeout: int = 0,
     unsolved: int = 0,
 ) -> Path:
     """Write a structured JSON evaluation report to {puzzle_dir}/eval_report.json.
@@ -61,39 +57,31 @@ def write_eval_report(
 
     Args:
         puzzle_dir: Directory containing puzzle images.
-        newspaper: Newspaper identifier string ('guardian' or 'observer'), or None.
         status: StatusStore with current puzzle outcomes.
         solved: Count of SOLVED puzzles.
-        cheated: Count of CHEAT puzzles.
         perror: Count of ProcessingError puzzles.
         aerror: Count of AssertionError puzzles.
         verror: Count of ValueError puzzles.
         total: Total puzzles processed.
-        ctimeout: Count of CheatTimeout puzzles (cheat_solve exceeded time limit).
         unsolved: Count of UNSOLVED puzzles (engine made no further progress).
 
     Returns:
         Path to the written report file.
     """
     solve_rate = solved / total if total else 0.0
-    cheat_rate = cheated / total if total else 0.0
-    error_rate = (perror + aerror + verror + ctimeout) / total if total else 0.0
+    error_rate = (perror + aerror + verror) / total if total else 0.0
 
     per_image = dict(status.items())
 
     report = {
         "timestamp": datetime.now(tz=UTC).isoformat(),
-        "newspaper": newspaper,
         "total": total,
         "solved": solved,
         "unsolved": unsolved,
-        "cheat": cheated,
-        "cheat_timeout": ctimeout,
         "processing_error": perror,
         "assertion_error": aerror,
         "value_error": verror,
         "solve_rate": round(solve_rate, 6),
-        "cheat_rate": round(cheat_rate, 6),
         "error_rate": round(error_rate, 6),
         "per_image": per_image,
     }
@@ -109,10 +97,10 @@ def compare_reports(baseline_path: Path, current_path: Path) -> bool:
     """Compare two evaluation reports and print a diff table.
 
     Loads both JSON reports and prints a table of Metric / Baseline / Current /
-    Delta for solve_rate, cheat_rate, and error_rate.  Any metric that regresses
-    by more than 0.01 (1%) is flagged as a failure.
+    Delta for solve_rate and error_rate.  Any metric that regresses by more than
+    0.01 (1%) is flagged as a failure.
 
-    Also detects per-image regressions: puzzles that moved from SOLVED/CHEAT to
+    Also detects per-image regressions: puzzles that moved from SOLVED to
     an error status.
 
     Args:
@@ -127,10 +115,10 @@ def compare_reports(baseline_path: Path, current_path: Path) -> bool:
     with open(current_path, encoding="utf-8") as fh:
         current = json.load(fh)
 
-    metrics = ["solve_rate", "cheat_rate", "error_rate"]
+    metrics = ["solve_rate", "error_rate"]
     # For solve_rate: higher is better (regression = decrease).
-    # For cheat_rate/error_rate: lower is better (regression = increase).
-    higher_is_better = {"solve_rate": True, "cheat_rate": False, "error_rate": False}
+    # For error_rate: lower is better (regression = increase).
+    higher_is_better = {"solve_rate": True, "error_rate": False}
 
     print(f"\n{'Metric':<20} {'Baseline':>10} {'Current':>10} {'Delta':>10}")
     print("-" * 55)
@@ -154,8 +142,8 @@ def compare_reports(baseline_path: Path, current_path: Path) -> bool:
     regressions: list[str] = []
     for name, base_status in base_per.items():
         curr_status = curr_per.get(name, "")
-        was_good = base_status in {"SOLVED", "CHEAT"}
-        now_bad = curr_status not in {"SOLVED", "CHEAT"} and curr_status != ""
+        was_good = base_status == "SOLVED"
+        now_bad = curr_status != "SOLVED" and curr_status != ""
         if was_good and now_bad:
             regressions.append(f"  {name}: {base_status} -> {curr_status}")
 
@@ -173,7 +161,6 @@ def compare_reports(baseline_path: Path, current_path: Path) -> bool:
 def _process_one_image(
     f: Path,
     config: ImagePipelineConfig,
-    border_detector: BorderPCA1D | None,
     num_recogniser: CayenneNumber,
 ) -> tuple[str, str, float]:
     """Process one puzzle image and return (filename, status_string, elapsed_s).
@@ -186,7 +173,6 @@ def _process_one_image(
     Args:
         f: Path to the puzzle .jpg image.
         config: Pipeline configuration.
-        border_detector: Observer border model or None for Guardian.
         num_recogniser: Trained digit classifier.
 
     Returns:
@@ -196,7 +182,7 @@ def _process_one_image(
     """
     t0 = time.perf_counter()
     try:
-        inp = InpImage(f, config, border_detector, num_recogniser)
+        inp = InpImage(f, config, num_recogniser)
         assert inp.spec is not None, inp.spec_error
         grd = Grid()
         grd.set_up(inp.spec)
@@ -213,7 +199,6 @@ def _process_one_image(
 
 def collect_status(
     config: ImagePipelineConfig,
-    border_detector: BorderPCA1D | None,
 ) -> StatusStore:
     """Process all .jpg puzzles and record solve status to disk.
 
@@ -230,7 +215,6 @@ def collect_status(
 
     Args:
         config: Pipeline configuration (supplies puzzle_dir, status_path, etc.).
-        border_detector: Observer border model or None for Guardian.
 
     Returns:
         StatusStore with updated results (already saved to disk).
@@ -247,8 +231,7 @@ def collect_status(
     # completes (unordered).  StatusStore is updated only in the main process
     # so workers never share mutable state.
     results = joblib.Parallel(n_jobs=config.n_jobs, return_as="generator_unordered")(
-        joblib.delayed(_process_one_image)(f, config, border_detector, num_recogniser)
-        for f in files
+        joblib.delayed(_process_one_image)(f, config, num_recogniser) for f in files
     )
 
     timings: list[tuple[str, float]] = []
@@ -318,15 +301,12 @@ def collect_status(
     _log.info("TOTAL           %3d", total)
     write_eval_report(
         config.puzzle_dir,
-        config.newspaper,
         status,
         solved,
-        0,
         perror,
         aerror,
         verror,
         total,
-        ctimeout=0,
         unsolved=unsolved,
     )
     return status
@@ -336,7 +316,6 @@ def test_border_fun(
     config: ImagePipelineConfig,
     status: StatusStore,
     status_pattern: re.Pattern[str],
-    border_detector: BorderPCA1D | None,
     is_border_fn: Callable[[npt.NDArray[np.float64]], bool] | None = None,
 ) -> tuple[int, int, int, int, int]:
     """Evaluate a custom border detection function against matching puzzles.
@@ -349,7 +328,6 @@ def test_border_fun(
         config: Pipeline configuration.
         status: StatusStore with previously recorded solve outcomes.
         status_pattern: Only process puzzles whose status matches this pattern.
-        border_detector: Observer border model or None for Guardian.
         is_border_fn: Optional function (pixel_strip -> bool) to test. If None,
             uses the pre-validated spec from InpImage directly.
 
@@ -372,7 +350,7 @@ def test_border_fun(
         total += 1
 
         try:
-            inp = InpImage(f, config, border_detector, num_recogniser)
+            inp = InpImage(f, config, num_recogniser)
             grd = Grid()
 
             if is_border_fn is None:
@@ -428,7 +406,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Evaluate image pipeline and record solve status for all puzzles"
     )
-    parser.add_argument("--rag", choices=["guardian", "observer"], required=True)
+    parser.add_argument(
+        "--puzzle-dir", required=True, help="Directory of puzzle images"
+    )
     parser.add_argument(
         "--rework",
         action="store_true",
@@ -450,8 +430,7 @@ def main() -> None:
     args = parser.parse_args()
 
     config = ImagePipelineConfig(
-        puzzle_dir=Path(args.rag),
-        newspaper=args.rag,
+        puzzle_dir=Path(args.puzzle_dir),
         rework=args.rework,
     )
 
@@ -460,7 +439,6 @@ def main() -> None:
         status = StatusStore(config.status_path, config.puzzle_dir)
         counts: dict[str, int] = {
             "solved": 0,
-            "cheat": 0,
             "perror": 0,
             "aerror": 0,
             "verror": 0,
@@ -470,8 +448,6 @@ def main() -> None:
             counts["total"] += 1
             if stat == "SOLVED":
                 counts["solved"] += 1
-            elif stat == "CHEAT":
-                counts["cheat"] += 1
             elif stat.startswith("ProcessingError"):
                 counts["perror"] += 1
             elif stat.startswith("AssertionError"):
@@ -480,10 +456,8 @@ def main() -> None:
                 counts["verror"] += 1
         write_eval_report(
             config.puzzle_dir,
-            config.newspaper,
             status,
             counts["solved"],
-            counts["cheat"],
             counts["perror"],
             counts["aerror"],
             counts["verror"],
@@ -503,8 +477,7 @@ def main() -> None:
             raise SystemExit(1)
         return
 
-    border_detector = InpImage.make_border_detector(config)
-    collect_status(config, border_detector)
+    collect_status(config)
 
 
 if __name__ == "__main__":

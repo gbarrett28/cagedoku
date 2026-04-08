@@ -1,17 +1,15 @@
 """Cage border detection for killer sudoku puzzle images.
 
-Two detectors are implemented:
-- BorderDecode: PCA + KMeans clustering (used during training only).
-- BorderPCA1D: Fast single-principal-component classifier (production observer model).
+BorderDecode: PCA + KMeans clustering, used only during training to fit the
+cluster-to-label mapping.
 
-For Guardian puzzles, threshold-based detection is used directly in InpImage
-(no trained model needed). For Observer puzzles, a BorderPCA1D model is loaded
-lazily from disk using load_observer_border_detector().
+detect_borders_peak_count: threshold-based peak-counting, used as a bootstrap
+approximation when no trained model is available.
+
+For production border detection, the format-agnostic anchored-clustering
+pipeline in border_clustering.py (Stages 3 + 4) is used exclusively.
 """
 
-from pathlib import Path
-
-import joblib  # type: ignore[import-untyped]
 import numpy as np
 import numpy.typing as npt
 from scipy.signal import find_peaks
@@ -49,66 +47,6 @@ class BorderDecode:
         return [bool(self.isbrdr[int(c)]) for c in cls]
 
 
-class BorderPCA1D:
-    """Single principal-component border classifier (production Observer model).
-
-    Collapses a two-stage PCA pipeline into a single inner-product plus
-    threshold comparison, for fast inference without full PCA overhead.
-
-    Attributes:
-        vec: Combined projection vector (product of both PCA component matrices).
-        bp: Bias/breakpoint scalar — subtract then compare sign.
-        cmp: Polarity flag — when True, invert the comparison direction.
-    """
-
-    def __init__(
-        self,
-        pp: npt.NDArray[np.float64],
-        mm: npt.NDArray[np.float64],
-        cmp: bool,
-    ) -> None:
-        self.vec: npt.NDArray[np.float64] = pp
-        self.bp: npt.NDArray[np.float64] = mm
-        self.cmp: bool = cmp
-
-    def project(self, brdps: list[npt.NDArray[np.float64]]) -> list[float]:
-        """Project border samples onto the single discriminant axis.
-
-        Args:
-            brdps: List of 1D pixel arrays sampled from each candidate border.
-
-        Returns:
-            List of scalar projection values (positive or negative).
-        """
-        return [float(np.matmul(self.vec, b)) - float(self.bp) for b in brdps]
-
-    def is_border(self, brdps: list[npt.NDArray[np.float64]]) -> list[bool]:
-        """Classify border samples as border or not using the projection.
-
-        Args:
-            brdps: List of 1D pixel arrays sampled from each candidate border.
-
-        Returns:
-            List of booleans, True where a cage border was detected.
-        """
-        return [(b > 0) != self.cmp for b in self.project(brdps)]
-
-
-def load_observer_border_detector(model_path: Path) -> BorderPCA1D:
-    """Load a trained BorderPCA1D model from disk using joblib.
-
-    Args:
-        model_path: Path to the serialised BorderPCA1D model file.
-
-    Raises:
-        FileNotFoundError: if model_path does not exist.
-    """
-    if not model_path.exists():
-        raise FileNotFoundError(f"Observer border model not found: {model_path}")
-    result: BorderPCA1D = joblib.load(model_path)
-    return result
-
-
 def detect_borders_peak_count(
     warped_brd: npt.NDArray[np.uint8],
     subres: int,
@@ -121,9 +59,8 @@ def detect_borders_peak_count(
     on each edge from the adaptive-threshold image, and counts peaks in the
     inverted strip. More than 2 peaks indicates a printed cage border line.
 
-    This is the Guardian border detection algorithm. It can also be used as a
-    bootstrap approximation for Observer images when no trained model is yet
-    available (accuracy is lower but sufficient to seed initial training).
+    This is the peak-count border detection algorithm. It is used as the
+    bootstrap step in the anchored clustering pipeline (Stage 3 cell scan).
 
     Args:
         warped_brd: Adaptive-threshold binary image (output of

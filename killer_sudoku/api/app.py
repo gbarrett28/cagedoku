@@ -125,8 +125,7 @@ def serve() -> None:
     URL after a short delay to let the server bind its port.
 
     Host/port are read from CoachConfig (COACH_HOST / COACH_PORT env vars).
-    Run from the project root so that guardian/ and observer/ model directories
-    resolve correctly.
+    Run from the project root so that puzzle directories resolve correctly.
     """
     args = _build_arg_parser().parse_args()
     cfg = CoachConfig()

@@ -14,7 +14,7 @@ from killer_sudoku.api.routers.puzzle import _spec_to_cage_states, _spec_to_data
 from killer_sudoku.api.schemas import PuzzleState
 from killer_sudoku.api.session import SessionStore
 from tests.api.test_hints import _make_g10_state
-from tests.fixtures.guardian10_puzzle import make_guardian10_spec
+from tests.fixtures.puzzle10_fixture import make_puzzle10_spec
 
 
 @pytest.fixture
@@ -44,11 +44,10 @@ class TestRefreshEndpoint:
     def test_409_unconfirmed_session(
         self, client: TestClient, store: SessionStore
     ) -> None:
-        spec = make_guardian10_spec()
+        spec = make_puzzle10_spec()
         sid = str(uuid.uuid4())
         state = PuzzleState(
             session_id=sid,
-            newspaper="guardian",
             cages=_spec_to_cage_states(spec),
             spec_data=_spec_to_data(spec),
             original_image_b64="dGVzdA==",

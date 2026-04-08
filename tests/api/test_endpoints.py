@@ -58,7 +58,6 @@ def trivial_state() -> PuzzleState:
     spec = make_trivial_spec()
     return PuzzleState(
         session_id="trivial-session-001",
-        newspaper="guardian",
         cages=_spec_to_cage_states(spec),
         spec_data=_spec_to_data(spec),
         original_image_b64="dGVzdA==",  # base64("test") — placeholder for unit tests
@@ -75,7 +74,6 @@ def two_cell_state(store: SessionStore) -> PuzzleState:
     cages = _spec_to_cage_states(spec)
     state = PuzzleState(
         session_id="two-cell-001",
-        newspaper="guardian",
         cages=cages,
         spec_data=_spec_to_data(spec),
         original_image_b64="dGVzdA==",

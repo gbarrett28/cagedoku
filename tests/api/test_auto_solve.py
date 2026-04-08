@@ -1,4 +1,4 @@
-"""Auto-solve test: simulate a human player working through Guardian puzzle 10.
+"""Auto-solve test: simulate a human player working through puzzle 10.
 
 The test drives the puzzle to completion using the coaching API:
 
@@ -55,7 +55,7 @@ from killer_sudoku.solver.engine import (
 )
 from killer_sudoku.solver.engine.board_state import NoSolnError
 from killer_sudoku.solver.engine.types import Elimination
-from tests.fixtures.guardian10_puzzle import make_guardian10_spec
+from tests.fixtures.puzzle10_fixture import make_puzzle10_spec
 
 # ---------------------------------------------------------------------------
 # Golden solution
@@ -76,7 +76,7 @@ GUARDIAN10_SOLUTION: list[list[int]] = [
 # Names of rules active in coaching mode; used to identify archive rules.
 _COACHING_RULE_NAMES: frozenset[str] = frozenset(r.name for r in default_rules())
 
-MAX_STEPS = 1000  # guardian 10 should complete in far fewer
+MAX_STEPS = 1000  # puzzle 10 should complete in far fewer
 
 
 # ---------------------------------------------------------------------------
@@ -109,12 +109,11 @@ def client(sessions_dir: Path, tmp_path: Path) -> TestClient:
 
 
 def _seed_g10_session(store: SessionStore) -> str:
-    """Seed a confirmed guardian-10 session; return session_id."""
-    spec = make_guardian10_spec()
+    """Seed a confirmed puzzle-10 session; return session_id."""
+    spec = make_puzzle10_spec()
     sid = str(uuid.uuid4())
     state = PuzzleState(
         session_id=sid,
-        newspaper="guardian",
         cages=_spec_to_cage_states(spec),
         spec_data=_spec_to_data(spec),
         original_image_b64="dGVzdA==",
@@ -356,8 +355,8 @@ def _try_archive_rules(
 # ---------------------------------------------------------------------------
 
 
-class TestAutoSolveGuardian10:
-    """Play Guardian puzzle 10 to completion using coaching hints + archive fallback.
+class TestAutoSolvePuzzle10:
+    """Play puzzle 10 to completion using coaching hints + archive fallback.
 
     Test documents:
     - Every hint applied (rule name, description, effect).
@@ -541,5 +540,5 @@ class TestAutoSolveGuardian10:
         summary = self._summary(step_log, archive_log, vc_log)
         # Replace Unicode minus sign with ASCII hyphen for Windows cp1252 compat.
         summary = summary.replace("\u2212", "-")
-        print(f"\n=== Guardian 10 solved in {steps} steps ===\n")
+        print(f"\n=== Puzzle 10 solved in {steps} steps ===\n")
         print(summary)

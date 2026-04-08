@@ -106,7 +106,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Calibrate isblack_offset from puzzle images"
     )
-    parser.add_argument("--rag", choices=["guardian", "observer"], required=True)
+    parser.add_argument(
+        "--puzzle-dir", required=True, help="Directory of puzzle images"
+    )
     parser.add_argument(
         "--n-images",
         type=int,
@@ -115,8 +117,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    result = calibrate_isblack_offset(Path(args.rag), n_images=args.n_images)
-    print(f"Recommended isblack_offset for {args.rag}: {result}")
+    result = calibrate_isblack_offset(Path(args.puzzle_dir), n_images=args.n_images)
+    print(f"Recommended isblack_offset for {args.puzzle_dir}: {result}")
 
 
 if __name__ == "__main__":

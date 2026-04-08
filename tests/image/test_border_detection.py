@@ -1,8 +1,7 @@
 """Tests for killer_sudoku.image.border_detection.
 
-Covers detect_borders_peak_count (the format-agnostic Guardian/bootstrap
-border detector) using synthetic numpy images to avoid any dependency on
-real photograph fixtures or trained models.
+Covers detect_borders_peak_count using synthetic numpy images to avoid any
+dependency on real photograph fixtures or trained models.
 """
 
 from __future__ import annotations
@@ -15,7 +14,6 @@ import numpy.typing as npt
 
 from killer_sudoku.image.border_detection import (
     BorderDecode,
-    BorderPCA1D,
     detect_borders_peak_count,
 )
 
@@ -173,42 +171,3 @@ class TestBorderDecodeIsBorder:
         samples = cast(list[npt.NDArray[np.float64]], [np.zeros(8), np.ones(8)])
         result = bd.is_border(samples)
         assert result == [True, False]
-
-
-# ---------------------------------------------------------------------------
-# BorderPCA1D — unit tests
-# ---------------------------------------------------------------------------
-
-
-class TestBorderPCA1D:
-    def _make_model(self, cmp: bool = False) -> BorderPCA1D:
-        vec = cast(npt.NDArray[np.float64], np.array([1.0, 0.0, 0.0, 0.0]))
-        bp = cast(npt.NDArray[np.float64], np.array([0.5]))
-        return BorderPCA1D(pp=vec, mm=bp, cmp=cmp)
-
-    def _s(self, *rows: list[float]) -> list[npt.NDArray[np.float64]]:
-        """Wrap float lists as properly-typed sample arrays."""
-        return cast(list[npt.NDArray[np.float64]], [np.array(r) for r in rows])
-
-    def test_project_returns_scalar_list(self) -> None:
-        model = self._make_model()
-        samples = self._s([1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0])
-        projections = model.project(samples)
-        assert len(projections) == 2
-        assert abs(projections[0] - 0.5) < 1e-9  # 1*1 - 0.5
-        assert abs(projections[1] - (-0.5)) < 1e-9  # 0*1 - 0.5
-
-    def test_is_border_positive_projection_no_invert(self) -> None:
-        model = self._make_model(cmp=False)
-        # projection > 0 → (b > 0) != False → True (border)
-        assert model.is_border(self._s([2.0, 0.0, 0.0, 0.0])) == [True]
-
-    def test_is_border_negative_projection_no_invert(self) -> None:
-        model = self._make_model(cmp=False)
-        # projection < 0 → (b > 0) = False, != False → False (not border)
-        assert model.is_border(self._s([0.0, 0.0, 0.0, 0.0])) == [False]
-
-    def test_is_border_with_polarity_inversion(self) -> None:
-        model = self._make_model(cmp=True)
-        # cmp=True inverts: positive projection → False
-        assert model.is_border(self._s([2.0, 0.0, 0.0, 0.0])) == [False]

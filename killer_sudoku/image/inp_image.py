@@ -20,11 +20,6 @@ from killer_sudoku.image.border_clustering import (
     boundary_kind,
     cluster_borders,
 )
-from killer_sudoku.image.border_detection import (
-    BorderPCA1D,
-    detect_borders_peak_count,
-    load_observer_border_detector,
-)
 from killer_sudoku.image.cell_scan import detect_puzzle_type, scan_cells
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.grid_location import get_gry_img, locate_grid
@@ -75,18 +70,20 @@ class PicInfo:
 class InpImage:
     """Parses a killer sudoku puzzle image into structured cage data.
 
-    Dependencies (border_detector, num_recogniser) are passed explicitly,
-    enabling lazy initialisation and clean testability. Use the static factory
-    methods make_border_detector and make_num_recogniser for production use.
+    Dependencies (num_recogniser) are passed explicitly, enabling lazy
+    initialisation and clean testability.  Use the static factory method
+    make_num_recogniser for production use.
 
-    No module-level side effects: model loading is deferred to factory methods.
+    Border detection uses the format-agnostic anchored-clustering pipeline
+    (Stages 3 + 4) exclusively — no trained border model is required.
+
+    No module-level side effects: model loading is deferred to the factory method.
     """
 
     def __init__(
         self,
         filepath: Path,
         config: ImagePipelineConfig,
-        border_detector: BorderPCA1D | None,
         num_recogniser: CayenneNumber,
     ) -> None:
         """Parse a puzzle image file and populate self.info with extracted data.
@@ -101,8 +98,7 @@ class InpImage:
 
         Args:
             filepath: Path to the puzzle image file.
-            config: Pipeline configuration (newspaper, resolution, thresholds).
-            border_detector: Observer border model, or None for Guardian.
+            config: Pipeline configuration (resolution, thresholds).
             num_recogniser: Trained digit classifier.
 
         Raises:
@@ -168,7 +164,6 @@ class InpImage:
             cv2.getPerspectiveTransform(self.info.grid, dst_size), dtype=np.float64
         )
 
-        # Warp blk, gry, and img before border detection so scan_cells can run first.
         warped_blk: npt.NDArray[np.uint8] = np.asarray(
             cv2.warpPerspective(
                 blk, m, (resolution, resolution), flags=cv2.INTER_LINEAR
@@ -219,33 +214,14 @@ class InpImage:
                 self.spec_error = str(exc)
             return
 
-        # Killer path: run border detection and cage-total extraction.
+        # Killer path: format-agnostic anchored-clustering border detection.
         self.given_digits = None
         self.info.border_x, self.info.border_y = self._identify_borders(
-            gry, m, config, border_detector
+            gry, m, config, warped_blk, num_recogniser
         )
         self.info.brdrs = InpImage._borders_to_brdrs(
             self.info.border_x, self.info.border_y
         )
-
-        if config.poc_border_clustering:
-            poc_bx, poc_by = self._identify_borders_poc(
-                gry, m, config, warped_blk, num_recogniser
-            )
-            diff_x = int(np.sum(poc_bx != self.info.border_x))
-            diff_y = int(np.sum(poc_by != self.info.border_y))
-            total = int(self.info.border_x.size + self.info.border_y.size)
-            if diff_x + diff_y == 0:
-                _log.info("poc_border_clustering: MATCH — all %d borders agree", total)
-            else:
-                _log.warning(
-                    "poc_border_clustering: MISMATCH — %d/%d borders differ "
-                    "(border_x: %d, border_y: %d)",
-                    diff_x + diff_y,
-                    total,
-                    diff_x,
-                    diff_y,
-                )
 
         try:
             cage_totals = self._build_cage_totals(
@@ -253,7 +229,7 @@ class InpImage:
             )
 
             # Every cell belongs to exactly one cage, so cage totals must sum to 405
-            # (9 rows × (1+2+…+9) = 9 × 45). A sum outside [360, 450] (±10%) almost
+            # (9 rows x (1+2+...+9) = 9 x 45). A sum outside [360, 450] (+-10%) almost
             # always means the number recogniser read a cell incorrectly.
             # Fallback: if the global-threshold blk binary floods cell interiors (e.g.
             # when isblack is over-estimated), retry with adaptive thresholding of the
@@ -301,87 +277,10 @@ class InpImage:
         gry: npt.NDArray[np.uint8],
         m: npt.NDArray[np.float64],
         config: ImagePipelineConfig,
-        border_detector: BorderPCA1D | None,
-    ) -> tuple[npt.NDArray[np.bool_], npt.NDArray[np.bool_]]:
-        """Classify inter-cell borders from the warped grayscale image.
-
-        Samples a strip centred on each interior grid edge. For Observer puzzles,
-        passes the raw grayscale strip to the trained BorderPCA1D model. For
-        Guardian puzzles, applies adaptive thresholding then calls
-        detect_borders_peak_count (peak counting on the thresholded strips).
-
-        Args:
-            gry: Grayscale source image.
-            m: Perspective transform matrix from locate_grid.
-            config: Pipeline configuration.
-            border_detector: Observer border model, or None for Guardian.
-
-        Returns:
-            (border_x, border_y) as (9, 8) and (8, 9) bool arrays.
-        """
-        resolution = config.resolution
-        subres = config.subres
-        bd = config.border_detection
-
-        warped_gry: npt.NDArray[np.uint8] = np.asarray(
-            cv2.warpPerspective(
-                gry, m, (resolution, resolution), flags=cv2.INTER_LINEAR
-            ),
-            dtype=np.uint8,
-        )
-        brd_view: npt.NDArray[np.uint8] = np.asarray(
-            cv2.adaptiveThreshold(
-                warped_gry,
-                255,
-                cv2.ADAPTIVE_THRESH_MEAN_C,
-                cv2.THRESH_BINARY,
-                config.adaptive_block_size,
-                bd.adaptive_c,
-            ),
-            dtype=np.uint8,
-        )
-
-        if border_detector is None:
-            # Guardian: peak-counting on the adaptive-threshold image.
-            return detect_borders_peak_count(
-                brd_view, subres, bd.sample_fraction, bd.sample_margin
-            )
-
-        # Observer: raw grayscale strips classified by the PCA1D model.
-        brdrsh: npt.NDArray[np.bool_] = np.zeros((9, 8), dtype=bool)
-        brdrsv: npt.NDArray[np.bool_] = np.zeros((8, 9), dtype=bool)
-        sample_half = subres // bd.sample_fraction
-        sample_margin_px = subres // bd.sample_margin
-
-        for col in range(9):
-            xm = ((2 * col + 1) * subres) // 2
-            xb = xm + sample_margin_px
-            xt = xm + sample_half - sample_margin_px
-            for row in range(1, 9):
-                yl = (row * subres) - sample_half
-                yr = (row * subres) + sample_half
-                brdrph = np.min(warped_gry[xb:xt, yl:yr], axis=0)
-                brdrpv = np.min(warped_gry[yl:yr, xb:xt], axis=1)
-                isbh_val, isbv_val = border_detector.is_border(
-                    [
-                        np.asarray(brdrph, dtype=np.float64),
-                        np.asarray(brdrpv, dtype=np.float64),
-                    ]
-                )
-                brdrsh[col, row - 1] = bool(isbh_val)
-                brdrsv[row - 1, col] = bool(isbv_val)
-
-        return brdrsh, brdrsv
-
-    def _identify_borders_poc(
-        self,
-        gry: npt.NDArray[np.uint8],
-        m: npt.NDArray[np.float64],
-        config: ImagePipelineConfig,
         warped_blk: npt.NDArray[np.uint8],
         num_recogniser: CayenneNumber,
     ) -> tuple[npt.NDArray[np.bool_], npt.NDArray[np.bool_]]:
-        """Run the PoC format-agnostic pipeline (Stages 3 + 4) for comparison.
+        """Classify inter-cell borders using the anchored-clustering pipeline.
 
         Applies cell scan (Stage 3) followed by anchored border clustering
         (Stage 4).  Tries all 4 combinations of BOX/CELL group polarity and
@@ -419,7 +318,7 @@ class InpImage:
             config.cell_scan.anchor_confidence_threshold,
         )
 
-        # Compute cage_totals once — it depends only on the image, not on borders.
+        # Compute cage_totals once -- it depends only on the image, not on borders.
         initial_bx: npt.NDArray[np.bool_] = bx_prob > 0.5
         initial_by: npt.NDArray[np.bool_] = by_prob > 0.5
         try:
@@ -437,7 +336,7 @@ class InpImage:
         # Try all 4 BOX/CELL polarity combinations; pick the one with the most
         # cage regions that contain exactly one printed total (connectivity score).
         # Early-out: a perfect score means every detected cage head is uniquely
-        # enclosed — no further combinations can improve on this.
+        # enclosed -- no further combinations can improve on this.
         best_bx = initial_bx
         best_by = initial_by
         best_score = InpImage._connectivity_score(initial_bx, initial_by, cage_totals)
@@ -459,7 +358,7 @@ class InpImage:
             border_y: npt.NDArray[np.bool_] = cy > 0.5
             score = InpImage._connectivity_score(border_x, border_y, cage_totals)
             _log.debug(
-                "poc polarity flip_box=%s flip_cell=%s: connectivity=%d/%d",
+                "polarity flip_box=%s flip_cell=%s: connectivity=%d/%d",
                 flip_box,
                 flip_cell,
                 score,
@@ -506,13 +405,13 @@ class InpImage:
         Flood-fills through open (non-cage) borders using border_x[col, row_gap]
         (horizontal borders) and border_y[col_gap, row] (vertical borders).
         A well-formed cage has exactly one non-zero cage_totals cell.  The
-        maximum score equals the number of cages in the puzzle (~20–30 for
+        maximum score equals the number of cages in the puzzle (~20-30 for
         a typical killer sudoku).
 
         Args:
-            border_x: Shape (9, 8) — True where cage border lies between rows.
-            border_y: Shape (8, 9) — True where cage border lies between columns.
-            cage_totals: Shape (9, 9), indexed [col, row] — non-zero for cage heads.
+            border_x: Shape (9, 8) -- True where cage border lies between rows.
+            border_y: Shape (8, 9) -- True where cage border lies between columns.
+            cage_totals: Shape (9, 9), indexed [col, row] -- non-zero for cage heads.
 
         Returns:
             Number of cage regions with exactly one head.
@@ -532,19 +431,19 @@ class InpImage:
                     i += 1
                     if cage_totals[c, r] > 0:
                         heads += 1
-                    # down: row r → r+1, blocked by border_x[c, r]
+                    # down: row r -> r+1, blocked by border_x[c, r]
                     if r + 1 < 9 and not visited[c, r + 1] and not border_x[c, r]:
                         visited[c, r + 1] = True
                         region.append((c, r + 1))
-                    # up: row r → r-1, blocked by border_x[c, r-1]
+                    # up: row r -> r-1, blocked by border_x[c, r-1]
                     if r > 0 and not visited[c, r - 1] and not border_x[c, r - 1]:
                         visited[c, r - 1] = True
                         region.append((c, r - 1))
-                    # right: col c → c+1, blocked by border_y[c, r]
+                    # right: col c -> c+1, blocked by border_y[c, r]
                     if c + 1 < 9 and not visited[c + 1, r] and not border_y[c, r]:
                         visited[c + 1, r] = True
                         region.append((c + 1, r))
-                    # left: col c → c-1, blocked by border_y[c-1, r]
+                    # left: col c -> c-1, blocked by border_y[c-1, r]
                     if c > 0 and not visited[c - 1, r] and not border_y[c - 1, r]:
                         visited[c - 1, r] = True
                         region.append((c - 1, r))
@@ -563,7 +462,7 @@ class InpImage:
 
         Finds contours in warped_blk, classifies them as digit bounding rects,
         splits two-digit numbers, and runs the digit classifier to build the
-        9×9 cage-total array.
+        9x9 cage-total array.
 
         Args:
             warped_blk: Warped binary image (ink=white, background=black).
@@ -605,7 +504,7 @@ class InpImage:
                 col = (bx + bw // 2) // subres
                 row = (by + bh // 2) // subres
                 if col < 0 or col >= 9 or row < 0 or row >= 9:
-                    # Contour centre falls outside the 9×9 grid — skip.
+                    # Contour centre falls outside the 9x9 grid -- skip.
                     continue
                 if num_pixels[col, row] is None:
                     num_pixels[col, row] = []
@@ -629,25 +528,6 @@ class InpImage:
                                 v
                             )
         return cage_totals
-
-    @staticmethod
-    def make_border_detector(config: ImagePipelineConfig) -> BorderPCA1D | None:
-        """Load the border detector model, or return None for format-agnostic detection.
-
-        When newspaper is not specified (production), returns None and the pipeline
-        uses format-agnostic peak-count detection.  When newspaper is "observer"
-        (training/batch), loads the trained BorderPCA1D model.  Guardian always
-        uses peak-count.
-
-        Args:
-            config: Pipeline configuration.
-
-        Returns:
-            Loaded BorderPCA1D model, or None to use peak-count detection.
-        """
-        if config.newspaper is None or config.is_guardian:
-            return None
-        return load_observer_border_detector(config.border_pca1d_model_path)
 
     @staticmethod
     def make_num_recogniser(config: ImagePipelineConfig) -> CayenneNumber:

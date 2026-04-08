@@ -1,7 +1,7 @@
-"""Guardian puzzle 10 spec fixture.
+"""Killer sudoku puzzle 10 spec fixture.
 
-Provides a programmatic PuzzleSpec for the Guardian killer sudoku puzzle 10,
-extracted from a confirmed session.  No image files required.
+Provides a programmatic PuzzleSpec for puzzle 10 (extracted from a confirmed
+session).  No image files required.
 
 Key structural features used by hint tests:
   Cage D  (label index 3, 1-based region 4): cells r1c6, r1c7, r1c8, r2c8
@@ -75,10 +75,10 @@ _BORDER_Y: list[list[bool]] = [
 ]
 
 
-def make_guardian10_spec() -> PuzzleSpec:
-    """Return a validated PuzzleSpec for Guardian puzzle 10."""
+def make_puzzle10_spec() -> PuzzleSpec:
+    """Return a PuzzleSpec for puzzle 10."""
     return validate_cage_layout(
         np.array(_CAGE_TOTALS, dtype=np.intp),
-        np.array(_BORDER_X, dtype=bool),
-        np.array(_BORDER_Y, dtype=bool),
+        np.array(_BORDER_X, dtype=np.bool_),
+        np.array(_BORDER_Y, dtype=np.bool_),
     )

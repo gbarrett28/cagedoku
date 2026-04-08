@@ -21,7 +21,6 @@ _EMPTY_SPEC = PuzzleSpecData(
 
 _MIN_STATE = {
     "session_id": "test-session",
-    "newspaper": "guardian",
     "cages": [],
     "spec_data": _EMPTY_SPEC,
     "original_image_b64": "",

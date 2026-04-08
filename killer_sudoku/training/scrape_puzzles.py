@@ -1,17 +1,18 @@
-"""Guardian/Observer killer sudoku puzzle image scraper.
+"""Killer sudoku puzzle image scraper.
 
-Downloads puzzle images from the Guardian website. The website structure may
-have changed since this scraper was written -- treat existing .jpg images as
-the primary source of training data and only use this as a last resort.
+Downloads puzzle images from the newspaper series index page. The website
+structure may have changed since this scraper was written -- treat existing
+.jpg images as the primary source of training data and only use this as a
+last resort.
 
-The scraper iterates over the Guardian series index pages, collects article
-links for Guardian and Observer killer sudokus, then for each article fetches
-the print-edition .jpg image. Images are named killer_sudoku_N.jpg and saved
-into the appropriate output directory.
+The scraper iterates over the series index pages, collects article links,
+then for each article fetches the print-edition .jpg image. Images are named
+killer_sudoku_N.jpg and saved into the output directory.
 
 Usage:
-    python -m killer_sudoku.training.scrape_puzzles --output-dir guardian
-    python -m killer_sudoku.training.scrape_puzzles --output-dir observer
+    python -m killer_sudoku.training.scrape_puzzles --output-dir <dir>
+    python -m killer_sudoku.training.scrape_puzzles --output-dir <dir> \
+        --url-contains bserver
 """
 
 import argparse
@@ -25,29 +26,28 @@ from bs4 import BeautifulSoup, Tag
 _log = logging.getLogger(__name__)
 
 
-def scrape_puzzles(output_dir: Path) -> None:
+def scrape_puzzles(output_dir: Path, url_contains: str | None = None) -> None:
     """Download killer sudoku puzzle images into output_dir.
 
-    Fetches the Guardian series index pages, collects article URLs for the
-    matching newspaper (Guardian or Observer, determined by whether "bserver"
-    appears in the URL), then downloads the print .jpg from each article.
+    Fetches the series index pages, collects article URLs, then downloads the
+    print .jpg from each article.  If url_contains is provided, only articles
+    whose URL contains that substring are collected (use this to restrict to a
+    specific puzzle series).
 
     Only runs if output_dir does not already exist. This is intentional:
     the existing .jpg images are the primary source of training data and
     should not be overwritten.
 
-    WARNING: The Guardian website structure may have changed since this was
-    written. If downloads fail, inspect the page source and update the
-    BeautifulSoup selectors accordingly.
+    WARNING: The website structure may have changed since this was written.
+    If downloads fail, inspect the page source and update the BeautifulSoup
+    selectors accordingly.
 
     Args:
         output_dir: Directory to create and populate with .jpg files.
-            Named "observer" or "guardian" by convention.
+        url_contains: Optional substring filter applied to article URLs.
+            If None, all articles from the series index are collected.
     """
     html_idx = "https://www.theguardian.com/lifeandstyle/series/killer-sudoku?page={}"
-
-    # Determine which newspaper to collect based on directory name.
-    is_observer = output_dir.name.lower() == "observer"
 
     article_urls: set[str] = set()
     prev_count = 0
@@ -66,9 +66,7 @@ def scrape_puzzles(output_dir: Path) -> None:
             href = link.get("href")
             if not isinstance(href, str):
                 continue
-            if is_observer and "bserver" in href:
-                article_urls.add(href)
-            elif not is_observer and "bserver" not in href:
+            if url_contains is None or url_contains in href:
                 article_urls.add(href)
 
         if len(article_urls) == prev_count:
@@ -118,19 +116,27 @@ def scrape_puzzles(output_dir: Path) -> None:
 
 
 def main() -> None:
-    """CLI entry point: scrape puzzle images from the Guardian website."""
+    """CLI entry point: scrape puzzle images from the series index page."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(
-        description="Scrape Guardian/Observer killer sudoku puzzle images"
+        description="Scrape killer sudoku puzzle images from a series index page"
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
         required=True,
-        help='Directory to save images into (e.g. "guardian" or "observer")',
+        help="Directory to save images into",
+    )
+    parser.add_argument(
+        "--url-contains",
+        default=None,
+        help=(
+            "Only collect articles whose URL contains this substring. "
+            "Use to restrict to a specific puzzle series."
+        ),
     )
     args = parser.parse_args()
-    scrape_puzzles(args.output_dir)
+    scrape_puzzles(args.output_dir, url_contains=args.url_contains)
 
 
 if __name__ == "__main__":

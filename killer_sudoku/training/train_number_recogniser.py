@@ -12,9 +12,9 @@ The training strategy:
   5. Transform all digit images and train an SVC on the reduced space.
 
 Usage:
-    python -m killer_sudoku.training.train_number_recogniser --rag guardian
-    python -m killer_sudoku.training.train_number_recogniser --rag observer
-    python -m killer_sudoku.training.train_number_recogniser --rag guardian --bootstrap
+    python -m killer_sudoku.training.train_number_recogniser --puzzle-dir <dir>
+    python -m killer_sudoku.training.train_number_recogniser --puzzle-dir <dir> \
+        --bootstrap
 """
 
 import argparse
@@ -67,7 +67,7 @@ def train_number_recogniser(
         raise FileNotFoundError(
             f"{filename} not found at {numerals_path}. "
             f"Run first: python -m killer_sudoku.training.{script} "
-            "--rag <guardian|observer>"
+            "--puzzle-dir <dir>"
         )
 
     with open(numerals_path, "rb") as fh:
@@ -133,7 +133,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Train PCA+KNN digit recogniser from labelled digit images"
     )
-    parser.add_argument("--rag", choices=["guardian", "observer"], required=True)
+    parser.add_argument(
+        "--puzzle-dir", required=True, help="Directory of puzzle images"
+    )
     parser.add_argument(
         "--bootstrap",
         action="store_true",
@@ -143,8 +145,7 @@ def main() -> None:
     args = parser.parse_args()
 
     config = ImagePipelineConfig(
-        puzzle_dir=Path(args.rag),
-        newspaper=args.rag,
+        puzzle_dir=Path(args.puzzle_dir),
     )
 
     train_number_recogniser(config, bootstrap=args.bootstrap)

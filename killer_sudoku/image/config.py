@@ -6,7 +6,6 @@ A top-level ImagePipelineConfig aggregates them for convenience.
 
 import dataclasses
 from pathlib import Path
-from typing import Literal
 
 
 @dataclasses.dataclass(frozen=True)
@@ -20,14 +19,14 @@ class GridLocationConfig:
         Binary search descends from hough_threshold_max until at least
         hough_lines_min_count lines are found.
         hough_lines_theta_divisor controls angular resolution (16 ≈ 11°).
-        This is the reliable production strategy for both Guardian and Observer.
+        This is the reliable production strategy for all puzzle formats.
 
     HoughLinesP (use_hough_p=True): probabilistic line segments.
         hough_theta_divisor controls angular resolution (180 = 1°).
         min_line_length_fraction * resolution sets the minimum segment length:
         a valid grid line must span at least one 3-box row (resolution / 3).
         max_line_gap bridges small discontinuities in ink.
-        Note: known to underperform on Observer puzzles (24/424 grid failures).
+        Note: known to underperform on some puzzle formats (24/424 grid failures).
     """
 
     rho: int = 2
@@ -68,50 +67,11 @@ class BorderDetectionConfig:
 class NumberRecognitionConfig:
     """Parameters for digit/number recognition.
 
-    cluster_labels_guardian and cluster_labels_observer are empirically derived
-    cluster-to-digit mappings determined by visual inspection of training data.
-
     The SVM and template-matching hyperparameters control the two-stage
     classifier used during inference: template matching (fast path) runs first;
     if the best match score is below template_threshold, the SVM fallback runs.
     """
 
-    cluster_labels_guardian: tuple[int, ...] = (
-        3,
-        1,
-        2,
-        0,
-        1,
-        8,
-        7,
-        9,
-        6,
-        1,
-        4,
-        0,
-        2,
-        5,
-        3,
-        7,
-    )
-    cluster_labels_observer: tuple[int, ...] = (
-        2,
-        1,
-        6,
-        4,
-        0,
-        7,
-        8,
-        3,
-        1,
-        2,
-        1,
-        9,
-        5,
-        1,
-        2,
-        5,
-    )
     subres: int = 128
     svm_c: float = 5.0
     svm_gamma: str = "scale"
@@ -123,7 +83,7 @@ class NumberRecognitionConfig:
     # separate ink from paper even when the global threshold over-includes
     # grey pixels (isblack too high), but not so large that faint digits are
     # missed.  Validated empirically: C=20 recovers image 278 without
-    # regressions across the full Guardian and Observer datasets.
+    # regressions across the full puzzle datasets.
     contour_fallback_adaptive_c: int = 20
 
 
@@ -182,7 +142,13 @@ class ImagePipelineConfig:
     """Top-level configuration for the image processing pipeline."""
 
     puzzle_dir: Path
-    newspaper: Literal["guardian", "observer"] | None = None
+    num_recogniser_file: Path | None = None
+    """Explicit path to the number recogniser model (nums_pca_s.pkl).
+
+    When set, overrides the default puzzle_dir / "nums_pca_s.pkl" lookup so
+    that a single shared model can be used regardless of which puzzle_dir is
+    active.  If None, the path falls back to puzzle_dir / "nums_pca_s.pkl".
+    """
     rework: bool = False
     grid_location: GridLocationConfig = dataclasses.field(
         default_factory=GridLocationConfig
@@ -201,32 +167,12 @@ class ImagePipelineConfig:
     )
     """Stage 4 anchored-clustering configuration."""
 
-    poc_border_clustering: bool = False
-    """Run the new anchored-clustering pipeline in parallel with the existing pipeline.
-
-    When True, InpImage.__init__ also runs Stage 3 (cell scan) and Stage 4
-    (border clustering), converts the soft border assignments to hard ones, compares
-    them with the existing pipeline output, and logs any discrepancies.  The primary
-    pipeline (existing Guardian/Observer detection) is unchanged; this flag enables
-    Phase 1 proof-of-concept comparison only.
-    """
-
     n_jobs: int = -1
     """Number of parallel worker processes for batch operations.
 
     Passed directly to joblib.Parallel(n_jobs=...).  -1 means use all
     available CPUs; 1 disables parallelism (useful for debugging).
     """
-
-    @property
-    def is_guardian(self) -> bool:
-        """True if the newspaper is Guardian."""
-        return self.newspaper == "guardian"
-
-    @property
-    def is_observer(self) -> bool:
-        """True if the newspaper is Observer."""
-        return self.newspaper == "observer"
 
     @property
     def subres(self) -> int:
@@ -254,16 +200,13 @@ class ImagePipelineConfig:
         return self.puzzle_dir / "status.pkl"
 
     @property
-    def border_model_path(self) -> Path:
-        """Path to the Observer border detection model file."""
-        return self.puzzle_dir / "brdr.pkl"
-
-    @property
-    def border_pca1d_model_path(self) -> Path:
-        """Path to the Observer 1D PCA border model file."""
-        return self.puzzle_dir / "pca_1d_border.pkl"
-
-    @property
     def num_recogniser_path(self) -> Path:
-        """Path to the number recogniser model file."""
+        """Path to the number recogniser model file.
+
+        Returns num_recogniser_file if explicitly set, otherwise falls back to
+        puzzle_dir / "nums_pca_s.pkl" for backward compatibility with training
+        and batch-solve pipelines that don't set a separate model path.
+        """
+        if self.num_recogniser_file is not None:
+            return self.num_recogniser_file
         return self.puzzle_dir / "nums_pca_s.pkl"
