@@ -220,10 +220,10 @@ def collect_status(
         StatusStore with updated results (already saved to disk).
     """
     num_recogniser = InpImage.make_num_recogniser(config)
-    status = StatusStore(config.status_path, config.puzzle_dir)
+    status = StatusStore(config.status_path, config.puzzle_dir_required)
     solved = perror = aerror = verror = unsolved = total = 0
 
-    files = list(config.puzzle_dir.glob("*.jpg"))
+    files = list(config.puzzle_dir_required.glob("*.jpg"))
     n_total = len(files)
     _log.info("Processing %d images with n_jobs=%d ...", n_total, config.n_jobs)
 
@@ -238,7 +238,7 @@ def collect_status(
     for name, stat, elapsed in results:
         total += 1
         timings.append((name, elapsed))
-        f = config.puzzle_dir / name
+        f = config.puzzle_dir_required / name
         status[f] = stat
         if stat == "SOLVED":
             solved += 1
@@ -300,7 +300,7 @@ def collect_status(
     _log.info("ValueError      %3d", verror)
     _log.info("TOTAL           %3d", total)
     write_eval_report(
-        config.puzzle_dir,
+        config.puzzle_dir_required,
         status,
         solved,
         perror,
@@ -341,7 +341,7 @@ def test_border_fun(
     aerror = 0
     total = 0
 
-    for f in itertools.islice(config.puzzle_dir.glob("*.jpg"), None):
+    for f in itertools.islice(config.puzzle_dir_required.glob("*.jpg"), None):
         recorded = status[f]
         if not re.match(status_pattern, recorded):
             continue
@@ -436,7 +436,7 @@ def main() -> None:
 
     if args.report_only:
         # Regenerate the report from existing status.pkl without re-running pipeline.
-        status = StatusStore(config.status_path, config.puzzle_dir)
+        status = StatusStore(config.status_path, config.puzzle_dir_required)
         counts: dict[str, int] = {
             "solved": 0,
             "perror": 0,
@@ -455,7 +455,7 @@ def main() -> None:
             elif stat.startswith("ValueError"):
                 counts["verror"] += 1
         write_eval_report(
-            config.puzzle_dir,
+            config.puzzle_dir_required,
             status,
             counts["solved"],
             counts["perror"],
@@ -464,7 +464,7 @@ def main() -> None:
             counts["total"],
         )
         if args.compare:
-            report_path = config.puzzle_dir / "eval_report.json"
+            report_path = config.puzzle_dir_required / "eval_report.json"
             ok = compare_reports(Path(args.compare), report_path)
             if not ok:
                 raise SystemExit(1)
@@ -472,7 +472,8 @@ def main() -> None:
 
     if args.compare:
         # Compare the existing eval_report.json to a baseline without re-running.
-        ok = compare_reports(Path(args.compare), config.puzzle_dir / "eval_report.json")
+        report_path = config.puzzle_dir_required / "eval_report.json"
+        ok = compare_reports(Path(args.compare), report_path)
         if not ok:
             raise SystemExit(1)
         return

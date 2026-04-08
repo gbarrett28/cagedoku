@@ -45,7 +45,6 @@ def store(sessions_dir: Path) -> SessionStore:
 def client(sessions_dir: Path, tmp_path: Path) -> TestClient:
     """TestClient backed by a test app whose sessions_dir is the tmp_path."""
     config = CoachConfig(
-        puzzle_dir=tmp_path / "puzzles",
         sessions_dir=sessions_dir,
     )
     return TestClient(create_app(config))

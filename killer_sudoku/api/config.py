@@ -1,17 +1,14 @@
 """Configuration for the COACH web application.
 
-Paths are set via environment variables.  The server fails to start if a
-required variable is unset.  Override optional variables for deployment
-flexibility.
-
-Required:
-    COACH_PUZZLE_DIR          — directory containing puzzle images and cached
-                                .jpk files.
+All variables are optional; the server starts without any of them set.
+Missing paths are reported as clear HTTP 500 errors at the point of use.
 
 Optional:
     COACH_NUM_RECOGNISER_PATH — path to the number recogniser model
-                                (nums_pca_s.pkl).  Must be set explicitly;
-                                no default path is assumed.
+                                (nums_pca_s.pkl).  Required only for the
+                                image upload endpoint; the server starts
+                                without it and returns a 500 if unset when
+                                a puzzle is uploaded.
     COACH_SESSIONS_DIR        — session persistence directory. Default: sessions
     COACH_HOST                — bind address. Default: 127.0.0.1
     COACH_PORT                — port. Default: 8000
@@ -26,37 +23,25 @@ from pathlib import Path
 from killer_sudoku.solver.puzzle_spec import PuzzleSpec
 
 
-def _require_env(var: str) -> Path:
-    """Return Path(os.environ[var]), raising ValueError if unset."""
-    v = os.environ.get(var)
-    if v is None:
-        raise ValueError(
-            f"{var} environment variable must be set. "
-            f"Point it to the directory containing puzzle images."
-        )
-    return Path(v)
-
-
 @dataclasses.dataclass(frozen=True)
 class CoachConfig:
     """Central configuration for the COACH API server.
 
     Attributes:
-        puzzle_dir: Directory containing puzzle images and cached .jpk files.
-            Set via COACH_PUZZLE_DIR — no default; the server raises at startup
-            if unset.
         num_recogniser_path: Path to the number recogniser model (nums_pca_s.pkl).
-            Set via COACH_NUM_RECOGNISER_PATH — required; no default is assumed.
+            Set via COACH_NUM_RECOGNISER_PATH.  If None the upload endpoint
+            returns HTTP 500 with a clear error message.
         sessions_dir: Directory for JSON session persistence files.
         host: Bind address for the uvicorn server.
         port: Port for the uvicorn server.
+        mock_spec: When set, the upload endpoint bypasses InpImage and returns
+            this spec directly.  Used by Playwright e2e tests.
     """
 
-    puzzle_dir: Path = dataclasses.field(
-        default_factory=lambda: _require_env("COACH_PUZZLE_DIR")
-    )
-    num_recogniser_path: Path = dataclasses.field(
-        default_factory=lambda: _require_env("COACH_NUM_RECOGNISER_PATH")
+    num_recogniser_path: Path | None = dataclasses.field(
+        default_factory=lambda: Path(v)
+        if (v := os.environ.get("COACH_NUM_RECOGNISER_PATH"))
+        else None
     )
     sessions_dir: Path = dataclasses.field(
         default_factory=lambda: Path(os.environ.get("COACH_SESSIONS_DIR", "sessions"))

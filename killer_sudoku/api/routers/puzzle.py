@@ -700,8 +700,16 @@ def make_router(
                 tmp.write(contents)
                 tmp_path = Path(tmp.name)
 
+            if config.num_recogniser_path is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        "Number recogniser model not configured. "
+                        "Set the COACH_NUM_RECOGNISER_PATH environment variable "
+                        "to the path of nums_pca_s.pkl."
+                    ),
+                )
             img_config = ImagePipelineConfig(
-                puzzle_dir=config.puzzle_dir,
                 num_recogniser_file=config.num_recogniser_path,
                 rework=True,
             )
@@ -711,9 +719,8 @@ def make_router(
                 raise HTTPException(
                     status_code=500,
                     detail=(
-                        f"Number recogniser model not found. "
-                        f"Set COACH_NUM_RECOGNISER_PATH to the path of "
-                        f"nums_pca_s.pkl. ({exc})"
+                        f"Number recogniser model not found at "
+                        f"{config.num_recogniser_path}. ({exc})"
                     ),
                 ) from exc
 

@@ -99,8 +99,16 @@ def create_app(config: CoachConfig | None = None) -> FastAPI:
     return application
 
 
-# Module-level app instance for `uvicorn killer_sudoku.api.app:app`
-app = create_app()
+def __getattr__(name: str) -> FastAPI:
+    """Lazy module-level `app` for ``uvicorn killer_sudoku.api.app:app``.
+
+    Defers ``create_app()`` until the attribute is actually accessed so that
+    importing this module (e.g. to reach ``serve``) does not fail when the
+    ``COACH_*`` environment variables are not yet set.
+    """
+    if name == "app":
+        return create_app()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -129,6 +137,7 @@ def serve() -> None:
     """
     args = _build_arg_parser().parse_args()
     cfg = CoachConfig()
+    application = create_app(cfg)
     url = f"http://{cfg.host}:{cfg.port}"
 
     # webbrowser.open is unreliable on headless Linux / WSL
@@ -157,7 +166,11 @@ def serve() -> None:
 
     try:
         uvicorn.run(
-            app, host=cfg.host, port=cfg.port, log_level="info", access_log=False
+            application,
+            host=cfg.host,
+            port=cfg.port,
+            log_level="info",
+            access_log=False,
         )
     except KeyboardInterrupt:
         print("\nCOACH stopped.")

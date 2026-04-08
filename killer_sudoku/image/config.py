@@ -139,15 +139,21 @@ class BorderClusteringConfig:
 
 @dataclasses.dataclass(frozen=True)
 class ImagePipelineConfig:
-    """Top-level configuration for the image processing pipeline."""
+    """Top-level configuration for the image processing pipeline.
 
-    puzzle_dir: Path
+    In the web-app context (single-file upload), only ``num_recogniser_file``
+    needs to be set; ``puzzle_dir`` is not required.
+
+    In the training and batch-solve context, ``puzzle_dir`` is always provided
+    by the caller; ``num_recogniser_file`` is optional (falls back to
+    ``puzzle_dir / "nums_pca_s.pkl"``).
+    """
+
+    puzzle_dir: Path | None = None
     num_recogniser_file: Path | None = None
     """Explicit path to the number recogniser model (nums_pca_s.pkl).
 
-    When set, overrides the default puzzle_dir / "nums_pca_s.pkl" lookup so
-    that a single shared model can be used regardless of which puzzle_dir is
-    active.  If None, the path falls back to puzzle_dir / "nums_pca_s.pkl".
+    When set, overrides the fallback to ``puzzle_dir / "nums_pca_s.pkl"``.
     """
     rework: bool = False
     grid_location: GridLocationConfig = dataclasses.field(
@@ -195,18 +201,41 @@ class ImagePipelineConfig:
         return (self.subres // 4) | 1
 
     @property
+    def puzzle_dir_required(self) -> Path:
+        """Return puzzle_dir, raising if not set.
+
+        Use in training and batch-solve code that always constructs
+        ``ImagePipelineConfig`` with an explicit ``puzzle_dir``.
+
+        Raises:
+            ValueError: if puzzle_dir is not set.
+        """
+        if self.puzzle_dir is None:
+            raise ValueError(
+                "puzzle_dir must be set for training and batch-solve operations."
+            )
+        return self.puzzle_dir
+
+    @property
     def status_path(self) -> Path:
-        """Path to the solved/status file."""
-        return self.puzzle_dir / "status.pkl"
+        """Path to the solved/status file (training pipeline only)."""
+        return self.puzzle_dir_required / "status.pkl"
 
     @property
     def num_recogniser_path(self) -> Path:
         """Path to the number recogniser model file.
 
         Returns num_recogniser_file if explicitly set, otherwise falls back to
-        puzzle_dir / "nums_pca_s.pkl" for backward compatibility with training
-        and batch-solve pipelines that don't set a separate model path.
+        puzzle_dir / "nums_pca_s.pkl" for training and batch-solve pipelines.
+
+        Raises:
+            ValueError: if neither num_recogniser_file nor puzzle_dir is set.
         """
         if self.num_recogniser_file is not None:
             return self.num_recogniser_file
-        return self.puzzle_dir / "nums_pca_s.pkl"
+        if self.puzzle_dir is not None:
+            return self.puzzle_dir / "nums_pca_s.pkl"
+        raise ValueError(
+            "Either num_recogniser_file or puzzle_dir must be set "
+            "to resolve the number recogniser model path."
+        )

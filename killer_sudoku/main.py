@@ -54,7 +54,7 @@ def main() -> None:
     # Lazy factory method — no I/O until called here.
     num_recogniser = InpImage.make_num_recogniser(config)
 
-    for filepath in sorted(config.puzzle_dir.glob("*.jpg")):
+    for filepath in sorted(config.puzzle_dir_required.glob("*.jpg")):
         _log.info("Processing %s...", filepath)
 
         try:

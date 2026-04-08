@@ -41,7 +41,7 @@ def train_number_recogniser(
     """Train a CayenneNumber model from labelled digit images.
 
     Reads either numerals.pkl (standard) or bootstrap_numerals.pkl (bootstrap
-    mode) from config.puzzle_dir, groups digit images by label, computes
+    mode) from config.puzzle_dir_required, groups digit images by label, computes
     per-label means, fits PCA on those means, then trains a KNN classifier on
     the reduced space.
 
@@ -61,7 +61,7 @@ def train_number_recogniser(
         FileNotFoundError: if the numerals file does not exist.
     """
     filename = "bootstrap_numerals.pkl" if bootstrap else "numerals.pkl"
-    numerals_path = config.puzzle_dir / filename
+    numerals_path = config.puzzle_dir_required / filename
     if not numerals_path.exists():
         script = "collect_numerals --bootstrap" if bootstrap else "collect_numerals"
         raise FileNotFoundError(

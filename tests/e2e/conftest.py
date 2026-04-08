@@ -10,7 +10,6 @@ from __future__ import annotations
 import base64
 import threading
 import time
-from pathlib import Path
 
 import httpx
 import pytest
@@ -45,7 +44,6 @@ def live_server_url(tmp_path_factory: pytest.TempPathFactory) -> str:
     """Start COACH server with mock_spec; return its base URL."""
     sessions_dir = tmp_path_factory.mktemp("e2e_sessions")
     config = CoachConfig(
-        puzzle_dir=Path("."),
         sessions_dir=sessions_dir,
         host=_E2E_HOST,
         port=_E2E_PORT,

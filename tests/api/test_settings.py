@@ -14,7 +14,6 @@ from killer_sudoku.api.config import CoachConfig
 @pytest.fixture
 def client(tmp_path: Path) -> TestClient:
     config = CoachConfig(
-        puzzle_dir=tmp_path / "puzzles",
         sessions_dir=tmp_path / "sessions",
     )
     return TestClient(create_app(config))

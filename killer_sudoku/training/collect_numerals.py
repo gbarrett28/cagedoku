@@ -175,10 +175,10 @@ def bootstrap_numerals(
         ValueError: if no .jpk cache files are found (bootstrapping requires
             solved puzzles with cached grid data).
     """
-    status = StatusStore(config.status_path, config.puzzle_dir)
+    status = StatusStore(config.status_path, config.puzzle_dir_required)
     numerals: list[tuple[int, npt.NDArray[np.uint8]]] = []
 
-    for f in itertools.islice(config.puzzle_dir.glob("*.jpg"), None):
+    for f in itertools.islice(config.puzzle_dir_required.glob("*.jpg"), None):
         if status[f] not in TRAINING_STATUSES:
             continue
         jpk = f.with_suffix(".jpk")
@@ -222,7 +222,7 @@ def collect_numerals(
 ) -> list[tuple[int, npt.NDArray[np.uint8]]]:
     """Collect labelled digit images from all solved puzzles.
 
-    Iterates over every SOLVED puzzle in config.puzzle_dir, running the full
+    Iterates over every SOLVED puzzle in config.puzzle_dir_required, running the full
     contour extraction pipeline on each, and aggregates the resulting
     (label, pixel_image) pairs.
 
@@ -233,10 +233,10 @@ def collect_numerals(
     Returns:
         List of (digit_label, warped_pixel_image) pairs across all solved puzzles.
     """
-    status = StatusStore(config.status_path, config.puzzle_dir)
+    status = StatusStore(config.status_path, config.puzzle_dir_required)
     numerals: list[tuple[int, npt.NDArray[np.uint8]]] = []
 
-    for f in itertools.islice(config.puzzle_dir.glob("*.jpg"), None):
+    for f in itertools.islice(config.puzzle_dir_required.glob("*.jpg"), None):
         if status[f] in TRAINING_STATUSES:
             _log.info("Processing (collect_numerals) %s...", f)
             pairs = extract_raw_numerals_from_image(f, config, num_recogniser)
@@ -274,11 +274,11 @@ def main() -> None:
 
     if args.bootstrap:
         numerals = bootstrap_numerals(config)
-        out_path = config.puzzle_dir / "bootstrap_numerals.pkl"
+        out_path = config.puzzle_dir_required / "bootstrap_numerals.pkl"
     else:
         num_recogniser = InpImage.make_num_recogniser(config)
         numerals = collect_numerals(config, num_recogniser)
-        out_path = config.puzzle_dir / "numerals.pkl"
+        out_path = config.puzzle_dir_required / "numerals.pkl"
 
     with open(out_path, "wb") as fh:
         pickle.dump(numerals, fh)
