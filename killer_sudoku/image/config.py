@@ -141,20 +141,14 @@ class BorderClusteringConfig:
 class ImagePipelineConfig:
     """Top-level configuration for the image processing pipeline.
 
-    In the web-app context (single-file upload), only ``num_recogniser_file``
-    needs to be set; ``puzzle_dir`` is not required.
+    In the web-app context (single-file upload), ``puzzle_dir`` is not required.
+    The number recogniser model is loaded from the bundled package data.
 
     In the training and batch-solve context, ``puzzle_dir`` is always provided
-    by the caller; ``num_recogniser_file`` is optional (falls back to
-    ``puzzle_dir / "nums_pca_s.pkl"``).
+    by the caller.
     """
 
     puzzle_dir: Path | None = None
-    num_recogniser_file: Path | None = None
-    """Explicit path to the number recogniser model (nums_pca_s.pkl).
-
-    When set, overrides the fallback to ``puzzle_dir / "nums_pca_s.pkl"``.
-    """
     rework: bool = False
     grid_location: GridLocationConfig = dataclasses.field(
         default_factory=GridLocationConfig
@@ -220,22 +214,3 @@ class ImagePipelineConfig:
     def status_path(self) -> Path:
         """Path to the solved/status file (training pipeline only)."""
         return self.puzzle_dir_required / "status.pkl"
-
-    @property
-    def num_recogniser_path(self) -> Path:
-        """Path to the number recogniser model file.
-
-        Returns num_recogniser_file if explicitly set, otherwise falls back to
-        puzzle_dir / "nums_pca_s.pkl" for training and batch-solve pipelines.
-
-        Raises:
-            ValueError: if neither num_recogniser_file nor puzzle_dir is set.
-        """
-        if self.num_recogniser_file is not None:
-            return self.num_recogniser_file
-        if self.puzzle_dir is not None:
-            return self.puzzle_dir / "nums_pca_s.pkl"
-        raise ValueError(
-            "Either num_recogniser_file or puzzle_dir must be set "
-            "to resolve the number recogniser model path."
-        )

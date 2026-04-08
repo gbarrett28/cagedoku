@@ -1,17 +1,13 @@
 """Configuration for the COACH web application.
 
 All variables are optional; the server starts without any of them set.
-Missing paths are reported as clear HTTP 500 errors at the point of use.
+The number recogniser model is bundled in the package and requires no
+path configuration.
 
 Optional:
-    COACH_NUM_RECOGNISER_PATH — path to the number recogniser model
-                                (nums_pca_s.pkl).  Required only for the
-                                image upload endpoint; the server starts
-                                without it and returns a 500 if unset when
-                                a puzzle is uploaded.
-    COACH_SESSIONS_DIR        — session persistence directory. Default: sessions
-    COACH_HOST                — bind address. Default: 127.0.0.1
-    COACH_PORT                — port. Default: 8000
+    COACH_SESSIONS_DIR — session persistence directory. Default: sessions
+    COACH_HOST         — bind address. Default: 127.0.0.1
+    COACH_PORT         — port. Default: 8000
 """
 
 from __future__ import annotations
@@ -28,9 +24,6 @@ class CoachConfig:
     """Central configuration for the COACH API server.
 
     Attributes:
-        num_recogniser_path: Path to the number recogniser model (nums_pca_s.pkl).
-            Set via COACH_NUM_RECOGNISER_PATH.  If None the upload endpoint
-            returns HTTP 500 with a clear error message.
         sessions_dir: Directory for JSON session persistence files.
         host: Bind address for the uvicorn server.
         port: Port for the uvicorn server.
@@ -38,11 +31,6 @@ class CoachConfig:
             this spec directly.  Used by Playwright e2e tests.
     """
 
-    num_recogniser_path: Path | None = dataclasses.field(
-        default_factory=lambda: Path(v)
-        if (v := os.environ.get("COACH_NUM_RECOGNISER_PATH"))
-        else None
-    )
     sessions_dir: Path = dataclasses.field(
         default_factory=lambda: Path(os.environ.get("COACH_SESSIONS_DIR", "sessions"))
     )

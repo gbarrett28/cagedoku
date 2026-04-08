@@ -12,9 +12,6 @@ import os
 import subprocess
 import sys
 
-import pytest
-from starlette.testclient import TestClient
-
 from killer_sudoku.api.app import create_app
 from killer_sudoku.api.config import CoachConfig
 
@@ -54,7 +51,7 @@ class TestImportWithoutEnvVars:
         saved = {k: os.environ.pop(k) for k in coach_keys}
         try:
             cfg = CoachConfig()
-            assert cfg.num_recogniser_path is None
+            assert cfg.sessions_dir is not None
         finally:
             os.environ.update(saved)
 
@@ -67,32 +64,3 @@ class TestImportWithoutEnvVars:
             assert app is not None
         finally:
             os.environ.update(saved)
-
-
-class TestUploadEndpointWithoutModel:
-    def test_upload_returns_500_when_model_not_configured(
-        self, tmp_path: pytest.TempdirFactory
-    ) -> None:
-        """POST /api/puzzle/upload returns 500 with clear message if model unset."""
-        cfg = CoachConfig(
-            num_recogniser_path=None,
-            sessions_dir=tmp_path,  # type: ignore[arg-type]
-        )
-        client = TestClient(create_app(cfg))
-
-        # Minimal 1x1 JPEG
-        tiny_jpg = bytes.fromhex(
-            "ffd8ffe000104a464946000101000001000100"
-            "00ffdb004300080606070605080707070909"
-            "0808080a0a0a0c0e0e0b0d0d0d0d0d0d0d0d"
-            "0c0c0e0e0c0c0d0d0c0d0d0d0d0d0d0d0d"
-            "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d"
-            "0dffc0000b080001000101011100ffda0008"
-            "01010000003f00f5aa00ffd9"
-        )
-        resp = client.post(
-            "/api/puzzle",
-            files={"file": ("puzzle.jpg", tiny_jpg, "image/jpeg")},
-        )
-        assert resp.status_code == 500
-        assert "COACH_NUM_RECOGNISER_PATH" in resp.json()["detail"]
