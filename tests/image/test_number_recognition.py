@@ -11,6 +11,7 @@ import pytest
 from sklearn.decomposition import PCA  # type: ignore[import-untyped]
 from sklearn.svm import SVC  # type: ignore[import-untyped]
 
+from killer_sudoku.image.inp_image import InpImage
 from killer_sudoku.image.number_recognition import (
     CayenneNumber,
     RBFClassifier,
@@ -94,6 +95,14 @@ class TestSaveLoadRoundtrip:
         assert isinstance(orig_preds, np.ndarray)
         assert isinstance(loaded_preds, np.ndarray)
         np.testing.assert_array_equal(orig_preds, loaded_preds)
+
+
+class TestMakeNumRecogniser:
+    def test_loads_bundled_model(self) -> None:
+        """make_num_recogniser() with no args loads the bundled .npz."""
+        model = InpImage.make_num_recogniser()
+        assert isinstance(model, CayenneNumber)
+        assert isinstance(model.classifier, RBFClassifier)
 
 
 class TestPklMigration:

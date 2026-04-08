@@ -714,7 +714,7 @@ def make_router(
                 rework=True,
             )
             try:
-                num_recogniser = InpImage.make_num_recogniser(img_config)
+                num_recogniser = InpImage.make_num_recogniser()
             except FileNotFoundError as exc:
                 raise HTTPException(
                     status_code=500,

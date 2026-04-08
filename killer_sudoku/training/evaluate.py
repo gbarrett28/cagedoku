@@ -219,7 +219,7 @@ def collect_status(
     Returns:
         StatusStore with updated results (already saved to disk).
     """
-    num_recogniser = InpImage.make_num_recogniser(config)
+    num_recogniser = InpImage.make_num_recogniser()
     status = StatusStore(config.status_path, config.puzzle_dir_required)
     solved = perror = aerror = verror = unsolved = total = 0
 
@@ -334,7 +334,7 @@ def test_border_fun(
     Returns:
         (aerror, unsolved, perror, solved, total) counts.
     """
-    num_recogniser = InpImage.make_num_recogniser(config)
+    num_recogniser = InpImage.make_num_recogniser()
     solved = 0
     unsolved = 0
     perror = 0

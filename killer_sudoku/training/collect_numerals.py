@@ -276,7 +276,7 @@ def main() -> None:
         numerals = bootstrap_numerals(config)
         out_path = config.puzzle_dir_required / "bootstrap_numerals.pkl"
     else:
-        num_recogniser = InpImage.make_num_recogniser(config)
+        num_recogniser = InpImage.make_num_recogniser()
         numerals = collect_numerals(config, num_recogniser)
         out_path = config.puzzle_dir_required / "numerals.pkl"
 

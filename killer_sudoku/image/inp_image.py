@@ -8,6 +8,7 @@ detection pipeline, and populates a PicInfo.
 import dataclasses
 import logging
 import pickle as pk
+from importlib.resources import files
 from pathlib import Path
 from typing import Any, Literal
 
@@ -27,7 +28,7 @@ from killer_sudoku.image.number_recognition import (
     CayenneNumber,
     contour_hier,
     get_num_contours,
-    load_number_recogniser,
+    load_number_recogniser_stream,
     read_classic_digits,
     split_num,
 )
@@ -530,16 +531,18 @@ class InpImage:
         return cage_totals
 
     @staticmethod
-    def make_num_recogniser(config: ImagePipelineConfig) -> CayenneNumber:
-        """Load the number recogniser model from disk.
+    def make_num_recogniser() -> CayenneNumber:
+        """Load the bundled number recogniser model from the package data.
 
-        Args:
-            config: Pipeline configuration (supplies the model path).
+        Uses importlib.resources so the model is found whether the package
+        is installed normally or as an editable install (pip install -e .).
 
         Returns:
-            Loaded CayenneNumber classifier.
+            Loaded CayenneNumber classifier with RBFClassifier.
         """
-        return load_number_recogniser(config.num_recogniser_path)
+        resource = files("killer_sudoku.data").joinpath("num_recogniser.npz")
+        with resource.open("rb") as fh:
+            return load_number_recogniser_stream(fh)
 
     @staticmethod
     def load_cached(jpk_path: Path) -> "PicInfo":
