@@ -8,6 +8,9 @@ Helper functions handle contour hierarchy traversal, digit geometry checks,
 image painting, digit splitting, and perspective warping.
 """
 
+import dataclasses
+import io
+import warnings
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -34,6 +37,95 @@ class _Classifier(Protocol):
     def predict(self, x: npt.NDArray[np.float64]) -> npt.NDArray[np.intp]:
         """Return predicted digit labels for each row of x."""
         ...
+
+
+@dataclasses.dataclass(frozen=True)
+class RBFClassifier:
+    """Pure-numpy OvO RBF SVM classifier extracted from a fitted sklearn SVC.
+
+    Implements the _Classifier protocol so it can replace sklearn SVC inside
+    CayenneNumber. At inference time only numpy is required — sklearn is not
+    imported.
+
+    Fields mirror sklearn SVC internals:
+        support_vectors: (n_sv, n_features) support vectors.
+        dual_coef: (n_classes-1, n_sv) dual coefficients. For pair (i, j),
+            row j-1 holds coefficients for class i's SVs; row i for class j's SVs.
+        intercept: (n_classifiers,) bias; n_classifiers = n_classes*(n_classes-1)//2.
+        n_support: (n_classes,) number of SVs per class (SVs are ordered by class).
+        gamma: RBF kernel width (the actual float, post "scale" resolution).
+        classes: (n_classes,) class labels (e.g. array([0,1,...,9])).
+    """
+
+    support_vectors: npt.NDArray[np.float64]
+    dual_coef: npt.NDArray[np.float64]
+    intercept: npt.NDArray[np.float64]
+    n_support: npt.NDArray[np.intp]
+    gamma: float
+    classes: npt.NDArray[np.intp]
+
+    @staticmethod
+    def from_svc(svc: Any) -> "RBFClassifier":
+        """Extract arrays from a fitted sklearn SVC with kernel='rbf'.
+
+        Args:
+            svc: Fitted sklearn SVC instance (must use kernel='rbf').
+
+        Returns:
+            RBFClassifier with all arrays copied from svc internals.
+        """
+        return RBFClassifier(
+            support_vectors=np.array(svc.support_vectors_, dtype=np.float64),
+            dual_coef=np.array(svc.dual_coef_, dtype=np.float64),
+            intercept=np.array(svc.intercept_, dtype=np.float64),
+            n_support=np.array(svc.n_support_, dtype=np.intp),
+            gamma=float(svc._gamma),
+            classes=np.array(svc.classes_, dtype=np.intp),
+        )
+
+    def predict(self, x: npt.NDArray[np.float64]) -> npt.NDArray[np.intp]:
+        """OvO RBF SVM prediction using pure numpy.
+
+        Computes the RBF kernel matrix, runs a binary decision function for each
+        class pair, tallies votes, and returns the class with the most votes.
+
+        Args:
+            x: (n_samples, n_features) query points.
+
+        Returns:
+            (n_samples,) predicted class labels from self.classes.
+        """
+        sv = self.support_vectors
+        # RBF kernel: K[i,j] = exp(-gamma * ||x[i] - sv[j]||^2)
+        x_sq = np.sum(x**2, axis=1, keepdims=True)  # (n, 1)
+        sv_sq = np.sum(sv**2, axis=1, keepdims=True).T  # (1, n_sv)
+        k = np.exp(-self.gamma * (x_sq + sv_sq - 2.0 * x @ sv.T))  # (n, n_sv)
+
+        n_classes = len(self.classes)
+        votes = np.zeros((len(x), n_classes), dtype=np.int32)
+        sv_end: npt.NDArray[np.intp] = np.cumsum(self.n_support)
+        sv_start: npt.NDArray[np.intp] = np.r_[np.intp(0), sv_end[:-1]]
+
+        clf_idx = 0
+        for i in range(n_classes):
+            for j in range(i + 1, n_classes):
+                si, ei = int(sv_start[i]), int(sv_end[i])
+                sj, ej = int(sv_start[j]), int(sv_end[j])
+                # Dual coef layout: row j-1 → class i's SVs; row i → class j's SVs.
+                coef = np.concatenate(
+                    [
+                        self.dual_coef[j - 1, si:ei],
+                        self.dual_coef[i, sj:ej],
+                    ]
+                )
+                k_sub = np.concatenate([k[:, si:ei], k[:, sj:ej]], axis=1)
+                decision = k_sub @ coef + self.intercept[clf_idx]
+                votes[:, i] += (decision > 0).astype(np.int32)
+                votes[:, j] += (decision <= 0).astype(np.int32)
+                clf_idx += 1
+
+        result: npt.NDArray[np.intp] = self.classes[np.argmax(votes, axis=1)]
+        return result
 
 
 def contour_hier(
@@ -441,29 +533,139 @@ class CayenneNumber:
         return np.array(labels, dtype=np.intp)
 
 
-def load_number_recogniser(model_path: Path) -> CayenneNumber:
-    """Load a trained CayenneNumber model from disk using joblib.
+def save_number_recogniser(model: CayenneNumber, path: Path) -> None:
+    """Save a CayenneNumber model to a compressed .npz file.
 
-    Handles migration of older models that stored a KNN under the attribute
-    name 'neighbs' (pre-SVM refactor).  Those models are upgraded in-memory
-    to the current CayenneNumber layout (classifier, no templates).
+    The model's classifier must be an RBFClassifier. All arrays — PCA
+    components, RBF SVM arrays, per-digit templates, and scalar parameters —
+    are stored in a single .npz file suitable for committing to the repository.
 
     Args:
-        model_path: Path to the serialised CayenneNumber model file.
+        model: Trained CayenneNumber whose classifier is an RBFClassifier.
+        path: Destination file path (should end in .npz).
 
     Raises:
-        FileNotFoundError: if model_path does not exist.
+        TypeError: if model.classifier is not an RBFClassifier.
     """
-    if not model_path.exists():
-        raise FileNotFoundError(f"Number recogniser model not found: {model_path}")
-    raw = joblib.load(model_path)
-    if hasattr(raw, "neighbs") and not hasattr(raw, "classifier"):
-        # Migrate: old model stored KNN as 'neighbs'; wrap it under 'classifier'.
-        raw.classifier = raw.neighbs
-        raw.templates = None
-        raw.template_threshold = 0.85
-    result: CayenneNumber = raw
-    return result
+    if not isinstance(model.classifier, RBFClassifier):
+        raise TypeError(
+            f"save_number_recogniser requires an RBFClassifier; "
+            f"got {type(model.classifier).__name__}"
+        )
+    rbf = model.classifier
+    arrays: dict[str, Any] = {
+        "pca_components": np.array(model.pca.components_, dtype=np.float64),
+        "pca_mean": np.array(model.pca.mean_, dtype=np.float64),
+        "dims": np.array(model.dims, dtype=np.int64),
+        "rbf_support_vectors": rbf.support_vectors,
+        "rbf_dual_coef": rbf.dual_coef,
+        "rbf_intercept": rbf.intercept,
+        "rbf_n_support": rbf.n_support.astype(np.int64),
+        "rbf_gamma": np.array(rbf.gamma, dtype=np.float64),
+        "rbf_classes": rbf.classes.astype(np.int64),
+        "template_threshold": np.array(model.template_threshold, dtype=np.float64),
+    }
+    if model.templates is not None:
+        for digit, tmpl in model.templates.items():
+            arrays[f"template_{digit}"] = np.array(tmpl, dtype=np.float32)
+    np.savez_compressed(path, **arrays)
+
+
+def _load_npz(data: Any) -> CayenneNumber:
+    """Reconstruct a CayenneNumber from an open NpzFile.
+
+    Sets PCA attributes directly on a bare PCA() instance so transform()
+    works without re-fitting. Reconstructs RBFClassifier from stored arrays.
+
+    Args:
+        data: Open numpy NpzFile (from np.load).
+
+    Returns:
+        CayenneNumber with RBFClassifier.
+    """
+    pca: PCA = PCA()
+    pca.components_ = data["pca_components"]
+    pca.mean_ = data["pca_mean"]
+    pca.n_components_ = int(data["pca_components"].shape[0])
+    pca.n_features_in_ = int(data["pca_components"].shape[1])
+
+    rbf = RBFClassifier(
+        support_vectors=data["rbf_support_vectors"].astype(np.float64),
+        dual_coef=data["rbf_dual_coef"].astype(np.float64),
+        intercept=data["rbf_intercept"].astype(np.float64),
+        n_support=data["rbf_n_support"].astype(np.intp),
+        gamma=float(data["rbf_gamma"]),
+        classes=data["rbf_classes"].astype(np.intp),
+    )
+
+    templates: dict[int, npt.NDArray[np.float32]] | None = None
+    template_keys = [
+        k for k in data.files if k.startswith("template_") and k[9:].isdigit()
+    ]
+    if template_keys:
+        templates = {int(k[9:]): data[k].astype(np.float32) for k in template_keys}
+
+    return CayenneNumber(
+        pca=pca,
+        dims=int(data["dims"]),
+        classifier=rbf,
+        templates=templates,
+        template_threshold=float(data["template_threshold"]),
+    )
+
+
+def load_number_recogniser_stream(fh: Any) -> CayenneNumber:
+    """Load a CayenneNumber from a binary stream containing .npz data.
+
+    Used by InpImage.make_num_recogniser() to load from the importlib.resources
+    Traversable without requiring a filesystem path.
+
+    Args:
+        fh: Binary file-like object containing .npz data.
+
+    Returns:
+        CayenneNumber with RBFClassifier.
+    """
+    with np.load(io.BytesIO(fh.read())) as data:
+        return _load_npz(data)
+
+
+def load_number_recogniser(model_path: Path) -> CayenneNumber:
+    """Load a trained CayenneNumber model from disk.
+
+    Dispatches on file suffix:
+      .npz — reconstructs RBFClassifier and PCA from arrays; sklearn not required.
+      .pkl — loads via joblib and emits DeprecationWarning (migration path only).
+
+    Args:
+        model_path: Path to the model file (.npz or .pkl).
+
+    Raises:
+        ValueError: if the suffix is not .npz or .pkl.
+    """
+    suffix = model_path.suffix.lower()
+    if suffix == ".npz":
+        with np.load(model_path) as data:
+            return _load_npz(data)
+    if suffix == ".pkl":
+        warnings.warn(
+            f"Loading number recogniser from .pkl ({model_path}) is deprecated. "
+            "Re-train with ks-train-numbers to produce a .npz bundle.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        raw = joblib.load(model_path)
+        if hasattr(raw, "neighbs") and not hasattr(raw, "classifier"):
+            # Migrate: old model stored KNN as 'neighbs'; wrap under 'classifier'.
+            raw.classifier = raw.neighbs
+            raw.templates = None
+            raw.template_threshold = 0.85
+        result: CayenneNumber = raw
+        return result
+    raise ValueError(
+        f"Unsupported number recogniser format: {model_path.suffix!r}. "
+        "Expected .npz or .pkl."
+    )
 
 
 def read_classic_digits(
