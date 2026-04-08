@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cagedoku"
 version = "0.1.0"
-description = "Killer sudoku solver that reads newspaper puzzle images (Guardian/Observer) using OpenCV and PCA"
+description = "Killer sudoku coaching tool that reads puzzle images using OpenCV and PCA"
 requires-python = ">=3.12"
 dependencies = [
     "opencv-python-headless",
@@ -16,7 +16,7 @@ dependencies = [
     "python-constraint",
     "joblib",
     "fastapi>=0.115",
-    "uvicorn[standard]>=0.30",
+    "uvicorn[standard]>=0.44",
     "python-multipart>=0.0.9",
 ]
 
@@ -29,7 +29,6 @@ cagedoku = "killer_sudoku.main:main"
 coach    = "killer_sudoku.api.app:serve"
 ks-collect-numerals = "killer_sudoku.training.collect_numerals:main"
 ks-train-numbers = "killer_sudoku.training.train_number_recogniser:main"
-ks-train-borders = "killer_sudoku.training.train_border_detector:main"
 ks-scrape = "killer_sudoku.training.scrape_puzzles:main"
 ks-evaluate = "killer_sudoku.training.evaluate:main"
 
