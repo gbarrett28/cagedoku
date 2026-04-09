@@ -60,7 +60,7 @@ def _extract_cell_contours(
     subres = config.subres
 
     gry, img = get_gry_img(filepath, resolution)
-    blk, grid = locate_grid(gry, img, config.grid_location)
+    blk, grid = locate_grid(gry, config.grid_location)
 
     dst_size = np.array(
         [

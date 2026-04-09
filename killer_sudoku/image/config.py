@@ -10,42 +10,17 @@ from pathlib import Path
 
 @dataclasses.dataclass(frozen=True)
 class GridLocationConfig:
-    """Parameters for Hough-line grid detection.
+    """Parameters for contour-based grid detection.
 
-    Two detection strategies are available, selected by use_hough_p:
+    Grid location thresholds the image using a histogram-valley estimate of
+    the darkest significant tone (the grid lines), then finds the largest
+    quadrilateral contour as the grid boundary.
 
-    HoughLines (use_hough_p=False, default): classical accumulator with adaptive
-    threshold.
-        Binary search descends from hough_threshold_max until at least
-        hough_lines_min_count lines are found.
-        hough_lines_theta_divisor controls angular resolution (16 ≈ 11°).
-        This is the reliable production strategy for all puzzle formats.
-
-    HoughLinesP (use_hough_p=True): probabilistic line segments.
-        hough_theta_divisor controls angular resolution (180 = 1°).
-        min_line_length_fraction * resolution sets the minimum segment length:
-        a valid grid line must span at least one 3-box row (resolution / 3).
-        max_line_gap bridges small discontinuities in ink.
-        Note: known to underperform on some puzzle formats (24/424 grid failures).
+    isblack_offset is subtracted from the valley estimate to tighten the
+    threshold and avoid classifying mid-tone paper as grid ink.
     """
 
-    rho: int = 2
-    hough_theta_divisor: int = 180
-    min_line_length_fraction: float = 0.3
-    max_line_gap: int = 20
-    hough_p_threshold: int = 80
-    hough_lines_theta_divisor: int = 16
-    hough_threshold_max: int = 2048
-    hough_lines_min_count: int = 20
-    """Minimum line count for the HoughLines binary search.
-
-    The binary search halves the threshold until this many lines are found
-    (or threshold drops below 1).  Images where the grid spans only part of
-    the frame accumulate fewer votes per line, so the search must descend
-    further than a single-image-filling grid would require.
-    """
     isblack_offset: int = 56
-    use_hough_p: bool = False
 
 
 @dataclasses.dataclass(frozen=True)

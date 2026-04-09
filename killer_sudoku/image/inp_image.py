@@ -154,7 +154,7 @@ class InpImage:
 
         self.info = PicInfo()
 
-        blk, self.info.grid = locate_grid(gry, img, config.grid_location)
+        blk, self.info.grid = locate_grid(gry, config.grid_location)
 
         dst_size = np.array(
             [

@@ -99,7 +99,7 @@ def main(argv: list[str] | None = None) -> None:
     resolution = config.resolution
 
     gry, img = get_gry_img(image_path, resolution)
-    _blk, grid = locate_grid(gry, img, config.grid_location)
+    _blk, grid = locate_grid(gry, config.grid_location)
 
     dst_size = np.array(
         [
