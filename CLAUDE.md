@@ -12,10 +12,10 @@ that are not necessary for the task, and verbose output where concise output suf
 
 ## What This Project Is
 
-A browser-based coaching companion for killer sudoku. The system reads newspaper
-puzzle images (Guardian or Observer), uses OpenCV + PCA to locate the grid, detect
-cage borders, and read cage totals, then guides the user through solving with
-candidates, logical hints, and rule-based deductions.
+A browser-based coaching companion for killer sudoku. Reads newspaper puzzle images,
+locates the grid via contour detection, detects cage borders using format-agnostic
+anchored k-means clustering, reads cage totals, and guides the user through solving
+with candidates, logical hints, and rule-based deductions.
 
 ## Codebase Map
 
@@ -24,6 +24,7 @@ candidates, logical hints, and rule-based deductions.
 | Puzzle discovery | `training/scrape_puzzles.py`, `training/status.py` | code |
 | Image pipeline | `image/` | `docs/architecture.md` |
 | Training pipeline | `training/` | `docs/architecture.md` |
+| Image pipeline debug | `training/debug_border_strips.py`, `training/debug_borders.py` | CLI tools — strip positions and border decisions on the warped image |
 | Batch solver | `solver/grid.py`, `solver/equation.py`, `output/`, `main.py` | code |
 | Coaching engine | `solver/engine/` | `docs/rules.md` |
 | Coaching app | `api/`, `static/` | `docs/architecture.md`, `docs/ui.md` |
@@ -74,10 +75,6 @@ killer_sudoku/                  # Project root
 ├── docs/
 └── pyproject.toml
 ```
-
-**Legacy root-level files** (`grid.py`, `equation.py`, `sol_image.py`, `no_gutter.py`)
-are superseded by the package but not yet deleted. They are excluded from all quality
-gates. Do not import from them.
 
 ## Import Statement Rules
 
@@ -259,6 +256,16 @@ python -m pytest tests/ -v --cov=killer_sudoku --cov-report=term
 ```
 
 **This sequence is MANDATORY before git commit. If ANY step fails, DO NOT COMMIT.**
+
+## Image Pipeline Regression (~10–15 min)
+
+```bash
+python -m pytest tests/image/test_pipeline_regression.py -v
+```
+
+Processes all available puzzle images (465 Guardian + 424 Observer = 889 total).
+Run deliberately when touching `image/`, `border_clustering.py`, or `cell_scan.py` —
+too slow for routine bronze-gate use.
 
 ## Silver Gate (REQUIRED — full codebase pass)
 
