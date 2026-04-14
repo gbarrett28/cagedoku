@@ -45,8 +45,26 @@ from killer_sudoku.solver.engine.types import (
     UnitKind,
 )
 
-# Maximum DFS branch nodes per partition before treating remaining as valid.
-_MAX_NODES = 200
+
+@dataclasses.dataclass(frozen=True)
+class UnitPartitionConfig:
+    """Complexity limits for UnitPartitionFilter.
+
+    max_partition_cage_size: Maximum number of cells in any single partition cage
+        before the unit is skipped entirely.  Phase 2 (cell-level expansion) runs
+        k! permutations per cage of size k; for a human-verifiable hint the limit
+        should be at most 4 (4! = 24 cases).  Larger cages produce hints that
+        reference hundreds or thousands of combinations that no human could check.
+    max_nodes: Maximum DFS branch nodes in phase 1 (cage-set DFS) before treating
+        remaining branches as conservatively valid.  Prevents exponential blowup
+        when many cages have multiple solutions.
+    """
+
+    max_partition_cage_size: int = 4
+    max_nodes: int = 200
+
+
+_CONFIG = UnitPartitionConfig()
 
 
 @dataclasses.dataclass
@@ -98,6 +116,20 @@ class UnitPartitionFilter:
             if partition is None:
                 continue
 
+            # A single-cage partition means one cage covers the entire unit.
+            # CageCandidateFilter already handles this case (candidate ∩ cage
+            # solutions), so no additional eliminations are possible here.
+            if len(partition) == 1:
+                continue
+
+            # Skip if any cage in the partition exceeds the size limit.
+            # Phase 2 runs k! permutations per cage of size k; beyond the
+            # configured limit the hint cites more cases than a human can verify.
+            if any(
+                len(cells) > _CONFIG.max_partition_cage_size for cells, _ in partition
+            ):
+                continue
+
             partition_cells = {cells for cells, _ in partition}
             cross_cages = [
                 (cells, solns)
@@ -105,7 +137,7 @@ class UnitPartitionFilter:
                 if cells not in partition_cells
             ]
 
-            valid_per_cage = _cross_valid_combos(partition, _MAX_NODES)
+            valid_per_cage = _cross_valid_combos(partition, _CONFIG.max_nodes)
             valid_cell_digits = _expand_cell_level(
                 partition, valid_per_cage, cross_cages, board.candidates
             )

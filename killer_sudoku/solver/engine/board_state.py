@@ -94,8 +94,13 @@ class BoardState:
                     break
             self.cage_solns.append(sol_sums(len(cells), 0, total))
 
-        # LinearSystem: build now so virtual_cages are available
-        self.linear_system = LinearSystem(spec)
+        # LinearSystem: build now so delta_pairs/sum_pairs are available for
+        # DeltaConstraint and SumPairConstraint.  When include_virtual_cages=False
+        # (playing-mode path), skip only the expensive non-burb virtual-cage
+        # derivation; the RREF and pair extraction still run.
+        self.linear_system = LinearSystem(
+            spec, derive_virtual_cages=include_virtual_cages
+        )
 
         # Add virtual cage units from the linear system (derived sum equations).
         # Virtual cage unit IDs start at 27 + n_cages and are indexed in

@@ -51,7 +51,20 @@ class LinearSystem:
     virtual_cages: list[_VirtualCage]
     _pairs_by_cell: dict[Cell, list[tuple[Cell, Cell, int]]]
 
-    def __init__(self, spec: PuzzleSpec) -> None:
+    def __init__(self, spec: PuzzleSpec, *, derive_virtual_cages: bool = True) -> None:
+        """Build the linear system for a puzzle spec.
+
+        Args:
+            spec: Validated puzzle specification.
+            derive_virtual_cages: When True (default), run the full virtual-cage
+                derivation pipeline (_derive_nonburb_virtual_cages etc.) after the
+                RREF.  When False, skip that pipeline and leave ``virtual_cages``
+                empty; the RREF and delta-pair extraction still run so that
+                DeltaConstraint and SumPairConstraint have their data.  Pass False
+                in the playing-mode engine path (include_virtual_cages=False) to
+                avoid the most expensive part of LinearSystem construction on every
+                board rebuild.
+        """
         self.initial_eliminations: list[Elimination] = []
         self.delta_pairs: list[tuple[Cell, Cell, int]] = []
         # Sum pairs: (a, b, total) meaning a + b = total.  Unlike delta pairs,
@@ -211,19 +224,22 @@ class LinearSystem:
             self._pairs_by_cell.setdefault(p, []).append(pair)
             self._pairs_by_cell.setdefault(q, []).append(pair)
 
-        # Derive non-burb virtual cages using reduce_equns-style subset subtraction.
-        # Must be called AFTER burb virtual cages are added so they participate
-        # in the derivation as input equations.
-        self._derive_nonburb_virtual_cages(spec, real_cage_cell_sets)
-
-        # Derive delta pairs from overlapping sum equations.
-        # Must be called AFTER all virtual cages are added (both burb and non-burb)
-        # so that RREF-derived virtual cages participate in the overlap scan.
-        self._derive_overlapping_delta_pairs(spec)
-
         # Derive sum pairs from complementary RREF row pairs.
         # Must be called AFTER _live_rows is fully populated (done above).
+        # Runs even when derive_virtual_cages=False so SumPairConstraint works
+        # in playing-mode without requiring the expensive non-burb derivation.
         self._derive_sum_pairs()
+
+        if derive_virtual_cages:
+            # Derive non-burb virtual cages using reduce_equns-style subset subtraction.
+            # Must be called AFTER burb virtual cages are added so they participate
+            # in the derivation as input equations.
+            self._derive_nonburb_virtual_cages(spec, real_cage_cell_sets)
+
+            # Derive delta pairs from overlapping sum equations.
+            # Must be called AFTER all virtual cages are added (both burb and non-burb)
+            # so that RREF-derived virtual cages participate in the overlap scan.
+            self._derive_overlapping_delta_pairs(spec)
 
     @staticmethod
     def _is_burb(vcells: frozenset[Cell]) -> bool:
