@@ -79,6 +79,17 @@ class CellEntryRequest(BaseModel):
     digit: int  # 1–9 to place; 0 to clear
 
 
+class GivenDigitPatchRequest(BaseModel):
+    """Request to correct a pre-filled digit in a classic puzzle before confirmation.
+
+    Only valid for classic puzzles that have not yet been confirmed.
+    """
+
+    row: int  # 1-based (1–9)
+    col: int  # 1-based (1–9)
+    digit: int  # 1–9 to set; 0 to clear
+
+
 class PuzzleSpecData(BaseModel):
     """Serialized form of PuzzleSpec numpy arrays for JSON session storage.
 

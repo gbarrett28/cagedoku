@@ -33,6 +33,7 @@ from killer_sudoku.api.schemas import (
     CellPosition,
     EliminateSolutionRequest,
     EliminationItem,
+    GivenDigitPatchRequest,
     HintItem,
     HintsResponse,
     MoveRecord,
@@ -373,6 +374,8 @@ def _user_removed(state: PuzzleState) -> list[tuple[int, int, int]]:
 def _build_engine(
     state: PuzzleState,
     always_apply: frozenset[str],
+    *,
+    include_hints: bool = False,
 ) -> tuple[BoardState, SolverEngine]:
     """Build a fresh BoardState and run it to convergence from user decisions.
 
@@ -380,8 +383,14 @@ def _build_engine(
     BoardState is always reconstructed from spec + Turn history — never
     stored as serialised solver state.
 
-    Hint-only rules (those not in always_apply) buffer HintResults into
-    engine.pending_hints rather than draining eliminations.
+    When include_hints=False (the default), only always-apply rules are passed
+    to SolverEngine so hint-only rules are never added to the trigger map and
+    never execute.  This avoids expensive hint-rule DFS on every /candidates
+    call where pending_hints is never read.
+
+    When include_hints=True (used by the /hints endpoint), all default rules
+    are passed and hint-only rules buffer HintResults into engine.pending_hints
+    rather than draining eliminations.
 
     Raises HTTPException 422 if the board is in a contradictory state.
     """
@@ -395,12 +404,20 @@ def _build_engine(
             [frozenset(s) for s in vc.eliminated_solns],
         )
 
-    hint_rule_names = frozenset(
-        r.name for r in default_rules() if r.name not in always_apply
-    )
+    all_rules = default_rules()
+    if include_hints:
+        hint_rule_names = frozenset(
+            r.name for r in all_rules if r.name not in always_apply
+        )
+        active_rules = all_rules
+    else:
+        # Hint rules skipped entirely: not in trigger map, never executed.
+        hint_rule_names = frozenset()
+        active_rules = [r for r in all_rules if r.name in always_apply]
+
     engine = SolverEngine(
         board,
-        rules=list(default_rules()),
+        rules=active_rules,
         linear_system_active=False,
         hint_rules=hint_rule_names,
     )
@@ -836,6 +853,39 @@ def make_router(
         store.save(updated)
         return updated
 
+    @router.patch("/{session_id}/given-digit", response_model=PuzzleState)
+    async def patch_given_digit(
+        session_id: str,
+        req: GivenDigitPatchRequest,
+    ) -> PuzzleState:
+        """Correct a pre-filled digit in a classic puzzle before confirmation.
+
+        Allows the user to fix OCR misclassifications in the confirmation UI.
+        Returns 409 if the session is already confirmed or is not a classic puzzle.
+        """
+        try:
+            state = store.load(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+
+        if state.user_grid is not None:
+            raise HTTPException(
+                status_code=409, detail="Session already confirmed — use /cell instead"
+            )
+        if state.puzzle_type != "classic":
+            raise HTTPException(status_code=409, detail="Not a classic puzzle")
+        if not (1 <= req.row <= 9 and 1 <= req.col <= 9 and 0 <= req.digit <= 9):
+            raise HTTPException(
+                status_code=422, detail="row/col must be 1–9; digit 0–9"
+            )
+
+        r, c = req.row - 1, req.col - 1
+        new_given = [row[:] for row in (state.given_digits or [[0] * 9] * 9)]
+        new_given[r][c] = req.digit
+        updated = state.model_copy(update={"given_digits": new_given})
+        store.save(updated)
+        return updated
+
     @router.post("/{session_id}/confirm", response_model=PuzzleState)
     async def confirm_puzzle(session_id: str) -> PuzzleState:
         """Solve the puzzle and transition the session to playing mode.
@@ -904,7 +954,8 @@ def make_router(
             }
         )
         always_apply = frozenset(settings_store.load().always_apply_rules)
-        _board, _engine = _build_engine(updated, always_apply)
+        _board, engine = _build_engine(updated, always_apply)
+        updated = _apply_auto_placements(updated, engine)
         store.save(updated)
         return updated
 
@@ -1456,7 +1507,7 @@ def make_router(
             )
 
         always_apply = frozenset(settings_store.load().always_apply_rules)
-        _board, engine = _build_engine(state, always_apply)
+        _board, engine = _build_engine(state, always_apply, include_hints=True)
 
         raw_hints = [
             h
