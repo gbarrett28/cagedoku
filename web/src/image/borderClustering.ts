@@ -10,9 +10,9 @@
  *   StandardScaler  → standardScale() (~15 lines)
  *   KMeans(k=2, n_init=10) → kmeans2() (~40 lines)
  *
- * Image convention: warpedGry uses column-first indexing — pixel(x, y) is
- * stored at data[x * size + y].  This matches the transposed numpy convention
- * used in the Python source throughout border detection.
+ * Image convention: warpedGry is a standard row-major grayscale image where
+ * pixel(row, col) = data[row * size + col].  (The Python source uses a
+ * column-first convention that is geometrically equivalent for a square grid.)
  */
 
 import type { BorderClusteringConfig } from './config.js';
@@ -21,8 +21,8 @@ import type { BorderClusteringConfig } from './config.js';
 // Types
 // ---------------------------------------------------------------------------
 
-/** Column-first square grayscale image: pixel(x, y) = data[x * size + y]. */
-export interface ColFirstImage {
+/** Standard row-major square grayscale image: pixel(row, col) = data[row * size + col]. */
+export interface GrayImage {
   readonly data: Uint8Array;
   readonly size: number; // width = height = resolution
 }
@@ -83,7 +83,7 @@ export function stripFeatures(strip: Uint8Array): [number, number, number, numbe
  * cage-total anchors to resolve cluster polarity, and returns soft
  * cage-border probabilities.
  *
- * @param warpedGry - Perspective-corrected grayscale image (column-first).
+ * @param warpedGry - Perspective-corrected grayscale image (standard row-major).
  * @param cageTotalConfidence - Shape (9, 9) [row][col] confidence array from Stage 3.
  * @param subresParam - Pixels per cell side.
  * @param config - Clustering parameters.
@@ -93,7 +93,7 @@ export function stripFeatures(strip: Uint8Array): [number, number, number, numbe
  *   border; 0.5 means uncertain.
  */
 export function clusterBorders(
-  warpedGry: ColFirstImage,
+  warpedGry: GrayImage,
   cageTotalConfidence: number[][],
   subresParam: number,
   config: BorderClusteringConfig,
@@ -201,20 +201,29 @@ function anchorSet(cageTotalConfidence: number[][], threshold: number): Set<stri
 /**
  * Sample a 1-D min-projected strip for one interior border edge.
  *
- * Follows the sampling convention from the Python source: the first axis of
- * warpedGry is the x (column) direction, so pixel(x, y) = data[x * size + y].
+ * Uses standard row-major indexing: pixel(row, col) = data[row * size + col].
  *
- * @param warpedGry - Column-first square grayscale image.
- * @param isHorizontal - True for a horizontal border (between rows), false for vertical.
+ * For a horizontal border (between rows gap_idx and gap_idx+1):
+ *   - Perpendicular direction = rows, range = boundary ± sampleHalf.
+ *   - Along direction = cols, sampled from centre of alongIdx cell ± margin.
+ *   - Min projected over columns → 1-D array of length 2*sampleHalf in row direction.
+ *
+ * For a vertical border (between cols gap_idx and gap_idx+1):
+ *   - Perpendicular direction = cols, range = boundary ± sampleHalf.
+ *   - Along direction = rows, sampled from centre of alongIdx cell ± margin.
+ *   - Min projected over rows → 1-D array of length 2*sampleHalf in col direction.
+ *
+ * @param warpedGry - Standard row-major square grayscale image.
+ * @param isHorizontal - True for horizontal border (between rows), false for vertical.
  * @param gapIdx - 0-indexed gap position (0..7) perpendicular to the border.
  * @param alongIdx - 0-indexed cell position (0..8) along the border.
  * @param subresParam - Pixels per cell side.
  * @param sampleHalf - Half-width of the sampling strip in pixels.
- * @param sampleMarginPx - Pixels removed from each end of the strip.
- * @returns 1-D Uint8Array of min-projected pixel values.
+ * @param sampleMarginPx - Pixels removed from each end along the border.
+ * @returns 1-D Uint8Array of min-projected pixel values, length 2*sampleHalf.
  */
 function sampleStrip(
-  warpedGry: ColFirstImage,
+  warpedGry: GrayImage,
   isHorizontal: boolean,
   gapIdx: number,
   alongIdx: number,
@@ -223,37 +232,37 @@ function sampleStrip(
   sampleMarginPx: number,
 ): Uint8Array {
   const { data, size } = warpedGry;
-  const xm = (((2 * alongIdx + 1) * subresParam) / 2) | 0;
-  const xb = xm + sampleMarginPx;
-  const xt = xm + sampleHalf - sampleMarginPx;
-  const yl = (gapIdx + 1) * subresParam - sampleHalf;
-  const yr = (gapIdx + 1) * subresParam + sampleHalf;
+  // Centre of the cell in the "along" direction.
+  const cm = (((2 * alongIdx + 1) * subresParam) / 2) | 0;
+  const cStart = cm + sampleMarginPx;
+  const cEnd = cm + sampleHalf - sampleMarginPx;
+  // Boundary position in the perpendicular direction.
+  const bndry = (gapIdx + 1) * subresParam;
+  const pStart = bndry - sampleHalf;
+  const pEnd = bndry + sampleHalf;
+  const len = pEnd - pStart; // = 2 * sampleHalf
+
+  const result = new Uint8Array(len).fill(255);
 
   if (isHorizontal) {
-    // warped_gry[xb:xt, yl:yr], min along first axis (x), result length = yr-yl.
-    const len = yr - yl;
-    const result = new Uint8Array(len).fill(255);
-    for (let x = xb; x < xt; x++) {
-      for (let y = yl; y < yr; y++) {
-        const v = data[x * size + y];
-        if (v < result[y - yl]) result[y - yl] = v;
+    // Min over columns in [cStart, cEnd), result indexed by row offset from pStart.
+    for (let row = pStart; row < pEnd; row++) {
+      for (let col = cStart; col < cEnd; col++) {
+        const v = data[row * size + col];
+        if (v < result[row - pStart]) result[row - pStart] = v;
       }
     }
-    return result;
   } else {
-    // warped_gry[yl:yr, xb:xt], min along second axis (y), result length = yr-yl.
-    // In vertical case the first-axis range [yl, yr) spans across the border;
-    // second-axis range [xb, xt) runs along the border.
-    const len = yr - yl;
-    const result = new Uint8Array(len).fill(255);
-    for (let x = yl; x < yr; x++) {
-      for (let y = xb; y < xt; y++) {
-        const v = data[x * size + y];
-        if (v < result[x - yl]) result[x - yl] = v;
+    // Min over rows in [cStart, cEnd), result indexed by col offset from pStart.
+    for (let col = pStart; col < pEnd; col++) {
+      for (let row = cStart; row < cEnd; row++) {
+        const v = data[row * size + col];
+        if (v < result[col - pStart]) result[col - pStart] = v;
       }
     }
-    return result;
   }
+
+  return result;
 }
 
 /**
