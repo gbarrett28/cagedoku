@@ -87,6 +87,7 @@ interface PuzzleState {
   user_grid: number[][] | null;
   move_history: MoveRecord[];
   puzzle_type: "killer" | "classic";
+  given_digits: number[][] | null;
 }
 
 interface UploadResponse {
@@ -378,12 +379,62 @@ function drawGrid(
     }
   }
 
-  // 7. User-entered digits (playing mode).
-  //    Classic given digits (source="given") are rendered in black; user
-  //    entries remain blue so the two are visually distinct.
-  if (state.user_grid !== null) {
+  // 7. Digit rendering — pre-confirm given_digits (classic) or playing-mode user_grid.
+  //    Classic given digits are black; user entries are blue.
+  //    Cells with a digit that is duplicated in its row, column, or 3×3 box
+  //    are rendered in red to flag OCR or entry errors.
+  const digitGrid: number[][] | null =
+    state.user_grid !== null
+      ? state.user_grid
+      : state.given_digits ?? null;
+
+  if (digitGrid !== null) {
+    // Build set of (r,c) keys whose digit is duplicated in its unit.
+    const duplicateCells = new Set<string>();
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        const d = digitGrid[r]?.[c] ?? 0;
+        if (d === 0) continue;
+        // Check row
+        for (let cc = 0; cc < 9; cc++) {
+          if (cc !== c && (digitGrid[r]?.[cc] ?? 0) === d) {
+            duplicateCells.add(`${r},${c}`);
+          }
+        }
+        // Check column
+        for (let rr = 0; rr < 9; rr++) {
+          if (rr !== r && (digitGrid[rr]?.[c] ?? 0) === d) {
+            duplicateCells.add(`${r},${c}`);
+          }
+        }
+        // Check 3×3 box
+        const br = Math.floor(r / 3) * 3;
+        const bc = Math.floor(c / 3) * 3;
+        for (let dr = 0; dr < 3; dr++) {
+          for (let dc = 0; dc < 3; dc++) {
+            const rr = br + dr;
+            const cc = bc + dc;
+            if ((rr !== r || cc !== c) && (digitGrid[rr]?.[cc] ?? 0) === d) {
+              duplicateCells.add(`${r},${c}`);
+            }
+          }
+        }
+      }
+    }
+
+    // Underlay duplicate cells in pale red before drawing digits.
+    if (duplicateCells.size > 0) {
+      ctx.fillStyle = "rgba(220, 38, 38, 0.15)";
+      for (const key of duplicateCells) {
+        const parts = key.split(",");
+        const r = Number(parts[0]);
+        const c = Number(parts[1]);
+        ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
+      }
+    }
+
     const givenCells = new Set<string>();
-    if (state.puzzle_type === "classic") {
+    if (state.puzzle_type === "classic" && state.user_grid !== null) {
       for (const m of state.move_history) {
         if (m.source === "given") {
           givenCells.add(`${m.row - 1},${m.col - 1}`);
@@ -395,9 +446,19 @@ function drawGrid(
     ctx.textBaseline = "middle";
     for (let r = 0; r < 9; r++) {
       for (let c = 0; c < 9; c++) {
-        const digit = state.user_grid[r]?.[c] ?? 0;
+        const digit = digitGrid[r]?.[c] ?? 0;
         if (digit > 0) {
-          ctx.fillStyle = givenCells.has(`${r},${c}`) ? "#000" : "#2563eb";
+          const key = `${r},${c}`;
+          const isDuplicate = duplicateCells.has(key);
+          // Pre-confirm given_digits: black normally, red if duplicate.
+          // Post-confirm user_grid: given=black, user=blue, duplicate=red.
+          if (isDuplicate) {
+            ctx.fillStyle = "#dc2626";
+          } else if (state.user_grid !== null && !givenCells.has(key)) {
+            ctx.fillStyle = "#2563eb";
+          } else {
+            ctx.fillStyle = "#000";
+          }
           ctx.fillText(
             String(digit),
             MARGIN + c * CELL + CELL / 2,
@@ -463,6 +524,7 @@ function drawGrid(
 // ── Render helpers ──────────────────────────────────────────────────────────
 
 function renderState(state: PuzzleState): void {
+  currentState = state;
   // Draw the detected cage layout onto the canvas
   drawGrid(el<HTMLCanvasElement>("grid-canvas"), state);
 
@@ -474,6 +536,10 @@ function renderState(state: PuzzleState): void {
         ? "Detected Layout — Classic Sudoku"
         : "Detected Layout — Killer Sudoku";
   }
+
+  // Show inline-edit hint for classic puzzles in the pre-confirm review phase.
+  el<HTMLElement>("classic-edit-hint").hidden =
+    state.puzzle_type !== "classic" || state.user_grid !== null;
 
   // Show the uploaded photo for comparison
   el<HTMLImageElement>("original-img").src =
@@ -848,6 +914,27 @@ async function handleCageEdit(label: string, newTotal: number): Promise<void> {
   }
 }
 
+async function handleGivenDigitEdit(row: number, col: number, digit: number): Promise<void> {
+  if (!currentSessionId) return;
+  try {
+    const res = await fetch(`/api/puzzle/${currentSessionId}/given-digit`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ row, col, digit }),
+    });
+    if (!res.ok) {
+      const err = (await res.json()) as { detail: string };
+      setStatus(`Error updating digit: ${err.detail}`, true);
+      return;
+    }
+    const state = (await res.json()) as PuzzleState;
+    currentState = state;
+    drawGrid(el<HTMLCanvasElement>("grid-canvas"), state, selectedCell);
+  } catch (e) {
+    setStatus(`Network error: ${String(e)}`, true);
+  }
+}
+
 async function handleConfirm(): Promise<void> {
   if (!currentSessionId) {
     setStatus("No active session — process an image first.", true);
@@ -1002,7 +1089,13 @@ el<HTMLButtonElement>("undo-btn").addEventListener("click", () => {
 });
 
 el<HTMLCanvasElement>("grid-canvas").addEventListener("mousedown", (e) => {
-  if (currentState?.user_grid == null) return;
+  // Allow cell selection in pre-confirm classic mode (for OCR correction)
+  // as well as the normal post-confirm playing mode.
+  const isPreConfirmClassic =
+    currentState?.user_grid == null &&
+    currentState?.puzzle_type === "classic" &&
+    currentState?.given_digits != null;
+  if (currentState?.user_grid == null && !isPreConfirmClassic) return;
   const canvas = el<HTMLCanvasElement>("grid-canvas");
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
@@ -1056,7 +1149,11 @@ el<HTMLCanvasElement>("grid-canvas").addEventListener("mousedown", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
-  if (currentState?.user_grid == null) return;
+  const isPreConfirmClassic =
+    currentState?.user_grid == null &&
+    currentState?.puzzle_type === "classic" &&
+    currentState?.given_digits != null;
+  if (currentState?.user_grid == null && !isPreConfirmClassic) return;
   // Don't steal keypresses from any focused input or textarea.
   const activeEl = document.activeElement;
   if (activeEl instanceof HTMLInputElement || activeEl instanceof HTMLTextAreaElement) return;
@@ -1080,7 +1177,14 @@ document.addEventListener("keydown", (e) => {
     return;
   }
 
-  if (showCandidates && candidateEditMode) {
+  if (isPreConfirmClassic) {
+    // Pre-confirm classic: edit given_digits directly via API.
+    if (e.key >= "1" && e.key <= "9") {
+      void handleGivenDigitEdit(selectedCell.row, selectedCell.col, Number(e.key));
+    } else if (e.key === "Backspace" || e.key === "Delete") {
+      void handleGivenDigitEdit(selectedCell.row, selectedCell.col, 0);
+    }
+  } else if (showCandidates && candidateEditMode) {
     if (e.key >= "1" && e.key <= "9") {
       void handleCandidateCycle(
         selectedCell.row,
