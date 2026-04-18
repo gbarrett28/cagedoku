@@ -288,15 +288,21 @@ export function loadNumRecogniser(
 
   function getF64(name: string): Float64Array {
     const { offset, byteLength } = arrays[name];
-    return new Float64Array(binBuffer, offset, byteLength / 8);
+    // Float64Array requires byteOffset % 8 === 0. The .bin file packs arrays
+    // without alignment padding, so a direct view may throw RangeError.
+    // Copying into a fresh buffer guarantees alignment at negligible cost.
+    if (offset % 8 === 0) return new Float64Array(binBuffer, offset, byteLength / 8);
+    return new Float64Array(binBuffer.slice(offset, offset + byteLength));
   }
   function getF32(name: string): Float32Array {
     const { offset, byteLength } = arrays[name];
-    return new Float32Array(binBuffer, offset, byteLength / 4);
+    if (offset % 4 === 0) return new Float32Array(binBuffer, offset, byteLength / 4);
+    return new Float32Array(binBuffer.slice(offset, offset + byteLength));
   }
   function getI32(name: string): Int32Array {
     const { offset, byteLength } = arrays[name];
-    return new Int32Array(binBuffer, offset, byteLength / 4);
+    if (offset % 4 === 0) return new Int32Array(binBuffer, offset, byteLength / 4);
+    return new Int32Array(binBuffer.slice(offset, offset + byteLength));
   }
   function getScalarF64(name: string): number {
     return getF64(name)[0];
