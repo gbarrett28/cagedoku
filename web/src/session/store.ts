@@ -55,7 +55,7 @@ export function getRec(): NumRecogniser | null { return _rec; }
  * returns a promise that resolves to the cv object. Subsequent calls
  * return the cached instance.
  */
-export function loadCV(url = '/opencv.js'): Promise<Cv> {
+export function loadCV(url = './opencv.js'): Promise<Cv> {
   if (_cv !== null) return Promise.resolve(_cv);
   if (_cvLoading !== null) return _cvLoading;
 
@@ -90,8 +90,8 @@ export function loadCV(url = '/opencv.js'): Promise<Cv> {
  * return the cached instance.
  */
 export function loadRec(
-  binUrl = '/num_recogniser.bin',
-  jsonUrl = '/num_recogniser.json',
+  binUrl = './num_recogniser.bin',
+  jsonUrl = './num_recogniser.json',
 ): Promise<NumRecogniser> {
   if (_rec !== null) return Promise.resolve(_rec);
   if (_recLoading !== null) return _recLoading;

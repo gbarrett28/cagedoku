@@ -84,8 +84,10 @@ self.addEventListener('activate', (event) => {
 // ---------------------------------------------------------------------------
 
 self.addEventListener('fetch', (event) => {
-  // Only handle GET requests; let POST/PUT/DELETE pass through.
+  // Only handle GET requests over http(s). Ignore chrome-extension://, data:,
+  // blob: etc. — those come from browser extensions and must not be intercepted.
   if (event.request.method !== 'GET') return;
+  if (!event.request.url.startsWith('http')) return;
 
   event.respondWith(
     caches.match(event.request).then(async (cached) => {
