@@ -1,0 +1,23 @@
+# Cloudflare Pages response headers (ignored by GitHub Pages).
+# If deploying to Cloudflare instead of GitHub Pages, this file is picked up
+# automatically.  GitHub Pages does not support custom response headers.
+
+# Service worker must be served with no-cache so browsers always re-check
+# for a new version on each load.
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# WASM files should be served with the correct MIME type.
+/*.wasm
+  Content-Type: application/wasm
+
+# Large static assets (opencv, model) can be cached aggressively since their
+# filenames are versioned (or they only change on explicit re-deployment).
+/opencv.js
+  Cache-Control: public, max-age=604800, immutable
+
+/num_recogniser.bin
+  Cache-Control: public, max-age=604800, immutable
+
+/num_recogniser.json
+  Cache-Control: public, max-age=604800, immutable

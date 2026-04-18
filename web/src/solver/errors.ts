@@ -32,3 +32,11 @@ export class ProcessingError extends Error {
     this.brdrs = brdrs;
   }
 }
+
+/** Thrown when a solver operation would leave a cell with no valid candidates. */
+export class NoSolnError extends Error {
+  constructor(msg: string) {
+    super(msg);
+    this.name = 'NoSolnError';
+  }
+}

@@ -115,6 +115,31 @@ export function defaultBorderClusteringConfig(): BorderClusteringConfig {
   return { sampleFraction: 4, sampleMargin: 16 };
 }
 
+// ---------------------------------------------------------------------------
+// Global config instance — set once at app startup, read everywhere.
+// ---------------------------------------------------------------------------
+
+let _config: ImagePipelineConfig | null = null;
+
+/**
+ * Set the image pipeline config for the session.
+ * Must be called before any pipeline function is invoked.
+ * Subsequent calls overwrite the previous config (useful for testing).
+ */
+export function setImagePipelineConfig(cfg: ImagePipelineConfig): void {
+  _config = cfg;
+}
+
+/**
+ * Read the current global image pipeline config.
+ * Falls back to the default if setImagePipelineConfig has not been called.
+ */
+export function getImagePipelineConfig(): ImagePipelineConfig {
+  return _config ?? (_config = defaultImagePipelineConfig());
+}
+
+// ---------------------------------------------------------------------------
+
 /** Top-level configuration for the image processing pipeline. */
 export interface ImagePipelineConfig {
   readonly gridLocation: GridLocationConfig;
@@ -139,9 +164,9 @@ export function subres(cfg: ImagePipelineConfig): number {
   return cfg.numberRecognition.subres;
 }
 
-/** Full grid resolution in pixels (9 * subres). */
-export function resolution(cfg: ImagePipelineConfig): number {
-  return 9 * subres(cfg);
+/** Full grid resolution in pixels (gridSize * subres). */
+export function resolution(cfg: ImagePipelineConfig, gridSize = 9): number {
+  return gridSize * subres(cfg);
 }
 
 /**

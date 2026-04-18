@@ -39,6 +39,40 @@ interactive modes in order to assure correctness of the interactive mode.
 
 ---
 
+## TypeScript Array Conventions
+
+All 2-D arrays in the TypeScript codebase (`web/src/`) use **row-major `[row][col]`
+ordering**, where `row` is the 0-based canvas row (y-axis, top = 0) and `col` is the
+0-based canvas column (x-axis, left = 0).
+
+This applies to every named array in `PuzzleSpec`, `BoardState`, and the engine:
+
+| Array | Type | Convention |
+|---|---|---|
+| `PuzzleSpec.regions` | `number[][]` | `regions[row][col]` — 1-based cage index |
+| `PuzzleSpec.cageTotals` | `number[][]` | `cageTotals[row][col]` — 0 except at cage head |
+| `PuzzleSpec.borderX` | `boolean[][]` | `borderX[col][rowGap]` — wall between rows `rowGap` / `rowGap+1` in column `col` (shape 9×8) |
+| `PuzzleSpec.borderY` | `boolean[][]` | `borderY[colGap][row]` — wall between cols `colGap` / `colGap+1` in row `row` (shape 8×9) |
+| `BoardState.candidates` | `Set<number>[][]` | `candidates[row][col]` — remaining digit set |
+| `BoardState.regions` | `number[][]` | `regions[row][col]` — 0-based cage index |
+| `Cell` (engine type) | `[number, number]` | `[row, col]` — 0-based |
+
+**Why the `[col][row]` comments in some source files are misleading:**
+The internal helper `buildCageTotals` (in `inpImage.ts`) processes contours in
+x-order and stores intermediate pixel data with `numPixels[col][row]`, but its
+*reading* loop is transposed (`numPixels[row][col]`), yielding a `cageTotals`
+array that is effectively `[row][col]`. The `[col][row]` annotation in the
+`PuzzleSpec` interface is therefore incorrect and should be read as `[row][col]`.
+The `borderX`/`borderY` annotations are correct; their shape alone (9×8 and 8×9)
+distinguishes them from the square region/total arrays.
+
+**No transposition at any boundary:** Python `PuzzleSpec` (NumPy, row-major) maps
+directly to TypeScript `PuzzleSpec` without transposition. The frontend canvas
+also reads `spec_data.regions[row][col]` row-major. No coordinate flip occurs at
+any stage of the pipeline.
+
+---
+
 ## UI
 
 See **`docs/ui.md`** for the full UI specification: screen flow, component

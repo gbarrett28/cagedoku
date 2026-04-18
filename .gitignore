@@ -24,3 +24,14 @@ killer_sudoku/static/main.js
 tests/fixtures/sudoku/*.jpg
 tests/fixtures/sudoku/*.jpeg
 tests/fixtures/sudoku/*.png
+
+# Web build artifacts
+web/dist/
+web/node_modules/
+
+# opencv.js is large (~10 MB) and downloaded at CI time via scripts/download-opencv.sh
+web/public/opencv.js
+
+# tsc emit artefacts — Vite compiles TS natively; tsc runs with --noEmit
+web/src/**/*.js
+web/vite.config.js

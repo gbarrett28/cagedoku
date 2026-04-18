@@ -4,9 +4,10 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
-    "lib": ["ES2022", "DOM"],
+    "lib": ["ESNext", "DOM"],
     "isolatedModules": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "noEmit": true
   },
   "include": ["src/**/*", "*.ts"],
   "exclude": ["node_modules", "dist"]
