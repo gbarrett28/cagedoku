@@ -25,6 +25,20 @@ const PUZZLE_IMAGE = path.resolve(
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Stub opencv.js with an empty script so it "loads" without starting WASM
+ * compilation.  Without this, DOMContentLoaded triggers loadCV() which kicks
+ * off a 10 MB download + WASM init that blocks browserContext.close() for 10+
+ * seconds.  Structural tests do not exercise the image pipeline at all.
+ */
+async function stubOpenCV(page: Page) {
+  await page.route('**/opencv.js', route => route.fulfill({
+    status: 200,
+    contentType: 'application/javascript',
+    body: '// opencv.js stubbed for structural tests',
+  }));
+}
+
 /** Wait for the image pipeline (opencv + model) to finish loading. */
 async function waitForPipelineReady(page: Page, timeoutMs = 75_000) {
   // Wait until window.cv is initialised (opencv.js fully loaded) or an error fires.
@@ -48,7 +62,8 @@ async function waitForPipelineReady(page: Page, timeoutMs = 75_000) {
 // ---------------------------------------------------------------------------
 
 test('page loads with correct title and upload panel visible', async ({ page }) => {
-  test.setTimeout(25_000); // teardown waits for in-flight opencv.js download to abort (~15 s)
+  test.setTimeout(8_000);
+  await stubOpenCV(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveTitle(/COACH/);
   await expect(page.locator('#upload-panel')).toBeVisible();
@@ -61,13 +76,14 @@ test('page loads with correct title and upload panel visible', async ({ page }) 
 // ---------------------------------------------------------------------------
 
 test('no console errors on page load', async ({ page }) => {
-  test.setTimeout(15_000);
+  test.setTimeout(8_000);
   const errors: string[] = [];
   page.on('console', msg => {
     if (msg.type() === 'error') errors.push(msg.text());
   });
   page.on('pageerror', err => errors.push(err.message));
 
+  await stubOpenCV(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2_000);
 

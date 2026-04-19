@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from 'vite';
 
 export default defineConfig({
   base: './', // relative paths for GitHub Pages subpath deployment
@@ -12,8 +12,5 @@ export default defineConfig({
   optimizeDeps: {
     // Prevent Vite's pre-bundler from trying to analyse opencv.js.
     exclude: ['opencv.js'],
-  },
-  test: {
-    include: ['src/**/*.test.ts'],
   },
 });
