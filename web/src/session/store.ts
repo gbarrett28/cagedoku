@@ -10,9 +10,10 @@
  */
 
 import type { CandidatesResponse, PuzzleState } from './types.js';
+import { loadNumRecogniser } from '../image/numberRecognition.js';
+import type { NumRecogniser } from '../image/numberRecognition.js';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Cv = any;
-import type { NumRecogniser } from '../image/numberRecognition.js';
 
 // ---------------------------------------------------------------------------
 // Puzzle session state
@@ -102,7 +103,6 @@ export function loadRec(
     if (!jsonRes.ok) throw new Error(`Failed to load recogniser manifest: ${jsonRes.status}`);
 
     const [binBuffer, manifest] = await Promise.all([binRes.arrayBuffer(), jsonRes.json()]);
-    const { loadNumRecogniser } = await import('../image/numberRecognition.js');
     _rec = loadNumRecogniser(binBuffer, manifest as Parameters<typeof loadNumRecogniser>[1]);
     return _rec;
   })();

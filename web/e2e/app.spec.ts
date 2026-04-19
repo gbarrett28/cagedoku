@@ -26,15 +26,21 @@ const PUZZLE_IMAGE = path.resolve(
 // ---------------------------------------------------------------------------
 
 /** Wait for the image pipeline (opencv + model) to finish loading. */
-async function waitForPipelineReady(page: Page, timeoutMs = 45_000) {
-  await page.waitForFunction(
+async function waitForPipelineReady(page: Page, timeoutMs = 75_000) {
+  // Wait until window.cv is initialised (opencv.js fully loaded) or an error fires.
+  // Returns the status text: 'ok' on success, or an error string to surface.
+  const result = await page.waitForFunction(
     () => {
-      const status = document.getElementById('status-msg');
-      const text = status?.textContent ?? '';
-      return !text.includes('Loading') && !text.includes('failed');
+      const status = document.getElementById('status-msg')?.textContent ?? '';
+      if (status.includes('failed') || status.includes('Error')) return `ERR:${status}`;
+      // OpenCV sets window.cv.getBuildInformation once fully initialised.
+      const w = window as unknown as { cv?: { getBuildInformation?: () => string } };
+      return w.cv?.getBuildInformation ? 'ok' : null; // null → keep polling
     },
     { timeout: timeoutMs },
   );
+  const msg = await result.jsonValue() as string;
+  if (msg.startsWith('ERR:')) throw new Error(`Pipeline load error: ${msg.slice(4)}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -42,6 +48,7 @@ async function waitForPipelineReady(page: Page, timeoutMs = 45_000) {
 // ---------------------------------------------------------------------------
 
 test('page loads with correct title and upload panel visible', async ({ page }) => {
+  test.setTimeout(25_000); // teardown waits for in-flight opencv.js download to abort (~15 s)
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveTitle(/COACH/);
   await expect(page.locator('#upload-panel')).toBeVisible();
@@ -54,6 +61,7 @@ test('page loads with correct title and upload panel visible', async ({ page }) 
 // ---------------------------------------------------------------------------
 
 test('no console errors on page load', async ({ page }) => {
+  test.setTimeout(15_000);
   const errors: string[] = [];
   page.on('console', msg => {
     if (msg.type() === 'error') errors.push(msg.text());
@@ -76,7 +84,7 @@ test('no console errors on page load', async ({ page }) => {
 // ---------------------------------------------------------------------------
 
 test('image pipeline loads without error', async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000); // opencv.js WASM init can take 60–90 s in headless Chrome
 
   const errors: string[] = [];
   page.on('console', msg => {
@@ -84,10 +92,13 @@ test('image pipeline loads without error', async ({ page }) => {
   });
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await waitForPipelineReady(page, 75_000);
+  await waitForPipelineReady(page, 150_000);
 
-  const statusText = await page.locator('#status-msg').textContent();
-  expect(statusText ?? '').not.toContain('failed');
+  // Use evaluate (not locator) — after waitForPipelineReady, the DOM is settled.
+  const statusText = await page.evaluate(
+    () => document.getElementById('status-msg')?.textContent ?? '',
+  );
+  expect(statusText).not.toContain('failed');
 
   const pipelineErrors = errors.filter(e =>
     (e.includes('opencv') || e.includes('recogniser') || e.includes('RangeError')) &&
@@ -101,10 +112,10 @@ test('image pipeline loads without error', async ({ page }) => {
 // ---------------------------------------------------------------------------
 
 test('upload puzzle image → review panel appears with canvas', async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await waitForPipelineReady(page, 75_000);
+  await waitForPipelineReady(page, 150_000);
 
   await page.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
   await page.locator('#process-btn').click();
@@ -123,10 +134,10 @@ test('upload puzzle image → review panel appears with canvas', async ({ page }
 // ---------------------------------------------------------------------------
 
 test('status message is empty after successful image process', async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await waitForPipelineReady(page, 75_000);
+  await waitForPipelineReady(page, 150_000);
 
   await page.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
   await page.locator('#process-btn').click();
@@ -142,10 +153,10 @@ test('status message is empty after successful image process', async ({ page }) 
 // ---------------------------------------------------------------------------
 
 test('confirm puzzle → playing actions panel appears', async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await waitForPipelineReady(page, 75_000);
+  await waitForPipelineReady(page, 150_000);
 
   await page.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
   await page.locator('#process-btn').click();
@@ -164,10 +175,10 @@ test('confirm puzzle → playing actions panel appears', async ({ page }) => {
 // ---------------------------------------------------------------------------
 
 test('click cell then press digit → digit appears in canvas, undo enabled', async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await waitForPipelineReady(page, 75_000);
+  await waitForPipelineReady(page, 150_000);
 
   await page.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
   await page.locator('#process-btn').click();
@@ -194,10 +205,10 @@ test('click cell then press digit → digit appears in canvas, undo enabled', as
 // ---------------------------------------------------------------------------
 
 test('undo after placing digit re-disables undo button', async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await waitForPipelineReady(page, 75_000);
+  await waitForPipelineReady(page, 150_000);
 
   await page.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
   await page.locator('#process-btn').click();
@@ -222,10 +233,10 @@ test('undo after placing digit re-disables undo button', async ({ page }) => {
 // ---------------------------------------------------------------------------
 
 test('show candidates button toggles candidate display', async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await waitForPipelineReady(page, 75_000);
+  await waitForPipelineReady(page, 150_000);
 
   await page.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
   await page.locator('#process-btn').click();
@@ -245,10 +256,10 @@ test('show candidates button toggles candidate display', async ({ page }) => {
 // ---------------------------------------------------------------------------
 
 test('new puzzle button returns to upload panel', async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await waitForPipelineReady(page, 75_000);
+  await waitForPipelineReady(page, 150_000);
 
   await page.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
   await page.locator('#process-btn').click();

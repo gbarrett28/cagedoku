@@ -35,3 +35,4 @@ web/public/opencv.js
 # tsc emit artefacts — Vite compiles TS natively; tsc runs with --noEmit
 web/src/**/*.js
 web/vite.config.js
+web/playwright.config.js

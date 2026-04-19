@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
-  base: './',
+  base: './', // relative paths for GitHub Pages subpath deployment
   // Treat .bin files (num_recogniser.bin) as static assets, not JS modules.
   assetsInclude: ['**/*.bin'],
   build: {
