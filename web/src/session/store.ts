@@ -71,43 +71,54 @@ export function loadCV(
       script.onload = () => {
         URL.revokeObjectURL(blobUrl);
         const w = window as unknown as { cv?: Promise<Cv> | Cv };
+        console.log('[CV] script loaded, waiting for WASM init…');
         Promise.resolve(w.cv as Promise<Cv>)
-          .then((module: Cv) => { _cv = module; resolve(_cv); })
-          .catch(reject);
+          .then((module: Cv) => { console.log('[CV] ready'); _cv = module; resolve(_cv); })
+          .catch(e => { console.error('[CV] WASM init failed', e); reject(e); });
       };
-      script.onerror = () => { URL.revokeObjectURL(blobUrl); reject(new Error(`Failed to load OpenCV.js from ${url}`)); };
+      script.onerror = (e) => {
+        URL.revokeObjectURL(blobUrl);
+        console.error('[CV] script inject failed', e);
+        reject(new Error(`Failed to inject OpenCV.js blob`));
+      };
       document.head.appendChild(script);
     };
 
     if (!onProgress) {
       // Fast path: no progress needed — use a plain script tag.
+      console.log('[CV] loading', url);
       const script = document.createElement('script');
       script.src = url;
       script.async = true;
       script.onload = () => {
         const w = window as unknown as { cv?: Promise<Cv> | Cv };
+        console.log('[CV] script loaded, waiting for WASM init…');
         Promise.resolve(w.cv as Promise<Cv>)
-          .then((module: Cv) => { _cv = module; resolve(_cv); })
-          .catch(reject);
+          .then((module: Cv) => { console.log('[CV] ready'); _cv = module; resolve(_cv); })
+          .catch(e => { console.error('[CV] WASM init failed', e); reject(e); });
       };
-      script.onerror = () => reject(new Error(`Failed to load OpenCV.js from ${url}`));
+      script.onerror = (e) => { console.error('[CV] script load failed', e); reject(new Error(`Failed to load OpenCV.js from ${url}`)); };
       document.head.appendChild(script);
       return;
     }
 
     // Progress path: stream the fetch so we can report download progress,
     // then inject the completed bytes as a blob URL.
+    console.log('[CV] fetching', url);
     fetch(url)
       .then(response => {
         if (!response.ok) throw new Error(`HTTP ${response.status} fetching ${url}`);
+        if (!response.body) throw new Error(`No response body for ${url}`);
         const total = Number(response.headers.get('Content-Length') ?? '0');
-        const reader = response.body!.getReader();
+        console.log('[CV] download started, Content-Length:', total || 'unknown');
+        const reader = response.body.getReader();
         const chunks: ArrayBuffer[] = [];
         let received = 0;
 
         const pump = (): Promise<void> =>
           reader.read().then(({ done, value }) => {
             if (done) {
+              console.log('[CV] download complete, injecting blob…');
               onProgress('compiling', 0);
               const blob = new Blob(chunks, { type: 'application/javascript' });
               injectBlob(URL.createObjectURL(blob));
@@ -121,7 +132,7 @@ export function loadCV(
 
         return pump();
       })
-      .catch(reject);
+      .catch(e => { console.error('[CV] fetch failed', e); reject(e); });
   });
 
   return _cvLoading;

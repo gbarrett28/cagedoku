@@ -730,11 +730,26 @@ document.addEventListener('DOMContentLoaded', () => {
     return cv;
   });
 
+  // Timeout: if the pipeline hasn't loaded in 30 s, tell the user how to diagnose.
+  const loadTimeout = setTimeout(() => {
+    cvLabel.textContent = 'Still loading — check browser console (F12) for errors';
+    cvBar.removeAttribute('value'); // indeterminate
+    console.warn('[CV] Pipeline not ready after 30 s. Common causes:\n' +
+      '  1. opencv.js failed to fetch — check Network tab\n' +
+      '  2. WASM init threw — look for [CV] errors above\n' +
+      '  3. Stale service worker — Application > Storage > Clear site data, then reload');
+  }, 30_000);
+
   void Promise.all([cvWithProgress, loadRec()])
-    .then(() => { (window as unknown as Record<string, unknown>)['__pipelineReady'] = true; })
+    .then(() => {
+      clearTimeout(loadTimeout);
+      (window as unknown as Record<string, unknown>)['__pipelineReady'] = true;
+    })
     .catch(e => {
+      clearTimeout(loadTimeout);
       cvRow.style.display = 'none';
-      setStatus(`Image pipeline load failed: ${String(e)}`, true);
+      console.error('[CV] Pipeline load failed:', e);
+      setStatus(`Image pipeline failed: ${String(e)} — open DevTools (F12) for details`, true);
     });
 
   el<HTMLButtonElement>('process-btn').addEventListener('click', () => { void handleProcess(); });
