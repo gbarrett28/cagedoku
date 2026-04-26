@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build-opencv-wsl.sh — build a minimal opencv.js (core + imgproc only) in WSL.
+# build-opencv-wsl.sh — build a minimal opencv.js (core + imgproc, function whitelist) in WSL.
 #
 # Run from WSL terminal (not PowerShell):
 #   bash /mnt/c/Users/geoff/PycharmProjects/killer_sudoku/web/scripts/build-opencv-wsl.sh
@@ -8,19 +8,29 @@
 #   1. Installs cmake, ninja, python3 if absent
 #   2. Clones emsdk 3.1.61 (known-good with OpenCV 4.10.0) into ~/opencv-js-build/
 #   3. Clones OpenCV 4.10.0 (shallow) into ~/opencv-js-build/
-#   4. Builds opencv.js with only core+imgproc — ~1.5-2 MB vs ~4 MB standard build
+#   4. Builds opencv.js with:
+#      - Only core+imgproc modules compiled  (reduces C++ compilation scope)
+#      - Function whitelist from opencv-whitelist.json  (reduces WASM entry points)
+#      - Emscripten DCE removes all unreachable code     (reduces binary size)
 #   5. Copies result to web/public/opencv.js
 #
-# Subsequent runs reuse the existing emsdk and source checkouts (incremental).
-# Expected time: 30-60 min first run, a few minutes if re-running after a change.
+# Why the whitelist matters:
+#   Without it, gen2.py emits JS wrappers for every function in core+imgproc
+#   (~hundreds of entry points). With only the ~20 functions we actually call as
+#   roots, Emscripten's dead-code eliminator can strip Fourier, Hough, histograms,
+#   morphology, optical flow, and everything else we don't use.
+#   Expected output: ~1-2 MB (vs ~4 MB without whitelist).
 #
-# After a successful build, commit web/public/opencv.js to git so CI uses it
-# directly (the workflow already skips the download when the file is present).
+# After a successful build:
+#   git add web/public/opencv.js
+#   git commit -m "feat: minimal opencv.js with function whitelist"
+#   git push
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="$(realpath "$SCRIPT_DIR/../public")"
+WHITELIST="$SCRIPT_DIR/opencv-whitelist.json"
 BUILD_BASE="$HOME/opencv-js-build"
 LOG="$BUILD_BASE/build.log"
 EMSDK_VERSION="3.1.61"
@@ -28,8 +38,9 @@ OPENCV_TAG="4.10.0"
 
 mkdir -p "$BUILD_BASE"
 exec > >(tee -a "$LOG") 2>&1
-echo "=== $(date) — opencv.js minimal build (core+imgproc) ==="
-echo "    output → $OUTPUT_DIR/opencv.js"
+echo "=== $(date) — opencv.js minimal build (core+imgproc + whitelist) ==="
+echo "    whitelist  → $WHITELIST"
+echo "    output     → $OUTPUT_DIR/opencv.js"
 
 # ── System deps ──────────────────────────────────────────────────────────────
 SUDO=""
@@ -66,15 +77,28 @@ if [ ! -d "$BUILD_BASE/opencv/.git" ]; then
     https://github.com/opencv/opencv.git "$BUILD_BASE/opencv"
 fi
 
-# ── Build ────────────────────────────────────────────────────────────────────
-# Modules: core (Mat, arithmetic, geometry), imgproc (contours, threshold,
-#           perspective, template matching), js (JS/WASM bindings).
-# Image codecs (JPEG, PNG, TIFF, WEBP) excluded — the app receives raw
-# ImageData from the browser, no codec decoding required in WASM.
-echo "--- building (this takes 30-60 min on first run) ---"
+# ── Check whether build_js.py supports --white_list ─────────────────────────
+echo "--- checking build_js.py options ---"
 cd "$BUILD_BASE/opencv"
+if python3 platforms/js/build_js.py --help 2>&1 | grep -q "white.list"; then
+  WHITELIST_ARG="--white_list $WHITELIST"
+  echo "    whitelist flag supported — using $WHITELIST"
+else
+  # Older versions: pass via CMake binding generator flags
+  WHITELIST_ARG="--cmake_option=-DOPENCV_JS_BINDINGS_GENERATOR_FLAGS=--jinja2"
+  echo "    WARNING: --white_list not found in help; trying CMake flag path"
+  echo "    Check ~/opencv-js-build/build.log if the output is still large"
+fi
+
+# ── Build ────────────────────────────────────────────────────────────────────
+echo "--- building (30-60 min first run) ---"
+# Remove previous build output so CMake reconfigures cleanly with new flags
+rm -rf "$BUILD_BASE/build"
+
+# shellcheck disable=SC2086
 python3 platforms/js/build_js.py "$BUILD_BASE/build" \
   --build_wasm \
+  $WHITELIST_ARG \
   --cmake_option="-DBUILD_LIST=core,imgproc,js" \
   --cmake_option="-DCMAKE_BUILD_TYPE=Release" \
   --cmake_option="-DBUILD_TESTS=OFF" \
@@ -89,7 +113,7 @@ python3 platforms/js/build_js.py "$BUILD_BASE/build" \
 
 # ── Copy output ──────────────────────────────────────────────────────────────
 OUTPUT="$BUILD_BASE/build/bin/opencv.js"
-echo "--- copying output ---"
+echo "--- output ---"
 ls -lh "$OUTPUT"
 cp "$OUTPUT" "$OUTPUT_DIR/opencv.js"
 ls -lh "$OUTPUT_DIR/opencv.js"
@@ -97,7 +121,6 @@ ls -lh "$OUTPUT_DIR/opencv.js"
 echo ""
 echo "=== $(date) — done ==="
 echo ""
-echo "Next steps:"
-echo "  1. Test: cd /mnt/c/.../killer_sudoku/web && npm run dev"
-echo "  2. Commit: git add web/public/opencv.js && git commit -m 'feat: minimal opencv.js (core+imgproc)'"
-echo "  3. Push: git push  — CI will use the committed file, skipping the download step"
+echo "If the file is still ~4 MB, the whitelist format may need adjusting."
+echo "Check: python3 ~/opencv-js-build/opencv/platforms/js/build_js.py --help"
+echo "Also check: python3 ~/opencv-js-build/opencv/platforms/js/gen2.py --help"

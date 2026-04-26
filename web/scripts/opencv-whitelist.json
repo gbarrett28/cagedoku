@@ -1,0 +1,39 @@
+{
+  "": {
+    "classes": [
+      "Mat",
+      "MatVector",
+      "Point",
+      "Point2f",
+      "Rect",
+      "RotatedRect",
+      "Scalar",
+      "Size",
+      "TermCriteria",
+      "Range"
+    ],
+    "functions": [
+      "matFromArray",
+      "matFromImageData"
+    ]
+  },
+  "cv": {
+    "classes": [],
+    "functions": [
+      "adaptiveThreshold",
+      "approxPolyDP",
+      "arcLength",
+      "boundingRect",
+      "contourArea",
+      "copyMakeBorder",
+      "cvtColor",
+      "drawContours",
+      "findContours",
+      "getPerspectiveTransform",
+      "inRange",
+      "matchTemplate",
+      "pyrUp",
+      "warpPerspective"
+    ]
+  }
+}
