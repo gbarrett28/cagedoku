@@ -709,10 +709,31 @@ if ('serviceWorker' in navigator && !import.meta.env.DEV) {
 
 document.addEventListener('DOMContentLoaded', () => {
 
-  // Startup: load OpenCV and digit recogniser in parallel
-  void Promise.all([loadCV(), loadRec()])
+  // Startup: load OpenCV (with download progress bar) and digit recogniser in parallel
+  const cvRow = el<HTMLElement>('cv-loading-row');
+  const cvLabel = el<HTMLElement>('cv-loading-label');
+  const cvBar = el<HTMLProgressElement>('cv-progress');
+  cvRow.style.display = 'flex';
+
+  const cvWithProgress = loadCV('./opencv.js', (phase, ratio) => {
+    if (phase === 'downloading') {
+      cvBar.value = Math.round(ratio * 85); // reserve last 15% for WASM compilation
+      cvLabel.textContent = `Downloading image pipeline… ${Math.round(ratio * 100)}%`;
+    } else {
+      cvBar.value = 90;
+      cvLabel.textContent = 'Compiling (WASM)…';
+    }
+  }).then(cv => {
+    cvBar.value = 100;
+    cvLabel.textContent = 'Image pipeline ready';
+    setTimeout(() => { cvRow.style.display = 'none'; }, 1500);
+    return cv;
+  });
+
+  void Promise.all([cvWithProgress, loadRec()])
     .then(() => { (window as unknown as Record<string, unknown>)['__pipelineReady'] = true; })
     .catch(e => {
+      cvRow.style.display = 'none';
       setStatus(`Image pipeline load failed: ${String(e)}`, true);
     });
 

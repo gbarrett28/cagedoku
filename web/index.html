@@ -33,6 +33,10 @@
       <button id="process-btn">Process image</button>
       <span id="status-msg" class="status"></span>
     </div>
+    <div id="cv-loading-row" class="form-row" style="display:none;align-items:center;gap:0.5rem;">
+      <span id="cv-loading-label" class="field-label" style="min-width:12rem">Loading image pipeline…</span>
+      <progress id="cv-progress" max="100" value="0" style="flex:1"></progress>
+    </div>
   </section>
 
   <!-- ── Phase 1b: Review & confirm ── -->

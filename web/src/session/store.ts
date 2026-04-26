@@ -56,29 +56,72 @@ export function getRec(): NumRecogniser | null { return _rec; }
  * returns a promise that resolves to the cv object. Subsequent calls
  * return the cached instance.
  */
-export function loadCV(url = './opencv.js'): Promise<Cv> {
+export function loadCV(
+  url = './opencv.js',
+  onProgress?: (phase: 'downloading' | 'compiling', ratio: number) => void,
+): Promise<Cv> {
   if (_cv !== null) return Promise.resolve(_cv);
   if (_cvLoading !== null) return _cvLoading;
 
   _cvLoading = new Promise<Cv>((resolve, reject) => {
-    // OpenCV.js sets window.cv when loaded; we poll until it's ready.
-    const script = document.createElement('script');
-    script.src = url;
-    script.async = true;
-    script.onload = () => {
-      // Modern OpenCV.js (MODULARIZE=1) sets window.cv to a Promise that resolves
-      // to the module after WASM initialisation.  Older builds set it to the module
-      // object directly.  Promise.resolve() handles both cases correctly.
-      const w = window as unknown as { cv?: Promise<Cv> | Cv };
-      Promise.resolve(w.cv as Promise<Cv>)
-        .then((module: Cv) => {
-          _cv = module;
-          resolve(_cv);
-        })
-        .catch(reject);
+    const injectBlob = (blobUrl: string) => {
+      const script = document.createElement('script');
+      script.src = blobUrl;
+      script.async = true;
+      script.onload = () => {
+        URL.revokeObjectURL(blobUrl);
+        const w = window as unknown as { cv?: Promise<Cv> | Cv };
+        Promise.resolve(w.cv as Promise<Cv>)
+          .then((module: Cv) => { _cv = module; resolve(_cv); })
+          .catch(reject);
+      };
+      script.onerror = () => { URL.revokeObjectURL(blobUrl); reject(new Error(`Failed to load OpenCV.js from ${url}`)); };
+      document.head.appendChild(script);
     };
-    script.onerror = () => reject(new Error(`Failed to load OpenCV.js from ${url}`));
-    document.head.appendChild(script);
+
+    if (!onProgress) {
+      // Fast path: no progress needed — use a plain script tag.
+      const script = document.createElement('script');
+      script.src = url;
+      script.async = true;
+      script.onload = () => {
+        const w = window as unknown as { cv?: Promise<Cv> | Cv };
+        Promise.resolve(w.cv as Promise<Cv>)
+          .then((module: Cv) => { _cv = module; resolve(_cv); })
+          .catch(reject);
+      };
+      script.onerror = () => reject(new Error(`Failed to load OpenCV.js from ${url}`));
+      document.head.appendChild(script);
+      return;
+    }
+
+    // Progress path: stream the fetch so we can report download progress,
+    // then inject the completed bytes as a blob URL.
+    fetch(url)
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status} fetching ${url}`);
+        const total = Number(response.headers.get('Content-Length') ?? '0');
+        const reader = response.body!.getReader();
+        const chunks: ArrayBuffer[] = [];
+        let received = 0;
+
+        const pump = (): Promise<void> =>
+          reader.read().then(({ done, value }) => {
+            if (done) {
+              onProgress('compiling', 0);
+              const blob = new Blob(chunks, { type: 'application/javascript' });
+              injectBlob(URL.createObjectURL(blob));
+              return;
+            }
+            chunks.push(value!.buffer.slice(value!.byteOffset, value!.byteOffset + value!.byteLength));
+            received += value!.byteLength;
+            if (total > 0) onProgress('downloading', received / total);
+            return pump();
+          });
+
+        return pump();
+      })
+      .catch(reject);
   });
 
   return _cvLoading;
