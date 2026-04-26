@@ -1,5 +1,7 @@
 # COACH — Killer Sudoku Coaching App
 
+[![Deploy to GitHub Pages](https://github.com/gbarrett28/cagedoku/actions/workflows/pages.yml/badge.svg)](https://github.com/gbarrett28/cagedoku/actions/workflows/pages.yml)
+
 A browser-based coaching companion for killer sudoku. Reads a photo of a newspaper puzzle, detects the cage layout, and guides you through solving with candidates, logical hints, and rule-based deductions — all running locally in the browser with no server required.
 
 **Live app:** https://gbarrett28.github.io/cagedoku/
