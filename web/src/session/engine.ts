@@ -24,12 +24,6 @@ import { NoSolnError } from '../solver/errors.js';
 import { dataToSpec, virtualCageKeyFromCage } from './specUtils.js';
 import type { AutoMutation, BoardSnapshot, PuzzleState, Turn, UserAction, VirtualCage } from './types.js';
 
-/** Default rules that run on every engine solve pass. */
-export const DEFAULT_ALWAYS_APPLY_RULES: readonly string[] = [
-  'CageCandidateFilter',
-  'CellSolutionElimination',
-];
-
 // ---------------------------------------------------------------------------
 // Derive user state from turn history
 // ---------------------------------------------------------------------------

@@ -9,8 +9,8 @@ import {
   buildEngine,
   userRemoved,
   userVirtualCages,
-  DEFAULT_ALWAYS_APPLY_RULES,
 } from './engine.js';
+import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
 import type { PuzzleState, Turn, UserAction, VirtualCage } from './types.js';
 import type { Cell } from '../engine/types.js';
 

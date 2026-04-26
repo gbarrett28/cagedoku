@@ -24,7 +24,8 @@ import {
   undo,
   computeCandidates,
 } from './actions.js';
-import { rebuildUserGrid, applyAutoPlacements, DEFAULT_ALWAYS_APPLY_RULES } from './engine.js';
+import { rebuildUserGrid, applyAutoPlacements } from './engine.js';
+import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
 import type { PuzzleState } from './types.js';
 import { specToData, specToCageStates } from './specUtils.js';
 

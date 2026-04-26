@@ -1,14 +1,25 @@
 /**
  * Coach settings persistence via localStorage.
  *
- * Mirrors Python's api/settings.py SettingsStore, but without a file system —
- * settings are stored in the browser's localStorage under a fixed key.
+ * Mirrors Python's api/settings.py SettingsStore and api/schemas.py
+ * DEFAULT_ALWAYS_APPLY_RULES — both the default value and the persistence
+ * logic live here so that nothing in the engine layer depends on user-facing
+ * configuration defaults.
  */
 
 import type { CoachSettings } from './types.js';
-import { DEFAULT_ALWAYS_APPLY_RULES } from './engine.js';
 
 const SETTINGS_KEY = 'killer_sudoku_settings';
+
+/**
+ * Rules that are applied automatically on every engine pass when the user has
+ * not yet configured anything (cold start).  Mirrors Python schemas.py
+ * DEFAULT_ALWAYS_APPLY_RULES.
+ */
+export const DEFAULT_ALWAYS_APPLY_RULES: readonly string[] = [
+  'CageCandidateFilter',
+  'CellSolutionElimination',
+];
 
 /** Returns the current settings, falling back to defaults if none are stored. */
 export function loadSettings(): CoachSettings {
