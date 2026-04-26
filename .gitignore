@@ -29,11 +29,8 @@ tests/fixtures/sudoku/*.png
 web/dist/
 web/node_modules/
 
-# opencv.js — ignored when using the standard 4 MB download (scripts/download-opencv.sh).
-# Once the custom minimal build (core+imgproc, ~1.5 MB) is produced by
-# scripts/build-opencv-wsl.sh, remove this line and commit the file directly so
-# CI uses it without a download step.
-web/public/opencv.js
+# opencv.js committed directly — custom core+imgproc build from build-opencv-wsl.sh.
+# CI uses this file; the download step in pages.yml is skipped when it is present.
 
 # tsc emit artefacts — Vite compiles TS natively; tsc runs with --noEmit
 web/src/**/*.js
