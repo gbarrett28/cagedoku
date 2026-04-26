@@ -7,12 +7,13 @@
  * main.ts can call them as drop-in replacements.
  */
 
-import { solve, getHints as engineGetHints } from '../engine/index.js';
+import { solve } from '../engine/index.js';
 import { solSums } from '../solver/equation.js';
 import { defaultRules } from '../engine/rules/index.js';
 import type { Cell } from '../engine/types.js';
 import { parsePuzzleImage } from '../image/inpImage.js';
 import { defaultImagePipelineConfig } from '../image/config.js';
+import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import {
   buildEngine,
   applyAutoPlacements,
@@ -21,14 +22,12 @@ import {
   userRemoved,
   userVirtualCages,
   findLastConsistentTurnIdx,
-  DEFAULT_ALWAYS_APPLY_RULES,
 } from './engine.js';
 import { loadSettings, saveSettings } from './settings.js';
 import {
   specToCageStates,
   cageStatesToSpec,
   specToData,
-  dataToSpec,
   virtualCageKey,
 } from './specUtils.js';
 import { getState, setState, getCV, getRec } from './store.js';
@@ -71,6 +70,31 @@ export interface UploadResult {
   state: PuzzleState;
   warpedImageUrl: string | null;
   warning: string | null;
+}
+
+/**
+ * Build a PuzzleState directly from a PuzzleSpec, bypassing the image pipeline.
+ *
+ * Used in dev/test mode to exercise the full review→confirm→playing UI flow
+ * without requiring OpenCV or a real puzzle image.
+ */
+export function loadSpecDirect(spec: PuzzleSpec): UploadResult {
+  const settings = loadSettings();
+  const state: PuzzleState = {
+    specData: specToData(spec),
+    cageStates: specToCageStates(spec),
+    userGrid: null,
+    virtualCages: [],
+    turns: [],
+    alwaysApplyRules: [...settings.alwaysApplyRules],
+    goldenSolution: null,
+    puzzleType: 'killer',
+    givenDigits: null,
+    originalImageUrl: null,
+    warpedImageUrl: null,
+  };
+  setState(state);
+  return { state, warpedImageUrl: null, warning: null };
 }
 
 /**
@@ -170,8 +194,8 @@ export function confirmPuzzle(): PuzzleState {
   // Extract golden solution — 0 for cells the solver could not determine
   const goldenSolution: number[][] = Array.from({ length: 9 }, (_, r) =>
     Array.from({ length: 9 }, (__, c) => {
-      const cands = board.candidates[r][c];
-      return cands.size === 1 ? [...cands][0] : 0;
+      const cands = board.cands(r, c);
+      return cands.size === 1 ? [...cands][0]! : 0;
     }),
   );
 
@@ -183,11 +207,11 @@ export function confirmPuzzle(): PuzzleState {
     const blankSnapshot = { candidates: Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => [])) };
     for (let r = 0; r < 9; r++) {
       for (let c = 0; c < 9; c++) {
-        const d = state.givenDigits[r][c];
+        const d = state.givenDigits[r]![c]!;
         if (d > 0) {
-          userGrid[r][c] = d;
+          userGrid[r]![c] = d;
           givenTurns.push({
-            action: { type: 'placeDigit', row: r, col: c, digit: d, source: 'given' },
+            action: { type: 'placeDigit', row: r, col: c, digit: d as number, source: 'given' },
             autoMutations: [],
             snapshot: blankSnapshot,
           });
@@ -196,12 +220,12 @@ export function confirmPuzzle(): PuzzleState {
     }
   }
 
+  // Preserve alwaysApplyRules from state (set from user settings in uploadPuzzle/loadSpecDirect).
   let updated: PuzzleState = {
     ...state,
     goldenSolution,
     userGrid,
     turns: givenTurns,
-    alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],
   };
   updated = applyAutoPlacements(updated);
   setState(updated);
@@ -218,7 +242,7 @@ export function confirmPuzzle(): PuzzleState {
  */
 export function computeCandidates(): CandidatesResponse {
   const state = requireConfirmed();
-  const { board } = buildEngine(state);
+  const { board } = buildEngine(state); // engine.solve() called inside buildEngine
 
   // Per-cell user-removed lookup
   const removedByCell = new Map<string, Set<number>>();
@@ -232,13 +256,13 @@ export function computeCandidates(): CandidatesResponse {
   // Build per-cell info
   const cells = Array.from({ length: 9 }, (_, r) =>
     Array.from({ length: 9 }, (__, c) => {
-      const cageIdx = board.regions[r][c];
-      const remaining = board.cageSolns[cageIdx];
+      const cageIdx = board.regions[r]![c]!;
+      const remaining = board.cageSolns[cageIdx]!;
       const cagePossible: Set<number> = remaining.length > 0
         ? new Set(remaining.flat())
         : new Set<number>();
       const removedHere = removedByCell.get(`${r},${c}`) ?? new Set<number>();
-      const solverCands = new Set([...board.candidates[r][c]].filter(d => cagePossible.has(d)));
+      const solverCands = new Set([...board.cands(r, c)].filter(d => cagePossible.has(d)));
       // Union in user-removed so they show for strikethrough even after SolutionMapFilter prunes
       for (const d of removedHere) solverCands.add(d);
       return {
@@ -251,15 +275,15 @@ export function computeCandidates(): CandidatesResponse {
   // Real cage info
   const nRealCages = Math.max(...board.regions.flat()) + 1;
   const cages = Array.from({ length: nRealCages }, (_, idx) => {
-    const unit = board.units[27 + idx];
-    const solns = board.cageSolns[idx];
+    const unit = board.units[27 + idx]!;
+    const solns = board.cageSolns[idx]!;
     const mustContain = solns.length > 0
-      ? [...solns.reduce((acc, s) => { const ss = new Set(s); return new Set([...acc].filter(d => ss.has(d))); }, new Set(solns[0]))]
+      ? [...solns.reduce((acc, s) => { const ss = new Set(s); return new Set([...acc].filter(d => ss.has(d))); }, new Set(solns[0]!))]
           .sort((a, b) => a - b)
       : [];
     let total = 0;
     for (const [r, c] of unit.cells) {
-      const v = board.spec.cageTotals[r][c];
+      const v = board.spec.cageTotals[r]![c]!;
       if (v) { total = v; break; }
     }
     return {
@@ -271,10 +295,21 @@ export function computeCandidates(): CandidatesResponse {
     };
   });
 
-  // Virtual cage info
-  const vcs = userVirtualCages(state);
-  const virtualCages = vcs.map((vc, i) => {
+  // Virtual cage info — include allSolutions/userEliminated so the UI can
+  // render them identically to the real cage inspector.
+  const virtualCages = state.virtualCages.map((vc, i) => {
     const vcSolns = board.cageSolns[nRealCages + i] ?? [];
+    const allSolutions = [...solSums(vc.cells.length, 0, vc.total)]
+      .map(s => [...s].sort((a, b) => a - b))
+      .sort((a, b) => { for (let j = 0; j < a.length; j++) { const d = a[j]! - b[j]!; if (d !== 0) return d; } return 0; });
+    const possibleKeys = new Set(vcSolns.map(s => [...s].sort((a, b) => a - b).join(',')));
+    const userEliminatedKeys = new Set(
+      vc.eliminatedSolns.map(s => [...s].sort((a, b) => a - b).join(',')),
+    );
+    const autoImpossible = allSolutions.filter(
+      s => !possibleKeys.has(s.join(',')) && !userEliminatedKeys.has(s.join(',')),
+    );
+    const userEliminated = allSolutions.filter(s => userEliminatedKeys.has(s.join(',')));
     const mustContain = vcSolns.length > 0
       ? [...vcSolns.reduce((acc, s) => { const ss = new Set(s); return new Set([...acc].filter(d => ss.has(d))); }, new Set(vcSolns[0]))]
           .sort((a, b) => a - b)
@@ -284,6 +319,9 @@ export function computeCandidates(): CandidatesResponse {
       cells: vc.cells.map(([r, c]) => [r, c] as [number, number]),
       total: vc.total,
       solutions: vcSolns.map(s => [...s].sort((a, b) => a - b)),
+      allSolutions,
+      autoImpossible,
+      userEliminated,
       mustContain,
     };
   });
@@ -306,7 +344,8 @@ export function enterCell(row1b: number, col1b: number, digit: number): PuzzleSt
   const action: UserAction = digit !== 0
     ? { type: 'placeDigit', row: r, col: c, digit, source: 'user' }
     : { type: 'removeDigit', row: r, col: c };
-  const updated = recordTurn(state, action);
+  let updated = recordTurn(state, action);
+  updated = applyAutoPlacements(updated);
   setState(updated);
   return updated;
 }
@@ -322,10 +361,8 @@ export function enterCell(row1b: number, col1b: number, digit: number): PuzzleSt
 export function undo(): PuzzleState {
   const state = requireConfirmed();
   if (state.turns.length === 0) throw new Error('Nothing to undo');
-  const last = state.turns[state.turns.length - 1].action;
+  const last = state.turns[state.turns.length - 1]!.action;
   if (last.type === 'placeDigit' && last.source === 'given') throw new Error('Cannot undo given digits');
-  // Sentinel auto-only turns (row=-1) can also not be undone by the user
-  if (last.type === 'eliminateCandidate' && last.row === -1) throw new Error('Nothing to undo');
 
   const trimmed: PuzzleState = { ...state, turns: state.turns.slice(0, -1) };
   let updated = rebuildUserGrid(trimmed);
@@ -369,7 +406,7 @@ export function cycleCandidate(row1b: number, col1b: number, digit: number): Puz
     const { board } = buildEngine(state);
     if (cellRemoved.has(digit)) {
       action = { type: 'restoreCandidate', row: r, col: c, digit };
-    } else if (board.candidates[r][c].has(digit)) {
+    } else if (board.cands(r, c).has(digit)) {
       action = { type: 'eliminateCandidate', row: r, col: c, digit };
     } else {
       // auto-impossible and not user-removed — no-op
@@ -377,7 +414,8 @@ export function cycleCandidate(row1b: number, col1b: number, digit: number): Puz
     }
   }
 
-  const updated = recordTurn(state, action);
+  let updated = recordTurn(state, action);
+  updated = applyAutoPlacements(updated);
   setState(updated);
   return updated;
 }
@@ -397,8 +435,8 @@ export function solvePuzzle(): SolveResponse {
     const board = solve(spec);
     const grid: number[][] = Array.from({ length: 9 }, (_, r) =>
       Array.from({ length: 9 }, (__, c) => {
-        const cands = board.candidates[r][c];
-        return cands.size === 1 ? [...cands][0] : 0;
+        const cands = board.cands(r, c);
+        return cands.size === 1 ? [...cands][0]! : 0;
       }),
     );
     const solved = grid.every(row => row.every(d => d !== 0));
@@ -421,14 +459,14 @@ export function getCageSolutions(label: string): CageSolutionsResponse {
   const upper = label.toUpperCase();
   const cageIdx = state.cageStates.findIndex(c => c.label === upper);
   if (cageIdx === -1) throw new Error(`Cage ${label} not found`);
-  const cage = state.cageStates[cageIdx];
+  const cage = state.cageStates[cageIdx]!;
 
-  const { board } = buildEngine(state);
+  const { board } = buildEngine(state); // engine.solve() called inside buildEngine
   const allSolutions = [...solSums(cage.cells.length, 0, cage.total)]
     .map(s => [...s].sort((a, b) => a - b))
-    .sort((a, b) => { for (let i = 0; i < a.length; i++) { const d = a[i] - b[i]; if (d !== 0) return d; } return 0; });
+    .sort((a, b) => { for (let i = 0; i < a.length; i++) { const d = a[i]! - b[i]!; if (d !== 0) return d; } return 0; });
 
-  const possible = new Set(board.cageSolns[cageIdx].map(s => [...s].sort((a, b) => a - b).join(',')));
+  const possible = new Set(board.cageSolns[cageIdx]!.map(s => [...s].sort((a, b) => a - b).join(',')));
   const autoImpossible = allSolutions.filter(s => !possible.has(s.join(',')));
 
   return {
@@ -463,6 +501,32 @@ export function eliminateCageSolution(label: string, solution: number[]): Puzzle
   return applyAutoPlacements(updated);
 }
 
+/**
+ * Toggles a solution combination for a virtual cage (eliminate ↔ restore).
+ * Mirrors eliminateCageSolution but operates on state.virtualCages by key.
+ * The change is stored in virtualCages.eliminatedSolns (not in turn history)
+ * and survives undo of unrelated actions, just like real cage eliminations.
+ */
+export function eliminateVirtualCageSolution(vcKey: string, solution: number[]): PuzzleState {
+  const state = requireConfirmed();
+  const sorted = [...solution].sort((a, b) => a - b);
+  const solKey = sorted.join(',');
+
+  const newVCs = state.virtualCages.map(vc => {
+    if (virtualCageKey(vc.cells, vc.total) !== vcKey) return vc;
+    const current = vc.eliminatedSolns.map(s => [...s].sort((a, b) => a - b));
+    const existsIdx = current.findIndex(s => s.join(',') === solKey);
+    const updated = existsIdx >= 0
+      ? current.filter((_, i) => i !== existsIdx)
+      : [...current, sorted];
+    return { ...vc, eliminatedSolns: updated };
+  });
+
+  const updated: PuzzleState = { ...state, virtualCages: newVCs };
+  setState(updated);
+  return applyAutoPlacements(updated);
+}
+
 // ---------------------------------------------------------------------------
 // Virtual cages
 // ---------------------------------------------------------------------------
@@ -487,12 +551,12 @@ export function addVirtualCage(cells: [number, number][], total: number): Puzzle
     throw new Error(`Total ${total} impossible for ${n} distinct digits (${minTotal}–${maxTotal})`);
   }
 
-  const typedCells = cells.map(([r, c]) => [r, c] as unknown as Cell);
+  const typedCells = cells.map(([r, c]) => [r, c] as Cell);
   const key = virtualCageKey(typedCells as unknown as readonly Cell[], total);
   const existing = new Set(userVirtualCages(state).map(vc => virtualCageKey(vc.cells, vc.total)));
   if (existing.has(key)) throw new Error(`Virtual cage already exists: ${key}`);
 
-  const cage: VirtualCage = { cells: typedCells as unknown as Cell[], total, eliminatedSolns: [] };
+  const cage: VirtualCage = { cells: typedCells as Cell[], total, eliminatedSolns: [] };
   const action: UserAction = { type: 'addVirtualCage', cage };
   const updated = recordTurn(state, action);
   setState(updated);
@@ -533,13 +597,14 @@ export function getHints(): HintsResponse {
     };
   }
 
-  const hintRuleNames = new Set(defaultRules().map(r => r.name));
-  const spec = dataToSpec(state.specData);
-  const rawHints = engineGetHints(spec, state.givenDigits ?? undefined, hintRuleNames);
+  // Build engine from full current state so user placements, candidate removals,
+  // and virtual cages are all reflected before generating hints.
+  const { engine } = buildEngine(state, { includeHints: true }); // engine.solve() called inside buildEngine
+  const rawHints = engine.pendingHints;
 
   // Filter out hints for cells that already have a placed digit
   const filtered = rawHints.filter(h =>
-    h.placement == null || state.userGrid![h.placement[0]][h.placement[1]] === 0,
+    h.placement == null || state.userGrid![h.placement[0]!]![h.placement[1]!] === 0,
   );
 
   // Stratify linear hints: T1 (placements) > T2 (delta/sum pairs) > T3 (virtual cage suggestions)
@@ -585,7 +650,8 @@ export function applyHint(eliminations: readonly { cell: [number, number]; digit
   const state = requireConfirmed();
   const triples: [number, number, number][] = eliminations.map(e => [e.cell[0], e.cell[1], e.digit]);
   const action: UserAction = { type: 'applyHint', eliminations: triples };
-  const updated = recordTurn(state, action);
+  let updated = recordTurn(state, action);
+  updated = applyAutoPlacements(updated);
   setState(updated);
   return updated;
 }

@@ -32,7 +32,7 @@ export class MustContain {
 
     for (const [r, c] of unitCells) {
       for (const uid of board.cellUnitIds(r, c)) {
-        const other = board.units[uid];
+        const other = board.units[uid]!;
         if (other.kind !== UnitKind.CAGE) continue;
         const cageIdx = other.unitId - 27;
         if (seen.has(cageIdx)) continue;
@@ -44,11 +44,11 @@ export class MustContain {
 
         const otherElsewhere = new Set<number>();
         for (const [cr, cc] of otherCells.filter(([cr,cc]) => !unitCellSet.has(`${cr},${cc}`)))
-          for (const d of board.candidates[cr][cc]) otherElsewhere.add(d);
+          for (const d of board.cands(cr, cc)) otherElsewhere.add(d);
 
-        const solns = board.cageSolns[cageIdx];
+        const solns = board.cageSolns[cageIdx]!;
         if (!solns.length) continue;
-        const must = new Set<number>(solns[0]);
+        const must = new Set<number>(solns[0]!);
         for (const s of solns.slice(1)) { for (const d of must) { if (!s.includes(d)) must.delete(d); } }
 
         const confined = new Set([...must].filter(d => !otherElsewhere.has(d)));
@@ -56,8 +56,8 @@ export class MustContain {
 
         const elims = unitCells
           .filter(([er,ec]) => !new Set(overlap.map(([r,c])=>`${r},${c}`)).has(`${er},${ec}`))
-          .flatMap(([er,ec]) => [...confined].filter(d => board.candidates[er][ec].has(d))
-            .map(d => ({ cell: [er, ec] as unknown as Cell, digit: d })));
+          .flatMap(([er,ec]) => [...confined].filter(d => board.cands(er, ec).has(d))
+            .map(d => ({ cell: [er, ec] as Cell, digit: d })));
         if (elims.length) matches.push({ unit: ctx.unit, cageUnitId: uid, overlap, confinedDigits: confined, eliminations: elims });
       }
     }
@@ -79,7 +79,7 @@ export class MustContain {
       });
       if (!newElims.length) continue;
       const board = ctx.board;
-      const cageLabels = [...(board.units[m.cageUnitId].cells as Cell[])].sort((a,b)=>a[0]-b[0]||a[1]-b[1]).map(cellLabel).join(', ');
+      const cageLabels = [...(board.units[m.cageUnitId]!.cells as Cell[])].sort((a,b)=>a[0]-b[0]||a[1]-b[1]).map(cellLabel).join(', ');
       const overlapStr = [...m.overlap].sort((a,b)=>a[0]-b[0]||a[1]-b[1]).map(cellLabel).join(', ');
       const uLbl = unitLabel(m.unit!);
       const digits = [...m.confinedDigits].sort().join(', ');

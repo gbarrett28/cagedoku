@@ -26,8 +26,8 @@ export class XYWing {
     const bivalue: [[number, number], number, number][] = [];
     for (let r = 0; r < 9; r++) {
       for (let c = 0; c < 9; c++) {
-        if (board.candidates[r][c].size === 2) {
-          const [d1, d2] = [...board.candidates[r][c]].sort((a, b) => a - b);
+        if (board.cands(r, c).size === 2) {
+          const [d1, d2] = [...board.cands(r, c)].sort((a, b) => a - b) as [number, number];
           bivalue.push([[r, c], d1, d2]);
         }
       }
@@ -59,8 +59,8 @@ export class XYWing {
           for (let r = 0; r < 9; r++) {
             for (let c = 0; c < 9; c++) {
               if ((r === ar && c === ac) || (r === br && c === bc)) continue;
-              if (board.candidates[r][c].has(z) && sees(r, c, ar, ac) && sees(r, c, br, bc))
-                elims.push({ cell: [r, c] as unknown as Cell, digit: z });
+              if (board.cands(r, c).has(z) && sees(r, c, ar, ac) && sees(r, c, br, bc))
+                elims.push({ cell: [r, c] as Cell, digit: z });
             }
           }
         }

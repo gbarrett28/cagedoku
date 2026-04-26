@@ -20,7 +20,8 @@ import { BoardState } from '../engine/boardState.js';
 import { SolverEngine } from '../engine/solverEngine.js';
 import { defaultRules } from '../engine/rules/index.js';
 import type { Cell, Elimination } from '../engine/types.js';
-import { dataToSpec } from './specUtils.js';
+import { NoSolnError } from '../solver/errors.js';
+import { dataToSpec, virtualCageKeyFromCage } from './specUtils.js';
 import type { AutoMutation, BoardSnapshot, PuzzleState, Turn, UserAction, VirtualCage } from './types.js';
 
 /** Default rules that run on every engine solve pass. */
@@ -52,7 +53,7 @@ export function userRemoved(state: PuzzleState): [number, number, number][] {
     } else if (a.type === 'resetCellCandidates') {
       const r = a.row; const c = a.col;
       for (let i = removed.length - 1; i >= 0; i--) {
-        if (removed[i][0] === r && removed[i][1] === c) removed.splice(i, 1);
+        if (removed[i]![0] === r && removed[i]![1] === c) removed.splice(i, 1);
       }
     }
   }
@@ -94,10 +95,10 @@ export function userEliminations(board: BoardState, userGrid: number[][] | null)
   const elims: Elimination[] = [];
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
-      const placed = userGrid[r][c];
+      const placed = userGrid[r]![c]!;
       if (placed === 0) continue;
-      for (const d of board.candidates[r][c]) {
-        if (d !== placed) elims.push({ cell: [r, c] as unknown as Cell, digit: d });
+      for (const d of board.cands(r, c)) {
+        if (d !== placed) elims.push({ cell: [r, c] as Cell, digit: d });
       }
     }
   }
@@ -130,16 +131,32 @@ export function buildEngine(
   const spec = dataToSpec(state.specData);
   const board = new BoardState(spec, { includeVirtualCages: false });
 
-  // Re-add virtual cages
-  for (const vc of userVirtualCages(state)) {
+  // Apply user-eliminated cage solutions for real cages before any rules run.
+  for (let i = 0; i < state.cageStates.length; i++) {
+    const eliminated = state.cageStates[i]!.userEliminatedSolns;
+    if (eliminated.length === 0) continue;
+    const elimKeys = new Set(eliminated.map(s => [...s].sort((a, b) => a - b).join(',')));
+    const solns = board.cageSolns[i]!;
+    solns.splice(0, Infinity, ...solns.filter(s => !elimKeys.has([...s].sort((a, b) => a - b).join(','))));
+  }
+
+  // Re-add virtual cages — use state.virtualCages directly so that
+  // eliminatedSolns set by eliminateVirtualCageSolution are applied.
+  for (const vc of state.virtualCages) {
     board.addVirtualCage(vc.cells, vc.total, vc.eliminatedSolns);
   }
 
   const rules = defaultRules();
   const alwaysApplySet = new Set(state.alwaysApplyRules);
-  const hintRules = includeHints ? new Set(rules.map(r => r.name)) : new Set<string>();
 
-  const engine = new SolverEngine(board, rules, {
+  // Non-hint mode: only always-apply rules run.
+  // Hint mode: all rules run; always-apply rules apply directly, hint-only rules go to pendingHints.
+  const activeRules = includeHints ? rules : rules.filter(r => alwaysApplySet.has(r.name));
+  const hintRules = includeHints
+    ? new Set(rules.filter(r => !alwaysApplySet.has(r.name)).map(r => r.name))
+    : new Set<string>();
+
+  const engine = new SolverEngine(board, activeRules, {
     linearSystemActive: true,
     hintRules,
   });
@@ -152,15 +169,18 @@ export function buildEngine(
   const removed = userRemoved(state);
   if (removed.length > 0) {
     engine.applyEliminations(
-      removed.map(([r, c, d]) => ({ cell: [r, c] as unknown as Cell, digit: d })),
+      removed.map(([r, c, d]) => ({ cell: [r, c] as Cell, digit: d })),
     );
   }
 
-  // Only activate the always-apply rules in non-hint mode
-  if (!includeHints) {
-    // Filter engine rules to only the always-apply set for initial solve pass
-    // (The full rule list is preserved; filtering is by name match at engine level)
-    void alwaysApplySet; // used by caller via engine.solve()
+  // Solve immediately — mirrors Python's _build_engine which calls engine.solve() before returning.
+  // All callers receive a fully-reduced board; none need to call engine.solve() themselves.
+  try {
+    engine.solve();
+  } catch (e) {
+    if (!(e instanceof NoSolnError)) throw e;
+    // Board is contradictory — return as-is so callers can detect the inconsistency
+    // via findLastConsistentTurnIdx and offer a Rewind hint.
   }
 
   return { board, engine };
@@ -176,27 +196,17 @@ export function buildEngine(
  */
 export function applyAutoPlacements(state: PuzzleState): PuzzleState {
   if (state.userGrid === null) return state; // no-op before confirm
-  const { board, engine } = buildEngine(state);
-  engine.solve();
+  const { engine } = buildEngine(state); // engine.solve() called inside buildEngine
 
   let changed = false;
   const newGrid = state.userGrid.map(row => [...row]);
   for (const p of engine.appliedPlacements) {
     const [r, c] = p.cell;
-    if (newGrid[r][c] === 0) { newGrid[r][c] = p.digit; changed = true; }
+    if (newGrid[r]![c]! === 0) { newGrid[r]![c] = p.digit; changed = true; }
   }
 
-  if (!changed) return state;
-
-  const snapshot = captureSnapshot(board);
-  const autoMutations: AutoMutation[] = [...engine.appliedMutations];
-  const turn: Turn = {
-    // sentinel turn: auto-only (row=-1 means no user gesture)
-    action: { type: 'eliminateCandidate', row: -1, col: -1, digit: -1 },
-    autoMutations,
-    snapshot,
-  };
-  return { ...state, userGrid: newGrid, turns: [...state.turns, turn] };
+  // Update userGrid only — no sentinel turn. Mirrors Python _apply_auto_placements.
+  return changed ? { ...state, userGrid: newGrid } : state;
 }
 
 // ---------------------------------------------------------------------------
@@ -211,16 +221,10 @@ export function recordTurn(
   state: PuzzleState,
   action: UserAction,
 ): PuzzleState {
-  // Apply the action to a working copy first
   const nextState = applyAction(state, action);
-
-  // Rebuild engine on the post-action state
-  const { board, engine } = buildEngine(nextState);
-  engine.solve();
-
+  const { board, engine } = buildEngine(nextState); // engine.solve() called inside buildEngine
   const autoMutations: AutoMutation[] = [...engine.appliedMutations];
   const snapshot = captureSnapshot(board);
-
   const turn: Turn = { action, autoMutations, snapshot };
   return { ...nextState, turns: [...nextState.turns, turn] };
 }
@@ -234,13 +238,13 @@ function applyAction(state: PuzzleState, action: UserAction): PuzzleState {
     case 'placeDigit': {
       const g = state.userGrid ?? Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
       const newGrid = g.map(row => [...row]);
-      newGrid[action.row][action.col] = action.digit;
+      newGrid[action.row]![action.col] = action.digit;
       return { ...state, userGrid: newGrid };
     }
     case 'removeDigit': {
       const g = state.userGrid ?? Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
       const newGrid = g.map(row => [...row]);
-      newGrid[action.row][action.col] = 0;
+      newGrid[action.row]![action.col] = 0;
       return { ...state, userGrid: newGrid };
     }
     case 'eliminateCandidate':
@@ -296,19 +300,25 @@ export function rebuildUserGrid(state: PuzzleState): PuzzleState {
   for (const turn of state.turns) {
     const a = turn.action;
     if (a.type === 'placeDigit') {
-      newGrid[a.row][a.col] = a.digit;
+      newGrid[a.row]![a.col] = a.digit;
     } else if (a.type === 'removeDigit') {
-      newGrid[a.row][a.col] = 0;
-    }
-    // Auto-placements are in autoMutations
-    for (const m of turn.autoMutations) {
-      if (m.type === 'placement' && typeof m.row === 'number' && typeof m.col === 'number' && typeof m.digit === 'number') {
-        newGrid[m.row][m.col] = m.digit;
-      }
+      newGrid[a.row]![a.col] = 0;
     }
   }
 
-  return { ...state, userGrid: newGrid };
+  // Rebuild virtualCages from the add/remove turn history, but preserve any
+  // eliminatedSolns that were set via eliminateVirtualCageSolution (stored in
+  // state.virtualCages, not in turns) for cages that still exist after replay.
+  const existingElims = new Map(
+    state.virtualCages.map(vc => [virtualCageKeyFromCage(vc), vc.eliminatedSolns]),
+  );
+  const rebuiltVCs = userVirtualCages(state);
+  const mergedVCs = rebuiltVCs.map(vc => {
+    const key = virtualCageKeyFromCage(vc);
+    return { ...vc, eliminatedSolns: existingElims.get(key) ?? vc.eliminatedSolns };
+  });
+
+  return { ...state, userGrid: newGrid, virtualCages: mergedVCs };
 }
 
 // ---------------------------------------------------------------------------
@@ -328,7 +338,7 @@ export function findLastConsistentTurnIdx(state: PuzzleState): number | null {
   // Walk backwards: find the first turn whose snapshot is consistent with
   // the current board candidates
   for (let i = state.turns.length - 1; i >= 0; i--) {
-    const snap = state.turns[i].snapshot;
+    const snap = state.turns[i]!.snapshot;
     if (snapshotConsistent(snap, board)) return i;
   }
   return null;
@@ -338,8 +348,8 @@ export function findLastConsistentTurnIdx(state: PuzzleState): number | null {
 function snapshotConsistent(snap: BoardSnapshot, board: BoardState): boolean {
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
-      for (const d of snap.candidates[r][c]) {
-        if (!board.candidates[r][c].has(d)) return false;
+      for (const d of snap.candidates[r]![c]!) {
+        if (!board.cands(r, c).has(d)) return false;
       }
     }
   }
@@ -352,7 +362,7 @@ function snapshotConsistent(snap: BoardSnapshot, board: BoardState): boolean {
 
 function captureSnapshot(board: BoardState): BoardSnapshot {
   const candidates = Array.from({ length: 9 }, (_, r) =>
-    Array.from({ length: 9 }, (__, c) => [...board.candidates[r][c]].sort((a, b) => a - b)),
+    Array.from({ length: 9 }, (__, c) => [...board.cands(r, c)].sort((a, b) => a - b)),
   );
   return { candidates };
 }

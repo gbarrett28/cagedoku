@@ -29,14 +29,14 @@ export class NakedHiddenTriple {
     // --- Naked triple: three cells whose union of candidates has exactly 3 digits ---
     for (const triple of combinations(cells, 3)) {
       const union = new Set<number>();
-      for (const [r, c] of triple) for (const d of board.candidates[r][c]) union.add(d);
+      for (const [r, c] of triple) for (const d of board.cands(r, c)) union.add(d);
       if (union.size !== 3) continue;
       const tripleSet = new Set(triple.map(([r, c]) => `${r},${c}`));
       for (const [r, c] of cells) {
         if (tripleSet.has(`${r},${c}`)) continue;
         for (const d of union) {
-          if (board.candidates[r][c].has(d))
-            elims.push({ cell: [r, c] as unknown as Cell, digit: d });
+          if (board.cands(r, c).has(d))
+            elims.push({ cell: [r, c] as Cell, digit: d });
         }
       }
     }
@@ -45,13 +45,13 @@ export class NakedHiddenTriple {
     // --- Hidden triple: three digits each appearing in 2-3 cells, covering exactly 3 cells ---
     const uid = ctx.unit.unitId;
     const candidateDigits = Array.from({ length: 9 }, (_, i) => i + 1)
-      .filter(d => board.counts[uid][d] > 1 && board.counts[uid][d] <= 3);
+      .filter(d => board.count(uid, d) > 1 && board.count(uid, d) <= 3);
     for (const dTriple of combinations(candidateDigits, 3)) {
       const cellsWith = new Set<string>();
       const cellMap = new Map<string, [number, number]>();
       for (const d of dTriple) {
         for (const [r, c] of cells) {
-          if (board.candidates[r][c].has(d)) {
+          if (board.cands(r, c).has(d)) {
             cellsWith.add(`${r},${c}`);
             cellMap.set(`${r},${c}`, [r, c]);
           }
@@ -60,9 +60,9 @@ export class NakedHiddenTriple {
       if (cellsWith.size !== 3) continue;
       const tripleSet = new Set(dTriple);
       for (const [r, c] of cellMap.values()) {
-        for (const d of board.candidates[r][c]) {
+        for (const d of board.cands(r, c)) {
           if (!tripleSet.has(d))
-            elims.push({ cell: [r, c] as unknown as Cell, digit: d });
+            elims.push({ cell: [r, c] as Cell, digit: d });
         }
       }
     }

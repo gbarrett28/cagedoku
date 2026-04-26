@@ -38,21 +38,21 @@ export class LockedCandidates {
     const matches: _Match[] = [];
 
     for (let d = 1; d <= 9; d++) {
-      const carriers = unitCells.filter(([r, c]) => board.candidates[r][c].has(d));
+      const carriers = unitCells.filter(([r, c]) => board.cands(r, c).has(d));
       if (carriers.length < 2) continue;
 
       // Pattern 1: unit → cage
       let commonCageIds: Set<number> | null = null;
       for (const [r, c] of carriers) {
-        const cageUids = board.cellUnitIds(r, c).filter((uid: number) => board.units[uid].kind === UnitKind.CAGE);
+        const cageUids = board.cellUnitIds(r, c).filter((uid: number) => board.units[uid]!.kind === UnitKind.CAGE);
         const cellCages = new Set<number>(cageUids);
         commonCageIds = commonCageIds === null ? cellCages : new Set<number>([...commonCageIds].filter((uid: number) => cellCages.has(uid)));
         if (!commonCageIds.size) break;
       }
       if (commonCageIds?.size) {
         for (const cageUid of commonCageIds) {
-          const elims = (board.units[cageUid].cells as Cell[])
-            .filter(([r,c]) => !unitCellSet.has(`${r},${c}`) && board.candidates[r][c].has(d))
+          const elims = (board.units[cageUid]!.cells as Cell[])
+            .filter(([r,c]) => !unitCellSet.has(`${r},${c}`) && board.cands(r, c).has(d))
             .map(cell => ({ cell, digit: d }));
           if (elims.length) matches.push({ digit: d, sourceUnitId: ctx.unit.unitId, carriers, targetUnitId: cageUid, pattern: 'unit_cage', eliminations: elims });
         }
@@ -63,10 +63,10 @@ export class LockedCandidates {
         const boxRows = new Set(carriers.map(([r]) => r / 3 | 0));
         const boxCols = new Set(carriers.map(([,c]) => c / 3 | 0));
         if (boxRows.size === 1 && boxCols.size === 1) {
-          const br = [...boxRows][0], bc = [...boxCols][0];
+          const br = [...boxRows][0]!, bc = [...boxCols][0]!;
           const boxUid = board.boxUnitId(br * 3, bc * 3);
-          const elims = (board.units[boxUid].cells as Cell[])
-            .filter(([r,c]) => !unitCellSet.has(`${r},${c}`) && board.candidates[r][c].has(d))
+          const elims = (board.units[boxUid]!.cells as Cell[])
+            .filter(([r,c]) => !unitCellSet.has(`${r},${c}`) && board.cands(r, c).has(d))
             .map(cell => ({ cell, digit: d }));
           if (elims.length) matches.push({ digit: d, sourceUnitId: ctx.unit.unitId, carriers, targetUnitId: boxUid, pattern: 'unit_box', eliminations: elims });
         }
@@ -98,8 +98,8 @@ export class LockedCandidates {
       if (!newElims.length) continue;
       const board = ctx.board;
       const carriersStr = [...m.carriers].sort((a,b)=>a[0]-b[0]||a[1]-b[1]).map(cellLabel).join(', ');
-      const srcLbl = unitLabel(board.units[m.sourceUnitId]);
-      const tgtLbl = unitLabel(board.units[m.targetUnitId]);
+      const srcLbl = unitLabel(board.units[m.sourceUnitId]!);
+      const tgtLbl = unitLabel(board.units[m.targetUnitId]!);
       const elimStr = [...newElims].sort((a,b)=>a.cell[0]-b.cell[0]||a.cell[1]-b.cell[1]).map(e=>cellLabel(e.cell)).join(', ');
       hints.push({
         ruleName: this.name,

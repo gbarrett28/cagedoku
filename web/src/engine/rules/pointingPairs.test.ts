@@ -15,11 +15,11 @@ describe('PointingPairs', () => {
     // Box 0: rows 0-2, cols 0-2. Confine digit 5 to row 0 within box 0.
     for (let r = 1; r < 3; r++)
       for (let c = 0; c < 3; c++)
-        bs.candidates[r][c].delete(5);
+        bs.cands(r, c).delete(5);
 
     const boxUid = bs.boxUnitId(0, 0);
     const ctx: RuleContext = {
-      unit: bs.units[boxUid],
+      unit: bs.units[boxUid] ?? null,
       cell: null,
       board: bs,
       hint: Trigger.COUNT_DECREASED,
@@ -42,11 +42,11 @@ describe('PointingPairs', () => {
     // Confine digit 8 to col 0 within box 0
     for (let r = 0; r < 3; r++)
       for (let c = 1; c < 3; c++)
-        bs.candidates[r][c].delete(8);
+        bs.cands(r, c).delete(8);
 
     const boxUid = bs.boxUnitId(0, 0);
     const ctx: RuleContext = {
-      unit: bs.units[boxUid],
+      unit: bs.units[boxUid] ?? null,
       cell: null,
       board: bs,
       hint: Trigger.COUNT_DECREASED,

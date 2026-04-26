@@ -35,24 +35,24 @@ function findMatch(
   const inside = cageCells.filter(([r,c]) => unitCellSet.has(`${r},${c}`));
   const outside = cageCells.filter(([r,c]) => !unitCellSet.has(`${r},${c}`));
   if (outside.length !== 1 || !inside.length) return null;
-  const outie = outside[0];
-  const outieCands = board.candidates[outie[0]][outie[1]];
+  const outie = outside[0]!;
+  const outieCands = board.cands(outie[0], outie[1]);
   if (!outieCands.size) return null;
 
   const qualifying = (unit.cells as Cell[]).filter(([r,c]) => {
     if (cageCellSet.has(`${r},${c}`)) return false;
-    const cands = board.candidates[r][c];
+    const cands = board.cands(r, c);
     return cands.size > 0 && cands.isSubsetOf(must);
   });
   if (qualifying.length !== 1) return null;
 
-  const [xr, xc] = qualifying[0];
-  const xCands = board.candidates[xr][xc];
+  const [xr, xc] = qualifying[0]!;
+  const xCands = board.cands(xr, xc);
   const elims = [...outieCands].filter(d => !xCands.has(d))
     .map(d => ({ cell: outie, digit: d }));
   if (!elims.length) return null;
 
-  return { cageCells, must, unit, outie, externalCell: qualifying[0], xCands, eliminations: elims };
+  return { cageCells, must, unit, outie, externalCell: qualifying[0]!, xCands, eliminations: elims };
 }
 
 export class MustContainOutie {
@@ -72,12 +72,12 @@ export class MustContainOutie {
       if (!ctx.unit.distinctDigits) return [];
       const cageCells = ctx.unit.cells as Cell[];
       const cageIdx = ctx.unit.unitId - 27;
-      const must = cageMust(board.cageSolns[cageIdx]);
+      const must = cageMust(board.cageSolns[cageIdx]!);
       if (!must) return [];
       const seen = new Set<number>();
       for (const [r, c] of cageCells) {
         for (const uid of board.cellUnitIds(r, c)) {
-          const unit = board.units[uid];
+          const unit = board.units[uid]!;
           if (unit.kind === UnitKind.CAGE || seen.has(uid)) continue;
           seen.add(uid);
           const m = findMatch(cageCells, must, unit, board);
@@ -88,12 +88,12 @@ export class MustContainOutie {
       const seen = new Set<number>();
       for (const [r, c] of ctx.unit.cells as Cell[]) {
         for (const uid of board.cellUnitIds(r, c)) {
-          const other = board.units[uid];
+          const other = board.units[uid]!;
           if (other.kind !== UnitKind.CAGE || !other.distinctDigits) continue;
           const cageIdx = other.unitId - 27;
           if (seen.has(cageIdx)) continue;
           seen.add(cageIdx);
-          const must = cageMust(board.cageSolns[cageIdx]);
+          const must = cageMust(board.cageSolns[cageIdx]!);
           if (!must) continue;
           const m = findMatch(other.cells as Cell[], must, ctx.unit, board);
           if (m) matches.push(m);

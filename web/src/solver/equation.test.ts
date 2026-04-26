@@ -33,7 +33,7 @@ describe('solSums', () => {
       expect(Array.isArray(s)).toBe(true);
       // Each array is sorted ascending
       for (let i = 0; i < s.length - 1; i++) {
-        expect(s[i]).toBeLessThan(s[i + 1]);
+        expect(s[i]!).toBeLessThan(s[i + 1]!);
       }
       // All digits are distinct and in 1-9
       expect(new Set(s).size).toBe(s.length);

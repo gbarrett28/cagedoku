@@ -13,7 +13,7 @@ describe('MustContain', () => {
   it('does not crash on a fresh trivial board (row unit)', () => {
     const bs = new BoardState(makeTrivialSpec());
     const ctx: RuleContext = {
-      unit: bs.units[bs.rowUnitId(0)],
+      unit: bs.units[bs.rowUnitId(0)] ?? null,
       cell: null,
       board: bs,
       hint: Trigger.COUNT_DECREASED,

@@ -12,8 +12,8 @@
  *   - readClassicDigits(): extracts pre-filled digits from classic puzzles.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Cv = any;
+import type { OpenCVModule, OpenCVMat, OpenCVMatVector } from './opencv.js';
+type Cv = OpenCVModule;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -76,13 +76,13 @@ export function rbfPredict(model: RBFModel, x: Float64Array, nSamples: number): 
     const xi = x.subarray(i * nFeatures, (i + 1) * nFeatures);
     // ||x[i]||²
     let xsq = 0;
-    for (let f = 0; f < nFeatures; f++) xsq += xi[f] * xi[f];
+    for (let f = 0; f < nFeatures; f++) xsq += xi[f]! * xi[f]!;
     for (let j = 0; j < nSv; j++) {
       const sv = supportVectors.subarray(j * nFeatures, (j + 1) * nFeatures);
       let svsq = 0, dot = 0;
       for (let f = 0; f < nFeatures; f++) {
-        svsq += sv[f] * sv[f];
-        dot += xi[f] * sv[f];
+        svsq += sv[f]! * sv[f]!;
+        dot += xi[f]! * sv[f]!;
       }
       k[i * nSv + j] = Math.exp(-gamma * (xsq + svsq - 2 * dot));
     }
@@ -90,32 +90,32 @@ export function rbfPredict(model: RBFModel, x: Float64Array, nSamples: number): 
 
   // Cumulative SV counts per class.
   const svEnd = new Int32Array(nClasses);
-  svEnd[0] = nSupport[0];
-  for (let c = 1; c < nClasses; c++) svEnd[c] = svEnd[c - 1] + nSupport[c];
+  svEnd[0] = nSupport[0]!;
+  for (let c = 1; c < nClasses; c++) svEnd[c] = svEnd[c - 1]! + nSupport[c]!;
   const svStart = new Int32Array(nClasses);
-  for (let c = 1; c < nClasses; c++) svStart[c] = svEnd[c - 1];
+  for (let c = 1; c < nClasses; c++) svStart[c] = svEnd[c - 1]!;
 
   const votes = new Int32Array(nSamples * nClasses);
   let clfIdx = 0;
 
   for (let i = 0; i < nClasses; i++) {
     for (let j = i + 1; j < nClasses; j++) {
-      const si = svStart[i], ei = svEnd[i];
-      const sj = svStart[j], ej = svEnd[j];
+      const si = svStart[i]!, ei = svEnd[i]!;
+      const sj = svStart[j]!, ej = svEnd[j]!;
 
       // Dual coef layout: row (j-1) → class-i SVs; row i → class-j SVs.
       for (let s = 0; s < nSamples; s++) {
-        let decision = intercept[clfIdx];
+        let decision = intercept[clfIdx]!;
         for (let sv = si; sv < ei; sv++) {
-          decision += dualCoef[(j - 1) * nSv + sv] * k[s * nSv + sv];
+          decision += dualCoef[(j - 1) * nSv + sv]! * k[s * nSv + sv]!;
         }
         for (let sv = sj; sv < ej; sv++) {
-          decision += dualCoef[i * nSv + sv] * k[s * nSv + sv];
+          decision += dualCoef[i * nSv + sv]! * k[s * nSv + sv]!;
         }
         if (decision > 0) {
-          votes[s * nClasses + i]++;
+          votes[s * nClasses + i] = votes[s * nClasses + i]! + 1;
         } else {
-          votes[s * nClasses + j]++;
+          votes[s * nClasses + j] = votes[s * nClasses + j]! + 1;
         }
       }
       clfIdx++;
@@ -126,9 +126,9 @@ export function rbfPredict(model: RBFModel, x: Float64Array, nSamples: number): 
   for (let s = 0; s < nSamples; s++) {
     let best = 0;
     for (let c = 1; c < nClasses; c++) {
-      if (votes[s * nClasses + c] > votes[s * nClasses + best]) best = c;
+      if (votes[s * nClasses + c]! > votes[s * nClasses + best]!) best = c;
     }
-    result[s] = classes[best];
+    result[s] = classes[best]!;
   }
   return result;
 }
@@ -172,11 +172,11 @@ function pcaTransform(pca: PCAModel, patches: Uint8Array[], nPatches: number): F
   const { components, mean, nComponents, nFeatures } = pca;
   const result = new Float64Array(nPatches * nComponents);
   for (let p = 0; p < nPatches; p++) {
-    const patch = patches[p];
+    const patch = patches[p]!;
     for (let c = 0; c < nComponents; c++) {
       let dot = 0;
       for (let f = 0; f < nFeatures; f++) {
-        dot += (patch[f] - mean[f]) * components[c * nFeatures + f];
+        dot += (patch[f]! - mean[f]!) * components[c * nFeatures + f]!;
       }
       result[p * nComponents + c] = dot;
     }
@@ -198,7 +198,7 @@ function classify(rec: NumRecogniser, imgs: Uint8Array[]): Int32Array {
   const x = new Float64Array(n * rec.dims);
   for (let p = 0; p < n; p++) {
     for (let d = 0; d < rec.dims; d++) {
-      x[p * rec.dims + d] = pcaResult[p * rec.pca.nComponents + d];
+      x[p * rec.dims + d] = pcaResult[p * rec.pca.nComponents + d]!;
     }
   }
   return rbfPredict(rec.rbf, x, n);
@@ -223,22 +223,22 @@ export function getSums(cv: Cv, rec: NumRecogniser, imgs: Uint8Array[]): Int32Ar
   const fallbackImgs: Uint8Array[] = [];
 
   for (let idx = 0; idx < n; idx++) {
-    const img = imgs[idx];
+    const img = imgs[idx]!;
     const size = Math.sqrt(img.length) | 0;
 
     // Build a float32 Mat from the patch.
     const imgF = new cv.Mat(size, size, cv.CV_32FC1);
-    for (let i = 0; i < img.length; i++) imgF.data32F[i] = img[i];
+    for (let i = 0; i < img.length; i++) imgF.data32F[i] = img[i]!;
 
     let bestScore = -2.0;
     let bestDigit = 0;
     for (const [digit, tmpl] of rec.templates) {
       const tmplMat = new cv.Mat(size, size, cv.CV_32FC1);
-      for (let i = 0; i < tmpl.length; i++) tmplMat.data32F[i] = tmpl[i];
+      for (let i = 0; i < tmpl.length; i++) tmplMat.data32F[i] = tmpl[i]!;
 
       const resultMat = new cv.Mat();
       cv.matchTemplate(imgF, tmplMat, resultMat, cv.TM_CCOEFF_NORMED);
-      const score = resultMat.data32F[0];
+      const score = resultMat.data32F[0]!;
       tmplMat.delete();
       resultMat.delete();
 
@@ -260,7 +260,7 @@ export function getSums(cv: Cv, rec: NumRecogniser, imgs: Uint8Array[]): Int32Ar
   if (fallbackImgs.length > 0) {
     const fallbackLabels = classify(rec, fallbackImgs);
     for (let i = 0; i < fallbackIdxs.length; i++) {
-      labels[fallbackIdxs[i]] = fallbackLabels[i];
+      labels[fallbackIdxs[i]!] = fallbackLabels[i]!;
     }
   }
 
@@ -287,7 +287,7 @@ export function loadNumRecogniser(
   const arrays = manifestJson.arrays;
 
   function getF64(name: string): Float64Array {
-    const { offset, byteLength } = arrays[name];
+    const { offset, byteLength } = arrays[name]!;
     // Float64Array requires byteOffset % 8 === 0. The .bin file packs arrays
     // without alignment padding, so a direct view may throw RangeError.
     // Copying into a fresh buffer guarantees alignment at negligible cost.
@@ -295,25 +295,25 @@ export function loadNumRecogniser(
     return new Float64Array(binBuffer.slice(offset, offset + byteLength));
   }
   function getF32(name: string): Float32Array {
-    const { offset, byteLength } = arrays[name];
+    const { offset, byteLength } = arrays[name]!;
     if (offset % 4 === 0) return new Float32Array(binBuffer, offset, byteLength / 4);
     return new Float32Array(binBuffer.slice(offset, offset + byteLength));
   }
   function getI32(name: string): Int32Array {
-    const { offset, byteLength } = arrays[name];
+    const { offset, byteLength } = arrays[name]!;
     if (offset % 4 === 0) return new Int32Array(binBuffer, offset, byteLength / 4);
     return new Int32Array(binBuffer.slice(offset, offset + byteLength));
   }
   function getScalarF64(name: string): number {
-    return getF64(name)[0];
+    return getF64(name)[0]!;
   }
   function getScalarI32(name: string): number {
-    return getI32(name)[0];
+    return getI32(name)[0]!;
   }
 
   const pcaComponents = getF64('pca_components');
   const pcaMean = getF64('pca_mean');
-  const [nComponents, nFeatures] = arrays['pca_components'].shape;
+  const [nComponents, nFeatures] = arrays['pca_components']!.shape as [number, number];
 
   const pca: PCAModel = {
     components: pcaComponents,
@@ -323,8 +323,8 @@ export function loadNumRecogniser(
   };
 
   const svArr = getF64('rbf_support_vectors');
-  const nSv = arrays['rbf_support_vectors'].shape[0];
-  const rbfNFeatures = arrays['rbf_support_vectors'].shape[1];
+  const nSv = arrays['rbf_support_vectors']!.shape[0]!;
+  const rbfNFeatures = arrays['rbf_support_vectors']!.shape[1]!;
   const nSupportArr = getI32('rbf_n_support');
   const classesArr = getI32('rbf_classes');
   const nClasses = classesArr.length;
@@ -399,18 +399,22 @@ export function contourIsNumber(br: BRect, subres: number): boolean {
  */
 export function contourHier(
   cv: Cv,
-  contours: Cv,
-  hierarchy: Cv,
+  contours: OpenCVMatVector,
+  hierarchy: OpenCVMat,
   seen: Set<number>,
   i: number = 0,
 ): ContourInfo[] {
   if (contours.size() === 0) return [];
 
+  // Hierarchy is a 1×N Mat with 4 int channels per contour.
+  // Layout per node (channel index): [0]=next, [1]=prev, [2]=firstChild, [3]=parent.
+  // Access via data32S[contourIdx * 4 + channel] — more reliable than intAt overloads.
+  const hier = hierarchy.data32S;
+
   const ret: ContourInfo[] = [];
   while (i !== -1) {
-    // hierarchy layout per node: [next, prev, firstChild, parent]
-    const next = hierarchy.intAt(0, i, 0);
-    const child = hierarchy.intAt(0, i, 2);
+    const next  = hier[i * 4 + 0];
+    const child = hier[i * 4 + 2];
     if (!seen.has(i)) {
       const c = contours.get(i);
       const br = cv.boundingRect(c);
@@ -419,12 +423,12 @@ export function contourHier(
       // Extract contour points as number[][].
       const pts: number[][] = [];
       for (let p = 0; p < c.rows; p++) {
-        pts.push([c.data32S[p * 2], c.data32S[p * 2 + 1]]);
+        pts.push([c.data32S[p * 2]!, c.data32S[p * 2 + 1]!]);
       }
       ret.push([pts, brTuple, children]);
     }
     seen.add(i);
-    i = next;
+    i = next!;
   }
   return ret;
 }
@@ -462,13 +466,13 @@ export function getNumContours(chier: ContourInfo[], subres: number): ContourInf
  * @param ch - Contour hierarchy.
  * @param fill - Fill value (255 = foreground, 0 = hole).
  */
-export function paintMask(cv: Cv, msk: Cv, ch: ContourInfo[], fill: number = 255): void {
+export function paintMask(cv: Cv, msk: OpenCVMat, ch: ContourInfo[], fill: number = 255): void {
   for (const [pts, , ds] of ch) {
     // Rebuild contour as a Mat.
     const c = cv.matFromArray(pts.length, 1, cv.CV_32SC2, pts.flat());
     const vec = new cv.MatVector();
     vec.push_back(c);
-    cv.drawContours(msk, vec, 0, new cv.Scalar(fill), -1);
+    cv.drawContours(msk, vec, 0, new cv.Scalar(fill, fill, fill, 255), -1);
     vec.delete();
     c.delete();
     paintMask(cv, msk, ds, 255 - fill);
@@ -488,7 +492,7 @@ export function paintMask(cv: Cv, msk: Cv, ch: ContourInfo[], fill: number = 255
 export function getWarpFromRect(
   cv: Cv,
   rect: number[][],
-  gry: Cv,
+  gry: OpenCVMat,
   resH: number = 64,
   resW: number = 64,
 ): Uint8Array {
@@ -518,7 +522,7 @@ export function getWarpFromRect(
 function findPeaks(arr: number[], minHeight: number): number[] {
   const peaks: number[] = [];
   for (let i = 1; i < arr.length - 1; i++) {
-    if (arr[i] >= minHeight && arr[i] > arr[i - 1] && arr[i] > arr[i + 1]) {
+    if (arr[i]! >= minHeight && arr[i]! > arr[i - 1]! && arr[i]! > arr[i + 1]!) {
       peaks.push(i);
     }
   }
@@ -541,7 +545,7 @@ function findPeaks(arr: number[], minHeight: number): number[] {
 export function splitNum(
   cv: Cv,
   br: BRect,
-  warpedBlk: Cv,
+  warpedBlk: OpenCVMat,
   subres: number,
 ): [Uint8Array[], number, number] {
   const [x, y, w, h] = br;
@@ -554,7 +558,7 @@ export function splitNum(
     let maxVal = 0;
     let maxRow = 0;
     for (let dy = 0; dy < h; dy++) {
-      const v = data[(y + dy) * width + (x + dx)];
+      const v = data[(y + dy) * width + (x + dx)]!;
       if (v > maxVal) { maxVal = v; maxRow = dy; }
     }
     ys.push(maxRow);
@@ -566,21 +570,47 @@ export function splitNum(
     contourIsNumber([x + p, y, w - p, h], subres),
   );
 
-  const halfRes = subres >> 1;
   const rects: Array<[number, number, number, number]> = [];
 
   if (validPeaks.length === 0) {
-    rects.push([y, y + h, x, x + w]);
+    // Ink-count fallback: argmax peaks are fragile to single-pixel JPEG decode differences.
+    // A true gap between two digits has significantly fewer white pixels than digit columns.
+    const inkCounts: number[] = [];
+    for (let dx = 0; dx < w; dx++) {
+      let ink = 0;
+      for (let dy = 0; dy < h; dy++) {
+        if (data[(y + dy) * width + (x + dx)]! > 0) ink++;
+      }
+      inkCounts.push(ink);
+    }
+    const margin = Math.max(2, w >> 3);
+    let minInk = Infinity;
+    let splitCol = -1;
+    for (let dx = margin; dx < w - margin; dx++) {
+      if (inkCounts[dx]! < minInk) { minInk = inkCounts[dx]!; splitCol = dx; }
+    }
+    const maxInk = Math.max(...inkCounts);
+    const isGap = maxInk > 0 && splitCol >= 0 && minInk < maxInk * 0.15 &&
+      contourIsNumber([x, y, splitCol, h], subres) &&
+      contourIsNumber([x + splitCol, y, w - splitCol, h], subres);
+    if (isGap) {
+      rects.push([y, y + h, x, x + splitCol]);
+      rects.push([y, y + h, x + splitCol, x + w]);
+    } else {
+      rects.push([y, y + h, x, x + w]);
+    }
   } else {
-    const sp = validPeaks[validPeaks.length - 1];
+    const sp = validPeaks[validPeaks.length - 1]!;
     rects.push([y, y + h, x, x + sp]);
     rects.push([y, y + h, x + sp, x + w]);
   }
 
+  // Use the full 64×64 resolution (default) so thumbnails match the model's
+  // nFeatures=4096 and template size expectations.
   const thumbnails: Uint8Array[] = [];
   for (const [yt, yb, xl, xr] of rects) {
     const src = [[xl, yt], [xr, yt], [xr, yb], [xl, yb]];
-    thumbnails.push(getWarpFromRect(cv, src, warpedBlk, halfRes, halfRes));
+    thumbnails.push(getWarpFromRect(cv, src, warpedBlk));
   }
 
   return [thumbnails, x, y];
@@ -598,7 +628,7 @@ export function splitNum(
  */
 export function readClassicDigits(
   cv: Cv,
-  warpedBlk: Cv,
+  warpedBlk: OpenCVMat,
   rec: NumRecogniser,
   subres: number,
   classicConf: number[][],
@@ -608,7 +638,7 @@ export function readClassicDigits(
 
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
-      if (classicConf[r][c] === 0) continue;
+      if (classicConf[r]![c]! === 0) continue;
 
       const y0 = r * subres + (subres >> 2);
       const x0 = c * subres + (subres >> 2);
@@ -646,8 +676,8 @@ export function readClassicDigits(
       ];
       const thumb = getWarpFromRect(cv, src, warpedBlk, half, half);
       const labels = getSums(cv, rec, [thumb]);
-      const d = labels[0];
-      if (d > 0) givenDigits[r][c] = d;
+      const d = labels[0]!;
+      if (d > 0) givenDigits[r]![c] = d;
     }
   }
 

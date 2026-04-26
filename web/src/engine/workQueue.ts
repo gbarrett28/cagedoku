@@ -144,8 +144,8 @@ export class SolverQueue {
     const heap = this._heap;
     while (i > 0) {
       const parent = (i - 1) >> 1;
-      if (this._lt(heap[i], heap[parent])) {
-        [heap[i], heap[parent]] = [heap[parent], heap[i]];
+      if (this._lt(heap[i]!, heap[parent]!)) {
+        [heap[i], heap[parent]] = [heap[parent]!, heap[i]!];
         i = parent;
       } else break;
     }
@@ -157,10 +157,10 @@ export class SolverQueue {
     for (;;) {
       let smallest = i;
       const l = 2 * i + 1, r = 2 * i + 2;
-      if (l < n && this._lt(heap[l], heap[smallest])) smallest = l;
-      if (r < n && this._lt(heap[r], heap[smallest])) smallest = r;
+      if (l < n && this._lt(heap[l]!, heap[smallest]!)) smallest = l;
+      if (r < n && this._lt(heap[r]!, heap[smallest]!)) smallest = r;
       if (smallest === i) break;
-      [heap[i], heap[smallest]] = [heap[smallest], heap[i]];
+      [heap[i], heap[smallest]] = [heap[smallest]!, heap[i]!];
       i = smallest;
     }
   }

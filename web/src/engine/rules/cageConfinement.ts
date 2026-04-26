@@ -27,7 +27,7 @@ function combinations<T>(arr: T[], k: number): T[][] {
   if (k === 0) return [[]];
   if (arr.length < k) return [];
   const [head, ...tail] = arr;
-  return [...combinations(tail, k - 1).map(c => [head, ...c]), ...combinations(tail, k)];
+  return [...combinations(tail, k - 1).map(c => [head!, ...c]), ...combinations(tail, k)];
 }
 
 export class CageConfinement {
@@ -56,11 +56,11 @@ export class CageConfinement {
     for (const unit of board.units) {
       if (unit.kind !== UnitKind.CAGE || !unit.distinctDigits) continue;
       const cageIdx = unit.unitId - 27;
-      const solns = board.cageSolns[cageIdx];
+      const solns = board.cageSolns[cageIdx]!;
       if (!solns.length || !solns.every(s => s.includes(d))) continue;
       const dUnitIds = new Set<number>();
       for (const [r, c] of unit.cells as Cell[]) {
-        if (board.candidates[r][c].has(d)) dUnitIds.add(typeUnitId(kind, r, c));
+        if (board.cands(r, c).has(d)) dUnitIds.add(typeUnitId(kind, r, c));
       }
       if (!dUnitIds.size) continue;
       cageInfo.push({ cells: unit.cells as Cell[], dUnitIds });
@@ -78,10 +78,10 @@ export class CageConfinement {
 
         const allCageCells = new Set(allFlat.map(([r,c])=>`${r},${c}`));
         const unitIdsSorted = [...combinedUids].sort((a,b)=>a-b);
-        const unitCellsUnion = unitIdsSorted.flatMap(uid => board.units[uid].cells as Cell[]);
+        const unitCellsUnion = unitIdsSorted.flatMap(uid => board.units[uid]!.cells as Cell[]);
 
         const elims = unitCellsUnion
-          .filter(([r,c]) => !allCageCells.has(`${r},${c}`) && board.candidates[r][c].has(d))
+          .filter(([r,c]) => !allCageCells.has(`${r},${c}`) && board.cands(r, c).has(d))
           .map(cell => ({ cell, digit: d }));
         if (!elims.length) continue;
 
@@ -119,9 +119,9 @@ export class CageConfinement {
       if (!newElims.length) continue;
       const n = m.unitIds.length;
       const board = ctx.board;
-      const firstUnit = board.units[m.unitIds[0]];
+      const firstUnit = board.units[m.unitIds[0]!]!;
       const kind = firstUnit.kind;
-      const unitLabels = m.unitIds.map(uid => unitLabel(board.units[uid])).join(' and ');
+      const unitLabels = m.unitIds.map(uid => unitLabel(board.units[uid]!)).join(' and ');
       const removedStr = [...new Set(newElims.map(e => cellLabel(e.cell)))].sort().join(', ');
       const cageDescs = m.cageCellsList.map(cells =>
         '[' + [...cells].sort((a,b)=>a[0]-b[0]||a[1]-b[1]).map(cellLabel).join(', ') + ']'

@@ -6,9 +6,11 @@
  * State lives in session/store.ts; no server required.
  */
 
-import { loadCV, loadRec, setCandidatesCache, getCandidatesCache } from './session/store.js';
+import { loadCV, loadRec, setCandidatesCache } from './session/store.js';
+import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec } from './engine/fixtures.js';
 import {
   uploadPuzzle,
+  loadSpecDirect,
   confirmPuzzle,
   computeCandidates,
   enterCell,
@@ -18,17 +20,16 @@ import {
   solvePuzzle,
   getCageSolutions,
   eliminateCageSolution,
+  eliminateVirtualCageSolution,
   addVirtualCage,
   getHints,
   applyHint,
-  refresh,
   patchCage,
   getSettingsData,
   saveSettingsData,
 } from './session/actions.js';
 import type {
   CandidatesResponse,
-  CandidatesResponse as CR,
   HintItem,
   PuzzleState,
 } from './session/types.js';
@@ -68,7 +69,6 @@ let virtualCageSelection = new Set<string>();   // "r,c" keys, 0-based
 let hintHighlightCells = new Set<string>();     // "r,c" keys, 0-based
 let activeHintItem: HintItem | null = null;
 let inspectCageMode = false;
-let inspectedCageLabel = '';
 
 // ---------------------------------------------------------------------------
 // Grid rendering
@@ -101,7 +101,7 @@ function drawGrid(
       'rgba(251, 146, 60, 0.25)',
     ];
     for (const [vcIdx, vc] of candidatesData.virtualCages.entries()) {
-      ctx.fillStyle = vcColors[vcIdx % vcColors.length];
+      ctx.fillStyle = vcColors[vcIdx % vcColors.length]!;
       for (const [r, c] of vc.cells) {
         ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
       }
@@ -112,7 +112,8 @@ function drawGrid(
   if (vcSelection !== null && vcSelection.size > 0) {
     ctx.fillStyle = 'rgba(99, 102, 241, 0.35)';
     for (const key of vcSelection) {
-      const [r, c] = key.split(',').map(Number);
+      const parts = key.split(',').map(Number);
+      const r = parts[0]!, c = parts[1]!;
       ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
     }
   }
@@ -121,7 +122,8 @@ function drawGrid(
   if (highlightKeys !== null && highlightKeys.size > 0) {
     ctx.fillStyle = 'rgba(251, 191, 36, 0.45)';
     for (const key of highlightKeys) {
-      const [r, c] = key.split(',').map(Number);
+      const parts = key.split(',').map(Number);
+      const r = parts[0]!, c = parts[1]!;
       ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
     }
   }
@@ -191,7 +193,7 @@ function drawGrid(
         if ((headCells[r]?.[c] ?? 0) > 0) {
           const cageIdx = (regions[r]?.[c] ?? 1) - 1;
           const cage = state.cageStates[cageIdx];
-          const total = cage !== undefined ? cage.total : headCells[r][c];
+          const total = cage !== undefined ? cage.total : headCells[r]![c]!;
           ctx.fillText(String(total), MARGIN + c * CELL + 2, MARGIN + r * CELL + 2);
         }
       }
@@ -220,7 +222,8 @@ function drawGrid(
     if (duplicateCells.size > 0) {
       ctx.fillStyle = 'rgba(220, 38, 38, 0.15)';
       for (const key of duplicateCells) {
-        const [r, c] = key.split(',').map(Number);
+        const parts = key.split(',').map(Number);
+        const r = parts[0]!, c = parts[1]!;
         ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
       }
     }
@@ -367,19 +370,22 @@ function renderPlayingMode(state: PuzzleState): void {
   el<HTMLElement>('review-actions').hidden = true;
   el<HTMLElement>('editor-section').hidden = true;
   el<HTMLElement>('original-col').hidden = true;
+  el<HTMLElement>('warped-col').hidden = true;
   el<HTMLElement>('playing-actions').hidden = false;
   el<HTMLElement>('solution-panel').hidden = true;
   updateUndoButton(state);
   el<HTMLButtonElement>('candidates-btn').disabled = false;
   el<HTMLButtonElement>('hints-btn').disabled = false;
+  const isKiller = state.puzzleType !== 'classic';
+  el<HTMLButtonElement>('inspect-cage-btn').hidden = !isKiller;
+  el<HTMLButtonElement>('virtual-cage-btn').hidden = !isKiller;
 }
 
 function updateUndoButton(state: PuzzleState): void {
   const btn = el<HTMLButtonElement>('undo-btn');
   if (state.turns.length === 0) { btn.disabled = true; return; }
-  const last = state.turns[state.turns.length - 1].action;
-  btn.disabled = (last.type === 'placeDigit' && last.source === 'given')
-    || (last.type === 'eliminateCandidate' && last.row === -1);
+  const last = state.turns[state.turns.length - 1]!.action;
+  btn.disabled = last.type === 'placeDigit' && last.source === 'given';
 }
 
 function renderSolution(grid: number[][]): void {
@@ -391,7 +397,7 @@ function renderSolution(grid: number[][]): void {
     const tr = document.createElement('tr');
     for (let c = 0; c < 9; c++) {
       const td = document.createElement('td');
-      td.textContent = String(grid[r][c] || '');
+      td.textContent = String(grid[r]![c]! || '');
       if (r === 2 || r === 5) td.classList.add('box-bottom');
       if (c === 2 || c === 5) td.classList.add('box-right');
       tr.appendChild(td);
@@ -419,15 +425,31 @@ function renderVirtualCagePanel(): void {
     const header = document.createElement('div'); header.className = 'vc-item-header';
     header.textContent = `total ${vc.total} — ${vc.cells.length} cells: ` + vc.cells.map(([r, c]) => `r${r + 1}c${c + 1}`).join(' ');
     item.appendChild(header);
-    const solns = document.createElement('div'); solns.className = 'vc-solutions';
-    if (vc.solutions.length === 0) {
-      const p = document.createElement('span'); p.className = 'soln-item auto-impossible'; p.textContent = '(no valid solutions)'; solns.appendChild(p);
+
+    const solnsDiv = document.createElement('div'); solnsDiv.className = 'vc-solutions';
+    const allSolns = vc.allSolutions;
+    if (allSolns.length === 0) {
+      const p = document.createElement('span'); p.className = 'soln-item auto-impossible'; p.textContent = '(no valid solutions)'; solnsDiv.appendChild(p);
     } else {
-      for (const soln of vc.solutions) {
-        const span = document.createElement('span'); span.className = 'soln-item active'; span.textContent = `{${soln.join(',')}}`; solns.appendChild(span);
+      const autoImpossibleKeys = new Set(vc.autoImpossible.map(s => s.join(',')));
+      const userEliminatedKeys = new Set(vc.userEliminated.map(s => s.join(',')));
+      for (const soln of allSolns) {
+        const span = document.createElement('span');
+        const key = soln.join(',');
+        if (autoImpossibleKeys.has(key)) {
+          span.className = 'soln-item auto-impossible';
+        } else if (userEliminatedKeys.has(key)) {
+          span.className = 'soln-item user-eliminated';
+          span.addEventListener('click', () => { void handleEliminateVirtualCageSolution(vc.key, [...soln]); });
+        } else {
+          span.className = 'soln-item active';
+          span.addEventListener('click', () => { void handleEliminateVirtualCageSolution(vc.key, [...soln]); });
+        }
+        span.textContent = `{${soln.join(',')}}`;
+        solnsDiv.appendChild(span);
       }
     }
-    item.appendChild(solns);
+    item.appendChild(solnsDiv);
     list.appendChild(item);
   }
 }
@@ -437,7 +459,6 @@ function renderVirtualCagePanel(): void {
 // ---------------------------------------------------------------------------
 
 function renderCageInspector(label: string): void {
-  inspectedCageLabel = label;
   try {
     const data = getCageSolutions(label);
     const inspector = el<HTMLElement>('cage-inspector');
@@ -472,6 +493,13 @@ async function handleEliminateSolution(label: string, solution: number[]): Promi
     const state = eliminateCageSolution(label, solution);
     renderPlayingMode(state);
     renderCageInspector(label);
+  } catch (e) { setStatus(String(e), true); }
+}
+
+async function handleEliminateVirtualCageSolution(vcKey: string, solution: number[]): Promise<void> {
+  try {
+    eliminateVirtualCageSolution(vcKey, solution);
+    void fetchCandidates(); // re-renders virtual cage panel with updated eliminations
   } catch (e) { setStatus(String(e), true); }
 }
 
@@ -560,19 +588,23 @@ function openConfigModal(): void {
 // Action handlers
 // ---------------------------------------------------------------------------
 
+function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, warning: string | null): void {
+  renderState(state);
+  const warpedCol = el<HTMLElement>('warped-col');
+  const warpedImg = el<HTMLImageElement>('warped-img');
+  if (warpedImageUrl) { warpedImg.src = warpedImageUrl; warpedCol.hidden = false; } else { warpedCol.hidden = true; }
+  el<HTMLElement>('upload-panel').hidden = true;
+  el<HTMLButtonElement>('new-puzzle-btn').hidden = false;
+  setStatus(warning ? `Warning: ${warning}` : '');
+}
+
 async function handleProcess(): Promise<void> {
   const fileInput = el<HTMLInputElement>('file-input');
   if (!fileInput.files || fileInput.files.length === 0) { setStatus('Please select an image file.', true); return; }
   setLoading(true);
   try {
-    const { state, warpedImageUrl, warning } = await uploadPuzzle(fileInput.files[0]);
-    renderState(state);
-    const warpedCol = el<HTMLElement>('warped-col');
-    const warpedImg = el<HTMLImageElement>('warped-img');
-    if (warpedImageUrl) { warpedImg.src = warpedImageUrl; warpedCol.hidden = false; } else { warpedCol.hidden = true; }
-    el<HTMLElement>('upload-panel').hidden = true;
-    el<HTMLButtonElement>('new-puzzle-btn').hidden = false;
-    setStatus(warning ? `Warning: ${warning}` : '');
+    const { state, warpedImageUrl, warning } = await uploadPuzzle(fileInput.files[0]!);
+    applyUploadResult(state, warpedImageUrl, warning);
   } catch (e) { setStatus(`OCR failed: ${String(e)}`, true); }
   finally { setLoading(false); }
 }
@@ -635,13 +667,20 @@ async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number)
   const givenDigits = currentState.givenDigits
     ? currentState.givenDigits.map(row => [...row])
     : Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-  givenDigits[row1b - 1][col1b - 1] = digit;
+  givenDigits[row1b - 1]![col1b - 1] = digit;
   currentState = { ...currentState, givenDigits };
   redrawGrid();
 }
 
 async function submitVirtualCage(): Promise<void> {
   if (virtualCageSelection.size < 2) return;
+  if (currentState?.userGrid !== null) {
+    const allSolved = [...virtualCageSelection].every(k => {
+      const [kr, kc] = k.split(',').map(Number);
+      return (currentState!.userGrid![kr!]?.[kc!] ?? 0) !== 0;
+    });
+    if (allSolved) { setStatus('Cannot add virtual cage: all selected cells are already solved.', true); return; }
+  }
   const totalInput = el<HTMLInputElement>('vc-total-input');
   const total = Number(totalInput.value);
   if (!total || total < 3) { totalInput.focus(); return; }
@@ -660,9 +699,9 @@ async function submitVirtualCage(): Promise<void> {
 // Event wiring
 // ---------------------------------------------------------------------------
 
-// Register the offline service worker. Only runs in browsers that support it
-// (not in Vitest/Node). Requires HTTPS or localhost.
-if ('serviceWorker' in navigator) {
+// Register the offline service worker. Only runs in production builds — skipped
+// during Vite dev mode to prevent the SW from intercepting HMR/module requests.
+if ('serviceWorker' in navigator && !import.meta.env.DEV) {
   void navigator.serviceWorker.register('./sw.js').catch(err => {
     console.warn('[SW] Registration failed:', err);
   });
@@ -671,9 +710,11 @@ if ('serviceWorker' in navigator) {
 document.addEventListener('DOMContentLoaded', () => {
 
   // Startup: load OpenCV and digit recogniser in parallel
-  void Promise.all([loadCV(), loadRec()]).catch(e => {
-    setStatus(`Image pipeline load failed: ${String(e)}`, true);
-  });
+  void Promise.all([loadCV(), loadRec()])
+    .then(() => { (window as unknown as Record<string, unknown>)['__pipelineReady'] = true; })
+    .catch(e => {
+      setStatus(`Image pipeline load failed: ${String(e)}`, true);
+    });
 
   el<HTMLButtonElement>('process-btn').addEventListener('click', () => { void handleProcess(); });
   el<HTMLButtonElement>('confirm-btn').addEventListener('click', () => { void handleConfirm(); });
@@ -694,8 +735,10 @@ document.addEventListener('DOMContentLoaded', () => {
     el<HTMLElement>('solution-panel').hidden = true;
     el<HTMLElement>('playing-actions').hidden = true;
     el<HTMLButtonElement>('new-puzzle-btn').hidden = true;
-    el<HTMLButtonElement>('candidates-btn').disabled = true;
+        el<HTMLButtonElement>('candidates-btn').disabled = true;
     el<HTMLButtonElement>('hints-btn').disabled = true;
+    el<HTMLButtonElement>('inspect-cage-btn').hidden = true;
+    el<HTMLButtonElement>('virtual-cage-btn').hidden = true;
     el<HTMLInputElement>('file-input').value = '';
     setStatus('');
   });
@@ -863,7 +906,16 @@ document.addEventListener('DOMContentLoaded', () => {
       const key = `${r0},${c0}`;
       if (virtualCageSelection.has(key)) virtualCageSelection.delete(key); else virtualCageSelection.add(key);
       const vcStatus = el<HTMLElement>('vc-selection-status');
-      vcStatus.textContent = virtualCageSelection.size < 2 ? 'Click cells on the grid' : `${virtualCageSelection.size} cells selected`;
+      const allSolved = virtualCageSelection.size >= 2 && currentState.userGrid !== null &&
+        [...virtualCageSelection].every(k => {
+          const [kr, kc] = k.split(',').map(Number);
+          return (currentState!.userGrid![kr!]?.[kc!] ?? 0) !== 0;
+        });
+      vcStatus.textContent = virtualCageSelection.size < 2
+        ? 'Click cells on the grid'
+        : allSolved ? 'All cells already solved — select unsolved cells'
+        : `${virtualCageSelection.size} cells selected`;
+      el<HTMLButtonElement>('vc-add-btn').disabled = allSolved || virtualCageSelection.size < 2;
       redrawGrid();
       return;
     }
@@ -888,4 +940,21 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   const clearBtn = document.getElementById('digit-0');
   if (clearBtn) clearBtn.addEventListener('click', () => { void handleCellEntry(0); });
+
+  // Dev/test hook — skipped in production builds by Vite's dead-code elimination.
+  // Exposes window.__testLoad() so Playwright tests can exercise the full
+  // review→confirm→playing UI flow without OpenCV or a real puzzle image.
+  if (import.meta.env.DEV) {
+    // 'trivial'     — all 81 cells are single-cell cages; all auto-placed after confirm.
+    // 'twoCellCage' — top-left two cells share a cage (sum 8); still over-constrained.
+    // 'boxCage'     — 9 box cages (3×3 each, sum 45); no cell auto-placed → digit entry works.
+    (window as unknown as Record<string, unknown>)['__testLoad'] = (specName?: string) => {
+      let spec;
+      if (specName === 'twoCellCage') spec = makeTwoCellCageSpec();
+      else if (specName === 'boxCage') spec = makeBoxCageSpec();
+      else spec = makeTrivialSpec();
+      const { state, warpedImageUrl, warning } = loadSpecDirect(spec);
+      applyUploadResult(state, warpedImageUrl, warning);
+    };
+  }
 });

@@ -56,21 +56,46 @@ export function makeTrivialSpec(): PuzzleSpec {
  * (0,0) and (0,1).
  */
 export function makeTwoCellCageSpec(): PuzzleSpec {
-  const total = KNOWN_SOLUTION[0][0] + KNOWN_SOLUTION[0][1]; // 8
+  const total = KNOWN_SOLUTION[0]![0]! + KNOWN_SOLUTION[0]![1]!; // 8
   const cageTotals: number[][] = KNOWN_SOLUTION.map(row => [...row]);
-  cageTotals[0][0] = total;
-  cageTotals[0][1] = 0;
+  cageTotals[0]![0] = total;
+  cageTotals[0]![1] = 0;
 
   const borderX: boolean[][] = Array.from({ length: 9 }, () =>
     Array.from({ length: 8 }, () => true));
-  borderX[0][0] = false; // open wall between (col=0,row=0) and (col=0,row=1)
+  borderX[0]![0] = false; // open wall between (col=0,row=0) and (col=0,row=1)
 
   const borderY: boolean[][] = Array.from({ length: 8 }, () =>
     Array.from({ length: 9 }, () => true));
   return validateCageLayout(cageTotals, borderX, borderY);
 }
 
-export const TWO_CELL_CAGE_TOTAL = KNOWN_SOLUTION[0][0] + KNOWN_SOLUTION[0][1]; // 8
+export const TWO_CELL_CAGE_TOTAL = KNOWN_SOLUTION[0]![0]! + KNOWN_SOLUTION[0]![1]!; // 8
+
+/**
+ * Return a PuzzleSpec where each 3×3 box forms its own 9-cell cage with total 45.
+ *
+ * Any permutation of {1..9} within each box satisfies the cage total, so no
+ * individual cell value can be determined from these constraints alone. This
+ * fixture is used by UI flow tests where cells must remain empty after confirm
+ * (no auto-placement), making digit-entry and undo behaviour testable.
+ */
+export function makeBoxCageSpec(): PuzzleSpec {
+  const cageTotals: number[][] = Array.from({ length: 9 }, () =>
+    new Array<number>(9).fill(0));
+  for (const boxRow of [0, 3, 6]) {
+    for (const boxCol of [0, 3, 6]) {
+      cageTotals[boxCol]![boxRow] = 45;
+    }
+  }
+  // Within each box: no borders (false). Between boxes: wall at row-gap 2 and 5.
+  const borderX: boolean[][] = Array.from({ length: 9 }, () =>
+    Array.from({ length: 8 }, (_, rowGap) => rowGap === 2 || rowGap === 5));
+  // Between boxes: wall at col-gap 2 and 5; none within boxes.
+  const borderY: boolean[][] = Array.from({ length: 8 }, (_, colGap) =>
+    Array.from({ length: 9 }, () => colGap === 2 || colGap === 5));
+  return validateCageLayout(cageTotals, borderX, borderY);
+}
 
 // ---------------------------------------------------------------------------
 // Lower-level helpers (mirrors Python's make_trivial_cage_totals etc.)
@@ -101,15 +126,15 @@ export function makeTrivialBorderY(): boolean[][] {
  * walls between BS(0,0)↔(0,1) and BS(0,1)↔(0,2) respectively.
  */
 export function makeThreeCellCageSpec(): PuzzleSpec {
-  const total = KNOWN_SOLUTION[0][0] + KNOWN_SOLUTION[0][1] + KNOWN_SOLUTION[0][2]; // 12
+  const total = KNOWN_SOLUTION[0]![0]! + KNOWN_SOLUTION[0]![1]! + KNOWN_SOLUTION[0]![2]!; // 12
   const cageTotals = makeTrivialCageTotals();
-  cageTotals[0][0] = total;
-  cageTotals[0][1] = 0;
-  cageTotals[0][2] = 0;
+  cageTotals[0]![0] = total;
+  cageTotals[0]![1] = 0;
+  cageTotals[0]![2] = 0;
 
   const borderX = makeTrivialBorderX();
-  borderX[0][0] = false;
-  borderX[0][1] = false;
+  borderX[0]![0] = false;
+  borderX[0]![1] = false;
 
   return validateCageLayout(cageTotals, borderX, makeTrivialBorderY());
 }
@@ -127,17 +152,17 @@ export function makeThreeCellCageSpec(): PuzzleSpec {
  */
 export function makeOutieSpec(): PuzzleSpec {
   const cageTotals = makeTrivialCageTotals();
-  cageTotals[0][5] = 24;
-  cageTotals[0][6] = 0;
-  cageTotals[0][7] = 0;
-  cageTotals[1][7] = 0;
+  cageTotals[0]![5] = 24;
+  cageTotals[0]![6] = 0;
+  cageTotals[0]![7] = 0;
+  cageTotals[1]![7] = 0;
 
   const borderX = makeTrivialBorderX();
-  borderX[0][5] = false;
-  borderX[0][6] = false;
+  borderX[0]![5] = false;
+  borderX[0]![6] = false;
 
   const borderY = makeTrivialBorderY();
-  borderY[0][7] = false;
+  borderY[0]![7] = false;
 
   return validateCageLayout(cageTotals, borderX, borderY);
 }

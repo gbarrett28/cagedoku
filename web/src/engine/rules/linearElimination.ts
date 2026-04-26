@@ -24,7 +24,7 @@ export class LinearElimination {
 
   apply(ctx: RuleContext): RuleResult {
     const elims = ctx.board.linearSystem.initialEliminations.filter(
-      e => ctx.board.candidates[e.cell[0]][e.cell[1]].has(e.digit)
+      e => ctx.board.cands(e.cell[0], e.cell[1]).has(e.digit)
     );
     return { ...emptyResult(), eliminations: elims };
   }
@@ -46,16 +46,16 @@ export class LinearElimination {
     }
     const hints: HintResult[] = [];
     for (const [key, cellElims] of byCell) {
-      const [r, c] = key.split(',').map(Number);
+      const [r, c] = key.split(',').map(Number) as [number, number];
       const elimSet = new Set(cellElims.map(e => e.digit));
-      const remaining = [...ctx.board.candidates[r][c]].filter(d => !elimSet.has(d));
+      const remaining = [...ctx.board.cands(r, c)].filter(d => !elimSet.has(d));
       if (remaining.length !== 1) continue;
-      const digit = remaining[0];
+      const digit = remaining[0]!;
       hints.push({
         ruleName: this.name,
         displayName: `Algebra: r${r+1}c${c+1} = ${digit}`,
         explanation: `The cage-sum equations (combined with row, column and box totals) uniquely determine r${r+1}c${c+1} = ${digit}.`,
-        highlightCells: [[r, c] as unknown as Cell],
+        highlightCells: [[r, c] as Cell],
         eliminations: cellElims,
         placement: [r, c, digit],
         virtualCageSuggestion: null,

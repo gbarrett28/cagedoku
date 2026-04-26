@@ -36,13 +36,13 @@ export class SimpleColouring {
 
       // Row conjugate pairs
       for (let r = 0; r < 9; r++) {
-        const cols = Array.from({ length: 9 }, (_, c) => c).filter(c => board.candidates[r][c].has(d));
-        if (cols.length === 2) addEdge(r, cols[0], r, cols[1]);
+        const cols = Array.from({ length: 9 }, (_, c) => c).filter(c => board.cands(r, c).has(d));
+        if (cols.length === 2) addEdge(r, cols[0]!, r, cols[1]!);
       }
       // Column conjugate pairs
       for (let c = 0; c < 9; c++) {
-        const rows = Array.from({ length: 9 }, (_, r) => r).filter(r => board.candidates[r][c].has(d));
-        if (rows.length === 2) addEdge(rows[0], c, rows[1], c);
+        const rows = Array.from({ length: 9 }, (_, r) => r).filter(r => board.cands(r, c).has(d));
+        if (rows.length === 2) addEdge(rows[0]!, c, rows[1]!, c);
       }
       // Box conjugate pairs
       for (let br = 0; br < 3; br++) {
@@ -51,9 +51,9 @@ export class SimpleColouring {
           for (let dr = 0; dr < 3; dr++)
             for (let dc = 0; dc < 3; dc++) {
               const r = br * 3 + dr, c = bc * 3 + dc;
-              if (board.candidates[r][c].has(d)) boxCells.push([r, c]);
+              if (board.cands(r, c).has(d)) boxCells.push([r, c]);
             }
-          if (boxCells.length === 2) addEdge(boxCells[0][0], boxCells[0][1], boxCells[1][0], boxCells[1][1]);
+          if (boxCells.length === 2) addEdge(boxCells[0]![0], boxCells[0]![1], boxCells[1]![0], boxCells[1]![1]);
         }
       }
 
@@ -69,7 +69,7 @@ export class SimpleColouring {
         colour.set(start, 0);
         let head = 0;
         while (head < queue.length) {
-          const cell = queue[head++];
+          const cell = queue[head++]!;
           for (const nb of adj.get(cell)!) {
             if (!colour.has(nb)) colour.set(nb, 1 - colour.get(cell)!);
             if (!componentOf.has(nb)) {
@@ -86,7 +86,7 @@ export class SimpleColouring {
       for (const [key, cid] of componentOf) {
         if (!compColours.has(cid)) compColours.set(cid, [[], []]);
         const [r, c] = key.split(',').map(Number) as [number, number];
-        compColours.get(cid)![colour.get(key)!].push([r, c]);
+        compColours.get(cid)![colour.get(key)!]!.push([r, c]);
       }
 
       for (const [c0Cells, c1Cells] of compColours.values()) {
@@ -100,14 +100,14 @@ export class SimpleColouring {
 
         if (hasConflict(c0Cells)) {
           for (const [r, c] of c0Cells)
-            if (board.candidates[r][c].has(d))
-              elims.push({ cell: [r, c] as unknown as Cell, digit: d });
+            if (board.cands(r, c).has(d))
+              elims.push({ cell: [r, c] as Cell, digit: d });
           continue;
         }
         if (hasConflict(c1Cells)) {
           for (const [r, c] of c1Cells)
-            if (board.candidates[r][c].has(d))
-              elims.push({ cell: [r, c] as unknown as Cell, digit: d });
+            if (board.cands(r, c).has(d))
+              elims.push({ cell: [r, c] as Cell, digit: d });
           continue;
         }
 
@@ -116,11 +116,11 @@ export class SimpleColouring {
         for (let r = 0; r < 9; r++) {
           for (let c = 0; c < 9; c++) {
             if (allColoured.has(cellKey(r, c))) continue;
-            if (!board.candidates[r][c].has(d)) continue;
+            if (!board.cands(r, c).has(d)) continue;
             const seesC0 = c0Cells.some(([cr, cc]) => sees(r, c, cr, cc));
             const seesC1 = c1Cells.some(([cr, cc]) => sees(r, c, cr, cc));
             if (seesC0 && seesC1)
-              elims.push({ cell: [r, c] as unknown as Cell, digit: d });
+              elims.push({ cell: [r, c] as Cell, digit: d });
           }
         }
       }

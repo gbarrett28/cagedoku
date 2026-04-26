@@ -69,14 +69,14 @@ export function dataToSpec(data: PuzzleSpecData): PuzzleSpec {
   // borderX[col][rowGap]: wall between rows rowGap and rowGap+1 in column col
   const borderX: boolean[][] = Array.from({ length: 9 }, (_, c) =>
     Array.from({ length: 8 }, (__, rowGap) =>
-      regions[rowGap][c] !== regions[rowGap + 1][c],
+      regions[rowGap]![c]! !== regions[rowGap + 1]![c]!,
     ),
   );
 
   // borderY[colGap][row]: wall between columns colGap and colGap+1 in row
   const borderY: boolean[][] = Array.from({ length: 8 }, (_, colGap) =>
     Array.from({ length: 9 }, (__, r) =>
-      regions[r][colGap] !== regions[r][colGap + 1],
+      regions[r]![colGap]! !== regions[r]![colGap + 1]!,
     ),
   );
 
@@ -96,8 +96,8 @@ export function specToCageStates(spec: PuzzleSpec): CageState[] {
   const cageMap = new Map<number, { total: number; cells: CellPosition[] }>();
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
-      const idx = spec.regions[r][c] - 1; // 0-based
-      const total = spec.cageTotals[r][c];
+      const idx = spec.regions[r]![c]! - 1; // 0-based
+      const total = spec.cageTotals[r]![c]!;
       if (!cageMap.has(idx)) {
         cageMap.set(idx, { total: 0, cells: [] });
       }
@@ -124,8 +124,8 @@ export function cageStatesToSpec(cages: readonly CageState[], base: PuzzleSpecDa
   for (const cage of cages) {
     // Find the first cell alphabetically to place the total (matches Python's head-cell convention)
     const sorted = [...cage.cells].sort((a, b) => a.row - b.row || a.col - b.col);
-    const head = sorted[0];
-    cageTotals[head.row - 1][head.col - 1] = cage.total;
+    const head = sorted[0]!;
+    cageTotals[head.row - 1]![head.col - 1] = cage.total;
   }
 
   return dataToSpec({ regions, cageTotals });

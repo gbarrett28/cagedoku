@@ -12,8 +12,8 @@
 import type { CandidatesResponse, PuzzleState } from './types.js';
 import { loadNumRecogniser } from '../image/numberRecognition.js';
 import type { NumRecogniser } from '../image/numberRecognition.js';
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Cv = any;
+import type { OpenCVModule } from '../image/opencv.js';
+type Cv = OpenCVModule;
 
 // ---------------------------------------------------------------------------
 // Puzzle session state
@@ -66,17 +66,16 @@ export function loadCV(url = './opencv.js'): Promise<Cv> {
     script.src = url;
     script.async = true;
     script.onload = () => {
-      const poll = () => {
-        // OpenCV.js sets cv.getBuildInformation() when fully initialised.
-        const w = window as unknown as { cv?: { getBuildInformation?: () => string } };
-        if (w.cv?.getBuildInformation) {
-          _cv = w.cv as unknown as Cv;
+      // Modern OpenCV.js (MODULARIZE=1) sets window.cv to a Promise that resolves
+      // to the module after WASM initialisation.  Older builds set it to the module
+      // object directly.  Promise.resolve() handles both cases correctly.
+      const w = window as unknown as { cv?: Promise<Cv> | Cv };
+      Promise.resolve(w.cv as Promise<Cv>)
+        .then((module: Cv) => {
+          _cv = module;
           resolve(_cv);
-        } else {
-          setTimeout(poll, 50);
-        }
-      };
-      poll();
+        })
+        .catch(reject);
     };
     script.onerror = () => reject(new Error(`Failed to load OpenCV.js from ${url}`));
     document.head.appendChild(script);

@@ -58,7 +58,7 @@ type SparseRow = Map<string, Frac>;
 function cellKey(cell: Cell): string { return `${cell[0]},${cell[1]}`; }
 function keyToCell(k: string): Cell {
   const i = k.indexOf(',');
-  return [parseInt(k.slice(0, i), 10), parseInt(k.slice(i + 1), 10)] as unknown as Cell;
+  return [parseInt(k.slice(0, i), 10), parseInt(k.slice(i + 1), 10)] as Cell;
 }
 
 // ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ export class LinearSystem {
     const varIndex = new Map<string, number>();
     for (let r = 0; r < 9; r++)
       for (let c = 0; c < 9; c++)
-        varIndex.set(cellKey([r, c] as unknown as Cell), r * 9 + c);
+        varIndex.set(cellKey([r, c] as Cell), r * 9 + c);
 
     const rows: Frac[][] = [];
 
@@ -114,15 +114,15 @@ export class LinearSystem {
 
     // Row, col, box constraints each sum to 45
     for (let r = 0; r < 9; r++)
-      addEq(Array.from({length: 9}, (_, c) => [r, c] as unknown as Cell), 45);
+      addEq(Array.from({length: 9}, (_, c) => [r, c] as Cell), 45);
     for (let c = 0; c < 9; c++)
-      addEq(Array.from({length: 9}, (_, r) => [r, c] as unknown as Cell), 45);
+      addEq(Array.from({length: 9}, (_, r) => [r, c] as Cell), 45);
     for (let b = 0; b < 9; b++) {
       const r0 = (b / 3 | 0) * 3, c0 = (b % 3) * 3;
       const bCells: Cell[] = [];
       for (let dr = 0; dr < 3; dr++)
         for (let dc = 0; dc < 3; dc++)
-          bCells.push([r0 + dr, c0 + dc] as unknown as Cell);
+          bCells.push([r0 + dr, c0 + dc] as Cell);
       addEq(bCells, 45);
     }
 
@@ -131,10 +131,10 @@ export class LinearSystem {
     const cageTotalsMap = new Map<number, number>();
     for (let r = 0; r < 9; r++) {
       for (let c = 0; c < 9; c++) {
-        const cid = spec.regions[r][c];
+        const cid = spec.regions[r]![c]!;
         if (!cageCellsMap.has(cid)) cageCellsMap.set(cid, []);
-        cageCellsMap.get(cid)!.push([r, c] as unknown as Cell);
-        const v = spec.cageTotals[r][c];
+        cageCellsMap.get(cid)!.push([r, c] as Cell);
+        const v = spec.cageTotals[r]![c]!;
         if (v !== 0) cageTotalsMap.set(cid, v);
       }
     }
@@ -153,17 +153,19 @@ export class LinearSystem {
       if (pivotRow >= nRows) break;
       let found = -1;
       for (let i = pivotRow; i < nRows; i++) {
-        if (!rows[i][pivotCol].isZero()) { found = i; break; }
+        if (!rows[i]![pivotCol]!.isZero()) { found = i; break; }
       }
       if (found < 0) continue;
-      [rows[pivotRow], rows[found]] = [rows[found], rows[pivotRow]];
-      const scale = rows[pivotRow][pivotCol];
-      for (let j = 0; j <= 81; j++) rows[pivotRow][j] = rows[pivotRow][j].div(scale);
+      [rows[pivotRow], rows[found]] = [rows[found]!, rows[pivotRow]!];
+      const pivotRowArr = rows[pivotRow]!;
+      const scale = pivotRowArr[pivotCol]!;
+      for (let j = 0; j <= 81; j++) pivotRowArr[j] = pivotRowArr[j]!.div(scale);
       for (let i = 0; i < nRows; i++) {
-        if (i === pivotRow || rows[i][pivotCol].isZero()) continue;
-        const factor = rows[i][pivotCol];
+        if (i === pivotRow || rows[i]![pivotCol]!.isZero()) continue;
+        const factor = rows[i]![pivotCol]!;
+        const rowI = rows[i]!;
         for (let j = 0; j <= 81; j++)
-          rows[i][j] = rows[i][j].sub(factor.mul(rows[pivotRow][j]));
+          rowI[j] = rowI[j]!.sub(factor.mul(pivotRowArr[j]!));
       }
       pivotRow++;
     }
@@ -174,13 +176,13 @@ export class LinearSystem {
     for (const row of rows) {
       const nonzero: Array<[number, Frac]> = [];
       for (let j = 0; j < 81; j++) {
-        if (!row[j].isZero()) nonzero.push([j, row[j]]);
+        if (!row[j]!.isZero()) nonzero.push([j, row[j]!]);
       }
-      const rhs = row[81];
+      const rhs = row[81]!;
       if (nonzero.length === 0) continue;
 
       if (nonzero.length === 1) {
-        const [j, coeff] = nonzero[0];
+        const [j, coeff] = nonzero[0]!;
         const valFrac = rhs.div(coeff);
         if (valFrac.isInteger()) {
           const val = valFrac.toInt();
@@ -192,7 +194,7 @@ export class LinearSystem {
           }
         }
       } else if (nonzero.length === 2) {
-        const [jp, cp] = nonzero[0], [jq, cq] = nonzero[1];
+        const [jp, cp] = nonzero[0]!, [jq, cq] = nonzero[1]!;
         if (cp.eq(Frac.ONE) && cq.eq(new Frac(-1)) && rhs.isInteger()) {
           this._addDeltaPair(idxToCell.get(jp)!, idxToCell.get(jq)!, rhs.toInt());
         } else if (cp.eq(new Frac(-1)) && cq.eq(Frac.ONE) && rhs.isInteger()) {
@@ -206,7 +208,7 @@ export class LinearSystem {
 
       if (nonzero.length >= 2) {
         const rid = this._nextRid++;
-        const rd: SparseRow = new Map(nonzero.map(([j, c]) => [cellKey(idxToCell.get(j)!), c]));
+        const rd: SparseRow = new Map(nonzero.map(([j, c]): [string, Frac] => [cellKey(idxToCell.get(j)!), c!]));
         this._liveRows.set(rid, rd);
         this._liveRhs.set(rid, rhs);
         for (const [ck] of rd) {
@@ -315,7 +317,8 @@ export class LinearSystem {
       }
 
       if (rowDict.size === 1) {
-        const [[rck, coeff]] = rowDict;
+        const [firstEntry] = rowDict;
+        const [rck, coeff] = firstEntry!;
         const valFrac = newRhs.div(coeff);
         if (valFrac.isInteger()) {
           const detVal = valFrac.toInt();
@@ -332,7 +335,7 @@ export class LinearSystem {
             const vkey = [...rowDict.keys()].sort().join('|');
             if (!seen.has(vkey)) {
               seen.add(vkey);
-              constraints.push([vcells as unknown as Cell[], total, isBurb(vcells as unknown as Cell[])]);
+              constraints.push([vcells as Cell[], total, isBurb(vcells as Cell[])]);
             }
           }
         }
@@ -384,21 +387,21 @@ export class LinearSystem {
     const covered = new Set<string>();
     for (const [p, q] of this.deltaPairs) covered.add(this._cellSetKey([p, q]));
     for (const [cells] of this.virtualCages)
-      if (cells.length === 2) covered.add(this._cellSetKey(cells as unknown as Cell[]));
+      if (cells.length === 2) covered.add(this._cellSetKey(cells as Cell[]));
 
     const rids = [...this._liveRows.keys()];
     for (let ii = 0; ii < rids.length; ii++) {
-      const rowI = this._liveRows.get(rids[ii])!;
-      const rhsI = this._liveRhs.get(rids[ii])!;
+      const rowI = this._liveRows.get(rids[ii]!)!;
+      const rhsI = this._liveRhs.get(rids[ii]!)!;
       for (let jj = ii + 1; jj < rids.length; jj++) {
-        const rowJ = this._liveRows.get(rids[jj])!;
-        const rhsJ = this._liveRhs.get(rids[jj])!;
+        const rowJ = this._liveRows.get(rids[jj]!)!;
+        const rhsJ = this._liveRhs.get(rids[jj]!)!;
         const merged = new Map<string, Frac>(rowI);
         for (const [ck, coeff] of rowJ)
           merged.set(ck, (merged.get(ck) ?? Frac.ZERO).add(coeff));
         const nonzero = [...merged].filter(([, c]) => !c.isZero());
         if (nonzero.length !== 2) continue;
-        if (!nonzero[0][1].eq(Frac.ONE) || !nonzero[1][1].eq(Frac.ONE)) continue;
+        if (!nonzero[0]![1]!.eq(Frac.ONE) || !nonzero[1]![1]!.eq(Frac.ONE)) continue;
         const totalFrac = rhsI.add(rhsJ);
         if (!totalFrac.isInteger()) continue;
         const total = totalFrac.toInt();
@@ -413,7 +416,7 @@ export class LinearSystem {
   }
 
   private _deriveNonburbVirtualCages(
-    spec: PuzzleSpec,
+    _spec: PuzzleSpec,
     realCageCellSets: Set<string>,
     cageCellsMap: Map<number, Cell[]>,
     cageTotalsMap: Map<number, number>,
@@ -422,14 +425,14 @@ export class LinearSystem {
     const eqs: DeriveEq[] = [];
 
     const rowSets = Array.from({length: 9}, (_, r) =>
-      new Set(Array.from({length: 9}, (__, c) => cellKey([r, c] as unknown as Cell))));
+      new Set(Array.from({length: 9}, (__, c) => cellKey([r, c] as Cell))));
     const colSets = Array.from({length: 9}, (_, c) =>
-      new Set(Array.from({length: 9}, (__, r) => cellKey([r, c] as unknown as Cell))));
+      new Set(Array.from({length: 9}, (__, r) => cellKey([r, c] as Cell))));
     const boxCellSets = Array.from({length: 9}, (_, b) => {
       const s = new Set<string>();
       for (let dr = 0; dr < 3; dr++)
         for (let dc = 0; dc < 3; dc++)
-          s.add(cellKey([(b / 3 | 0) * 3 + dr, (b % 3) * 3 + dc] as unknown as Cell));
+          s.add(cellKey([(b / 3 | 0) * 3 + dr, (b % 3) * 3 + dc] as Cell));
       return s;
     });
 
@@ -445,8 +448,8 @@ export class LinearSystem {
       if (total > 0) {
         const fc = new Set(cells.map(cellKey));
         for (const cell of cells) {
-          cageOf.set(cellKey(cell as unknown as Cell), fc);
-          totalOf.set(cellKey(cell as unknown as Cell), total);
+          cageOf.set(cellKey(cell as Cell), fc);
+          totalOf.set(cellKey(cell as Cell), total);
         }
         eqs.push({cells: fc, total, solns: solSums(cells.length, 0, total).map(s => [...s])});
       }
@@ -454,13 +457,13 @@ export class LinearSystem {
 
     const seenSw = new Set<string>(eqs.map(e => [...e.cells].sort().join('|')));
     for (const [cells] of this.virtualCages)
-      seenSw.add(this._cellSetKey(cells as unknown as Cell[]));
+      seenSw.add(this._cellSetKey(cells as Cell[]));
 
     const pushDerived = (fcvr: Set<string>, sm: number) => {
       const key = [...fcvr].sort().join('|');
       if (seenSw.has(key) || realCageCellSets.has(key)) return;
       seenSw.add(key);
-      const cells = [...fcvr].map(keyToCell) as unknown as Cell[];
+      const cells = [...fcvr].map(keyToCell) as Cell[];
       eqs.push({cells: fcvr, total: sm, solns: solSums(cells.length, 0, sm).map(s => [...s])});
       this.virtualCages.push([cells, sm, true, null]);
     };
@@ -472,10 +475,10 @@ export class LinearSystem {
 
     for (const [cells, vtotal, distinct] of this.virtualCages) {
       if (distinct) {
-        const key = this._cellSetKey(cells as unknown as Cell[]);
+        const key = this._cellSetKey(cells as Cell[]);
         if (!seenSw.has(key)) {
           seenSw.add(key);
-          const fc = new Set(cells.map(c => cellKey(c as unknown as Cell)));
+          const fc = new Set(cells.map(c => cellKey(c as Cell)));
           eqs.push({cells: fc, total: vtotal, solns: solSums(cells.length, 0, vtotal).map(s => [...s])});
         }
       }
@@ -489,7 +492,7 @@ export class LinearSystem {
       if (eq.cells.size === 0 || eq.solns.length === 0) continue;
       const key = [...eq.cells].sort().join('|');
       if (seen.has(key)) continue;
-      const cells = [...eq.cells].map(keyToCell) as unknown as Cell[];
+      const cells = [...eq.cells].map(keyToCell) as Cell[];
       const distinct = isBurb(cells);
       if (!distinct) {
         const must = eq.solns.reduce<Set<number> | null>((acc, s) => {
@@ -511,20 +514,20 @@ export class LinearSystem {
     const equns: Array<[Set<string>, number]> = [];
     let rf = 0, rb = 0, cvr = new Set<string>(), sm = 0;
     while (rf < line.length) {
-      for (const ck of line[rf]) {
+      for (const ck of line[rf]!) {
         if (!cvr.has(ck)) {
           const cage = cageOf.get(ck);
           if (cage) { for (const x of cage) cvr.add(x); sm += totalOf.get(ck)!; }
         }
       }
       rf++;
-      while (rb < line.length && line[rb].isSubsetOf(cvr)) {
-        for (const x of line[rb]) cvr.delete(x);
+      while (rb < line.length && line[rb]!.isSubsetOf(cvr)) {
+        for (const x of line[rb]!) cvr.delete(x);
         sm -= 45;
         rb++;
       }
       rf = Math.max(rf, rb);
-      if (sm > 0 && cvr.size > 0 && isBurb([...cvr].map(keyToCell) as unknown as Cell[]))
+      if (sm > 0 && cvr.size > 0 && isBurb([...cvr].map(keyToCell) as Cell[]))
         equns.push([new Set(cvr), sm]);
     }
     return equns;
@@ -540,21 +543,21 @@ export class LinearSystem {
 
     const recurse = (box: number, cvr: Set<string>, sm: number, subtracted: Set<number>, visited: Set<number>): void => {
       visited = new Set(visited); visited.add(box);
-      for (const ck of boxCellSets[box]) {
+      for (const ck of boxCellSets[box]!) {
         if (!cvr.has(ck)) {
           const cage = cageOf.get(ck);
           if (cage) { for (const x of cage) cvr.add(x); sm += totalOf.get(ck)!; }
         }
       }
       for (let b = 0; b < 9; b++) {
-        if (!subtracted.has(b) && boxCellSets[b].isSubsetOf(cvr)) {
+        if (!subtracted.has(b) && boxCellSets[b]!.isSubsetOf(cvr)) {
           subtracted = new Set(subtracted); subtracted.add(b);
           sm -= 45;
-          for (const x of boxCellSets[b]) cvr.delete(x);
+          for (const x of boxCellSets[b]!) cvr.delete(x);
         }
       }
       if (sm !== 0 && cvr.size > 0) {
-        const cells = [...cvr].map(keyToCell) as unknown as Cell[];
+        const cells = [...cvr].map(keyToCell) as Cell[];
         const key = [...cvr].sort().join('|');
         if (!seenEq.has(key) && isBurb(cells)) { seenEq.add(key); equns.push([new Set(cvr), sm]); }
       }
@@ -563,7 +566,7 @@ export class LinearSystem {
         const ni = bi + di, nj = bj + dj;
         if (ni >= 0 && ni < 3 && nj >= 0 && nj < 3) {
           const nb = ni * 3 + nj;
-          if (!visited.has(nb) && !boxCellSets[nb].isDisjointFrom(cvr))
+          if (!visited.has(nb) && !boxCellSets[nb]!.isDisjointFrom(cvr))
             recurse(nb, new Set(cvr), sm, subtracted, visited);
         }
       }
@@ -579,9 +582,9 @@ export class LinearSystem {
       reduced = false;
       const active = eqs.filter(e => e.cells.size > 0).sort((a, b) => a.cells.size - b.cells.size);
       for (let i = 0; i < active.length; i++) {
-        const ei = active[i];
+        const ei = active[i]!;
         for (let j = i + 1; j < active.length; j++) {
-          const ej = active[j];
+          const ej = active[j]!;
           if (ei.cells.isSubsetOf(ej.cells)) {
             ej.cells = ej.cells.difference(ei.cells);
             ej.total -= ei.total;
@@ -607,28 +610,28 @@ export class LinearSystem {
       const total = cageTotalsMap.get(cid) ?? 0;
       if (total > 0) allEqs.push([cells, total]);
     }
-    for (const vc of this.virtualCages) allEqs.push([vc[0] as unknown as Cell[], vc[1]]);
+    for (const vc of this.virtualCages) allEqs.push([vc[0] as Cell[], vc[1]]);
 
     const existing = new Set<string>();
     for (const [p, q] of this.deltaPairs) existing.add(this._cellSetKey([p, q]));
 
     for (let i = 0; i < allEqs.length; i++) {
-      const [cells1, total1] = allEqs[i];
+      const [cells1, total1] = allEqs[i]!;
       const set1 = new Set(cells1.map(cellKey));
       for (let j = i + 1; j < allEqs.length; j++) {
-        const [cells2, total2] = allEqs[j];
+        const [cells2, total2] = allEqs[j]!;
         const set2 = new Set(cells2.map(cellKey));
         const shared = new Set([...set1].filter(k => set2.has(k)));
         if (shared.size === 0) continue;
         const left  = [...set1].filter(k => !shared.has(k));
         const right = [...set2].filter(k => !shared.has(k));
         if (left.length !== 1 || right.length !== 1) continue;
-        const pairKey = [left[0], right[0]].sort().join('|');
+        const pairKey = [left[0]!, right[0]!].sort().join('|');
         if (existing.has(pairKey)) continue;
         existing.add(pairKey);
         const delta = total1 - total2;
-        if (delta >= 0) this._addDeltaPair(keyToCell(left[0]), keyToCell(right[0]), delta);
-        else            this._addDeltaPair(keyToCell(right[0]), keyToCell(left[0]), -delta);
+        if (delta >= 0) this._addDeltaPair(keyToCell(left[0]!), keyToCell(right[0]!), delta);
+        else            this._addDeltaPair(keyToCell(right[0]!), keyToCell(left[0]!), -delta);
       }
     }
   }

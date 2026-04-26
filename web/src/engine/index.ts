@@ -32,18 +32,18 @@ export type { HintResult } from './hint.js';
  * Falls back to MRV backtracking if the rule engine stalls.
  */
 export function solve(spec: PuzzleSpec, givenDigits?: number[][]): BoardState {
-  const board = new BoardState(spec, { includeVirtualCages: true });
+  const board = new BoardState(spec, { includeVirtualCages: false });
   const engine = new SolverEngine(board, defaultRules());
 
   if (givenDigits) {
     for (let r = 0; r < 9; r++) {
       for (let c = 0; c < 9; c++) {
-        const d = givenDigits[r][c];
+        const d = givenDigits[r]![c]!;
         if (d > 0) {
           const elims: Elimination[] = [];
           for (let other = 1; other <= 9; other++) {
-            if (other !== d && board.candidates[r][c].has(other))
-              elims.push({ cell: [r, c] as unknown as Cell, digit: other });
+            if (other !== d && board.cands(r, c).has(other))
+              elims.push({ cell: [r, c] as Cell, digit: other });
           }
           if (elims.length) engine.applyEliminations(elims);
         }
@@ -55,7 +55,7 @@ export function solve(spec: PuzzleSpec, givenDigits?: number[][]): BoardState {
 
   // If engine stalled, fall back to MRV backtracking
   const stalled = Array.from({length: 9}, (_, r) =>
-    Array.from({length: 9}, (__, c) => board.candidates[r][c].size !== 1)
+    Array.from({length: 9}, (__, c) => board.cands(r, c).size !== 1)
   ).some(row => row.some(Boolean));
 
   if (stalled) {
@@ -63,7 +63,7 @@ export function solve(spec: PuzzleSpec, givenDigits?: number[][]): BoardState {
     if (solution !== null) {
       for (let r = 0; r < 9; r++)
         for (let c = 0; c < 9; c++)
-          board.candidates[r][c] = new Set([solution[r][c]]);
+          board.candidates[r]![c]! = new Set([solution[r]![c]!]);
     }
   }
 
@@ -81,18 +81,18 @@ export function getHints(
   givenDigits: number[][] | undefined,
   hintRuleNames: ReadonlySet<string>,
 ): HintResult[] {
-  const board = new BoardState(spec, { includeVirtualCages: true });
+  const board = new BoardState(spec, { includeVirtualCages: false });
   const engine = new SolverEngine(board, defaultRules(), { hintRules: hintRuleNames });
 
   if (givenDigits) {
     for (let r = 0; r < 9; r++) {
       for (let c = 0; c < 9; c++) {
-        const d = givenDigits[r][c];
+        const d = givenDigits[r]![c]!;
         if (d > 0) {
           const elims: Elimination[] = [];
           for (let other = 1; other <= 9; other++) {
-            if (other !== d && board.candidates[r][c].has(other))
-              elims.push({ cell: [r, c] as unknown as Cell, digit: other });
+            if (other !== d && board.cands(r, c).has(other))
+              elims.push({ cell: [r, c] as Cell, digit: other });
           }
           if (elims.length) engine.applyEliminations(elims);
         }

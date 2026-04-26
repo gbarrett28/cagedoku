@@ -15,19 +15,19 @@ describe('NakedPair', () => {
     const rowUid = bs.rowUnitId(0);
 
     // Pair cells: both have {4,6}
-    bs.candidates[0][0] = new Set([4, 6]);
-    bs.candidates[0][1] = new Set([4, 6]);
+    bs.candidates[0]![0]! = new Set([4, 6]);
+    bs.candidates[0]![1]! = new Set([4, 6]);
     // Other cells: have 6 but not 4 (count(4)=2 triggers COUNT_HIT_TWO)
     for (let c = 2; c < 9; c++) {
-      bs.candidates[0][c] = new Set([1, 2, 3, 5, 6, 7, 8, 9]);
+      bs.candidates[0]![c]! = new Set([1, 2, 3, 5, 6, 7, 8, 9]);
     }
     // Sync counts
     for (let d = 1; d <= 9; d++) {
-      bs.counts[rowUid][d] = [...Array(9).keys()].filter(c => bs.candidates[0][c].has(d)).length;
+      bs.counts[rowUid]![d] = [...Array(9).keys()].filter(c => bs.cands(0, c).has(d)).length;
     }
 
     const ctx: RuleContext = {
-      unit: bs.units[rowUid],
+      unit: bs.units[rowUid] ?? null,
       cell: null,
       board: bs,
       hint: Trigger.COUNT_HIT_TWO,
@@ -53,12 +53,12 @@ describe('NakedPair', () => {
   it('returns empty when two cells do not share the same pair', () => {
     const bs = new BoardState(makeTrivialSpec());
     const rowUid = bs.rowUnitId(0);
-    bs.candidates[0][0] = new Set([4, 6]);
-    bs.candidates[0][1] = new Set([4, 7]); // different second digit
-    bs.counts[rowUid][4] = 2;
+    bs.candidates[0]![0]! = new Set([4, 6]);
+    bs.candidates[0]![1]! = new Set([4, 7]); // different second digit
+    bs.counts[rowUid]![4] = 2;
 
     const ctx: RuleContext = {
-      unit: bs.units[rowUid],
+      unit: bs.units[rowUid] ?? null,
       cell: null,
       board: bs,
       hint: Trigger.COUNT_HIT_TWO,

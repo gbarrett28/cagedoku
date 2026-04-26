@@ -13,7 +13,7 @@
  * cage-specific rules become no-ops naturally.
  */
 
-import { BoardState } from './boardState.js';
+import { BoardState, CAGE_UNIT_OFFSET } from './boardState.js';
 import type { HintResult } from './hint.js';
 import type { RuleContext, RuleStats, SolverRule } from './rule.js';
 import { makeRuleStats } from './rule.js';
@@ -27,10 +27,9 @@ import {
   Trigger,
   UnitKind,
   VirtualCageAddition,
-  emptyResult,
   hasProgress,
 } from './types.js';
-import { isStale, SolverQueue, WorkItem } from './workQueue.js';
+import { isStale, SolverQueue } from './workQueue.js';
 
 // ---------------------------------------------------------------------------
 // Module-level helpers
@@ -48,15 +47,16 @@ function filterSumRange(
   total: number,
   candidates: Set<number>[][],
 ): Elimination[] {
+  const c = (r: number, col: number): Set<number> => candidates[r]![col]!;
   const elims: Elimination[] = [];
   for (let i = 0; i < cells.length; i++) {
     const others = cells.filter((_, j) => j !== i);
-    const minOthers = others.reduce((s, [r, c]) => s + Math.min(...candidates[r][c]), 0);
-    const maxOthers = others.reduce((s, [r, c]) => s + Math.max(...candidates[r][c]), 0);
-    const [r, c] = cells[i];
-    for (const d of candidates[r][c]) {
+    const minOthers = others.reduce((s, [r, col]) => s + Math.min(...c(r, col)), 0);
+    const maxOthers = others.reduce((s, [r, col]) => s + Math.max(...c(r, col)), 0);
+    const [r, col] = cells[i]!;
+    for (const d of c(r, col)) {
       if (!(minOthers + d <= total && total <= maxOthers + d))
-        elims.push({ cell: cells[i], digit: d });
+        elims.push({ cell: cells[i]!, digit: d });
     }
   }
   return elims;
@@ -67,26 +67,27 @@ function filterSumConstraint(
   total: number,
   candidates: Set<number>[][],
 ): Elimination[] {
+  const c = (r: number, col: number): Set<number> => candidates[r]![col]!;
   const solns = solSums(cells.length, 0, total);
   if (solns.length === 0) return [];
 
   const candUnion = new Set(solns.flat());
   const sortedCells = [...cells].sort(([r1, c1], [r2, c2]) => {
-    const a = [...candidates[r1][c1]].filter(d => candUnion.has(d)).length;
-    const b = [...candidates[r2][c2]].filter(d => candUnion.has(d)).length;
+    const a = [...c(r1, c1)].filter(d => candUnion.has(d)).length;
+    const b = [...c(r2, c2)].filter(d => candUnion.has(d)).length;
     return a - b;
   });
 
-  const perCellPossible = new Map<string, Set<number>>(cells.map(c => [`${c[0]},${c[1]}`, new Set()]));
+  const perCellPossible = new Map<string, Set<number>>(cells.map(cell => [`${cell[0]},${cell[1]}`, new Set()]));
 
   function bt(idx: number, remaining: Set<number>): boolean {
     if (idx === sortedCells.length) return true;
-    const [r, c] = sortedCells[idx];
+    const [r, col] = sortedCells[idx]!;
     let found = false;
-    for (const d of [...candidates[r][c]].filter(d => remaining.has(d))) {
+    for (const d of [...c(r, col)].filter(d => remaining.has(d))) {
       remaining.delete(d);
       if (bt(idx + 1, remaining)) {
-        perCellPossible.get(`${r},${c}`)!.add(d);
+        perCellPossible.get(`${r},${col}`)!.add(d);
         found = true;
       }
       remaining.add(d);
@@ -96,9 +97,9 @@ function filterSumConstraint(
 
   for (const soln of solns) bt(0, new Set(soln));
 
-  return cells.flatMap(([r, c]) =>
-    [...candidates[r][c]].filter(d => !perCellPossible.get(`${r},${c}`)!.has(d))
-      .map(digit => ({ cell: [r, c] as unknown as Cell, digit }))
+  return cells.flatMap(([r, col]) =>
+    [...c(r, col)].filter(d => !perCellPossible.get(`${r},${col}`)!.has(d))
+      .map(digit => ({ cell: [r, col] as Cell, digit }))
   );
 }
 
@@ -145,7 +146,6 @@ export class SolverEngine {
   appliedVirtualCages: VirtualCageAddition[] = [];
 
   private readonly _triggerMap: Map<Trigger, SolverRule[]>;
-  private readonly _rules: SolverRule[];
   private readonly _ruleIndex: Map<SolverRule, number>;
   private readonly _hintRules: ReadonlySet<string>;
   private readonly _linearSystemActive: boolean;
@@ -160,7 +160,6 @@ export class SolverEngine {
   ) {
     this.board = board;
     this.queue = new SolverQueue();
-    this._rules = rules;
     this._ruleIndex = new Map(rules.map((r, i) => [r, i]));
     this.stats = new Map(rules.map(r => [r.name, makeRuleStats()]));
     this._hintRules = hintRules;
@@ -177,14 +176,14 @@ export class SolverEngine {
   applyEliminations(eliminations: readonly Elimination[]): void {
     for (const elim of eliminations) {
       const [r, c] = elim.cell;
-      if (!this.board.candidates[r][c].has(elim.digit)) continue;
-      if (this.board.candidates[r][c].size <= 1) continue;
+      if (!this.board.cands(r, c).has(elim.digit)) continue;
+      if (this.board.cands(r, c).size <= 1) continue;
       const events = this.board.removeCandidate(r, c, elim.digit);
       this._routeEvents(events, r, c);
     }
   }
 
-  private _routeEvents(events: BoardEvent[], srcR: number, srcC: number): void {
+  private _routeEvents(events: BoardEvent[], _srcR: number, _srcC: number): void {
     for (const event of events) {
       if (event.trigger === Trigger.CELL_DETERMINED) {
         const cell = event.payload as Cell;
@@ -196,10 +195,10 @@ export class SolverEngine {
           for (const [vcells, vtotal, distinct] of newConstraints) {
             const cellList = [...vcells];
             if (cellList.length === 1) {
-              const [lr, lc] = cellList[0];
+              const [lr, lc] = cellList[0]!;
               for (let d = 1; d <= 9; d++) {
-                if (d !== vtotal && this.board.candidates[lr][lc].has(d))
-                  this.applyEliminations([{ cell: cellList[0], digit: d }]);
+                if (d !== vtotal && this.board.cands(lr, lc).has(d))
+                  this.applyEliminations([{ cell: cellList[0]!, digit: d }]);
               }
             } else if (distinct) {
               this.applyEliminations(filterSumConstraint(cellList as Cell[], vtotal, this.board.candidates));
@@ -216,14 +215,14 @@ export class SolverEngine {
         const uid = event.payload as number;
         for (const rule of this._triggerMap.get(Trigger.SOLUTION_PRUNED) ?? [])
           this.queue.enqueueUnit(rule.priority, rule, this._ruleIndex.get(rule)!, uid,
-            this.board.unitVersions[uid] - 1, Trigger.SOLUTION_PRUNED, null);
+            this.board.unitVersions[uid]! - 1, Trigger.SOLUTION_PRUNED, null);
       } else {
         const uid = event.payload as number;
         const kind = unitKindFromId(uid);
         for (const rule of this._triggerMap.get(event.trigger) ?? []) {
           if (rule.unitKinds.size === 0 || rule.unitKinds.has(kind))
             this.queue.enqueueUnit(rule.priority, rule, this._ruleIndex.get(rule)!, uid,
-              this.board.unitVersions[uid] - 1, event.trigger, event.hintDigit);
+              this.board.unitVersions[uid]! - 1, event.trigger, event.hintDigit);
         }
       }
       // Re-schedule all GLOBAL rules on every board change
@@ -246,16 +245,16 @@ export class SolverEngine {
   }
 
   private _applyGlobalRuleDefault(se: SolutionElimination, ruleName: string): void {
-    const solns = this.board.cageSolns[se.cageIdx];
+    const solns = this.board.cageSolns[se.cageIdx]!;
     const idx = solns.findIndex(s => s.length === se.solution.length && s.every((d, i) => d === se.solution[i]));
     if (idx < 0) return;
     solns.splice(idx, 1);
-    const cageUnitId = 27 + se.cageIdx;
-    this.board.unitVersions[cageUnitId]++;
+    const cageUnitId = CAGE_UNIT_OFFSET + se.cageIdx;
+    this.board.unitVersions[cageUnitId]!++;
     this.appliedMutations.push({ ruleName, type: 'solution_eliminated', cageIdx: se.cageIdx });
     for (const rule of this._triggerMap.get(Trigger.SOLUTION_PRUNED) ?? [])
       this.queue.enqueueUnit(rule.priority, rule, this._ruleIndex.get(rule)!, cageUnitId,
-        this.board.unitVersions[cageUnitId] - 1, Trigger.SOLUTION_PRUNED, null);
+        this.board.unitVersions[cageUnitId]! - 1, Trigger.SOLUTION_PRUNED, null);
     for (const rule of this._triggerMap.get(Trigger.GLOBAL) ?? [])
       this.queue.enqueueGlobal(rule.priority, rule, this._ruleIndex.get(rule)!);
   }
@@ -274,7 +273,7 @@ export class SolverEngine {
       const item = this.queue.pop();
       if (isStale(item, this.board.unitVersions)) continue;
 
-      const unit = item.unitId !== null ? this.board.units[item.unitId] : null;
+      const unit = item.unitId !== null ? this.board.units[item.unitId] ?? null : null;
       const ctx: RuleContext = {
         unit,
         cell: item.cell,

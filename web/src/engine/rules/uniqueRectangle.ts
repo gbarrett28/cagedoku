@@ -25,17 +25,20 @@ export class UniqueRectangle {
     const rows = Array.from({ length: 9 }, (_, i) => i);
     const cols = Array.from({ length: 9 }, (_, i) => i);
 
-    for (const [r1, r2] of combinations(rows, 2)) {
-      for (const [c1, c2] of combinations(cols, 2)) {
+    for (const rPair of combinations(rows, 2)) {
+      const [r1, r2] = rPair as [number, number];
+      for (const cPair of combinations(cols, 2)) {
+        const [c1, c2] = cPair as [number, number];
         const corners: [number, number][] = [[r1, c1], [r1, c2], [r2, c1], [r2, c2]];
-        const cands = corners.map(([r, c]) => board.candidates[r][c]);
+        const cands = corners.map(([r, c]) => board.cands(r, c));
 
         // Union of all candidates across all four corners
         const allCands = new Set<number>();
         for (const s of cands) for (const d of s) allCands.add(d);
         if (allCands.size < 2) continue;
 
-        for (const [a, b] of combinations([...allCands].sort((x, y) => x - y), 2)) {
+        for (const abPair of combinations([...allCands].sort((x, y) => x - y), 2)) {
+          const [a, b] = abPair as [number, number];
           // --- Type 1: exactly three corners are {a, b} ---
           const roofIndices = cands.reduce<number[]>(
             (acc, s, i) => (s.size === 2 && s.has(a) && s.has(b) ? [...acc, i] : acc),
@@ -43,10 +46,10 @@ export class UniqueRectangle {
           );
           if (roofIndices.length === 3) {
             const floorIdx = [0, 1, 2, 3].find(i => !roofIndices.includes(i))!;
-            const [fr, fc] = corners[floorIdx];
+            const [fr, fc] = corners[floorIdx]!;
             for (const d of [a, b]) {
-              if (board.candidates[fr][fc].has(d))
-                elims.push({ cell: [fr, fc] as unknown as Cell, digit: d });
+              if (board.cands(fr, fc).has(d))
+                elims.push({ cell: [fr, fc] as Cell, digit: d });
             }
           }
 
@@ -61,17 +64,17 @@ export class UniqueRectangle {
             [],
           );
           if (baseIndices.length === 2 && extraIndices.length === 2) {
-            const extra0 = new Set([...cands[extraIndices[0]]].filter(d => d !== a && d !== b));
-            const extra1 = new Set([...cands[extraIndices[1]]].filter(d => d !== a && d !== b));
+            const extra0 = new Set([...cands[extraIndices[0]!]!].filter(d => d !== a && d !== b));
+            const extra1 = new Set([...cands[extraIndices[1]!]!].filter(d => d !== a && d !== b));
             if (extra0.size === 1 && [...extra0][0] === [...extra1][0]) {
-              const x = [...extra0][0];
-              const [ear, eac] = corners[extraIndices[0]];
-              const [ebr, ebc] = corners[extraIndices[1]];
+              const x = [...extra0][0]!;
+              const [ear, eac] = corners[extraIndices[0]!]!;
+              const [ebr, ebc] = corners[extraIndices[1]!]!;
               for (let r = 0; r < 9; r++) {
                 for (let c = 0; c < 9; c++) {
                   if ((r === ear && c === eac) || (r === ebr && c === ebc)) continue;
-                  if (board.candidates[r][c].has(x) && sees(r, c, ear, eac) && sees(r, c, ebr, ebc))
-                    elims.push({ cell: [r, c] as unknown as Cell, digit: x });
+                  if (board.cands(r, c).has(x) && sees(r, c, ear, eac) && sees(r, c, ebr, ebc))
+                    elims.push({ cell: [r, c] as Cell, digit: x });
                 }
               }
             }

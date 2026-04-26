@@ -32,15 +32,15 @@ export class SumPairConstraint {
     const seen = new Set<string>();
 
     for (const [r, c] of ctx.unit.cells as Cell[]) {
-      for (const [a, b, total] of board.linearSystem.sumPairsForCell([r, c] as unknown as Cell)) {
+      for (const [a, b, total] of board.linearSystem.sumPairsForCell([r, c] as Cell)) {
         const key = `${a[0]},${a[1]}-${b[0]},${b[1]}-${total}`;
         if (seen.has(key)) continue;
         seen.add(key);
 
-        const validA = new Set([...board.candidates[b[0]][b[1]]].map(m => total - m).filter(d => d >= 1 && d <= 9));
-        for (const d of board.candidates[a[0]][a[1]]) { if (!validA.has(d)) elims.push({ cell: a, digit: d }); }
-        const validB = new Set([...board.candidates[a[0]][a[1]]].map(m => total - m).filter(d => d >= 1 && d <= 9));
-        for (const d of board.candidates[b[0]][b[1]]) { if (!validB.has(d)) elims.push({ cell: b, digit: d }); }
+        const validA = new Set([...board.cands(b[0], b[1])].map(m => total - m).filter(d => d >= 1 && d <= 9));
+        for (const d of board.cands(a[0], a[1])) { if (!validA.has(d)) elims.push({ cell: a, digit: d }); }
+        const validB = new Set([...board.cands(a[0], a[1])].map(m => total - m).filter(d => d >= 1 && d <= 9));
+        for (const d of board.cands(b[0], b[1])) { if (!validB.has(d)) elims.push({ cell: b, digit: d }); }
       }
     }
     return { ...emptyResult(), eliminations: elims };
@@ -53,16 +53,16 @@ export class SumPairConstraint {
     const seen = new Set<string>();
 
     for (const [r, c] of ctx.unit.cells as Cell[]) {
-      for (const [a, b, total] of board.linearSystem.sumPairsForCell([r, c] as unknown as Cell)) {
+      for (const [a, b, total] of board.linearSystem.sumPairsForCell([r, c] as Cell)) {
         const key = `${a[0]},${a[1]}-${b[0]},${b[1]}-${total}`;
         if (seen.has(key)) continue;
         seen.add(key);
 
         const pairElims: Elimination[] = [];
-        const validA = new Set([...board.candidates[b[0]][b[1]]].map(m => total - m).filter(d => d >= 1 && d <= 9));
-        for (const d of board.candidates[a[0]][a[1]]) { if (!validA.has(d)) pairElims.push({ cell: a, digit: d }); }
-        const validB = new Set([...board.candidates[a[0]][a[1]]].map(m => total - m).filter(d => d >= 1 && d <= 9));
-        for (const d of board.candidates[b[0]][b[1]]) { if (!validB.has(d)) pairElims.push({ cell: b, digit: d }); }
+        const validA = new Set([...board.cands(b[0], b[1])].map(m => total - m).filter(d => d >= 1 && d <= 9));
+        for (const d of board.cands(a[0], a[1])) { if (!validA.has(d)) pairElims.push({ cell: a, digit: d }); }
+        const validB = new Set([...board.cands(a[0], a[1])].map(m => total - m).filter(d => d >= 1 && d <= 9));
+        for (const d of board.cands(b[0], b[1])) { if (!validB.has(d)) pairElims.push({ cell: b, digit: d }); }
         if (!pairElims.length) continue;
 
         hints.push({

@@ -33,7 +33,7 @@ function findPartition(remaining: Set<string>, cells: Cell[], subCages: SubCage[
   if (!remaining.size) return [];
   const sorted = [...cells].filter(([r,c]) => remaining.has(`${r},${c}`)).sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
   if (!sorted.length) return null;
-  const target = `${sorted[0][0]},${sorted[0][1]}`;
+  const target = `${sorted[0]![0]},${sorted[0]![1]}`;
   for (const [sc, solns] of subCages) {
     if (!sc.some(([r,c]) => `${r},${c}` === target)) continue;
     const newRemaining = new Set([...remaining].filter(k => !sc.some(([r,c]) => `${r},${c}` === k)));
@@ -55,7 +55,7 @@ function crossValidCombos(partition: Partition, maxNodes: number): Set<string>[]
 
   function dfs(idx: number, filtered: number[][][]): boolean {
     if (idx === n) return true;
-    const solns = filtered[idx];
+    const solns = filtered[idx]!;
     if (!solns.length) return false;
     const isForced = solns.length === 1;
     let foundValid = false;
@@ -63,8 +63,8 @@ function crossValidCombos(partition: Partition, maxNodes: number): Set<string>[]
       if (!isForced) {
         nodes++;
         if (nodes > maxNodes) {
-          for (const s of solns) validPerCage[idx].add(solnKey(s));
-          for (let j = idx + 1; j < n; j++) for (const s of filtered[j]) validPerCage[j].add(solnKey(s));
+          for (const s of solns) validPerCage[idx]!.add(solnKey(s));
+          for (let j = idx + 1; j < n; j++) for (const s of filtered[j]!) validPerCage[j]!.add(solnKey(s));
           throw new CapHitError();
         }
       }
@@ -74,9 +74,9 @@ function crossValidCombos(partition: Partition, maxNodes: number): Set<string>[]
       );
       try {
         const sub = dfs(idx + 1, newFiltered);
-        if (sub) { validPerCage[idx].add(solnKey(soln)); foundValid = true; }
+        if (sub) { validPerCage[idx]!.add(solnKey(soln)); foundValid = true; }
       } catch (e) {
-        if (e instanceof CapHitError) { validPerCage[idx].add(solnKey(soln)); throw e; }
+        if (e instanceof CapHitError) { validPerCage[idx]!.add(solnKey(soln)); throw e; }
       }
     }
     return foundValid;
@@ -104,14 +104,14 @@ function expandCellLevel(
       for (const [key, digit] of current) result.get(key)!.add(digit);
       return;
     }
-    const [cells, ] = partition[idx];
+    const [cells, ] = partition[idx]!;
     const sortedCells = [...cells].sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
-    for (const solnKey of validPerCage[idx]) {
+    for (const solnKey of validPerCage[idx]!) {
       const digits = solnKey.split(',').map(Number);
       if (digits.some(d => used.has(d))) continue;
       for (const perm of permutations(digits)) {
-        if (!perm.every((d, i) => candidates[sortedCells[i][0]][sortedCells[i][1]].has(d))) continue;
-        const cellAsn = new Map(sortedCells.map(([r,c], i) => [`${r},${c}`, perm[i]]));
+        if (!perm.every((d, i) => candidates[sortedCells[i]![0]]![sortedCells[i]![1]]!.has(d))) continue;
+        const cellAsn = new Map(sortedCells.map(([r,c], i) => [`${r},${c}`, perm[i]!]));
         const newCurrent = new Map([...current, ...cellAsn]);
         let ok = true;
         for (const [ccCells, ccSolns] of crossCages) {
@@ -149,7 +149,7 @@ export class UnitPartitionFilter {
         const otherCells = other.cells as Cell[];
         if (!otherCells.every(([r,c]) => unitCellSet.has(`${r},${c}`))) continue;
         const cageIdx = other.unitId - 27;
-        const solns = board.cageSolns[cageIdx];
+        const solns = board.cageSolns[cageIdx]!;
         if (solns.length) subCages.push([otherCells, solns]);
       }
       subCages.sort((a, b) => a[1].length - b[1].length);
@@ -167,9 +167,9 @@ export class UnitPartitionFilter {
 
       const elims: Elimination[] = [];
       for (const [key, valid] of validCellDigits) {
-        const [r, c] = key.split(',').map(Number);
-        for (const d of board.candidates[r][c]) {
-          if (!valid.has(d)) elims.push({ cell: [r, c] as unknown as Cell, digit: d });
+        const [r, c] = key.split(',').map(Number) as [number, number];
+        for (const d of board.cands(r, c)) {
+          if (!valid.has(d)) elims.push({ cell: [r, c] as Cell, digit: d });
         }
       }
       // Deduplicate

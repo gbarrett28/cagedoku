@@ -8,8 +8,8 @@
  * contour). Also detects puzzle rotation and puzzle type (killer vs classic).
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Cv = any;
+import type { OpenCVModule, OpenCVMat } from './opencv.js';
+type Cv = OpenCVModule;
 
 /**
  * Roll constant: given dominant quadrant index → number of corner positions
@@ -33,7 +33,7 @@ const DOMINANT_TO_ROT90_K: readonly number[] = [0, 1, 3, 2];
  */
 export function scanCells(
   cv: Cv,
-  warpedGry: Cv,
+  warpedGry: OpenCVMat,
   subres: number,
   classicMinSizeFraction: number,
 ): [number[][], number[][]] {
@@ -76,7 +76,7 @@ export function scanCells(
       for (let i = 0; i < contoursTL.size(); i++) {
         const br = cv.boundingRect(contoursTL.get(i));
         if (br.width >= minW && br.width < maxW && br.height >= minH && br.height < maxH) {
-          cageConf[row][col] = 1.0;
+          cageConf[row]![col] = 1.0;
           break;
         }
       }
@@ -101,7 +101,7 @@ export function scanCells(
       for (let i = 0; i < contoursC.size(); i++) {
         const br = cv.boundingRect(contoursC.get(i));
         if (br.width >= classicMin || br.height >= classicMin) {
-          classicConf[row][col] = 1.0;
+          classicConf[row]![col] = 1.0;
           break;
         }
       }
@@ -122,7 +122,7 @@ export function scanCells(
  * @param subres - Pixels per cell side.
  * @returns [TL, TR, BL, BR] summed ink values.
  */
-export function computeQuadSums(warpedGry: Cv, subres: number): [number, number, number, number] {
+export function computeQuadSums(warpedGry: OpenCVMat, subres: number): [number, number, number, number] {
   const margin = (subres / 6) | 0;
   const inner = subres - 2 * margin;
   const halfInner = inner >> 1;
@@ -142,7 +142,7 @@ export function computeQuadSums(warpedGry: Cv, subres: number): [number, number,
 
       for (let dy = 0; dy < inner; dy++) {
         for (let dx = 0; dx < inner; dx++) {
-          const ink = 255 - data[(y0 + dy) * width + (x0 + dx)];
+          const ink = 255 - data[(y0 + dy) * width + (x0 + dx)]!;
           if (dy < halfInner && dx < halfInner) { tlSum += ink; tlN++; }
           else if (dy < halfInner) { trSum += ink; trN++; }
           else if (dx < halfInner) { blSum += ink; blN++; }
@@ -176,7 +176,7 @@ export function computeQuadSums(warpedGry: Cv, subres: number): [number, number,
  * @param rotationDominanceThreshold - Minimum dominant-quadrant fraction to trigger.
  */
 export function detectRotation(
-  warpedGry: Cv,
+  warpedGry: OpenCVMat,
   subres: number,
   rotationDominanceThreshold: number,
 ): number {
@@ -185,12 +185,12 @@ export function detectRotation(
   if (total < 1.0) return 0;
 
   let dominant = 0;
-  for (let i = 1; i < 4; i++) if (quads[i] > quads[dominant]) dominant = i;
+  for (let i = 1; i < 4; i++) if (quads[i]! > quads[dominant]!) dominant = i;
 
   if (dominant === 0) return 0;
-  if (quads[dominant] / total < rotationDominanceThreshold) return 0;
+  if (quads[dominant]! / total < rotationDominanceThreshold) return 0;
 
-  return DOMINANT_TO_ROT90_K[dominant];
+  return DOMINANT_TO_ROT90_K[dominant]!;
 }
 
 /**
@@ -205,7 +205,7 @@ export function detectRotation(
  * @param tlFractionThreshold - Minimum dominant-quadrant fraction for killer.
  */
 export function detectPuzzleType(
-  warpedGry: Cv,
+  warpedGry: OpenCVMat,
   subres: number,
   tlFractionThreshold: number,
 ): 'killer' | 'classic' {

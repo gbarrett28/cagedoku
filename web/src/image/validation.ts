@@ -10,7 +10,7 @@ import { ProcessingError } from '../solver/errors.js';
 import { buildBrdrs } from '../solver/puzzleSpec.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 
-type Cell = readonly [number, number]; // [col, row]
+
 
 /**
  * Build a string key for a cell to use as a Map key.
@@ -84,7 +84,7 @@ export function validateCageLayout(
   // borderX[col][rowGap] = true means wall between rows rowGap and rowGap+1 in col.
   for (let col = 0; col < 9; col++) {
     for (let row = 0; row < 8; row++) {
-      if (!borderX[col][row]) {
+      if (!borderX[col]![row]!) {
         union(cellKey(col, row), cellKey(col, row + 1));
       }
     }
@@ -94,7 +94,7 @@ export function validateCageLayout(
   // borderY[colGap][row] = true means wall between colGap and colGap+1 in row.
   for (let colGap = 0; colGap < 8; colGap++) {
     for (let row = 0; row < 9; row++) {
-      if (!borderY[colGap][row]) {
+      if (!borderY[colGap]![row]!) {
         union(cellKey(colGap, row), cellKey(colGap + 1, row));
       }
     }
@@ -108,14 +108,14 @@ export function validateCageLayout(
 
   for (let col = 0; col < 9; col++) {
     for (let row = 0; row < 9; row++) {
-      if (cageTotals[col][row] !== 0) {
+      if (cageTotals[col]![row]! !== 0) {
         const repKey = find(cellKey(col, row));
         const component = members.get(repKey)!;
 
         // Check no cell in this component has already been assigned.
         for (const k of component) {
           const [c, r] = k.split(',').map(Number) as [number, number];
-          if (regions[c][r] !== 0) {
+          if (regions[c]![r]! !== 0) {
             throw new ProcessingError('region reassigned', regions, brdrs);
           }
         }
@@ -124,16 +124,16 @@ export function validateCageLayout(
         const n = component.size;
         const lo = (n * (n + 1)) / 2;
         const hi = (n * (19 - n)) / 2;
-        const total = cageTotals[col][row];
+        const total = cageTotals[col]![row]!;
         if (total < lo || total > hi) {
           throw new Error(
-            `cagesize=${n}, total=${total}: total must be in [${lo}, ${hi}]`,
+            `cagesize=${n}, total=${total} at col=${col},row=${row}: must be in [${lo}, ${hi}]`,
           );
         }
 
         for (const k of component) {
           const [c, r] = k.split(',').map(Number) as [number, number];
-          regions[c][r] = reg;
+          regions[c]![r] = reg;
         }
       }
     }
@@ -142,7 +142,7 @@ export function validateCageLayout(
   // Check all cells have been assigned to a cage.
   for (let c = 0; c < 9; c++) {
     for (let r = 0; r < 9; r++) {
-      if (regions[c][r] === 0) {
+      if (regions[c]![r]! === 0) {
         throw new ProcessingError('unassigned region', regions, brdrs);
       }
     }

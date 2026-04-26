@@ -33,22 +33,22 @@ export class CageIntersection {
     const board = ctx.board;
     const cageCells = ctx.unit.cells as Cell[];
     const cageIdx = ctx.unit.unitId - 27;
-    const solns = board.cageSolns[cageIdx];
+    const solns = board.cageSolns[cageIdx]!;
     if (!solns.length) return [];
 
-    const must = new Set<number>(solns[0]);
+    const must = new Set<number>(solns[0]!);
     for (const s of solns.slice(1)) { for (const d of must) { if (!s.includes(d)) must.delete(d); } }
 
     const cageCellSet = new Set(cageCells.map(([r, c]) => `${r},${c}`));
     const matches: _Match[] = [];
 
     for (const d of must) {
-      const carriers = cageCells.filter(([r, c]) => board.candidates[r][c].has(d));
+      const carriers = cageCells.filter(([r, c]) => board.cands(r, c).has(d));
       if (!carriers.length) continue;
 
       let shared: Set<number> | null = null;
       for (const [r, c] of carriers) {
-        const uids = board.cellUnitIds(r, c).filter((uid: number) => board.units[uid].kind !== UnitKind.CAGE);
+        const uids = board.cellUnitIds(r, c).filter((uid: number) => board.units[uid]!.kind !== UnitKind.CAGE);
         const nonCage = new Set<number>(uids);
         shared = shared === null ? nonCage : new Set<number>([...shared].filter((uid: number) => nonCage.has(uid)));
         if (!shared.size) break;
@@ -56,8 +56,8 @@ export class CageIntersection {
       if (!shared?.size) continue;
 
       for (const uid of shared) {
-        const elims = (board.units[uid].cells as Cell[])
-          .filter(([r, c]) => !cageCellSet.has(`${r},${c}`) && board.candidates[r][c].has(d))
+        const elims = (board.units[uid]!.cells as Cell[])
+          .filter(([r, c]) => !cageCellSet.has(`${r},${c}`) && board.cands(r, c).has(d))
           .map(cell => ({ cell, digit: d }));
         if (elims.length) matches.push({ digit: d, carriers, sharedUnitId: uid, eliminations: elims });
       }
@@ -89,7 +89,7 @@ export class CageIntersection {
       const board = ctx.board;
       const cageLabels = [...(ctx.unit!.cells as Cell[])].sort((a,b)=>a[0]-b[0]||a[1]-b[1]).map(cellLabel).join(', ');
       const carriersStr = [...m.carriers].sort((a,b)=>a[0]-b[0]||a[1]-b[1]).map(cellLabel).join(', ');
-      const uLbl = unitLabel(board.units[m.sharedUnitId]);
+      const uLbl = unitLabel(board.units[m.sharedUnitId]!);
       const elimStr = [...newElims].sort((a,b)=>a.cell[0]-b.cell[0]||a.cell[1]-b.cell[1]).map(e=>cellLabel(e.cell)).join(', ');
       hints.push({
         ruleName: this.name,

@@ -125,10 +125,10 @@ describe('clusterBorders', () => {
 
     for (let c = 0; c < 9; c++)
       for (let g = 0; g < 8; g++)
-        expect(bxProb[c][g]).toBe(0.5);
+        expect(bxProb[c]![g]!).toBe(0.5);
     for (let g = 0; g < 8; g++)
       for (let r = 0; r < 9; r++)
-        expect(byProb[g][r]).toBe(0.5);
+        expect(byProb[g]![r]!).toBe(0.5);
   });
 
   it('classifies clearly dark horizontal borders as cage borders when anchored', () => {
@@ -139,7 +139,7 @@ describe('clusterBorders', () => {
     // Confidence anchors: high confidence at row=1, col=1 through row=8, col=1.
     const conf = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
     // Cage total cells in row 1 have high confidence — anchors horizontal borders above them.
-    for (let c = 0; c < 9; c++) conf[c][1] = 1.0;
+    for (let c = 0; c < 9; c++) conf[c]![1] = 1.0;
 
     const [bxProb] = clusterBorders(img, conf, subres, config.borderClustering);
 
@@ -147,7 +147,7 @@ describe('clusterBorders', () => {
     // since all borders are equally dark and all anchors point to cage.
     for (let c = 0; c < 9; c++)
       for (let g = 0; g < 8; g++)
-        expect(bxProb[c][g]).toBe(1.0);
+        expect(bxProb[c]![g]!).toBe(1.0);
   });
 
   it('classifies dark BOX horizontal borders as cage when anchored at those rows', () => {
@@ -167,8 +167,8 @@ describe('clusterBorders', () => {
     // BOX group: H borders at gapIdx=2 and 5 are dark → cage (1.0);
     //            V borders at gapIdx=2 and 5 are white → non-cage (0.0).
     for (let c = 0; c < 9; c++) {
-      expect(bxProb[c][2]).toBe(1.0);
-      expect(bxProb[c][5]).toBe(1.0);
+      expect(bxProb[c]![2]!).toBe(1.0);
+      expect(bxProb[c]![5]!).toBe(1.0);
     }
 
     // CELL group is not tested here — with all-white CELL features and no clear

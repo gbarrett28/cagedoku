@@ -18,14 +18,14 @@ import { cellLabel } from './_labels.js';
 function perCellPossible(
   sortedCells: Cell[],
   solution: number[],
-  candidates: Set<number>[][],
+  getCands: (r: number, c: number) => Set<number>,
 ): Map<string, Set<number>> {
   const result = new Map<string, Set<number>>(sortedCells.map(([r, c]) => [`${r},${c}`, new Set()]));
   function bt(idx: number, remaining: Set<number>): boolean {
     if (idx === sortedCells.length) return true;
-    const [r, c] = sortedCells[idx];
+    const [r, c] = sortedCells[idx]!;
     let found = false;
-    for (const d of [...candidates[r][c]].filter(d => remaining.has(d))) {
+    for (const d of [...getCands(r, c)].filter(d => remaining.has(d))) {
       remaining.delete(d);
       if (bt(idx + 1, remaining)) { result.get(`${r},${c}`)!.add(d); found = true; }
       remaining.add(d);
@@ -48,22 +48,22 @@ export class SolutionMapFilter {
     if (!ctx.unit?.distinctDigits) return emptyResult();
     const board = ctx.board;
     const cageIdx = ctx.unit.unitId - 27;
-    const solns = [...board.cageSolns[cageIdx]];
+    const solns = [...board.cageSolns[cageIdx]!];
     if (!solns.length) return emptyResult();
 
     const cageCells = ctx.unit.cells as Cell[];
     // Sort most-constrained first
     const allCandUnion = new Set(solns.flat());
     const sortedCells = [...cageCells].sort(([r1,c1],[r2,c2]) =>
-      [...board.candidates[r1][c1]].filter(d => allCandUnion.has(d)).length -
-      [...board.candidates[r2][c2]].filter(d => allCandUnion.has(d)).length
+      [...board.cands(r1, c1)].filter(d => allCandUnion.has(d)).length -
+      [...board.cands(r2, c2)].filter(d => allCandUnion.has(d)).length
     );
 
     const perCellPoss = new Map<string, Set<number>>(cageCells.map(([r,c]) => [`${r},${c}`, new Set()]));
     const surviving: number[][] = [];
 
     for (const soln of solns) {
-      const cellPoss = perCellPossible(sortedCells, soln, board.candidates);
+      const cellPoss = perCellPossible(sortedCells, soln, (r, c) => board.cands(r, c));
       if (cageCells.every(([r,c]) => cellPoss.get(`${r},${c}`)!.size > 0)) {
         for (const [key, digits] of cellPoss) { for (const d of digits) perCellPoss.get(key)!.add(d); }
         surviving.push(soln);
@@ -71,13 +71,13 @@ export class SolutionMapFilter {
     }
 
     // Prune infeasible solutions directly (side-effect, see Python docstring)
-    if (surviving.length < solns.length) board.cageSolns[cageIdx].splice(0, Infinity, ...surviving);
+    if (surviving.length < solns.length) board.cageSolns[cageIdx]!.splice(0, Infinity, ...surviving);
 
     const elims: Elimination[] = [];
     for (const [r, c] of cageCells) {
-      for (const d of board.candidates[r][c]) {
+      for (const d of board.cands(r, c)) {
         if (!perCellPoss.get(`${r},${c}`)!.has(d))
-          elims.push({ cell: [r, c] as unknown as Cell, digit: d });
+          elims.push({ cell: [r, c] as Cell, digit: d });
       }
     }
     return { ...emptyResult(), eliminations: elims };
@@ -87,7 +87,7 @@ export class SolutionMapFilter {
     if (!eliminations.length || !ctx.unit) return [];
     const board = ctx.board;
     const cageIdx = ctx.unit.unitId - 27;
-    const solns = board.cageSolns[cageIdx];
+    const solns = board.cageSolns[cageIdx]!;
     const soln4 = solns.slice(0, 4).map(s => '{' + [...s].sort((a,b)=>a-b).join(',') + '}');
     const solnDisplay = soln4.join(', ') + (solns.length > 4 ? '...' : '');
     const elimParts = [...eliminations].sort((a,b)=>a.digit-b.digit).map(e => `${e.digit} from ${cellLabel(e.cell)}`);

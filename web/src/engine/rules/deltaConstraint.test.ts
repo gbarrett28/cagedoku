@@ -13,12 +13,12 @@ import { makeTrivialSpec } from '../fixtures.js';
 describe('DeltaConstraint', () => {
   it('narrows candidates using an injected delta pair (0,0)-(0,1) delta=2', () => {
     const bs = new BoardState(makeTrivialSpec());
-    bs.candidates[0][0] = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
-    bs.candidates[0][1] = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    bs.candidates[0]![0]! = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    bs.candidates[0]![1]! = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
     // Inject a synthetic delta pair: value[(0,0)] - value[(0,1)] = 2
-    const cellA = [0, 0] as unknown as Cell;
-    const cellB = [0, 1] as unknown as Cell;
+    const cellA = [0, 0] as Cell;
+    const cellB = [0, 1] as Cell;
     const pair = [cellA, cellB, 2] as unknown as readonly [Cell, Cell, number];
     bs.linearSystem.deltaPairs.push(pair);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -31,7 +31,7 @@ describe('DeltaConstraint', () => {
     pairsMap.get(kB)!.push(pair);
 
     const ctx: RuleContext = {
-      unit: bs.units[bs.rowUnitId(0)],
+      unit: bs.units[bs.rowUnitId(0)] ?? null,
       cell: null,
       board: bs,
       hint: Trigger.COUNT_DECREASED,

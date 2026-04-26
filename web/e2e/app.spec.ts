@@ -12,9 +12,10 @@
  *     WASM init takes 150–180 s in headless Chromium (standard 10 MB build).
  */
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { stubOpenCV, waitForPipelineReady } from './helpers.js';
 
 // Pipeline tests (opencv load, upload, play) require Chunk 4 — a minimal opencv.js
 // build (~2–3 MB, core+imgproc only).  With the standard 10 MB build, WASM
@@ -26,44 +27,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PUZZLE_IMAGE = path.resolve(
   __dirname,
-  '../../../guardian/killer_sudoku_0.jpg',
+  '../../guardian/killer_sudoku_0.jpg',
 );
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Helpers — see e2e/helpers.ts
 // ---------------------------------------------------------------------------
-
-/**
- * Stub opencv.js with an empty script so it "loads" without starting WASM
- * compilation.  Without this, DOMContentLoaded triggers loadCV() which kicks
- * off a 10 MB download + WASM init that blocks browserContext.close() for 10+
- * seconds.  Structural tests do not exercise the image pipeline at all.
- */
-async function stubOpenCV(page: Page) {
-  await page.route('**/opencv.js', route => route.fulfill({
-    status: 200,
-    contentType: 'application/javascript',
-    body: '// opencv.js stubbed for structural tests',
-  }));
-}
-
-/** Wait for the image pipeline (opencv + model) to finish loading. */
-async function waitForPipelineReady(page: Page, timeoutMs = 330_000) {
-  // Wait until window.cv is initialised (opencv.js fully loaded) or an error fires.
-  // Returns the status text: 'ok' on success, or an error string to surface.
-  const result = await page.waitForFunction(
-    () => {
-      const status = document.getElementById('status-msg')?.textContent ?? '';
-      if (status.includes('failed') || status.includes('Error')) return `ERR:${status}`;
-      // OpenCV sets window.cv.getBuildInformation once fully initialised.
-      const w = window as unknown as { cv?: { getBuildInformation?: () => string } };
-      return w.cv?.getBuildInformation ? 'ok' : null; // null → keep polling
-    },
-    { timeout: timeoutMs },
-  );
-  const msg = await result.jsonValue() as string;
-  if (msg.startsWith('ERR:')) throw new Error(`Pipeline load error: ${msg.slice(4)}`);
-}
 
 // ---------------------------------------------------------------------------
 // Test: page structure  (fast — structural only)

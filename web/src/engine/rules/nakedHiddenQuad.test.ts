@@ -12,11 +12,11 @@ import { makeTrivialSpec } from '../fixtures.js';
 function makeCtx(bs: BoardState, row: number): RuleContext {
   const rowUid = bs.rowUnitId(row);
   for (let d = 1; d <= 9; d++) {
-    bs.counts[rowUid][d] = Array.from({ length: 9 }, (_, c) => c)
-      .filter(c => bs.candidates[row][c].has(d)).length;
+    bs.counts[rowUid]![d] = Array.from({ length: 9 }, (_, c) => c)
+      .filter(c => bs.cands(row, c).has(d)).length;
   }
   return {
-    unit: bs.units[rowUid],
+    unit: bs.units[rowUid] ?? null,
     cell: null,
     board: bs,
     hint: Trigger.COUNT_DECREASED,
@@ -29,11 +29,11 @@ describe('NakedHiddenQuad', () => {
     const bs = new BoardState(makeTrivialSpec());
 
     // Four cells forming a naked quad: union = {1,2,3,4}
-    bs.candidates[0][0] = new Set([1, 2]);
-    bs.candidates[0][1] = new Set([2, 3]);
-    bs.candidates[0][2] = new Set([3, 4]);
-    bs.candidates[0][3] = new Set([1, 4]);
-    for (let c = 4; c < 9; c++) bs.candidates[0][c] = new Set([1, 2, 3, 4, 5]);
+    bs.candidates[0]![0]! = new Set([1, 2]);
+    bs.candidates[0]![1]! = new Set([2, 3]);
+    bs.candidates[0]![2]! = new Set([3, 4]);
+    bs.candidates[0]![3]! = new Set([1, 4]);
+    for (let c = 4; c < 9; c++) bs.candidates[0]![c]! = new Set([1, 2, 3, 4, 5]);
 
     const elims = new NakedHiddenQuad().apply(makeCtx(bs, 0)).eliminations;
 
@@ -51,11 +51,11 @@ describe('NakedHiddenQuad', () => {
     const bs = new BoardState(makeTrivialSpec());
 
     // Digits 1,2,3,4 appear only in cells 0-3 — hidden quad
-    bs.candidates[0][0] = new Set([1, 2, 5]);
-    bs.candidates[0][1] = new Set([2, 3, 6]);
-    bs.candidates[0][2] = new Set([3, 4, 7]);
-    bs.candidates[0][3] = new Set([1, 4, 8]);
-    for (let c = 4; c < 9; c++) bs.candidates[0][c] = new Set([5, 6, 7, 8, 9]);
+    bs.candidates[0]![0]! = new Set([1, 2, 5]);
+    bs.candidates[0]![1]! = new Set([2, 3, 6]);
+    bs.candidates[0]![2]! = new Set([3, 4, 7]);
+    bs.candidates[0]![3]! = new Set([1, 4, 8]);
+    for (let c = 4; c < 9; c++) bs.candidates[0]![c]! = new Set([5, 6, 7, 8, 9]);
 
     const elims = new NakedHiddenQuad().apply(makeCtx(bs, 0)).eliminations;
 

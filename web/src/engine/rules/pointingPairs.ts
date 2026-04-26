@@ -35,23 +35,23 @@ export class PointingPairs {
     const matches: _Match[] = [];
 
     for (let d = 1; d <= 9; d++) {
-      const carriers = boxCells.filter(([r, c]) => board.candidates[r][c].has(d));
+      const carriers = boxCells.filter(([r, c]) => board.cands(r, c).has(d));
       if (carriers.length < 2) continue;
       const rows = new Set(carriers.map(([r]) => r));
       const cols = new Set(carriers.map(([, c]) => c));
 
       if (rows.size === 1) {
-        const row = carriers[0][0];
+        const row = carriers[0]![0];
         const lineUid = board.rowUnitId(row);
-        const elims = (board.units[lineUid].cells as Cell[])
-          .filter(([r,c]) => !boxCellSet.has(`${r},${c}`) && board.candidates[r][c].has(d))
+        const elims = (board.units[lineUid]!.cells as Cell[])
+          .filter(([r,c]) => !boxCellSet.has(`${r},${c}`) && board.cands(r, c).has(d))
           .map(cell => ({ cell, digit: d }));
         if (elims.length) matches.push({ digit: d, carriers, lineUnitId: lineUid, eliminations: elims });
       } else if (cols.size === 1) {
-        const col = carriers[0][1];
+        const col = carriers[0]![1];
         const lineUid = board.colUnitId(col);
-        const elims = (board.units[lineUid].cells as Cell[])
-          .filter(([r,c]) => !boxCellSet.has(`${r},${c}`) && board.candidates[r][c].has(d))
+        const elims = (board.units[lineUid]!.cells as Cell[])
+          .filter(([r,c]) => !boxCellSet.has(`${r},${c}`) && board.cands(r, c).has(d))
           .map(cell => ({ cell, digit: d }));
         if (elims.length) matches.push({ digit: d, carriers, lineUnitId: lineUid, eliminations: elims });
       }
@@ -72,7 +72,7 @@ export class PointingPairs {
         const board = ctx.board;
         const carriersStr = [...m.carriers].sort((a,b)=>a[0]-b[0]||a[1]-b[1]).map(cellLabel).join(', ');
         const boxLbl = unitLabel(ctx.unit!);
-        const lineLbl = unitLabel(board.units[m.lineUnitId]);
+        const lineLbl = unitLabel(board.units[m.lineUnitId]!);
         const elimCells = [...m.eliminations].sort((a,b)=>a.cell[0]-b.cell[0]||a.cell[1]-b.cell[1]).map(e=>cellLabel(e.cell)).join(', ');
         return {
           ruleName: this.name,

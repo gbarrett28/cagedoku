@@ -89,6 +89,13 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   if (!event.request.url.startsWith('http')) return;
 
+  // Vite dev server uses internal routes (/@vite/client, /src/*, /node_modules/*)
+  // that do not exist in production builds. Intercepting them causes ERR_FAILED
+  // because the SW cannot fetch them from the network in its context. Let them
+  // pass through directly so the dev server handles them.
+  const { pathname } = new URL(event.request.url);
+  if (pathname.startsWith('/@') || pathname.startsWith('/src/') || pathname.startsWith('/node_modules/')) return;
+
   event.respondWith(
     caches.match(event.request).then(async (cached) => {
       if (cached) return cached;

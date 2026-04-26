@@ -29,14 +29,14 @@ export class NakedHiddenQuad {
     // --- Naked quad ---
     for (const quad of combinations(cells, 4)) {
       const union = new Set<number>();
-      for (const [r, c] of quad) for (const d of board.candidates[r][c]) union.add(d);
+      for (const [r, c] of quad) for (const d of board.cands(r, c)) union.add(d);
       if (union.size !== 4) continue;
       const quadSet = new Set(quad.map(([r, c]) => `${r},${c}`));
       for (const [r, c] of cells) {
         if (quadSet.has(`${r},${c}`)) continue;
         for (const d of union) {
-          if (board.candidates[r][c].has(d))
-            elims.push({ cell: [r, c] as unknown as Cell, digit: d });
+          if (board.cands(r, c).has(d))
+            elims.push({ cell: [r, c] as Cell, digit: d });
         }
       }
     }
@@ -45,13 +45,13 @@ export class NakedHiddenQuad {
     // --- Hidden quad ---
     const uid = ctx.unit.unitId;
     const candidateDigits = Array.from({ length: 9 }, (_, i) => i + 1)
-      .filter(d => board.counts[uid][d] > 1 && board.counts[uid][d] <= 4);
+      .filter(d => board.count(uid, d) > 1 && board.count(uid, d) <= 4);
     for (const dQuad of combinations(candidateDigits, 4)) {
       const cellsWith = new Set<string>();
       const cellMap = new Map<string, [number, number]>();
       for (const d of dQuad) {
         for (const [r, c] of cells) {
-          if (board.candidates[r][c].has(d)) {
+          if (board.cands(r, c).has(d)) {
             cellsWith.add(`${r},${c}`);
             cellMap.set(`${r},${c}`, [r, c]);
           }
@@ -60,9 +60,9 @@ export class NakedHiddenQuad {
       if (cellsWith.size !== 4) continue;
       const quadSet = new Set(dQuad);
       for (const [r, c] of cellMap.values()) {
-        for (const d of board.candidates[r][c]) {
+        for (const d of board.cands(r, c)) {
           if (!quadSet.has(d))
-            elims.push({ cell: [r, c] as unknown as Cell, digit: d });
+            elims.push({ cell: [r, c] as Cell, digit: d });
         }
       }
     }

@@ -61,15 +61,15 @@ export function buildBrdrs(borderX: boolean[][], borderY: boolean[][]): Brdrs {
 
   for (let col = 0; col < 9; col++) {
     for (let row = 0; row < 8; row++) {
-      const isbh = borderX[col][row];
-      const isbv = borderY[row][col];
+      const isbh = borderX[col]![row]!;
+      const isbv = borderY[row]![col]!;
       // isbh: horizontal wall in column col, between rows row and row+1.
-      result[row][col][1] = isbh;
-      result[row + 1][col][3] = isbh;
+      result[row]![col]![1] = isbh;
+      result[row + 1]![col]![3] = isbh;
       // isbv: vertical wall in row `row`, between cols `col` and `col`+1.
       // `col` acts as row-index into result here; `row` acts as col-index.
-      result[col][row][2] = isbv;
-      result[col][row + 1][0] = isbv;
+      result[col]![row]![2] = isbv;
+      result[col]![row + 1]![0] = isbv;
     }
   }
 

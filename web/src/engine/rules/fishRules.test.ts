@@ -17,8 +17,8 @@ function globalCtx(bs: BoardState): RuleContext {
 
 /** Clear digit d from every cell, then add it back only at the given (r,c) pairs. */
 function setDigitCells(bs: BoardState, d: number, cells: [number, number][]): void {
-  for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r][c].delete(d);
-  for (const [r, c] of cells) bs.candidates[r][c].add(d);
+  for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.cands(r, c).delete(d);
+  for (const [r, c] of cells) bs.cands(r, c).add(d);
 }
 
 describe('XWing', () => {

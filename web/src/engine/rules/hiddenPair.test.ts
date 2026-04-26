@@ -15,17 +15,17 @@ describe('HiddenPair', () => {
     const rowUid = bs.rowUnitId(0);
 
     // Pair digits 4 and 6 appear only in cells (0,0) and (0,1)
-    bs.candidates[0][0] = new Set([1, 4, 6]);
-    bs.candidates[0][1] = new Set([4, 5, 6]);
-    for (let c = 2; c < 9; c++) bs.candidates[0][c] = new Set([2, 3, 7, 8, 9]);
+    bs.candidates[0]![0]! = new Set([1, 4, 6]);
+    bs.candidates[0]![1]! = new Set([4, 5, 6]);
+    for (let c = 2; c < 9; c++) bs.candidates[0]![c]! = new Set([2, 3, 7, 8, 9]);
 
     for (let d = 1; d <= 9; d++) {
-      bs.counts[rowUid][d] = Array.from({ length: 9 }, (_, c) => c)
-        .filter(c => bs.candidates[0][c].has(d)).length;
+      bs.counts[rowUid]![d] = Array.from({ length: 9 }, (_, c) => c)
+        .filter(c => bs.cands(0, c).has(d)).length;
     }
 
     const ctx: RuleContext = {
-      unit: bs.units[rowUid],
+      unit: bs.units[rowUid] ?? null,
       cell: null,
       board: bs,
       hint: Trigger.COUNT_HIT_TWO,
@@ -46,17 +46,17 @@ describe('HiddenPair', () => {
     const bs = new BoardState(makeTrivialSpec());
     const rowUid = bs.rowUnitId(0);
 
-    bs.candidates[0][0] = new Set([4, 6]);
-    bs.candidates[0][1] = new Set([4, 7]); // d2=7, not 6
-    bs.candidates[0][2] = new Set([6, 7]);
-    for (let c = 3; c < 9; c++) bs.candidates[0][c] = new Set([1, 2, 3]);
+    bs.candidates[0]![0]! = new Set([4, 6]);
+    bs.candidates[0]![1]! = new Set([4, 7]); // d2=7, not 6
+    bs.candidates[0]![2]! = new Set([6, 7]);
+    for (let c = 3; c < 9; c++) bs.candidates[0]![c]! = new Set([1, 2, 3]);
     for (let d = 1; d <= 9; d++) {
-      bs.counts[rowUid][d] = Array.from({ length: 9 }, (_, c) => c)
-        .filter(c => bs.candidates[0][c].has(d)).length;
+      bs.counts[rowUid]![d] = Array.from({ length: 9 }, (_, c) => c)
+        .filter(c => bs.cands(0, c).has(d)).length;
     }
 
     const ctx: RuleContext = {
-      unit: bs.units[rowUid],
+      unit: bs.units[rowUid] ?? null,
       cell: null,
       board: bs,
       hint: Trigger.COUNT_HIT_TWO,

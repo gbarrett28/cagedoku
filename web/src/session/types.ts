@@ -5,8 +5,7 @@
  * but with no server round-trips — all state lives in memory.
  */
 
-import type { Cell, Elimination } from '../engine/types.js';
-import type { PuzzleSpec } from '../solver/puzzleSpec.js';
+import type { Cell } from '../engine/types.js';
 
 // ---------------------------------------------------------------------------
 // Puzzle specification interchange format
@@ -146,7 +145,10 @@ export interface VirtualCageInfo {
   readonly key: string;
   readonly cells: readonly [number, number][];
   readonly total: number;
-  readonly solutions: readonly (readonly number[])[];
+  readonly solutions: readonly (readonly number[])[];   // remaining (not eliminated, not auto-impossible)
+  readonly allSolutions: readonly (readonly number[])[]; // all mathematically valid combinations
+  readonly autoImpossible: readonly (readonly number[])[]; // ruled out by engine
+  readonly userEliminated: readonly (readonly number[])[]; // eliminated by user
   readonly mustContain: number[];
 }
 

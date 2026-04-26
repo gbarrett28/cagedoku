@@ -25,11 +25,11 @@ export class NakedPair {
     const board = ctx.board;
     const cells = ctx.unit.cells as Cell[];
     const d1 = ctx.hintDigit;
-    const d1Cells = cells.filter(([r, c]) => board.candidates[r][c].has(d1));
+    const d1Cells = cells.filter(([r, c]) => board.cands(r, c).has(d1));
     if (d1Cells.length !== 2) return null;
-    const [c1, c2] = d1Cells;
-    const cands1 = board.candidates[c1[0]][c1[1]];
-    const cands2 = board.candidates[c2[0]][c2[1]];
+    const [c1, c2] = [d1Cells[0]!, d1Cells[1]!];
+    const cands1 = board.cands(c1[0], c1[1]);
+    const cands2 = board.cands(c2[0], c2[1]);
     if (cands1.size !== 2 || cands1.size !== cands2.size) return null;
     for (const d of cands1) { if (!cands2.has(d)) return null; }
     const d2 = [...cands1].find(d => d !== d1)!;
@@ -43,8 +43,8 @@ export class NakedPair {
     const c1k = `${c1[0]},${c1[1]}`, c2k = `${c2[0]},${c2[1]}`;
     const elims: Elimination[] = (ctx.unit.cells as Cell[])
       .filter(([r,c]) => `${r},${c}` !== c1k && `${r},${c}` !== c2k)
-      .flatMap(([r,c]) => [dLo, dHi].filter(d => ctx.board.candidates[r][c].has(d))
-        .map(d => ({ cell: [r, c] as unknown as Cell, digit: d })));
+      .flatMap(([r,c]) => [dLo, dHi].filter(d => ctx.board.cands(r, c).has(d))
+        .map(d => ({ cell: [r, c] as Cell, digit: d })));
     return { ...emptyResult(), eliminations: elims };
   }
 

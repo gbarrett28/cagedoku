@@ -27,20 +27,20 @@ export class HiddenPair {
     const cells = ctx.unit.cells as Cell[];
     const d1 = ctx.hintDigit;
 
-    const pairCells = cells.filter(([r, c]) => board.candidates[r][c].has(d1));
+    const pairCells = cells.filter(([r, c]) => board.cands(r, c).has(d1));
     if (pairCells.length !== 2) return emptyResult();
 
     const elims: Elimination[] = [];
     for (let d2 = 1; d2 <= 9; d2++) {
       if (d2 === d1) continue;
-      if (board.counts[uid][d2] !== 2) continue;
-      const d2Cells = cells.filter(([r, c]) => board.candidates[r][c].has(d2));
+      if (board.count(uid, d2) !== 2) continue;
+      const d2Cells = cells.filter(([r, c]) => board.cands(r, c).has(d2));
       if (!sameCellSet(d2Cells, pairCells)) continue;
       // Hidden pair {d1, d2} found — restrict pair cells to only {d1, d2}
       for (const [r, c] of pairCells) {
-        for (const d of board.candidates[r][c]) {
+        for (const d of board.cands(r, c)) {
           if (d !== d1 && d !== d2)
-            elims.push({ cell: [r, c] as unknown as Cell, digit: d });
+            elims.push({ cell: [r, c] as Cell, digit: d });
         }
       }
       break; // one hidden pair per invocation is sufficient

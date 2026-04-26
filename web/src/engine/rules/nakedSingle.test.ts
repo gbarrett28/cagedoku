@@ -14,7 +14,7 @@ import { KNOWN_SOLUTION, makeTrivialSpec } from '../fixtures.js';
 describe('NakedSingle', () => {
   it('returns no eliminations (recognition-only rule)', () => {
     const bs = new BoardState(makeTrivialSpec());
-    bs.candidates[0][0] = new Set([5]);
+    bs.candidates[0]![0]! = new Set([5]);
     const ctx: RuleContext = {
       unit: null,
       cell: [0, 0] as unknown as import('../types.js').Cell,
@@ -38,7 +38,7 @@ describe('NakedSingle', () => {
     const placements = engine.pendingHints.filter(h => h.placement !== null);
     // Every cell determined by cage rules emits CELL_DETERMINED → NakedSingle hint
     expect(placements.some(
-      h => h.placement![0] === 0 && h.placement![1] === 0 && h.placement![2] === KNOWN_SOLUTION[0][0]
+      h => h.placement![0] === 0 && h.placement![1] === 0 && h.placement![2] === KNOWN_SOLUTION[0]![0]!
     )).toBe(true);
   });
 });

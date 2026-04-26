@@ -35,12 +35,6 @@ with candidates, logical hints, and rule-based deductions.
 - **`docs/architecture.md`** — read before working on the coaching API, session lifecycle, image pipeline, or training pipeline (`api/`, `static/`, `image/`, `training/`)
 - **`docs/ui.md`** — read before working on the frontend (`static/`)
 
-## Predecessor Project
-
-`../kill_sudoku` is an older, unpackaged predecessor with no git history. It contains
-code that was **not** carried over into this rewrite and should be reviewed before
-being discarded. Do not delete `kill_sudoku` until that review is complete.
-
 ---
 
 # Import Patterns and Project Structure
@@ -113,8 +107,8 @@ is not committed). Interactive API docs at `http://127.0.0.1:8000/docs` when run
 # Agent Protocol: Tool Use
 
 **CRITICAL RULE:** For ALL code analysis, retrieval, and modification tasks, you **MUST** use the `serena` MCP tools. DO NOT
-use generic filesystem tools (like `Read`, `Glob`) unless the `serena` tools explicitly fail or are
-insufficient for a non-code file (e.g., a `.yaml` or `.txt`).
+use generic filesystem tools (like `Read`, `Glob`) unless the `serena` tools are
+insufficient for a non-code file (e.g., a `.yaml` or `.txt`).  In particular, always use serena to read and modify python and typescript files.  If the serena tools fail on .py or .ts, stop immeidately and ask for the MCP server to be restarted.
 
 **Serena is a Claude Code plugin** (`serena@claude-plugins-official`). Before using any serena tool,
 load it via ToolSearch:

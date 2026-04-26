@@ -25,7 +25,7 @@ export class Swordfish {
       const rowCols: [number, Set<number>][] = [];
       for (let r = 0; r < 9; r++) {
         const cols = new Set<number>();
-        for (let c = 0; c < 9; c++) if (board.candidates[r][c].has(d)) cols.add(c);
+        for (let c = 0; c < 9; c++) if (board.cands(r, c).has(d)) cols.add(c);
         if (cols.size >= 2 && cols.size <= 3) rowCols.push([r, cols]);
       }
       for (const triple of combinations(rowCols, 3)) {
@@ -34,8 +34,8 @@ export class Swordfish {
         if (coverCols.size !== 3) continue;
         for (const col of coverCols) {
           for (let r = 0; r < 9; r++) {
-            if (!baseRows.has(r) && board.candidates[r][col].has(d))
-              elims.push({ cell: [r, col] as unknown as Cell, digit: d });
+            if (!baseRows.has(r) && board.cands(r, col).has(d))
+              elims.push({ cell: [r, col] as Cell, digit: d });
           }
         }
       }
@@ -44,7 +44,7 @@ export class Swordfish {
       const colRows: [number, Set<number>][] = [];
       for (let c = 0; c < 9; c++) {
         const rows = new Set<number>();
-        for (let r = 0; r < 9; r++) if (board.candidates[r][c].has(d)) rows.add(r);
+        for (let r = 0; r < 9; r++) if (board.cands(r, c).has(d)) rows.add(r);
         if (rows.size >= 2 && rows.size <= 3) colRows.push([c, rows]);
       }
       for (const triple of combinations(colRows, 3)) {
@@ -53,8 +53,8 @@ export class Swordfish {
         if (coverRows.size !== 3) continue;
         for (const row of coverRows) {
           for (let c = 0; c < 9; c++) {
-            if (!baseCols.has(c) && board.candidates[row][c].has(d))
-              elims.push({ cell: [row, c] as unknown as Cell, digit: d });
+            if (!baseCols.has(c) && board.cands(row, c).has(d))
+              elims.push({ cell: [row, c] as Cell, digit: d });
           }
         }
       }

@@ -39,7 +39,7 @@ describe('SolverEngine.solve', () => {
     let total = 0;
     for (let r = 0; r < 9; r++)
       for (let c = 0; c < 9; c++)
-        total += bs.candidates[r][c].size;
+        total += bs.candidates[r]![c]!.size;
     expect(total).toBe(81);
     expect(result).toBe(bs);
   });
@@ -54,7 +54,7 @@ describe('SolverEngine.solve', () => {
     const board = solve(makeTrivialSpec());
     for (let r = 0; r < 9; r++)
       for (let c = 0; c < 9; c++)
-        expect(board.candidates[r][c]).toEqual(new Set([KNOWN_SOLUTION[r][c]]));
+        expect(board.candidates[r]![c]!).toEqual(new Set([KNOWN_SOLUTION[r]![c]!]));
   });
 
   it('bootstraps without linear-system seeding (engine stills solves trivial spec)', () => {
@@ -66,7 +66,7 @@ describe('SolverEngine.solve', () => {
     engine.solve();
     for (let r = 0; r < 9; r++)
       for (let c = 0; c < 9; c++)
-        expect(board.candidates[r][c]).toEqual(new Set([KNOWN_SOLUTION[r][c]]));
+        expect(board.candidates[r]![c]!).toEqual(new Set([KNOWN_SOLUTION[r]![c]!]));
   });
 });
 
@@ -75,9 +75,9 @@ describe('SolverEngine.applyEliminations', () => {
     const bs = new BoardState(makeTrivialSpec());
     const engine = new SolverEngine(bs, []);
     engine.applyEliminations([{ cell: [0, 0] as unknown as Elimination['cell'], digit: 5 }]);
-    const before = new Set(bs.candidates[0][0]);
+    const before = new Set(bs.candidates[0]![0]!);
     engine.applyEliminations([{ cell: [0, 0] as unknown as Elimination['cell'], digit: 5 }]);
-    expect(bs.candidates[0][0]).toEqual(before);
+    expect(bs.candidates[0]![0]!).toEqual(before);
   });
 });
 

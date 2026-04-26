@@ -27,23 +27,23 @@ export class HiddenSingle {
     if (ctx.unit.kind === UnitKind.CAGE) {
       if (!ctx.unit.distinctDigits) return emptyResult();
       const cageIdx = ctx.unit.unitId - 27;
-      const solns = ctx.board.cageSolns[cageIdx];
+      const solns = ctx.board.cageSolns[cageIdx]!;
       if (!solns.length || !solns.every(s => s.includes(d))) return emptyResult();
     }
 
-    const sole = (ctx.unit.cells as Cell[]).find(([r, c]) => ctx.board.candidates[r][c].has(d));
+    const sole = (ctx.unit.cells as Cell[]).find(([r, c]) => ctx.board.cands(r, c).has(d));
     if (!sole) return emptyResult();
     const [r, c] = sole;
-    const elims: Elimination[] = [...ctx.board.candidates[r][c]]
+    const elims: Elimination[] = [...ctx.board.cands(r, c)]
       .filter(other => other !== d)
-      .map(other => ({ cell: [r, c] as unknown as Cell, digit: other }));
+      .map(other => ({ cell: [r, c] as Cell, digit: other }));
     return { ...emptyResult(), eliminations: elims };
   }
 
   asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
     if (!eliminations.length || !ctx.unit || ctx.hintDigit === null) return [];
     const d = ctx.hintDigit;
-    const sole = eliminations[0].cell;
+    const sole = eliminations[0]!.cell;
     const [r, c] = sole;
     const explanation = ctx.unit.kind === UnitKind.CAGE
       ? `${d} is the only candidate for r${r+1}c${c+1} in this cage, and ${d} is essential to every remaining cage solution. Place ${d} there by eliminating all other candidates.`

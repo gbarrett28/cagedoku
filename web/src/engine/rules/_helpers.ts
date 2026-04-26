@@ -24,7 +24,7 @@ export function combinations<T>(arr: readonly T[], k: number): T[][] {
   if (arr.length < k) return [];
   const [first, ...rest] = arr;
   return [
-    ...combinations(rest, k - 1).map(c => [first, ...c]),
+    ...combinations(rest, k - 1).map(c => [first!, ...c]),
     ...combinations(rest, k),
   ];
 }
@@ -52,5 +52,5 @@ export function sameCellSet(a: readonly Cell[], b: readonly Cell[]): boolean {
   const key = (c: Cell) => c[0] * 9 + c[1];
   const sa = [...a].sort((x, y) => key(x) - key(y));
   const sb = [...b].sort((x, y) => key(x) - key(y));
-  return sa.every((c, i) => c[0] === sb[i][0] && c[1] === sb[i][1]);
+  return sa.every((c, i) => c[0] === sb[i]![0] && c[1] === sb[i]![1]);
 }

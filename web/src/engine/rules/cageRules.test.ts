@@ -21,7 +21,7 @@ function cageCtx(
   trigger: Trigger = Trigger.COUNT_DECREASED,
 ): RuleContext {
   return {
-    unit: bs.units[cageUnitId],
+    unit: bs.units[cageUnitId] ?? null,
     cell: null,
     board: bs,
     hint: trigger,
@@ -32,17 +32,17 @@ function cageCtx(
 describe('SolutionMapFilter', () => {
   it('does not crash on a fresh trivial board', () => {
     const bs = new BoardState(makeTrivialSpec());
-    const cageIdx = bs.regions[0][0];
+    const cageIdx = bs.regions[0]![0]!;
     const result = new SolutionMapFilter().apply(cageCtx(bs, 27 + cageIdx));
     expect(Array.isArray(result.eliminations)).toBe(true);
   });
 
   it('returns a list (possibly empty) when cage solutions are restricted', () => {
     const bs = new BoardState(makeTrivialSpec());
-    const cageIdx = bs.regions[0][0];
-    const cageUnit = bs.units[27 + cageIdx];
+    const cageIdx = bs.regions[0]![0]!;
+    const cageUnit = bs.units[27 + cageIdx]!;
     const [r, c] = cageUnit.cells[0] as unknown as [number, number];
-    bs.candidates[r][c] = new Set([3]); // solution {5} is now unreachable
+    bs.candidates[r]![c]! = new Set([3]); // solution {5} is now unreachable
     const result = new SolutionMapFilter().apply(cageCtx(bs, 27 + cageIdx));
     expect(Array.isArray(result.eliminations)).toBe(true);
   });
@@ -53,11 +53,11 @@ describe('SolutionMapFilter', () => {
     // 3-cell cage total=12; restrict (0,0) and (0,1) to {1,2} → (0,2) forced to 9.
     const spec = makeThreeCellCageSpec();
     const bs = new BoardState(spec);
-    const cageIdx = bs.regions[0][0];
-    expect(bs.units[27 + cageIdx].cells.length).toBe(3);
+    const cageIdx = bs.regions[0]![0]!;
+    expect(bs.units[27 + cageIdx]!.cells.length).toBe(3);
 
-    bs.candidates[0][0] = new Set([1, 2]);
-    bs.candidates[0][1] = new Set([1, 2]);
+    bs.candidates[0]![0]! = new Set([1, 2]);
+    bs.candidates[0]![1]! = new Set([1, 2]);
     // (0,2) retains full candidates
 
     const result = new SolutionMapFilter().apply(cageCtx(bs, 27 + cageIdx));
@@ -78,7 +78,7 @@ describe('SolutionMapFilter', () => {
 describe('CageIntersection', () => {
   it('does not crash on a fresh trivial board', () => {
     const bs = new BoardState(makeTrivialSpec());
-    const cageIdx = bs.regions[0][0];
+    const cageIdx = bs.regions[0]![0]!;
     const result = new CageIntersection().apply(cageCtx(bs, 27 + cageIdx));
     expect(Array.isArray(result.eliminations)).toBe(true);
   });

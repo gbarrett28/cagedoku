@@ -24,21 +24,21 @@ export class CageCandidateFilter {
   readonly description =
     'Removes cage solutions that are now impossible because a required digit has been eliminated.';
   readonly priority = 1;
-  readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.SOLUTION_PRUNED]);
+  readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED, Trigger.SOLUTION_PRUNED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.CAGE]);
 
   apply(ctx: RuleContext): RuleResult {
     if (!ctx.unit?.distinctDigits) return emptyResult();
     const board = ctx.board;
     const cageIdx = ctx.unit.unitId - 27;
-    const solns = board.cageSolns[cageIdx];
+    const solns = board.cageSolns[cageIdx]!;
     if (!solns.length) return emptyResult();
     const cagePossible = new Set(solns.flat());
     const elims: Elimination[] = [];
     for (const [r, c] of ctx.unit.cells as Cell[]) {
-      for (const d of board.candidates[r][c]) {
+      for (const d of board.cands(r, c)) {
         if (!cagePossible.has(d))
-          elims.push({ cell: [r, c] as unknown as Cell, digit: d });
+          elims.push({ cell: [r, c] as Cell, digit: d });
       }
     }
     return { ...emptyResult(), eliminations: elims };
@@ -48,7 +48,7 @@ export class CageCandidateFilter {
     if (!eliminations.length || !ctx.unit) return [];
     const board = ctx.board;
     const cageIdx = ctx.unit.unitId - 27;
-    const solns = board.cageSolns[cageIdx];
+    const solns = board.cageSolns[cageIdx]!;
     const soln4 = solns.slice(0, 4).map(s => '{' + [...s].sort((a, b) => a - b).join(',') + '}');
     const solnDisplay = soln4.join(', ') + (solns.length > 4 ? '...' : '');
     const elimParts = [...eliminations].sort().map(e => `${e.digit} from r${e.cell[0] + 1}c${e.cell[1] + 1}`);

@@ -15,11 +15,11 @@ export function cellLabel([r, c]: Cell): string {
 export function unitLabel(unit: Unit): string {
   const cells = unit.cells as Cell[];
   switch (unit.kind) {
-    case UnitKind.ROW: return `row ${cells[0][0] + 1}`;
-    case UnitKind.COL: return `col ${cells[0][1] + 1}`;
+    case UnitKind.ROW: return `row ${cells[0]![0] + 1}`;
+    case UnitKind.COL: return `col ${cells[0]![1] + 1}`;
     case UnitKind.BOX: {
-      const br = (cells[0][0] / 3 | 0) + 1;
-      const bc = (cells[0][1] / 3 | 0) + 1;
+      const br = (cells[0]![0] / 3 | 0) + 1;
+      const bc = (cells[0]![1] / 3 | 0) + 1;
       return `box (${br},${bc})`;
     }
     default: {

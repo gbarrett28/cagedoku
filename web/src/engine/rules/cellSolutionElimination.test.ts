@@ -22,7 +22,7 @@ function makeCtx(bs: BoardState): RuleContext {
 describe('CellSolutionElimination', () => {
   it('eliminates solved digit from all row, col, and box peers', () => {
     const bs = new BoardState(makeTrivialSpec());
-    bs.candidates[0][0] = new Set([5]);
+    bs.candidates[0]![0]! = new Set([5]);
     const elims = new CellSolutionElimination().apply(makeCtx(bs)).eliminations;
     const elimCells = new Set(elims.map(e => `${e.cell[0]},${e.cell[1]}`));
 
@@ -39,15 +39,15 @@ describe('CellSolutionElimination', () => {
 
   it('only targets row/col/box peers — not cage-only peers', () => {
     const bs = new BoardState(makeTrivialSpec());
-    bs.candidates[0][0] = new Set([5]);
+    bs.candidates[0]![0]! = new Set([5]);
     const elims = new CellSolutionElimination().apply(makeCtx(bs)).eliminations;
     const nonCageUids = new Set(
-      bs.cellUnitIds(0, 0).filter(uid => bs.units[uid].kind !== UnitKind.CAGE)
+      bs.cellUnitIds(0, 0).filter(uid => bs.units[uid]!.kind !== UnitKind.CAGE)
     );
     for (const e of elims) {
       const [r, c] = e.cell as unknown as [number, number];
       const shared = [...nonCageUids].some(uid =>
-        bs.units[uid].cells.some(([cr, cc]) => cr === r && cc === c)
+        bs.units[uid]!.cells.some(([cr, cc]) => cr === r && cc === c)
       );
       expect(shared).toBe(true);
     }
@@ -61,14 +61,14 @@ describe('CellSolutionElimination', () => {
 
   it('asHints returns a single hint with non-empty eliminations referencing r1c1', () => {
     const bs = new BoardState(makeTrivialSpec());
-    bs.candidates[0][0] = new Set([5]);
+    bs.candidates[0]![0]! = new Set([5]);
     const ctx = makeCtx(bs);
     const rule = new CellSolutionElimination();
     const elims = rule.apply(ctx).eliminations;
     const hints = rule.asHints(ctx, elims);
     expect(hints.length).toBe(1);
-    expect(hints[0].placement).toBeNull();
-    expect(hints[0].eliminations.length).toBeGreaterThan(0);
-    expect(hints[0].explanation).toContain('r1c1');
+    expect(hints[0]!.placement).toBeNull();
+    expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
+    expect(hints[0]!.explanation).toContain('r1c1');
   });
 });

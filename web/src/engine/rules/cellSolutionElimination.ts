@@ -32,11 +32,11 @@ export class CellSolutionElimination {
     const d = ctx.hintDigit;
     const elims: Elimination[] = [];
     for (const uid of ctx.board.cellUnitIds(r, c)) {
-      const unit = ctx.board.units[uid];
+      const unit = ctx.board.units[uid]!;
       if (unit.kind === UnitKind.CAGE) continue;
       for (const [pr, pc] of unit.cells as Cell[]) {
-        if (!(pr === r && pc === c) && ctx.board.candidates[pr][pc].has(d))
-          elims.push({ cell: [pr, pc] as unknown as Cell, digit: d });
+        if (!(pr === r && pc === c) && ctx.board.cands(pr, pc).has(d))
+          elims.push({ cell: [pr, pc] as Cell, digit: d });
       }
     }
     return { ...emptyResult(), eliminations: elims };
@@ -54,7 +54,7 @@ export class CellSolutionElimination {
       ruleName: this.name,
       displayName: 'Naked Single',
       explanation: `Cell r${r + 1}c${c + 1} is ${d}. Eliminating ${d} from peers: ${peerLabels}.`,
-      highlightCells: [[r, c] as unknown as Cell, ...eliminations.map(e => e.cell)],
+      highlightCells: [[r, c] as Cell, ...eliminations.map(e => e.cell)],
       eliminations: [...eliminations],
       placement: null,
       virtualCageSuggestion: null,

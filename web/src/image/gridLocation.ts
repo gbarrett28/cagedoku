@@ -9,46 +9,8 @@
  * their first argument so the async module load is handled by the caller.
  */
 
-/** The OpenCV.js module type — typed as `any` to avoid requiring @types/opencv. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Cv = any;
-
-/**
- * Prepare a browser ImageData for grid detection.
- *
- * Converts the RGBA ImageData to grayscale, scales up via pyrUp until both
- * dimensions meet the minimum resolution, then adds a 3-pixel black border
- * to ensure contours near image edges are fully enclosed.
- *
- * @param cv - OpenCV.js module.
- * @param imageData - Raw RGBA image data from a canvas or FileReader.
- * @param resolution - Minimum pixel dimension required (9 * subres).
- * @returns [gry, srcMat] — grayscale Mat and bordered colour Mat.
- *   Caller must delete both Mats when done.
- */
-export function getGryImg(cv: Cv, imageData: ImageData, resolution: number): [Cv, Cv] {
-  // Convert RGBA ImageData to OpenCV Mat.
-  let src = cv.matFromImageData(imageData);
-  // Convert to grayscale.
-  let gry = new cv.Mat();
-  cv.cvtColor(src, gry, cv.COLOR_RGBA2GRAY);
-  src.delete();
-
-  // Scale up until both dimensions meet the minimum resolution.
-  while (gry.rows < resolution || gry.cols < resolution) {
-    const upscaled = new cv.Mat();
-    cv.pyrUp(gry, upscaled);
-    gry.delete();
-    gry = upscaled;
-  }
-
-  // Add a 3-pixel black border so contours near the edge are closed.
-  const bordered = new cv.Mat();
-  cv.copyMakeBorder(gry, bordered, 3, 3, 3, 3, cv.BORDER_CONSTANT, new cv.Scalar(0));
-
-  // Return separate grayscale (for border detection) and bordered grayscale.
-  return [bordered, bordered];
-}
+import type { OpenCVModule, OpenCVMat } from './opencv.js';
+type Cv = OpenCVModule;
 
 /**
  * Find the grid rectangle via contour detection.
@@ -66,7 +28,7 @@ export function getGryImg(cv: Cv, imageData: ImageData, resolution: number): [Cv
  * @returns 4×2 Float32Array [TL, TR, BR, BL] in source-image coordinates,
  *   or null if no suitable quadrilateral is found.
  */
-export function contourQuad(cv: Cv, blk: Cv, minAspect: number = 0.5): Float32Array | null {
+export function contourQuad(cv: Cv, blk: OpenCVMat, minAspect: number = 0.5): Float32Array | null {
   const contours = new cv.MatVector();
   const hierarchy = new cv.Mat();
   cv.findContours(blk, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
@@ -95,7 +57,7 @@ export function contourQuad(cv: Cv, blk: Cv, minAspect: number = 0.5): Float32Ar
     // Extract 4 points as flat array [x0,y0, x1,y1, x2,y2, x3,y3].
     const pts: Array<[number, number]> = [];
     for (let r = 0; r < 4; r++) {
-      pts.push([approx.data32S[r * 2], approx.data32S[r * 2 + 1]]);
+      pts.push([approx.data32S[r * 2]!, approx.data32S[r * 2 + 1]!]);
     }
     approx.delete();
 
@@ -108,10 +70,10 @@ export function contourQuad(cv: Cv, blk: Cv, minAspect: number = 0.5): Float32Ar
     const blIdx = argmax(diffs);
 
     const rect = new Float32Array(8);
-    rect[0] = pts[tlIdx][0]; rect[1] = pts[tlIdx][1];
-    rect[2] = pts[trIdx][0]; rect[3] = pts[trIdx][1];
-    rect[4] = pts[brIdx][0]; rect[5] = pts[brIdx][1];
-    rect[6] = pts[blIdx][0]; rect[7] = pts[blIdx][1];
+    rect[0] = pts[tlIdx]![0]; rect[1] = pts[tlIdx]![1];
+    rect[2] = pts[trIdx]![0]; rect[3] = pts[trIdx]![1];
+    rect[4] = pts[brIdx]![0]; rect[5] = pts[brIdx]![1];
+    rect[6] = pts[blIdx]![0]; rect[7] = pts[blIdx]![1];
 
     const w = Math.hypot(rect[2] - rect[0], rect[3] - rect[1]);
     const h = Math.hypot(rect[6] - rect[0], rect[7] - rect[1]);
@@ -143,22 +105,22 @@ export function contourQuad(cv: Cv, blk: Cv, minAspect: number = 0.5): Float32Ar
  */
 export function locateGrid(
   cv: Cv,
-  gry: Cv,
+  gry: OpenCVMat,
   isblackOffset: number,
-): [Cv, Float32Array] {
+): [OpenCVMat, Float32Array] {
   // Build a 16-bin histogram to find the darkest significant tone.
   const pixels = gry.data as Uint8Array;
   const counts = new Int32Array(16);
   for (const v of pixels) {
-    counts[(v >> 4) & 0xf]++;
+    counts[(v >> 4) & 0xf] = counts[(v >> 4) & 0xf]! + 1;
   }
 
   // Walk from the bright end; stop when count rises — that's the valley.
   let cm = pixels.length;
   let isblack = 256;
   for (let b = 15; b >= 0; b--) {
-    if (counts[b] < cm) {
-      cm = counts[b];
+    if (counts[b]! < cm) {
+      cm = counts[b]!;
       isblack = b * 16;
     } else {
       break;
@@ -167,8 +129,13 @@ export function locateGrid(
   isblack -= isblackOffset;
 
   // Threshold: pixels darker than isblack become 255 (white = dark region).
+  // Use 1×1 Mat bounds with Scalar fill — cv.inRange requires Mat (not Scalar) bounds.
   const blk = new cv.Mat();
-  cv.inRange(gry, new cv.Mat(1, 1, cv.CV_8UC1, [0]), new cv.Mat(1, 1, cv.CV_8UC1, [isblack]), blk);
+  const lo = new cv.Mat(1, 1, cv.CV_8UC1, new cv.Scalar(0, 0, 0, 0));
+  const hi = new cv.Mat(1, 1, cv.CV_8UC1, new cv.Scalar(isblack, 0, 0, 0));
+  cv.inRange(gry, lo, hi, blk);
+  lo.delete();
+  hi.delete();
 
   const rect = contourQuad(cv, blk);
   if (rect === null) {
@@ -185,12 +152,12 @@ export function locateGrid(
 
 function argmin(arr: number[]): number {
   let best = 0;
-  for (let i = 1; i < arr.length; i++) if (arr[i] < arr[best]) best = i;
+  for (let i = 1; i < arr.length; i++) if (arr[i]! < arr[best]!) best = i;
   return best;
 }
 
 function argmax(arr: number[]): number {
   let best = 0;
-  for (let i = 1; i < arr.length; i++) if (arr[i] > arr[best]) best = i;
+  for (let i = 1; i < arr.length; i++) if (arr[i]! > arr[best]!) best = i;
   return best;
 }

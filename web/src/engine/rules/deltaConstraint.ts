@@ -27,17 +27,17 @@ export class DeltaConstraint {
     const seen = new Set<string>();
 
     for (const [r, c] of ctx.unit.cells as Cell[]) {
-      for (const [p, q, delta] of board.linearSystem.pairsForCell([r, c] as unknown as Cell)) {
+      for (const [p, q, delta] of board.linearSystem.pairsForCell([r, c] as Cell)) {
         const key = `${p[0]},${p[1]}-${q[0]},${q[1]}-${delta}`;
         if (seen.has(key)) continue;
         seen.add(key);
 
-        const validP = new Set([...board.candidates[q[0]][q[1]]].map(m => m + delta).filter(d => d >= 1 && d <= 9));
-        for (const d of board.candidates[p[0]][p[1]]) {
+        const validP = new Set([...board.cands(q[0], q[1])].map(m => m + delta).filter(d => d >= 1 && d <= 9));
+        for (const d of board.cands(p[0], p[1])) {
           if (!validP.has(d)) elims.push({ cell: p, digit: d });
         }
-        const validQ = new Set([...board.candidates[p[0]][p[1]]].map(m => m - delta).filter(d => d >= 1 && d <= 9));
-        for (const d of board.candidates[q[0]][q[1]]) {
+        const validQ = new Set([...board.cands(p[0], p[1])].map(m => m - delta).filter(d => d >= 1 && d <= 9));
+        for (const d of board.cands(q[0], q[1])) {
           if (!validQ.has(d)) elims.push({ cell: q, digit: d });
         }
       }
@@ -52,16 +52,16 @@ export class DeltaConstraint {
     const seen = new Set<string>();
 
     for (const [r, c] of ctx.unit.cells as Cell[]) {
-      for (const [p, q, delta] of board.linearSystem.pairsForCell([r, c] as unknown as Cell)) {
+      for (const [p, q, delta] of board.linearSystem.pairsForCell([r, c] as Cell)) {
         const key = `${p[0]},${p[1]}-${q[0]},${q[1]}-${delta}`;
         if (seen.has(key)) continue;
         seen.add(key);
 
         const pairElims: Elimination[] = [];
-        const validP = new Set([...board.candidates[q[0]][q[1]]].map(m => m + delta).filter(d => d >= 1 && d <= 9));
-        for (const d of board.candidates[p[0]][p[1]]) { if (!validP.has(d)) pairElims.push({ cell: p, digit: d }); }
-        const validQ = new Set([...board.candidates[p[0]][p[1]]].map(m => m - delta).filter(d => d >= 1 && d <= 9));
-        for (const d of board.candidates[q[0]][q[1]]) { if (!validQ.has(d)) pairElims.push({ cell: q, digit: d }); }
+        const validP = new Set([...board.cands(q[0], q[1])].map(m => m + delta).filter(d => d >= 1 && d <= 9));
+        for (const d of board.cands(p[0], p[1])) { if (!validP.has(d)) pairElims.push({ cell: p, digit: d }); }
+        const validQ = new Set([...board.cands(p[0], p[1])].map(m => m - delta).filter(d => d >= 1 && d <= 9));
+        for (const d of board.cands(q[0], q[1])) { if (!validQ.has(d)) pairElims.push({ cell: q, digit: d }); }
         if (!pairElims.length) continue;
 
         const nameP = `r${p[0]+1}c${p[1]+1}`, nameQ = `r${q[0]+1}c${q[1]+1}`;

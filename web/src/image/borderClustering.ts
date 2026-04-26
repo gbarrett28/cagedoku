@@ -146,13 +146,13 @@ export function clusterBorders(
     const probs = clusterGroup(features, anchorPos);
 
     for (let i = 0; i < entries.length; i++) {
-      const [isH, gapIdx, alongIdx] = entries[i];
+      const [isH, gapIdx, alongIdx] = entries[i]!;
       if (isH) {
         // borderXProb[col][rowGap]: isH=true, gapIdx=rowGap, alongIdx=col
-        borderXProb[alongIdx][gapIdx] = probs[i];
+        borderXProb[alongIdx]![gapIdx] = probs[i]!;
       } else {
         // borderYProb[colGap][row]: isH=false, gapIdx=colGap, alongIdx=row
-        borderYProb[gapIdx][alongIdx] = probs[i];
+        borderYProb[gapIdx]![alongIdx] = probs[i]!;
       }
     }
   }
@@ -183,7 +183,7 @@ function anchorSet(cageTotalConfidence: number[][], threshold: number): Set<stri
   const anchors = new Set<string>();
   for (let row = 0; row < 9; row++) {
     for (let col = 0; col < 9; col++) {
-      if (cageTotalConfidence[row][col] >= threshold) {
+      if (cageTotalConfidence[row]![col]! >= threshold) {
         if (row > 0) {
           // Horizontal border above: isH=true, gapIdx=row-1, alongIdx=col
           anchors.add(anchorKey(true, row - 1, col));
@@ -248,16 +248,16 @@ function sampleStrip(
     // Min over columns in [cStart, cEnd), result indexed by row offset from pStart.
     for (let row = pStart; row < pEnd; row++) {
       for (let col = cStart; col < cEnd; col++) {
-        const v = data[row * size + col];
-        if (v < result[row - pStart]) result[row - pStart] = v;
+        const v = data[row * size + col]!;
+        if (v < result[row - pStart]!) result[row - pStart] = v;
       }
     }
   } else {
     // Min over rows in [cStart, cEnd), result indexed by col offset from pStart.
     for (let col = pStart; col < pEnd; col++) {
       for (let row = cStart; row < cEnd; row++) {
-        const v = data[row * size + col];
-        if (v < result[col - pStart]) result[col - pStart] = v;
+        const v = data[row * size + col]!;
+        if (v < result[col - pStart]!) result[col - pStart] = v;
       }
     }
   }
@@ -289,9 +289,9 @@ function clusterGroup(
   // Resolve polarity: whichever cluster label appears most among anchors is "cage".
   const counts = [0, 0];
   for (const idx of anchorPositions) {
-    counts[labels[idx]]++;
+    counts[labels[idx]!] = counts[labels[idx]!]! + 1;
   }
-  const cageCluster = counts[0] >= counts[1] ? 0 : 1;
+  const cageCluster = counts[0]! >= counts[1]! ? 0 : 1;
 
   return labels.map(l => (l === cageCluster ? 1.0 : 0.0));
 }
@@ -311,22 +311,22 @@ function standardScale(X: Array<[number, number, number, number]>): number[][] {
   const stds = [0, 0, 0, 0];
 
   for (const row of X) {
-    for (let j = 0; j < d; j++) means[j] += row[j];
+    for (let j = 0; j < d; j++) means[j] = means[j]! + row[j]!;
   }
-  for (let j = 0; j < d; j++) means[j] /= n;
+  for (let j = 0; j < d; j++) means[j] = means[j]! / n;
 
   for (const row of X) {
     for (let j = 0; j < d; j++) {
-      const diff = row[j] - means[j];
-      stds[j] += diff * diff;
+      const diff = row[j]! - means[j]!;
+      stds[j] = stds[j]! + diff * diff;
     }
   }
   // Avoid division by zero for constant features (std=0 → leave as-is).
   for (let j = 0; j < d; j++) {
-    stds[j] = Math.sqrt(stds[j] / n) || 1;
+    stds[j] = Math.sqrt(stds[j]! / n) || 1;
   }
 
-  return X.map(row => row.map((v, j) => (v - means[j]) / stds[j]));
+  return X.map(row => row.map((v, j) => (v - means[j]!) / stds[j]!));
 }
 
 /**
@@ -337,7 +337,7 @@ function standardScale(X: Array<[number, number, number, number]>): number[][] {
  */
 function kmeans2(X: number[][], nInit: number): number[] {
   const n = X.length;
-  const d = X[0].length;
+  const d = X[0]!.length;
   let bestLabels: number[] = new Array<number>(n).fill(0);
   let bestInertia = Infinity;
 
@@ -346,17 +346,17 @@ function kmeans2(X: number[][], nInit: number): number[] {
     const i0 = (Math.random() * n) | 0;
     let i1 = (Math.random() * (n - 1)) | 0;
     if (i1 >= i0) i1++;
-    const centroids = [X[i0].slice(), X[i1].slice()];
+    const centroids = [X[i0]!.slice(), X[i1]!.slice()];
     let labels = new Array<number>(n).fill(0);
 
     for (let iter = 0; iter < 100; iter++) {
       // Assign each point to the nearest centroid.
-      const newLabels = X.map(p => dist2(p, centroids[0]) <= dist2(p, centroids[1]) ? 0 : 1);
+      const newLabels = X.map(p => dist2(p, centroids[0]!) <= dist2(p, centroids[1]!) ? 0 : 1);
 
       // Check for convergence.
       let changed = false;
       for (let i = 0; i < n; i++) {
-        if (newLabels[i] !== labels[i]) { changed = true; break; }
+        if (newLabels[i]! !== labels[i]!) { changed = true; break; }
       }
       labels = newLabels;
       if (!changed) break;
@@ -366,13 +366,13 @@ function kmeans2(X: number[][], nInit: number): number[] {
         const cnt = new Array<number>(d).fill(0);
         let sz = 0;
         for (let i = 0; i < n; i++) {
-          if (labels[i] === k) {
-            for (let j = 0; j < d; j++) cnt[j] += X[i][j];
+          if (labels[i]! === k) {
+            for (let j = 0; j < d; j++) cnt[j] = cnt[j]! + X[i]![j]!;
             sz++;
           }
         }
         if (sz > 0) {
-          for (let j = 0; j < d; j++) centroids[k][j] = cnt[j] / sz;
+          for (let j = 0; j < d; j++) centroids[k]![j] = cnt[j]! / sz;
         }
       }
     }
@@ -380,7 +380,7 @@ function kmeans2(X: number[][], nInit: number): number[] {
     // Compute inertia for this run.
     let inertia = 0;
     for (let i = 0; i < n; i++) {
-      inertia += dist2(X[i], centroids[labels[i]]);
+      inertia += dist2(X[i]!, centroids[labels[i]!]!);
     }
     if (inertia < bestInertia) {
       bestInertia = inertia;
@@ -395,7 +395,7 @@ function kmeans2(X: number[][], nInit: number): number[] {
 function dist2(a: number[], b: number[]): number {
   let s = 0;
   for (let i = 0; i < a.length; i++) {
-    const d = a[i] - b[i];
+    const d = a[i]! - b[i]!;
     s += d * d;
   }
   return s;
@@ -412,12 +412,12 @@ function percentile(sorted: Float64Array, p: number): number {
   const idx = (p / 100) * (n - 1);
   const lo = Math.floor(idx);
   const hi = Math.ceil(idx);
-  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+  return sorted[lo]! + (sorted[hi]! - sorted[lo]!) * (idx - lo);
 }
 
 /** Compute mean of a typed array. */
 function mean(arr: Float64Array, n: number): number {
   let s = 0;
-  for (let i = 0; i < n; i++) s += arr[i];
+  for (let i = 0; i < n; i++) s += arr[i]!;
   return s / n;
 }

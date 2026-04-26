@@ -16,8 +16,8 @@
  *   6. Cage layout validation (validation.ts)
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Cv = any;
+import type { OpenCVModule, OpenCVMat } from './opencv.js';
+type Cv = OpenCVModule;
 
 import { defaultImagePipelineConfig, subres as cfgSubres, resolution as cfgResolution } from './config.js';
 import type { ImagePipelineConfig } from './config.js';
@@ -26,9 +26,9 @@ import { scanCells, detectRotation, detectPuzzleType } from './cellScan.js';
 import { clusterBorders } from './borderClustering.js';
 import type { GrayImage } from './borderClustering.js';
 import {
-  getSums, splitNum, contourHier, getNumContours, readClassicDigits, paintMask,
+  getSums, splitNum, contourHier, getNumContours, readClassicDigits,
 } from './numberRecognition.js';
-import type { NumRecogniser, ContourInfo } from './numberRecognition.js';
+import type { NumRecogniser } from './numberRecognition.js';
 import { validateCageLayout } from './validation.js';
 import { buildBrdrs } from '../solver/puzzleSpec.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
@@ -113,11 +113,18 @@ export async function parsePuzzleImage(
   let mMat = cv.getPerspectiveTransform(srcPts, dstPts);
   srcPts.delete(); dstPts.delete();
 
-  // Re-threshold blk from scratch so it's available for cage-total extraction.
+  // Warp grayscale then adaptively threshold for cage-digit contour extraction.
   const [blkMat2,] = prepareGrayMat(cv, imageData, resolution);
-  let warpedBlkMat = new cv.Mat();
-  cv.warpPerspective(blkMat2, warpedBlkMat, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
+  const warpedGryTmp = new cv.Mat();
+  cv.warpPerspective(blkMat2, warpedGryTmp, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
   blkMat2.delete();
+  let warpedBlkMat = new cv.Mat();
+  cv.adaptiveThreshold(
+    warpedGryTmp, warpedBlkMat, 255,
+    cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV,
+    (subres >> 2) | 1, config.borderDetection.adaptiveC,
+  );
+  warpedGryTmp.delete();
 
   let warpedGryMat = new cv.Mat();
   cv.warpPerspective(gryMat, warpedGryMat, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
@@ -141,10 +148,17 @@ export async function parsePuzzleImage(
 
     // Re-warp all three Mats.
     const [blkMat3,] = prepareGrayMat(cv, imageData, resolution);
+    const warpedGryTmp2 = new cv.Mat();
+    cv.warpPerspective(blkMat3, warpedGryTmp2, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
+    blkMat3.delete();
     warpedBlkMat.delete();
     warpedBlkMat = new cv.Mat();
-    cv.warpPerspective(blkMat3, warpedBlkMat, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
-    blkMat3.delete();
+    cv.adaptiveThreshold(
+      warpedGryTmp2, warpedBlkMat, 255,
+      cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV,
+      (subres >> 2) | 1, config.borderDetection.adaptiveC,
+    );
+    warpedGryTmp2.delete();
 
     warpedGryMat.delete();
     warpedGryMat = new cv.Mat();
@@ -160,7 +174,7 @@ export async function parsePuzzleImage(
 
   // Convert warped colour image to ImageData for the result.
   const warpedCanvas = new OffscreenCanvas(dstSize, dstSize);
-  const warpedCtx = warpedCanvas.getContext('2d')!;
+  warpedCanvas.getContext('2d');
   const warpedImgData = matToImageData(cv, warpedImgMat, dstSize);
   warpedImgMat.delete();
 
@@ -180,7 +194,7 @@ export async function parsePuzzleImage(
     const borderY: boolean[][] = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
 
     const cageTotals: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-    for (let r = 0; r < 9; r++) cageTotals[0][r] = 45;
+    for (let r = 0; r < 9; r++) cageTotals[0]![r] = 45;
 
     let spec: PuzzleSpec | null = null;
     let specError: string | null = null;
@@ -228,8 +242,8 @@ export async function parsePuzzleImage(
           const isCell = !isBox;
           if ((isBox && flipBox) || (isCell && flipCell)) {
             for (let a = 0; a < 9; a++) {
-              cx[a][gap] = 1.0 - cx[a][gap];
-              cy[gap][a] = 1.0 - cy[gap][a];
+              cx[a]![gap] = 1.0 - cx[a]![gap]!;
+              cy[gap]![a] = 1.0 - cy[gap]![a]!;
             }
           }
         }
@@ -322,7 +336,7 @@ export async function parsePuzzleImage(
  */
 function buildCageTotals(
   cv: Cv,
-  warpedBlk: Cv,
+  warpedBlk: OpenCVMat,
   rec: NumRecogniser,
   subres: number,
   brdrs: Brdrs,
@@ -344,21 +358,21 @@ function buildCageTotals(
 
     for (const [, br,] of rawNums) {
       let numThumbArr: Uint8Array[];
-      let bx: number, by: number;
+      let by: number;
       try {
-        [numThumbArr, bx, by] = splitNum(cv, br, warpedBlk, subres);
+        [numThumbArr, , by] = splitNum(cv, br, warpedBlk, subres);
       } catch {
         continue; // Unexpected geometry — skip.
       }
-      void by; // by is unused; kept for destructuring clarity.
+      void by;
 
       const [brx, bry, brw, brh] = br;
       const col = ((brx + (brw >> 1)) / subres) | 0;
       const row = ((bry + (brh >> 1)) / subres) | 0;
       if (col < 0 || col >= 9 || row < 0 || row >= 9) continue;
 
-      if (numPixels[col][row] === null) numPixels[col][row] = [];
-      numPixels[col][row]!.push(...numThumbArr);
+      if (numPixels[col]![row] === null) numPixels[col]![row] = [];
+      numPixels[col]![row]!.push(...numThumbArr);
     }
   }
   contours.delete();
@@ -367,7 +381,7 @@ function buildCageTotals(
   const cageTotals: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
   for (let col = 0; col < 9; col++) {
     for (let row = 0; row < 9; row++) {
-      const sums = numPixels[row][col]; // Note: numPixels indexed [col][row] but outer read
+      const sums = numPixels[col]![row]!;
       if (sums !== null) {
         const ntrs = getSums(cv, rec, sums);
         if (ntrs.length > 4) {
@@ -378,7 +392,7 @@ function buildCageTotals(
           );
         }
         for (const v of ntrs) {
-          if (v >= 0) cageTotals[col][row] = 10 * cageTotals[col][row] + v;
+          if (v >= 0) cageTotals[col]![row] = 10 * cageTotals[col]![row]! + v;
         }
       }
     }
@@ -403,29 +417,29 @@ function connectivityScore(
 
   for (let sc = 0; sc < 9; sc++) {
     for (let sr = 0; sr < 9; sr++) {
-      if (visited[sc][sr]) continue;
+      if (visited[sc]![sr]!) continue;
       const region: Array<[number, number]> = [[sc, sr]];
-      visited[sc][sr] = true;
+      visited[sc]![sr] = true;
       let heads = 0;
       let i = 0;
       while (i < region.length) {
-        const [c, r] = region[i++];
-        if (cageTotals[c][r] > 0) heads++;
+        const [c, r] = region[i++]!;
+        if (cageTotals[c]![r]! > 0) heads++;
         // down
-        if (r + 1 < 9 && !visited[c][r + 1] && !borderX[c][r]) {
-          visited[c][r + 1] = true; region.push([c, r + 1]);
+        if (r + 1 < 9 && !visited[c]![r + 1]! && !borderX[c]![r]!) {
+          visited[c]![r + 1] = true; region.push([c, r + 1]);
         }
         // up
-        if (r > 0 && !visited[c][r - 1] && !borderX[c][r - 1]) {
-          visited[c][r - 1] = true; region.push([c, r - 1]);
+        if (r > 0 && !visited[c]![r - 1]! && !borderX[c]![r - 1]!) {
+          visited[c]![r - 1] = true; region.push([c, r - 1]);
         }
         // right
-        if (c + 1 < 9 && !visited[c + 1][r] && !borderY[c][r]) {
-          visited[c + 1][r] = true; region.push([c + 1, r]);
+        if (c + 1 < 9 && !visited[c + 1]![r]! && !borderY[c]![r]!) {
+          visited[c + 1]![r] = true; region.push([c + 1, r]);
         }
         // left
-        if (c > 0 && !visited[c - 1][r] && !borderY[c - 1][r]) {
-          visited[c - 1][r] = true; region.push([c - 1, r]);
+        if (c > 0 && !visited[c - 1]![r]! && !borderY[c - 1]![r]!) {
+          visited[c - 1]![r] = true; region.push([c - 1, r]);
         }
       }
       if (heads === 1) score++;
@@ -447,11 +461,19 @@ async function decodeImageFile(file: File): Promise<ImageData> {
 }
 
 /**
- * Build grayscale + binary Mats from an ImageData, scaled up as needed.
- * Returns [gryMat, gryMat] (two references to avoid caller confusion; caller
- * is responsible for deleting both).
+ * Build two independent grayscale Mats from an ImageData, scaled up as needed.
+ *
+ * Returns two distinct Mat objects (not aliases) so callers can delete each
+ * independently without triggering a double-free.  The first Mat is reserved
+ * for binary cage-digit extraction (callers apply adaptiveThreshold after
+ * warping); the second is the bordered grayscale used by locateGrid.
+ *
+ * @param cv - OpenCV.js module.
+ * @param imageData - Raw RGBA pixel data.
+ * @param resolution - Minimum pixel dimension (9 × subres).
+ * @returns [mat1, mat2] — two independent bordered-grayscale Mats.
  */
-function prepareGrayMat(cv: Cv, imageData: ImageData, resolution: number): [Cv, Cv] {
+function prepareGrayMat(cv: Cv, imageData: ImageData, resolution: number): [OpenCVMat, OpenCVMat] {
   let src = cv.matFromImageData(imageData);
   let gry = new cv.Mat();
   cv.cvtColor(src, gry, cv.COLOR_RGBA2GRAY);
@@ -465,12 +487,13 @@ function prepareGrayMat(cv: Cv, imageData: ImageData, resolution: number): [Cv, 
     gry = up;
   }
 
-  // Add 3-pixel black border.
-  const bordered = new cv.Mat();
-  cv.copyMakeBorder(gry, bordered, 3, 3, 3, 3, cv.BORDER_CONSTANT, new cv.Scalar(0));
+  // Add 3-pixel black border (ensures contours near edges are closed).
+  const gryMat = new cv.Mat();
+  cv.copyMakeBorder(gry, gryMat, 3, 3, 3, 3, cv.BORDER_CONSTANT, new cv.Scalar(0, 0, 0, 0));
   gry.delete();
 
-  return [bordered, bordered];
+  // Return a clone so the two handles are independent (caller deletes both).
+  return [gryMat.clone(), gryMat];
 }
 
 /**
@@ -482,8 +505,8 @@ function rollCorners(corners: Float32Array, shift: number): Float32Array {
   const result = new Float32Array(8);
   for (let i = 0; i < n; i++) {
     const src = ((i - shift) % n + n) % n;
-    result[i * 2] = corners[src * 2];
-    result[i * 2 + 1] = corners[src * 2 + 1];
+    result[i * 2] = corners[src * 2]!;
+    result[i * 2 + 1] = corners[src * 2 + 1]!;
   }
   return result;
 }
@@ -491,7 +514,7 @@ function rollCorners(corners: Float32Array, shift: number): Float32Array {
 /**
  * Convert an OpenCV Mat to an ImageData (RGBA).
  */
-function matToImageData(cv: Cv, mat: Cv, size: number): ImageData {
+function matToImageData(cv: Cv, mat: OpenCVMat, size: number): ImageData {
   let rgba = new cv.Mat();
   if (mat.channels() === 4) {
     rgba = mat.clone();

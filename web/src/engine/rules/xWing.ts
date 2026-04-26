@@ -27,15 +27,16 @@ export class XWing {
       const rowCols: [number, Set<number>][] = [];
       for (let r = 0; r < 9; r++) {
         const cols = new Set<number>();
-        for (let c = 0; c < 9; c++) if (board.candidates[r][c].has(d)) cols.add(c);
+        for (let c = 0; c < 9; c++) if (board.cands(r, c).has(d)) cols.add(c);
         if (cols.size === 2) rowCols.push([r, cols]);
       }
-      for (const [[r1, cols1], [r2, cols2]] of combinations(rowCols, 2)) {
+      for (const [p1, p2] of combinations(rowCols, 2)) {
+        const [r1, cols1] = p1!; const [r2, cols2] = p2!;
         if (cols1.size !== cols2.size || ![...cols1].every(c => cols2.has(c))) continue;
         for (const col of cols1) {
           for (let r = 0; r < 9; r++) {
-            if (r !== r1 && r !== r2 && board.candidates[r][col].has(d))
-              elims.push({ cell: [r, col] as unknown as Cell, digit: d });
+            if (r !== r1 && r !== r2 && board.cands(r, col).has(d))
+              elims.push({ cell: [r, col] as Cell, digit: d });
           }
         }
       }
@@ -44,15 +45,16 @@ export class XWing {
       const colRows: [number, Set<number>][] = [];
       for (let c = 0; c < 9; c++) {
         const rows = new Set<number>();
-        for (let r = 0; r < 9; r++) if (board.candidates[r][c].has(d)) rows.add(r);
+        for (let r = 0; r < 9; r++) if (board.cands(r, c).has(d)) rows.add(r);
         if (rows.size === 2) colRows.push([c, rows]);
       }
-      for (const [[c1, rows1], [c2, rows2]] of combinations(colRows, 2)) {
+      for (const [p1c, p2c] of combinations(colRows, 2)) {
+        const [c1, rows1] = p1c!; const [c2, rows2] = p2c!;
         if (rows1.size !== rows2.size || ![...rows1].every(r => rows2.has(r))) continue;
         for (const row of rows1) {
           for (let c = 0; c < 9; c++) {
-            if (c !== c1 && c !== c2 && board.candidates[row][c].has(d))
-              elims.push({ cell: [row, c] as unknown as Cell, digit: d });
+            if (c !== c1 && c !== c2 && board.cands(row, c).has(d))
+              elims.push({ cell: [row, c] as Cell, digit: d });
           }
         }
       }

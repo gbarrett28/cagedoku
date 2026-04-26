@@ -77,10 +77,10 @@ describe('specToData / dataToSpec round-trip', () => {
     // trivial spec: every cell is its own cage, so every border is a wall
     for (let c = 0; c < 9; c++)
       for (let rowGap = 0; rowGap < 8; rowGap++)
-        expect(spec2.borderX[c][rowGap]).toBe(true);
+        expect(spec2.borderX[c]![rowGap]!).toBe(true);
     for (let colGap = 0; colGap < 8; colGap++)
       for (let r = 0; r < 9; r++)
-        expect(spec2.borderY[colGap][r]).toBe(true);
+        expect(spec2.borderY[colGap]![r]!).toBe(true);
   });
 });
 
@@ -121,14 +121,13 @@ describe('userRemoved', () => {
 
 describe('userVirtualCages', () => {
   const vc: VirtualCage = {
-    cells: [[0, 0], [0, 1]] as unknown as Cell[],
+    cells: [[0, 0], [0, 1]] as Cell[],
     total: 10,
     eliminatedSolns: [],
   };
 
   it('adds a cage via addVirtualCage', () => {
     const state = makeState();
-    const key = '0,0:0,1:10';
     const turns = [makeTurn({ type: 'addVirtualCage', cage: vc })];
     expect(userVirtualCages({ ...state, turns })).toHaveLength(1);
   });
@@ -160,18 +159,18 @@ describe('buildEngine', () => {
     engine.solve();
     for (let r = 0; r < 9; r++)
       for (let c = 0; c < 9; c++)
-        expect(board.candidates[r][c]).toEqual(new Set([KNOWN_SOLUTION[r][c]]));
+        expect(board.candidates[r]![c]!).toEqual(new Set([KNOWN_SOLUTION[r]![c]!]));
   });
 
   it('user eliminations reduce candidates before solve', () => {
     const state = makeState();
     // Place digit 1 at (0,0) in userGrid
     const userGrid = state.userGrid!.map(row => [...row]);
-    userGrid[0][0] = 1;
+    userGrid[0]![0] = 1;
     const stateWithPlacement = { ...state, userGrid };
     const { board } = buildEngine(stateWithPlacement);
     // All digits except 1 should have been removed from (0,0)
-    expect(board.candidates[0][0].has(1)).toBe(true);
+    expect(board.candidates[0]![0]!.has(1)).toBe(true);
     // After solve the candidate set may be even smaller — just check no crash
   });
 });
