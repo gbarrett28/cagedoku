@@ -353,13 +353,15 @@ export async function parsePuzzleImage(
  *
  * Finds all digit contours, classifies them, and assembles the grid.
  */
-function buildCageTotals(
+export function buildCageTotals(
   cv: Cv,
   warpedBlk: OpenCVMat,
   rec: NumRecogniser,
   subres: number,
   brdrs: Brdrs,
 ): number[][] {
+  // numPixels[row][col]: contour thumbnails found in each grid cell.
+  // col = bx/subres (x-pixel → column), row = by/subres (y-pixel → row).
   const numPixels: Array<Array<Uint8Array[] | null>> = Array.from(
     { length: 9 }, () => new Array<Uint8Array[] | null>(9).fill(null),
   );
@@ -386,32 +388,34 @@ function buildCageTotals(
       void by;
 
       const [brx, bry, brw, brh] = br;
-      const col = ((brx + (brw >> 1)) / subres) | 0;
-      const row = ((bry + (brh >> 1)) / subres) | 0;
+      const col = ((brx + (brw >> 1)) / subres) | 0;  // x-pixel → column
+      const row = ((bry + (brh >> 1)) / subres) | 0;  // y-pixel → row
       if (col < 0 || col >= 9 || row < 0 || row >= 9) continue;
 
-      if (numPixels[col]![row] === null) numPixels[col]![row] = [];
-      numPixels[col]![row]!.push(...numThumbArr);
+      // Row-major: numPixels[row][col]
+      if (numPixels[row]![col] === null) numPixels[row]![col] = [];
+      numPixels[row]![col]!.push(...numThumbArr);
     }
   }
   contours.delete();
   hierMat.delete();
 
+  // Row-major: cageTotals[row][col]
   const cageTotals: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-  for (let col = 0; col < 9; col++) {
-    for (let row = 0; row < 9; row++) {
-      const sums = numPixels[col]![row]!;
+  for (let row = 0; row < 9; row++) {
+    for (let col = 0; col < 9; col++) {
+      const sums = numPixels[row]![col]!;
       if (sums !== null) {
         const ntrs = getSums(cv, rec, sums);
         if (ntrs.length > 4) {
           throw new ProcessingError(
-            `Too many digits (${ntrs.length}) in cell (${col},${row})`,
+            `Too many digits (${ntrs.length}) in cell (row=${row},col=${col})`,
             Array.from({ length: 9 }, () => new Array<number>(9).fill(0)),
             brdrs,
           );
         }
         for (const v of ntrs) {
-          if (v >= 0) cageTotals[col]![row] = 10 * cageTotals[col]![row]! + v;
+          if (v >= 0) cageTotals[row]![col] = 10 * cageTotals[row]![col]! + v;
         }
       }
     }
