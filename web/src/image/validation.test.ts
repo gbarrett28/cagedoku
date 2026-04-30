@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { validateCageLayout } from './validation.js';
+import { validateCageLayout, repairCageTotals } from './validation.js';
 import { ProcessingError } from '../solver/errors.js';
 
 // ---------------------------------------------------------------------------
@@ -241,5 +241,64 @@ describe('validateCageLayout — row-major orientation (T2)', () => {
     const spec = validateCageLayout(totals, allWallsBorderX(), borderY);
     expect(spec.regions[7]![1]!).toBe(spec.regions[7]![2]!);
     expect(spec.regions[6]![1]!).not.toBe(spec.regions[7]![1]!);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// repairCageTotals (diagnostic spec recovery)
+// ---------------------------------------------------------------------------
+
+describe('repairCageTotals', () => {
+  it('returns repaired array and empty warnings when all totals are valid', () => {
+    const { repaired, warnings } = repairCageTotals(
+      trivialCageTotals(),
+      allWallsBorderX(),
+      allWallsBorderY(),
+    );
+    expect(warnings).toHaveLength(0);
+    // Every 1-cell cage with total=5 is valid — no clamping needed.
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++)
+        expect(repaired[r]![c]!).toBe(5);
+  });
+
+  it('clamps an out-of-range total and emits a warning', () => {
+    // A 1-cell cage must have total in [1,9].  total=0 is invalid (it signals
+    // "no head" in validateCageLayout) so will not be clamped here.
+    // total=15 is out of range for a 1-cell cage — clamp to 9.
+    const totals = trivialCageTotals();
+    totals[4]![4] = 15;  // row=4, col=4: 15 > max 9 for size-1 cage
+    const { repaired, warnings } = repairCageTotals(
+      totals,
+      allWallsBorderX(),
+      allWallsBorderY(),
+    );
+    expect(repaired[4]![4]!).toBe(9);
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(warnings[0]).toContain('15');
+  });
+
+  it('clamps a 2-cell cage total that is too small', () => {
+    // Open wall between rows 0 and 1 in col 0 → 2-cell cage.
+    // Total=2 is below minimum 3 for a 2-cell cage — clamp to 3.
+    const borderX = allWallsBorderX();
+    borderX[0]![0] = false;
+    const totals = trivialCageTotals();
+    totals[0]![0] = 2;   // row=0, col=0 — head of 2-cell cage, total too small
+    totals[1]![0] = 0;   // row=1, col=0 — merged cell
+    const { repaired, warnings } = repairCageTotals(totals, borderX, allWallsBorderY());
+    expect(repaired[0]![0]!).toBe(3);  // clamped to minimum
+    expect(warnings.length).toBe(1);
+  });
+
+  it('does not modify cells with total=0 (no-head cells)', () => {
+    // Cells with total=0 are non-head merged cells — repairCageTotals must not
+    // touch them (they are not cage heads).
+    const borderX = allWallsBorderX();
+    borderX[0]![0] = false;
+    const totals = trivialCageTotals();
+    totals[1]![0] = 0;   // row=1, col=0 is merged — total 0 must stay 0
+    const { repaired } = repairCageTotals(totals, borderX, allWallsBorderY());
+    expect(repaired[1]![0]!).toBe(0);
   });
 });
