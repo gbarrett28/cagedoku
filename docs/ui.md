@@ -1,6 +1,6 @@
 # UI Specification — COACH
 
-> Read this before working on the frontend (`static/`) or any behaviour
+> Read this before working on the frontend (`web/src/`) or any behaviour
 > visible to the user. For the coaching API and session lifecycle see
 > `docs/architecture.md`. For rule internals see `docs/rules.md`.
 
@@ -10,16 +10,16 @@
 
 ```
 Upload Screen
-    │  image processed successfully
+    │  image processed (success or OCR failure)
     ▼
 OCR Review Screen
-    │  layout confirmed (POST /confirm)
+    │  "Confirm & Solve" pressed, layout valid
     ▼
 Playing Screen ──► Solution Screen (puzzle complete)
 ```
 
-The upload panel collapses once an image has been processed successfully.
-Navigating back to "New puzzle" reloads the page.
+The upload panel collapses once processing completes, whether or not OCR
+succeeded. Navigating back via "New puzzle" returns to the upload screen.
 
 ---
 
@@ -29,49 +29,94 @@ Navigating back to "New puzzle" reloads the page.
 
 | Element | Description |
 |---|---|
-| Newspaper select | `guardian` or `observer` — determines OCR model |
-| File input | Accepts any image format (`image/*`) |
-| Process button | Submits image to `POST /api/puzzle` |
-| Status message | Shows progress, warnings, and errors inline |
+| File input | Accepts any image file (`image/*`). PDF support planned (see below). |
+| Process button | Runs the image pipeline locally (no server required). |
+| Status message | Shows progress and warnings inline. Never blocks on error — see Behaviour. |
 
 **Behaviour**
 
-- On success: upload panel hides; OCR Review Screen appears.
-- On warning (OCR validation failed but partial result available): review screen
-  shows with a warning banner; warped grid and detected layout are both visible
-  so the user can inspect what went wrong.
-- On error (grid not locatable): status shows the error; upload panel remains
-  visible for retry.
-- **Unimplemented:** If the application is launched with a puzzle path as an
-  argument, the upload panel is not shown at all; the app opens directly at the
-  OCR Review Screen.
+- After processing, the upload panel hides and the OCR Review Screen always
+  appears — even if OCR failed to detect cages. On total failure a blank canvas
+  is shown (no borders, no cage totals) with a warning message so the user can
+  build the layout from scratch.
+- If a warning was produced (e.g. cage totals out of range, sum ≠ 405), it
+  appears in the status bar below the review columns.
+- The upload panel never blocks with a hard error; the user always reaches the
+  review screen.
+
+**PDF support (planned, not yet implemented)**
+
+Accept `application/pdf` in the file input. Extract the first page as an image
+using pdf.js, then pass it through the existing image pipeline. No other changes
+required.
 
 ---
 
 ## OCR Review Screen
 
+The review screen is always in **edit mode** from the moment it appears.
+There is no separate "edit" button or confirmation step before editing.
+All changes — border toggles and cage total edits — are **committed when the
+user presses "Confirm & Solve"**. Until then, edits are freely reversible.
+
 **Layout**
 
-Three columns:
+Three columns, left to right:
 
-| Column | Always visible? | Description |
-|---|---|---|
-| Detected Layout | Always | Canvas showing OCR result — borders and cage totals |
-| Original Photo | Always | Uploaded image for comparison |
-| Warped Grid | Only on warning | Perspective-corrected image when validation failed |
+| Column | Description |
+|---|---|
+| Detected Layout | Interactive canvas — borders and cage totals |
+| Original Photo | Uploaded image for visual comparison |
+| Warped Grid | Perspective-corrected image (always shown) |
 
-Below the columns:
+The detected puzzle type (Killer / Classic) appears in the dropdown in the
+action bar. The user can change it if OCR misdetected the type.
 
-- **Action bar**: "Looks correct — solve!" and "Edit cage totals".
-- **Cage totals editor** (hidden until "Edit cage totals" pressed): a table of
-  `Cage | Cells | Total` rows with editable totals, plus a "Solve puzzle"
-  button.
+**Editing borders (Killer only)**
 
-**Clicking a cage boundary** (in Detected Layout canvas) toggles the boundary
-between cage boundary and internal cell boundary.
+Click near a border segment on the canvas to toggle it between cage boundary
+and internal cell boundary. There is no explicit save step; the current state
+of all borders is committed on Confirm.
 
-**Clicking a cage total** (or a cell with no total) opens an inline editor for
-that cage's total.
+**Editing cage totals (Killer only)**
+
+Any cell can hold a cage total. Click any cell on the canvas:
+
+- The `cage-total-edit` input overlays the entire clicked cell, sized to fill
+  it, with a large centred font so the value is clearly readable while editing.
+- The existing total (or blank if none) is pre-populated.
+- **Enter** or clicking elsewhere commits the value to that cell.
+- **Escape** cancels and restores the previous value.
+
+**Classic digit correction**
+
+Click a cell, then type a digit (1–9) to correct an OCR misread. Backspace
+clears the cell. Duplicate digits in the same row, column, or box are
+highlighted in red.
+
+**Action bar**
+
+| Control | Description |
+|---|---|
+| Confirm & Solve | Validates the layout and transitions to Playing mode |
+| Type dropdown | `Killer` / `Classic` — changeable if OCR misdetected |
+
+Confirm runs the following checks in order:
+
+1. **Structural**: each cage (connected component from border toggles) must have
+   exactly one non-zero total cell.
+2. **Range**: each cage total must be in the achievable range for its size
+   `[n(n+1)/2, n(19−n)/2]`. Out-of-range totals are highlighted; user must
+   correct before confirming.
+3. **Partition validity**: the borders form a valid partition of all 81 cells
+   into connected, non-overlapping cage regions. (This is structurally guaranteed
+   by the union-find construction; reported if the internal representation is
+   inconsistent.)
+4. **Sum advisory**: if the total of all cage totals differs significantly from
+   405, a warning is shown but does not block confirmation.
+
+If any of checks 1–3 fail, the review screen remains open with an error message
+and the problematic cages highlighted in amber on the canvas.
 
 ---
 
@@ -117,6 +162,14 @@ Renders the 9×9 sudoku grid with the following layers (back → front):
 | ? | Visible when candidates shown | Open candidates help modal |
 | Inspect cage | Visible when candidates shown | Enter cage inspection mode |
 | Virtual cage | Visible when candidates shown | Enter virtual cage drawing mode |
+| Reveal | Visible when a cell is selected | Reveal the solution digit for the selected cell after a confirmation popup |
+
+### Reveal
+
+Pressing **Reveal** with a cell selected opens a small confirmation popup:
+"Reveal solution for r{R}c{C}?" with OK and Cancel. On OK, the solver computes
+the full solution (if not already cached), then places the correct digit in the
+selected cell via the normal `enterCell` path so that undo works as expected.
 
 ### Hints Dropdown
 
@@ -131,7 +184,7 @@ Clicking a hint opens the **Hint Modal**.
 
 Shows the hint's title, full explanation, and summary. Two actions:
 
-- **Apply automatically** — posts to `/api/puzzle/{id}/hints/apply` and refreshes.
+- **Apply automatically** — applies the deduction and refreshes.
 - **Close & apply by hand** — closes modal; the user acts manually.
 
 ### Candidate Editing Mode
@@ -156,18 +209,22 @@ Activated by "Inspect cage" then clicking a cell. Shows:
 - Cage label and total
 - All valid solutions (digit combinations)
 - Auto-impossible solutions (greyed out)
-- User-eliminated solutions (struck through, restorable)
+- User-eliminated solutions (struck through, restorable by clicking)
 
-Clicking a solution row toggles its elimination status.
+Clicking a non-auto-impossible solution row toggles its user-eliminated status.
 
 ### Virtual Cage Panel
 
 Activated by "Virtual cage". The user clicks cells on the grid to select them
 (indigo underlay), enters a total, and presses "Add". Cancel clears the selection.
 
-**Bug (known):** When the total input field is focused, digit keys also place
-digits into the last selected cage cell. Fix: suppress the grid keydown handler
-while the total input has focus. See Known Issues #2.
+The panel lists **only the virtual cages that contain the currently selected
+cell** (not all virtual cages). This keeps the list manageable when many virtual
+cages have been added.
+
+User-eliminated solutions in the virtual cage panel appear and behave identically
+to user-eliminated solutions in the Cage Inspector (struck through, restorable by
+clicking).
 
 ---
 
@@ -178,7 +235,7 @@ Opened via "Config" in the header.
 **Rule list**: one row per hintable rule.
 - Checkbox: toggles the rule between always-apply and hint-only.
 - Rule display name.
-- **(i) button**: opens an **Rule Info Modal** (see below) explaining the rule.
+- **(i) button**: opens a **Rule Info Modal** (see below) explaining the rule.
 
 **Essential highlight toggle**: enables or disables the salmon highlight that
 marks essential digits. Disabled state leaves essential digits grey, identical
@@ -189,64 +246,31 @@ next candidates refresh.
 
 ### Rule Info Modal
 
-A small modal (or popover) triggered by the (i) button next to each rule. Shows:
+A small modal triggered by the (i) button next to each rule. Shows:
 
 - Rule display name
 - A plain-English description of what the rule detects and why it helps.
-- Whether the rule is always-apply, hint-only, or (if applicable) always-apply
-  by default.
-
-The description is sourced from the rule's `description` class attribute
-(added as part of implementing this feature). `GET /api/settings` returns
-descriptions alongside names so no additional endpoint is required.
 
 ---
 
 ## Help Facilities
 
-### Existing
-
 | Trigger | Content |
 |---|---|
-| **?** button (playing screen) | Candidates help modal — explains the candidate grid, essential digits, auto/manual mode, cycling states, solved cell behaviour |
-
-### Proposed
-
-**1. Rule info modals** (in config — described above).  
-One modal per rule, triggered by the (i) button. Self-contained; no new endpoint
-needed once `description` is added to `RuleInfo`.
-
-**2. General app help** (header "?" or "Help" button).  
-A single modal covering:
-- What COACH does (image → candidates → hints → solution)
-- How to work through each phase (upload, review, playing)
-- What always-apply rules are and when to change them
-- What virtual cages are and when to use them
-- Keyboard shortcuts table
-
-This modal is static HTML (no API call). It is the single onboarding reference
-for new users and replaces having no general help at all.
+| **?** (header) | General app help modal — phases, candidates, hints, virtual cages, keyboard shortcuts |
+| **?** (playing screen, candidates shown) | Candidates-specific help modal |
+| **(i)** (config, next to each rule) | Rule info modal |
 
 ---
 
 ## Known UI Issues
 
-1. **Candidate cycling allows toggling essential state** (COACH.md #2). The
-   cycle should be possible ↔ impossible only. Essential is auto-computed and
-   must not be user-overridable.
+1. **Candidate cycling allows toggling essential state.** The cycle should be
+   possible ↔ impossible only. Essential is auto-computed and must not be
+   user-overridable.
 
-2. **Virtual cage total input conflicts with digit entry** (architecture.md).
-   Digit keys fire the grid keydown handler while the total input has focus,
-   placing digits in the last selected cell.
+2. **Undo has no visible effect.** The undo action correctly reverts state but
+   the frontend does not re-render after the response.
 
-3. **Undo has no visible effect** (COACH.md #4). The `/undo` endpoint correctly
-   reverts server state but the frontend does not re-render after the response.
-
-4. **Arrow navigation not yet implemented.** Keyboard arrow keys do not move
-   cell selection.
-
-5. **Upload panel does not collapse after successful processing.**
-
-6. **No essential highlight toggle in config.**
-
-7. **No rule info (i) modals in config.**
+3. **Arrow navigation not implemented.** Keyboard arrow keys do not move cell
+   selection.
