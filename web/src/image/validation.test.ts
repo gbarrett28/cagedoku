@@ -188,3 +188,50 @@ describe('validateCageLayout — unassigned_region', () => {
     ).toThrow(ProcessingError);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Row-major orientation contract (T2)
+//
+// These tests FAIL with the current col-major implementation and PASS after
+// the row-major fix.  They define the expected contract:
+//   cageTotals[row][col]  — first index is the visual row
+//   regions[row][col]     — first index is the visual row
+// ---------------------------------------------------------------------------
+
+describe('validateCageLayout — row-major orientation (T2)', () => {
+  it('cageTotals[row][col] head unifies the correct adjacent cells', () => {
+    // Open the vertical wall between col=5 and col=6 in visual row=2.
+    // borderY convention (intentional exception): borderY[colGap][row]
+    //   borderY[5][2] = false => no wall between col 5 and col 6 in row 2.
+    const borderY = allWallsBorderY();
+    borderY[5]![2] = false;
+
+    // Row-major cageTotals:
+    //   totals[row=2][col=5] = 5  => head of the 2-cell cage (total 5 in [3,17])
+    //   totals[row=2][col=6] = 0  => merged cell, no head
+    //   all other cells = 5       => each is its own 1-cell cage
+    const totals = trivialCageTotals();
+    totals[2]![6] = 0;
+
+    // After the row-major fix: must not throw; the two cells share a cage index.
+    // With the col-major bug: misreads the zeroed slot, putting two heads in the
+    // merged component => ProcessingError.
+    const spec = validateCageLayout(totals, allWallsBorderX(), borderY);
+    expect(spec.regions[2]![5]!).toBe(spec.regions[2]![6]!);
+    // Adjacent cell in the same row outside the cage must have a different index.
+    expect(spec.regions[2]![4]!).not.toBe(spec.regions[2]![5]!);
+  });
+
+  it('regions[row][col] — cells in the same visual row share a cage when connected horizontally', () => {
+    // Independent scenario: col=1 and col=2 in row=7.
+    const borderY = allWallsBorderY();
+    borderY[1]![7] = false;  // no wall between col 1 and col 2 in row 7
+
+    const totals = trivialCageTotals();
+    totals[7]![2] = 0;  // (row=7, col=2) is the merged cell
+
+    const spec = validateCageLayout(totals, allWallsBorderX(), borderY);
+    expect(spec.regions[7]![1]!).toBe(spec.regions[7]![2]!);
+    expect(spec.regions[6]![1]!).not.toBe(spec.regions[7]![1]!);
+  });
+});
