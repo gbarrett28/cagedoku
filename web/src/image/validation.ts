@@ -127,7 +127,7 @@ export function validateCageLayout(
         const total = cageTotals[col]![row]!;
         if (total < lo || total > hi) {
           throw new Error(
-            `cagesize=${n}, total=${total} at col=${col},row=${row}: must be in [${lo}, ${hi}]`,
+            `cagesize=${n}, total=${total} at col=${col + 1},row=${row + 1}: must be in [${lo}, ${hi}]`,
           );
         }
 
@@ -149,4 +149,65 @@ export function validateCageLayout(
   }
 
   return { regions, cageTotals, borderX, borderY };
+}
+
+/**
+ * Clamp cage totals that are outside the achievable range for their cage size.
+ *
+ * Runs the same union-find as validateCageLayout to determine cage sizes, then
+ * sets any head-cell total that is below lo or above hi to lo (the minimum).
+ * Returns the repaired array and a list of human-readable warnings.
+ *
+ * Use this as a fallback when validateCageLayout throws an invalid_cage error:
+ *   const { repaired, warnings } = repairCageTotals(totals, bx, by);
+ *   spec = validateCageLayout(repaired, bx, by);
+ */
+export function repairCageTotals(
+  cageTotals: number[][],
+  borderX: boolean[][],
+  borderY: boolean[][],
+): { repaired: number[][]; warnings: string[] } {
+  const rmap = new Map<string, string>();
+  const members = new Map<string, Set<string>>();
+  for (let c = 0; c < 9; c++) {
+    for (let r = 0; r < 9; r++) {
+      const k = cellKey(c, r);
+      rmap.set(k, k);
+      members.set(k, new Set([k]));
+    }
+  }
+  const find = (k: string) => rmap.get(k)!;
+  const union = (ak: string, bk: string) => {
+    const ra = find(ak); const rb = find(bk);
+    if (ra === rb) return;
+    const [keep, drop] = ra < rb ? [ra, rb] : [rb, ra];
+    for (const p of members.get(drop)!) rmap.set(p, keep);
+    const ks = members.get(keep)!;
+    for (const p of members.get(drop)!) ks.add(p);
+    members.delete(drop);
+  };
+  for (let col = 0; col < 9; col++)
+    for (let row = 0; row < 8; row++)
+      if (!borderX[col]![row]!) union(cellKey(col, row), cellKey(col, row + 1));
+  for (let colGap = 0; colGap < 8; colGap++)
+    for (let row = 0; row < 9; row++)
+      if (!borderY[colGap]![row]!) union(cellKey(colGap, row), cellKey(colGap + 1, row));
+
+  const repaired = cageTotals.map(col => [...col]);
+  const warnings: string[] = [];
+  for (let col = 0; col < 9; col++) {
+    for (let row = 0; row < 9; row++) {
+      const total = repaired[col]![row]!;
+      if (total === 0) continue;
+      const n = members.get(find(cellKey(col, row)))!.size;
+      const lo = (n * (n + 1)) / 2;
+      const hi = (n * (19 - n)) / 2;
+      if (total < lo || total > hi) {
+        const clamped = total < lo ? lo : hi;
+        repaired[col]![row] = clamped;
+        warnings.push(`col=${col + 1},row=${row + 1}: read ${total}, clamped to ${clamped} (${n}-cell cage range [${lo}, ${hi}])`);
+      }
+    }
+  }
+  return { repaired, warnings };
 }

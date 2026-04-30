@@ -186,36 +186,85 @@ button:hover:not(:disabled) {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  min-width: 0;
+  flex-shrink: 0;
 }
 
 #review-actions {
   margin-bottom: 1rem;
 }
 
-#editor-section {
-  border-top: 1px solid var(--border);
-  padding-top: 1.25rem;
-  margin-top: 0.25rem;
-}
-
 /* ── Grid canvas ── */
+
+#canvas-wrapper {
+  position: relative;
+  display: inline-block;
+}
 
 #grid-canvas {
   display: block;
   border-radius: 3px;
   border: 1px solid var(--border);
+  cursor: pointer;
 }
 
-/* ── Original photo ── */
+#cage-total-edit {
+  position: absolute;
+  display: none;
+  width: 50px;
+  height: 50px;
+  font-size: 26px;
+  font-weight: bold;
+  text-align: center;
+  padding: 0;
+  border: 2px solid var(--accent);
+  background: var(--surface);
+  color: var(--text);
+  box-sizing: border-box;
+  z-index: 10;
+}
 
-#original-img {
+/* ── Original photo and warped grid images ── */
+
+#original-img,
+#warped-img {
   display: block;
-  /* Match the canvas width so both columns are the same size */
   max-width: 458px;
   width: 100%;
   border-radius: 3px;
   border: 1px solid var(--border);
+}
+
+/* ── Digit pad (mobile entry) ── */
+
+.digit-pad {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+  max-width: 330px;
+}
+
+.digit-btn {
+  width: 3rem;
+  height: 3rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.digit-btn:hover:not(:disabled) {
+  background: var(--border);
+}
+
+.digit-clear {
+  color: var(--error);
 }
 
 /* ── Secondary button variant ── */
@@ -239,78 +288,13 @@ button:hover:not(:disabled) {
   margin-bottom: 0.75rem;
 }
 
-#cage-table-wrap {
-  max-height: 420px;
-  overflow-y: auto;
+.puzzle-type-select {
+  padding: 0.35rem 0.5rem;
   border: 1px solid var(--border);
-  border-radius: 5px;
-  margin-bottom: 1rem;
-}
-
-#cage-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.83rem;
-}
-
-#cage-table thead {
-  position: sticky;
-  top: 0;
-  background: var(--surface-2);
-}
-
-#cage-table th {
-  padding: 0.45rem 0.75rem;
-  text-align: left;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--text-muted);
-  font-weight: 600;
-  border-bottom: 1px solid var(--border);
-}
-
-#cage-table td {
-  padding: 0.3rem 0.75rem;
-  border-bottom: 1px solid var(--border);
-  vertical-align: middle;
-}
-
-#cage-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-#cage-table tbody tr:hover {
-  background: var(--surface-2);
-}
-
-.cage-label {
-  font-weight: 700;
-  color: var(--accent);
-  width: 2.5rem;
-}
-
-.cage-cells {
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  font-family: ui-monospace, monospace;
-  word-break: break-all;
-}
-
-.total-input {
-  background: var(--input-bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 0.25rem 0.4rem;
   border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text);
   font-size: 0.875rem;
-  width: 4.5rem;
-  text-align: right;
-}
-
-.total-input:focus {
-  outline: 2px solid var(--accent-dim);
-  border-color: var(--accent-dim);
 }
 
 /* ── Solution grid ── */
@@ -413,6 +397,20 @@ button:hover:not(:disabled) {
 .vc-solutions {
   font-family: ui-monospace, monospace;
   font-size: 0.9rem;
+}
+
+/* ── Version banner ── */
+
+#version-banner {
+  position: fixed;
+  bottom: 0.4rem;
+  right: 0.5rem;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  opacity: 0.5;
+  pointer-events: none;
+  user-select: none;
+  z-index: 9999;
 }
 
 /* ── Dialog / modal base ── */

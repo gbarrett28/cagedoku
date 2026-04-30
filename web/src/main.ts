@@ -6,7 +6,9 @@
  * State lives in session/store.ts; no server required.
  */
 
-import { loadCV, loadRec, setCandidatesCache } from './session/store.js';
+import { loadCV, loadRec, setCandidatesCache, getCV } from './session/store.js';
+import { extractTrainingData } from './image/trainingExport.js';
+import { dataToSpec } from './session/specUtils.js';
 import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec } from './engine/fixtures.js';
 import {
   uploadPuzzle,
@@ -24,7 +26,7 @@ import {
   addVirtualCage,
   getHints,
   applyHint,
-  patchCage,
+  applyDraftLayout,
   getSettingsData,
   saveSettingsData,
 } from './session/actions.js';
@@ -70,6 +72,13 @@ let hintHighlightCells = new Set<string>();     // "r,c" keys, 0-based
 let activeHintItem: HintItem | null = null;
 let inspectCageMode = false;
 
+let draftBorderX: boolean[][] = [];   // [col][rowGap] — cage horizontal walls
+let draftBorderY: boolean[][] = [];   // [colGap][row] — cage vertical walls
+let draftEdited = false;              // true once the user changes any total or border
+let totalEditCell: { row: number; col: number } | null = null;  // 0-based, active overlay
+let totalEditPrev = 0;
+let reviewErrorCells = new Set<string>(); // "row,col" keys — cages failing Confirm validation
+
 // ---------------------------------------------------------------------------
 // Grid rendering
 // ---------------------------------------------------------------------------
@@ -83,6 +92,8 @@ function drawGrid(
   candidatesData: CandidatesResponse | null = null,
   vcSelection: Set<string> | null = null,
   showEss: boolean = true,
+  draft?: { borderX: boolean[][], borderY: boolean[][] },
+  errorCells?: Set<string>,
 ): void {
   canvas.width = GRID_PX;
   canvas.height = GRID_PX;
@@ -138,24 +149,55 @@ function drawGrid(
     );
   }
 
-  // 2. Cage boundaries in red (killer only)
+  // 1g. Validation error highlight (red tint on cages with missing/invalid totals)
+  if (errorCells && errorCells.size > 0) {
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.3)';
+    for (const key of errorCells) {
+      const parts = key.split(',').map(Number);
+      const r = parts[0]!, c = parts[1]!;
+      ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
+    }
+  }
+
+  // 2. Cage boundaries in red (killer only) — from draft borders if editing, else from regions
   if (state.puzzleType !== 'classic') {
-    ctx.strokeStyle = '#cc0000';
+    ctx.strokeStyle = draft ? '#0055cc' : '#cc0000'; // blue in edit mode, red normally
     ctx.lineWidth = 7.5;
-    const reg = state.specData.regions;
-    for (let r = 0; r < 8; r++) {
-      for (let c = 0; c < 9; c++) {
-        if ((reg[r]?.[c] ?? 0) !== (reg[r + 1]?.[c] ?? 0)) {
-          const y = MARGIN + (r + 1) * CELL;
-          ctx.beginPath(); ctx.moveTo(MARGIN + c * CELL, y); ctx.lineTo(MARGIN + (c + 1) * CELL, y); ctx.stroke();
+    if (draft) {
+      // draftBorderX[col][rowGap]: wall between rows rowGap and rowGap+1 in column col
+      for (let col = 0; col < 9; col++) {
+        for (let rowGap = 0; rowGap < 8; rowGap++) {
+          if (draft.borderX[col]![rowGap]) {
+            const y = MARGIN + (rowGap + 1) * CELL;
+            ctx.beginPath(); ctx.moveTo(MARGIN + col * CELL, y); ctx.lineTo(MARGIN + (col + 1) * CELL, y); ctx.stroke();
+          }
         }
       }
-    }
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 8; c++) {
-        if ((reg[r]?.[c] ?? 0) !== (reg[r]?.[c + 1] ?? 0)) {
-          const x = MARGIN + (c + 1) * CELL;
-          ctx.beginPath(); ctx.moveTo(x, MARGIN + r * CELL); ctx.lineTo(x, MARGIN + (r + 1) * CELL); ctx.stroke();
+      // draftBorderY[colGap][row]: wall between cols colGap and colGap+1 in row
+      for (let colGap = 0; colGap < 8; colGap++) {
+        for (let row = 0; row < 9; row++) {
+          if (draft.borderY[colGap]![row]) {
+            const x = MARGIN + (colGap + 1) * CELL;
+            ctx.beginPath(); ctx.moveTo(x, MARGIN + row * CELL); ctx.lineTo(x, MARGIN + (row + 1) * CELL); ctx.stroke();
+          }
+        }
+      }
+    } else {
+      const reg = state.specData.regions;
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 9; c++) {
+          if ((reg[r]?.[c] ?? 0) !== (reg[r + 1]?.[c] ?? 0)) {
+            const y = MARGIN + (r + 1) * CELL;
+            ctx.beginPath(); ctx.moveTo(MARGIN + c * CELL, y); ctx.lineTo(MARGIN + (c + 1) * CELL, y); ctx.stroke();
+          }
+        }
+      }
+      for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 8; c++) {
+          if ((reg[r]?.[c] ?? 0) !== (reg[r]?.[c + 1] ?? 0)) {
+            const x = MARGIN + (c + 1) * CELL;
+            ctx.beginPath(); ctx.moveTo(x, MARGIN + r * CELL); ctx.lineTo(x, MARGIN + (r + 1) * CELL); ctx.stroke();
+          }
         }
       }
     }
@@ -182,18 +224,15 @@ function drawGrid(
   ctx.strokeStyle = '#000'; ctx.lineWidth = 2.5;
   ctx.strokeRect(MARGIN, MARGIN, 9 * CELL, 9 * CELL);
 
-  // 6. Cage totals (killer only)
+  // 6. Cage totals (killer only) — read directly from specData.cageTotals [row][col]
   if (state.puzzleType !== 'classic') {
-    ctx.fillStyle = '#000'; ctx.font = 'bold 11px sans-serif';
+    ctx.fillStyle = '#000'; ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    const headCells = state.specData.cageTotals;
-    const regions = state.specData.regions;
+    const totals = state.specData.cageTotals;
     for (let r = 0; r < 9; r++) {
       for (let c = 0; c < 9; c++) {
-        if ((headCells[r]?.[c] ?? 0) > 0) {
-          const cageIdx = (regions[r]?.[c] ?? 1) - 1;
-          const cage = state.cageStates[cageIdx];
-          const total = cage !== undefined ? cage.total : headCells[r]![c]!;
+        const total = totals[r]?.[c] ?? 0;
+        if (total > 0) {
           ctx.fillText(String(total), MARGIN + c * CELL + 2, MARGIN + r * CELL + 2);
         }
       }
@@ -299,6 +338,8 @@ function redrawGrid(): void {
     currentCandidates,
     virtualCageSelection.size > 0 ? virtualCageSelection : null,
     showEssential,
+    currentState?.userGrid === null ? { borderX: draftBorderX, borderY: draftBorderY } : undefined,
+    reviewErrorCells.size > 0 ? reviewErrorCells : undefined,
   );
 }
 
@@ -345,40 +386,29 @@ function renderState(state: PuzzleState): void {
     el<HTMLImageElement>('original-img').src = state.originalImageUrl;
   }
 
-  const tbody = el<HTMLTableSectionElement>('cage-tbody');
-  clearChildren(tbody);
-  for (const cage of state.cageStates) {
-    const row = tbody.insertRow();
-    const labelCell = row.insertCell(); labelCell.textContent = cage.label; labelCell.className = 'cage-label';
-    const cellsCell = row.insertCell(); cellsCell.textContent = cage.cells.map(c => `r${c.row}c${c.col}`).join(' '); cellsCell.className = 'cage-cells';
-    const totalCell = row.insertCell();
-    const input = document.createElement('input');
-    input.type = 'number'; input.value = String(cage.total);
-    input.min = '1'; input.max = '45'; input.className = 'total-input'; input.dataset['cage'] = cage.label;
-    input.addEventListener('change', () => { void handleCageEdit(cage.label, Number(input.value)); });
-    totalCell.appendChild(input);
-  }
+  el<HTMLSelectElement>('puzzle-type-select').value = state.puzzleType;
 
   el<HTMLElement>('review-panel').hidden = false;
-  el<HTMLElement>('editor-section').hidden = true;
   el<HTMLElement>('solution-panel').hidden = true;
 }
 
 function renderPlayingMode(state: PuzzleState): void {
   currentState = state;
+  reviewErrorCells = new Set();
   refreshDisplay();
   el<HTMLElement>('review-actions').hidden = true;
-  el<HTMLElement>('editor-section').hidden = true;
   el<HTMLElement>('original-col').hidden = true;
   el<HTMLElement>('warped-col').hidden = true;
   el<HTMLElement>('playing-actions').hidden = false;
   el<HTMLElement>('solution-panel').hidden = true;
   updateUndoButton(state);
+  updateRevealButton();
   el<HTMLButtonElement>('candidates-btn').disabled = false;
   el<HTMLButtonElement>('hints-btn').disabled = false;
   const isKiller = state.puzzleType !== 'classic';
   el<HTMLButtonElement>('inspect-cage-btn').hidden = !isKiller;
   el<HTMLButtonElement>('virtual-cage-btn').hidden = !isKiller;
+  el<HTMLButtonElement>('export-btn').hidden = !isKiller || state.warpedImageUrl === null;
 }
 
 function updateUndoButton(state: PuzzleState): void {
@@ -388,34 +418,100 @@ function updateUndoButton(state: PuzzleState): void {
   btn.disabled = last.type === 'placeDigit' && last.source === 'given';
 }
 
-function renderSolution(grid: number[][]): void {
-  const container = el<HTMLElement>('solution-grid');
-  clearChildren(container);
-  const table = document.createElement('table');
-  table.className = 'solution-table';
-  for (let r = 0; r < 9; r++) {
-    const tr = document.createElement('tr');
-    for (let c = 0; c < 9; c++) {
-      const td = document.createElement('td');
-      td.textContent = String(grid[r]![c]! || '');
-      if (r === 2 || r === 5) td.classList.add('box-bottom');
-      if (c === 2 || c === 5) td.classList.add('box-right');
-      tr.appendChild(td);
-    }
-    table.appendChild(tr);
-  }
-  container.appendChild(table);
-  el<HTMLElement>('solution-panel').hidden = false;
+function updateRevealButton(): void {
+  el<HTMLButtonElement>('reveal-btn').hidden =
+    currentState === null || currentState.userGrid === null || selectedCell === null;
+}
+
+async function handleReveal(): Promise<void> {
+  if (currentState === null || selectedCell === null) return;
+  const { row, col } = selectedCell;
+  if (!confirm(`Reveal solution for r${row}c${col}?`)) return;
+  setLoading(true);
+  try {
+    const data = solvePuzzle();
+    if (!data.solved || data.grid === null) { setStatus('No solution found — check puzzle layout', true); return; }
+    const digit = data.grid[row - 1]![col - 1]!;
+    if (digit === 0) { setStatus('Solver could not determine this cell', true); return; }
+    await handleCellEntry(digit);
+    updateRevealButton();
+  } catch (e) { setStatus(String(e), true); }
+  finally { setLoading(false); }
+}
+
+async function handleExport(): Promise<void> {
+  if (currentState === null || currentState.warpedImageUrl === null) return;
+  const cv = getCV();
+  if (cv === null) { setStatus('Image pipeline not ready', true); return; }
+  setLoading(true);
+  try {
+    const data = await extractTrainingData(
+      cv,
+      currentState.warpedImageUrl,
+      currentState.specData.cageTotals,
+      currentState.puzzleType,
+    );
+    const json = JSON.stringify(data);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `training-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setStatus(`Exported ${data.sampleCount} training sample${data.sampleCount !== 1 ? 's' : ''}`);
+  } catch (e) { setStatus(`Export failed: ${String(e)}`, true); }
+  finally { setLoading(false); }
 }
 
 // ---------------------------------------------------------------------------
 // Virtual cage panel
 // ---------------------------------------------------------------------------
 
+function renderSolutionList(
+  container: HTMLElement,
+  allSolutions: readonly (readonly number[])[],
+  autoImpossible: readonly (readonly number[])[],
+  userEliminated: readonly (readonly number[])[],
+  onToggle: (soln: number[]) => void,
+): void {
+  if (allSolutions.length === 0) {
+    const p = document.createElement('span');
+    p.className = 'soln-item auto-impossible';
+    p.textContent = '(no valid solutions)';
+    container.appendChild(p);
+    return;
+  }
+  const autoKeys = new Set(autoImpossible.map(s => s.join(',')));
+  const elimKeys = new Set(userEliminated.map(s => [...s].sort((a, b) => a - b).join(',')));
+  for (const soln of allSolutions) {
+    const span = document.createElement('span');
+    const key = soln.join(',');
+    const normKey = [...soln].sort((a, b) => a - b).join(',');
+    if (autoKeys.has(key)) {
+      span.className = 'soln-item auto-impossible';
+    } else if (elimKeys.has(normKey)) {
+      span.className = 'soln-item user-eliminated';
+      span.addEventListener('click', () => onToggle([...soln]));
+    } else {
+      span.className = 'soln-item active';
+      span.addEventListener('click', () => onToggle([...soln]));
+    }
+    span.textContent = `{${soln.join(',')}}`;
+    container.appendChild(span);
+  }
+}
+
 function renderVirtualCagePanel(): void {
   if (currentCandidates === null) return;
-  const vcs = currentCandidates.virtualCages;
   const col = el<HTMLElement>('virtual-cage-col');
+
+  // Filter to virtual cages containing the selected cell (0-based r,c).
+  const sel = selectedCell;
+  const vcs = currentCandidates.virtualCages.filter(vc =>
+    sel !== null && vc.cells.some(([r, c]) => r === sel.row - 1 && c === sel.col - 1),
+  );
+
   if (vcs.length > 0 || virtualCageMode) col.hidden = false;
 
   const list = el<HTMLElement>('virtual-cage-list');
@@ -423,32 +519,18 @@ function renderVirtualCagePanel(): void {
   for (const vc of vcs) {
     const item = document.createElement('div'); item.className = 'vc-item';
     const header = document.createElement('div'); header.className = 'vc-item-header';
-    header.textContent = `total ${vc.total} — ${vc.cells.length} cells: ` + vc.cells.map(([r, c]) => `r${r + 1}c${c + 1}`).join(' ');
+    header.textContent = `total ${vc.total} — ${vc.cells.length} cells: ` +
+      vc.cells.map(([r, c]) => `r${r + 1}c${c + 1}`).join(' ');
     item.appendChild(header);
 
     const solnsDiv = document.createElement('div'); solnsDiv.className = 'vc-solutions';
-    const allSolns = vc.allSolutions;
-    if (allSolns.length === 0) {
-      const p = document.createElement('span'); p.className = 'soln-item auto-impossible'; p.textContent = '(no valid solutions)'; solnsDiv.appendChild(p);
-    } else {
-      const autoImpossibleKeys = new Set(vc.autoImpossible.map(s => s.join(',')));
-      const userEliminatedKeys = new Set(vc.userEliminated.map(s => s.join(',')));
-      for (const soln of allSolns) {
-        const span = document.createElement('span');
-        const key = soln.join(',');
-        if (autoImpossibleKeys.has(key)) {
-          span.className = 'soln-item auto-impossible';
-        } else if (userEliminatedKeys.has(key)) {
-          span.className = 'soln-item user-eliminated';
-          span.addEventListener('click', () => { void handleEliminateVirtualCageSolution(vc.key, [...soln]); });
-        } else {
-          span.className = 'soln-item active';
-          span.addEventListener('click', () => { void handleEliminateVirtualCageSolution(vc.key, [...soln]); });
-        }
-        span.textContent = `{${soln.join(',')}}`;
-        solnsDiv.appendChild(span);
-      }
-    }
+    renderSolutionList(
+      solnsDiv,
+      vc.allSolutions,
+      vc.autoImpossible,
+      vc.userEliminated,
+      (soln) => { void handleEliminateVirtualCageSolution(vc.key, soln); },
+    );
     item.appendChild(solnsDiv);
     list.appendChild(item);
   }
@@ -465,24 +547,13 @@ function renderCageInspector(label: string): void {
     clearChildren(inspector);
     el<HTMLElement>('inspector-heading').textContent = `Cage ${label}`;
     el<HTMLElement>('inspector-col').hidden = false;
-
-    for (const soln of data.allSolutions) {
-      const span = document.createElement('span');
-      const key = soln.join(',');
-      const isAutoImpossible = data.autoImpossible.some(s => s.join(',') === key);
-      const isUserElim = data.userEliminated.some(s => [...s].sort((a, b) => a - b).join(',') === key);
-      if (isAutoImpossible) {
-        span.className = 'soln-item auto-impossible';
-      } else if (isUserElim) {
-        span.className = 'soln-item user-eliminated';
-        span.addEventListener('click', () => { void handleEliminateSolution(label, [...soln]); });
-      } else {
-        span.className = 'soln-item active';
-        span.addEventListener('click', () => { void handleEliminateSolution(label, [...soln]); });
-      }
-      span.textContent = `{${soln.join(',')}}`;
-      inspector.appendChild(span);
-    }
+    renderSolutionList(
+      inspector,
+      data.allSolutions,
+      data.autoImpossible,
+      data.userEliminated,
+      (soln) => { void handleEliminateSolution(label, soln); },
+    );
   } catch (e) {
     setStatus(String(e), true);
   }
@@ -508,9 +579,11 @@ async function handleEliminateVirtualCageSolution(vcKey: string, solution: numbe
 // ---------------------------------------------------------------------------
 
 function setStatus(msg: string, isError = false): void {
-  const el_ = el<HTMLElement>('status-msg');
-  el_.textContent = msg;
-  el_.className = 'status' + (isError ? ' error' : '');
+  const cls = 'status' + (isError ? ' error' : '');
+  for (const id of ['status-msg', 'review-status-msg']) {
+    const el_ = document.getElementById(id);
+    if (el_) { el_.textContent = msg; el_.className = cls; }
+  }
 }
 
 function setLoading(on: boolean): void {
@@ -589,10 +662,20 @@ function openConfigModal(): void {
 // ---------------------------------------------------------------------------
 
 function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, warning: string | null): void {
+  reviewErrorCells = new Set();
   renderState(state);
+  // Initialise draft borders from the OCR result so edit mode is immediately active.
+  const spec = dataToSpec(state.specData);
+  draftBorderX = spec.borderX.map(col => [...col]);
+  draftBorderY = spec.borderY.map(row => [...row]);
+  draftEdited = false;
   const warpedCol = el<HTMLElement>('warped-col');
   const warpedImg = el<HTMLImageElement>('warped-img');
-  if (warpedImageUrl) { warpedImg.src = warpedImageUrl; warpedCol.hidden = false; } else { warpedCol.hidden = true; }
+  if (warpedImageUrl) { warpedImg.src = warpedImageUrl; }
+  el<HTMLElement>('original-col').hidden = false;
+  warpedCol.hidden = false;
+  el<HTMLElement>('review-actions').hidden = false;
+  el<HTMLElement>('playing-actions').hidden = true;
   el<HTMLElement>('upload-panel').hidden = true;
   el<HTMLButtonElement>('new-puzzle-btn').hidden = false;
   setStatus(warning ? `Warning: ${warning}` : '');
@@ -605,22 +688,66 @@ async function handleProcess(): Promise<void> {
   try {
     const { state, warpedImageUrl, warning } = await uploadPuzzle(fileInput.files[0]!);
     applyUploadResult(state, warpedImageUrl, warning);
-  } catch (e) { setStatus(`OCR failed: ${String(e)}`, true); }
+  } catch (e) {
+    // uploadPuzzle only throws on hard failures (e.g. not an image).
+    // Partial OCR failures return a placeholder state instead.
+    setStatus(`Processing failed: ${String(e)}`, true);
+  }
   finally { setLoading(false); }
 }
 
 async function handleConfirm(): Promise<void> {
+  if (currentState === null) return;
   setLoading(true);
   try {
-    const state = confirmPuzzle();
-    renderPlayingMode(state);
+    // Capture user-edited totals and warped image URL before state is replaced.
+    const exportTotals = currentState.specData.cageTotals;
+    const exportWarpedUrl = currentState.warpedImageUrl;
+    const exportPuzzleType = currentState.puzzleType;
+
+    const result = applyDraftLayout(
+      draftBorderX, draftBorderY, currentState.specData.cageTotals,
+    );
+    if (result.errorCells.size > 0) {
+      reviewErrorCells = result.errorCells;
+      redrawGrid();
+      setStatus('Each cage needs exactly one total in its valid range — highlighted in red', true);
+      return;
+    }
+    // Sum outside [360, 450] is a strong signal of OCR errors — block and require correction.
+    if (result.warnings.length > 0) {
+      setStatus(result.warnings.join('; ') + ' — please correct the totals before confirming', true);
+      return;
+    }
+    reviewErrorCells = new Set();
+    currentState = result.state;
+    const playing = confirmPuzzle();
+    renderPlayingMode(playing);
     setStatus('');
+
+    // Fire-and-forget training export — only when the user has corrected something,
+    // so unedited OCR results (which may contain errors) are never written to disk.
+    if (draftEdited && exportPuzzleType !== 'classic' && exportWarpedUrl !== null) {
+      const cv = getCV();
+      if (cv !== null) {
+        void extractTrainingData(cv, exportWarpedUrl, exportTotals, exportPuzzleType)
+          .then(data => {
+            if (data.sampleCount === 0) return;
+            const json = JSON.stringify(data);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `training-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            setStatus(`Exported ${data.sampleCount} training sample${data.sampleCount !== 1 ? 's' : ''}`);
+          })
+          .catch(() => { /* export is best-effort, don't disrupt play */ });
+      }
+    }
   } catch (e) { setStatus(`Confirm failed: ${String(e)}`, true); }
   finally { setLoading(false); }
-}
-
-async function handleCageEdit(label: string, total: number): Promise<void> {
-  try { renderState(patchCage(label, total)); } catch (e) { setStatus(String(e), true); }
 }
 
 async function handleCellEntry(digit: number): Promise<void> {
@@ -648,18 +775,6 @@ async function handleCandidateCycle(row1b: number, col1b: number, digit: number)
     currentState = state;
     refreshDisplay();
   } catch { /* best effort */ }
-}
-
-async function handleSolve(): Promise<void> {
-  if (currentState === null) { setStatus('No active session — process an image first.', true); return; }
-  setLoading(true);
-  try {
-    const data = solvePuzzle();
-    if (!data.solved || data.error) { setStatus(`Solve failed: ${data.error ?? 'unknown error'}`, true); return; }
-    renderSolution(data.grid);
-    setStatus('Solved!');
-  } catch (e) { setStatus(`Solve error: ${String(e)}`, true); }
-  finally { setLoading(false); }
 }
 
 async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number): Promise<void> {
@@ -710,6 +825,9 @@ if ('serviceWorker' in navigator && !import.meta.env.DEV) {
 document.addEventListener('DOMContentLoaded', () => {
 
   // Startup: load OpenCV (with download progress bar) and digit recogniser in parallel
+  el<HTMLElement>('version-banner').textContent =
+    `${import.meta.env.DEV ? 'dev' : 'prod'} ${__BUILD_TIME__}`;
+
   const cvRow = el<HTMLElement>('cv-loading-row');
   const cvLabel = el<HTMLElement>('cv-loading-label');
   const cvBar = el<HTMLProgressElement>('cv-progress');
@@ -754,12 +872,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
   el<HTMLButtonElement>('process-btn').addEventListener('click', () => { void handleProcess(); });
   el<HTMLButtonElement>('confirm-btn').addEventListener('click', () => { void handleConfirm(); });
-  el<HTMLButtonElement>('solve-btn').addEventListener('click', () => { void handleSolve(); });
   el<HTMLButtonElement>('undo-btn').addEventListener('click', () => { void handleUndo(); });
+  el<HTMLButtonElement>('reveal-btn').addEventListener('click', () => { void handleReveal(); });
+  el<HTMLButtonElement>('export-btn').addEventListener('click', () => { void handleExport(); });
 
-  el<HTMLButtonElement>('edit-btn').addEventListener('click', () => {
-    el<HTMLElement>('editor-section').hidden = false;
+  el<HTMLSelectElement>('puzzle-type-select').addEventListener('change', (e) => {
+    if (currentState === null) return;
+    const type = (e.target as HTMLSelectElement).value as 'killer' | 'classic';
+    const updated = { ...currentState, puzzleType: type };
+    import('./session/store.js').then(m => m.setState(updated));
+    currentState = updated;
+    renderState(updated);
   });
+
+  // ── Inline cage total editing overlay ──────────────────────────────────────
+  const cageTotalInput = el<HTMLInputElement>('cage-total-edit');
+
+  function commitTotalEdit(): void {
+    if (totalEditCell === null || currentState === null) return;
+    const { row, col } = totalEditCell;
+    const v = Number(cageTotalInput.value);
+    const newTotal = Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
+    currentState.specData.cageTotals[row]![col] = newTotal;
+    draftEdited = true;
+    totalEditCell = null;
+    cageTotalInput.style.display = 'none';
+    redrawGrid();
+  }
+
+  cageTotalInput.addEventListener('blur', commitTotalEdit);
+  cageTotalInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commitTotalEdit(); }
+    if (e.key === 'Escape') {
+      if (totalEditCell !== null && currentState !== null) {
+        const { row, col } = totalEditCell;
+        currentState.specData.cageTotals[row]![col] = totalEditPrev;
+      }
+      totalEditCell = null;
+      cageTotalInput.style.display = 'none';
+      redrawGrid();
+    }
+  });
+  // ───────────────────────────────────────────────────────────────────────────
 
   el<HTMLButtonElement>('new-puzzle-btn').addEventListener('click', () => {
     currentState = null; currentCandidates = null; selectedCell = null;
@@ -767,7 +921,7 @@ document.addEventListener('DOMContentLoaded', () => {
     virtualCageMode = false; virtualCageSelection = new Set();
     hintHighlightCells = new Set(); activeHintItem = null;
     el<HTMLElement>('upload-panel').hidden = false;
-    el<HTMLElement>('review-panel').hidden = true;
+        el<HTMLElement>('review-panel').hidden = true;
     el<HTMLElement>('solution-panel').hidden = true;
     el<HTMLElement>('playing-actions').hidden = true;
     el<HTMLButtonElement>('new-puzzle-btn').hidden = true;
@@ -775,6 +929,7 @@ document.addEventListener('DOMContentLoaded', () => {
     el<HTMLButtonElement>('hints-btn').disabled = true;
     el<HTMLButtonElement>('inspect-cage-btn').hidden = true;
     el<HTMLButtonElement>('virtual-cage-btn').hidden = true;
+    el<HTMLButtonElement>('reveal-btn').hidden = true;
     el<HTMLInputElement>('file-input').value = '';
     setStatus('');
   });
@@ -918,10 +1073,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (selectedCell !== null) {
       const { row, col } = selectedCell;
-      if (e.key === 'ArrowUp' && row > 1) { selectedCell = { row: row - 1, col }; redrawGrid(); }
-      else if (e.key === 'ArrowDown' && row < 9) { selectedCell = { row: row + 1, col }; redrawGrid(); }
-      else if (e.key === 'ArrowLeft' && col > 1) { selectedCell = { row, col: col - 1 }; redrawGrid(); }
-      else if (e.key === 'ArrowRight' && col < 9) { selectedCell = { row, col: col + 1 }; redrawGrid(); }
+      if (e.key === 'ArrowUp' && row > 1) { selectedCell = { row: row - 1, col }; redrawGrid(); updateRevealButton(); }
+      else if (e.key === 'ArrowDown' && row < 9) { selectedCell = { row: row + 1, col }; redrawGrid(); updateRevealButton(); }
+      else if (e.key === 'ArrowLeft' && col > 1) { selectedCell = { row, col: col - 1 }; redrawGrid(); updateRevealButton(); }
+      else if (e.key === 'ArrowRight' && col < 9) { selectedCell = { row, col: col + 1 }; redrawGrid(); updateRevealButton(); }
     }
   });
 
@@ -937,6 +1092,41 @@ document.addEventListener('DOMContentLoaded', () => {
     const c0 = Math.floor(x / CELL);  // 0-based
     const r0 = Math.floor(y / CELL);  // 0-based
     if (c0 < 0 || c0 > 8 || r0 < 0 || r0 > 8) return;
+
+    // ── Review-mode interaction (before confirm) ─────────────────────────
+    if (currentState.userGrid === null && currentState.puzzleType !== 'classic') {
+      // Review mode: borders always togglable; interior click handled by Chunk 2 (total overlay).
+      const BORDER_ZONE = 7; // px
+      for (let r = 1; r < 9; r++) {
+        if (Math.abs(y - r * CELL) < BORDER_ZONE) {
+          draftBorderX[c0]![r - 1] = !draftBorderX[c0]![r - 1];
+          draftEdited = true; redrawGrid(); return;
+        }
+      }
+      for (let c = 1; c < 9; c++) {
+        if (Math.abs(x - c * CELL) < BORDER_ZONE) {
+          draftBorderY[c - 1]![r0] = !draftBorderY[c - 1]![r0];
+          draftEdited = true; redrawGrid(); return;
+        }
+      }
+      // Interior click — open total-edit overlay on the clicked cell.
+      // e.preventDefault() prevents the browser from moving focus to document.body
+      // after mousedown on a non-focusable canvas, which would fire blur on the
+      // input and immediately hide the overlay.
+      e.preventDefault();
+      const existing = currentState.specData.cageTotals[r0]![c0]!;
+      totalEditCell = { row: r0, col: c0 };
+      totalEditPrev = existing;
+      const inp = el<HTMLInputElement>('cage-total-edit');
+      inp.style.left = `${MARGIN + c0 * CELL}px`;
+      inp.style.top  = `${MARGIN + r0 * CELL}px`;
+      inp.value = existing > 0 ? String(existing) : '';
+      inp.style.display = 'block';
+      inp.focus();
+      inp.select();
+      return;
+    }
+    // ─────────────────────────────────────────────────────────────────────
 
     if (virtualCageMode) {
       const key = `${r0},${c0}`;
@@ -960,13 +1150,19 @@ document.addEventListener('DOMContentLoaded', () => {
       const cageIdx = currentState.specData.regions[r0]?.[c0];
       if (cageIdx !== undefined) {
         const cage = currentState.cageStates[cageIdx - 1];
-        if (cage) renderCageInspector(cage.label);
+        if (cage) {
+          selectedCell = { row: r0 + 1, col: c0 + 1 };
+          renderCageInspector(cage.label);
+          renderVirtualCagePanel();
+          redrawGrid();
+        }
       }
       return;
     }
 
     selectedCell = { row: r0 + 1, col: c0 + 1 };  // convert to 1-based
     redrawGrid();
+    updateRevealButton();
   });
 
   // Digit buttons

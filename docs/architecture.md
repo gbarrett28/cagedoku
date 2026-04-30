@@ -88,11 +88,37 @@ is **format-agnostic**: no newspaper-specific configuration or pre-trained borde
 model is required.
 
 See **`docs/image-pipeline.md`** for the full pipeline architecture, stage
-descriptions, training pipeline, threshold derivation guide, and migration plan.
+descriptions, training pipeline (T1/T2), threshold derivation guide, and migration plan.
+The [Training Pipeline](image-pipeline.md#training-pipeline) section covers the T1
+(collect numerals) and T2 (fit PCA + classifier) steps in detail.
 
 See **`docs/superpowers/specs/2026-04-08-bundled-number-recogniser-design.md`** for
 the number recogniser sub-spec: RBFClassifier design, `.npz` bundle layout, inference
 protocol, save/load contract, and re-training workflow.
+
+### Web Recogniser Training
+
+The web app uses a browser-side image pipeline with a bundled model in
+`web/dist/num_recogniser.{json,bin}`.  After a user corrects OCR errors and
+confirms a killer puzzle, the app automatically exports a training JSON file
+containing the digit thumbnails paired with user-verified labels.
+
+To update the model from collected training files:
+
+```bash
+python web/train_recogniser.py ~/Downloads/training-*.json
+# Writes updated web/dist/num_recogniser.{json,bin}
+```
+
+The script (`web/train_recogniser.py`):
+1. Loads labelled digit thumbnails (64×64 binary, uint8) from the JSON exports
+2. Loads per-digit mean templates from the existing model to cover any digit
+   classes absent from the new data (e.g. `0` and `6` which are rare cage heads)
+3. Applies dithering (translation ±2 px, morphological step, 1% pixel noise) to
+   produce ~30 variants per source sample
+4. Fits PCA on per-class means (retaining dims that explain ≥ 99% of variance)
+5. Fits an RBF-kernel SVM (OvO, C=5, γ=scale) on PCA-projected samples
+6. Saves updated model files; the web app picks them up on next page reload
 
 See **`docs/classic-sudoku.md`** for the classic sudoku recognition feature design
 (puzzle type detection, center digit reading, locked given digits, cage-structure

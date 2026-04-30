@@ -13,7 +13,7 @@
  * commit hash.
  */
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v3';
 const CACHE_NAME = `coach-killer-sudoku-${CACHE_VERSION}`;
 
 /**

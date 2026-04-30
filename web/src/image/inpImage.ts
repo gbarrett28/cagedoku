@@ -29,7 +29,7 @@ import {
   getSums, splitNum, contourHier, getNumContours, readClassicDigits,
 } from './numberRecognition.js';
 import type { NumRecogniser } from './numberRecognition.js';
-import { validateCageLayout } from './validation.js';
+import { validateCageLayout, repairCageTotals } from './validation.js';
 import { buildBrdrs } from '../solver/puzzleSpec.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import { ProcessingError } from '../solver/errors.js';
@@ -129,8 +129,15 @@ export async function parsePuzzleImage(
   let warpedGryMat = new cv.Mat();
   cv.warpPerspective(gryMat, warpedGryMat, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
 
-  // Colour warp for rendering.
-  const srcMat = cv.matFromImageData(imageData);
+  // Colour warp for rendering — must be upsampled to the same resolution as
+  // gryMat so that mMat (computed in upsampled coordinates) samples correctly.
+  let srcMat = cv.matFromImageData(imageData);
+  while (srcMat.rows < resolution || srcMat.cols < resolution) {
+    const up = new cv.Mat();
+    cv.pyrUp(srcMat, up);
+    srcMat.delete();
+    srcMat = up;
+  }
   let warpedImgMat = new cv.Mat();
   cv.warpPerspective(srcMat, warpedImgMat, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
   srcMat.delete();
@@ -164,7 +171,13 @@ export async function parsePuzzleImage(
     warpedGryMat = new cv.Mat();
     cv.warpPerspective(gryMat, warpedGryMat, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
 
-    const srcMat2 = cv.matFromImageData(imageData);
+    let srcMat2 = cv.matFromImageData(imageData);
+    while (srcMat2.rows < resolution || srcMat2.cols < resolution) {
+      const up2 = new cv.Mat();
+      cv.pyrUp(srcMat2, up2);
+      srcMat2.delete();
+      srcMat2 = up2;
+    }
     warpedImgMat.delete();
     warpedImgMat = new cv.Mat();
     cv.warpPerspective(srcMat2, warpedImgMat, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
@@ -297,29 +310,35 @@ export async function parsePuzzleImage(
     };
   }
 
-  const totalSum = cageTotals.reduce((s, col) => s + col.reduce((a, b) => a + b, 0), 0);
-  if (totalSum < 360 || totalSum > 450) {
-    const brdrs = buildBrdrs(bestBorderX, bestBorderY);
-    const err = new ProcessingError(
-      `Cage totals sum to ${totalSum}, expected 405`,
-      Array.from({ length: 9 }, () => new Array<number>(9).fill(0)),
-      brdrs,
-    );
-    return {
-      spec: null,
-      specError: err.message,
-      puzzleType: 'killer',
-      givenDigits: null,
-      warpedImageData: warpedImgData,
-    };
-  }
-
+  // Try strict validation first, then fall back to clamping out-of-range totals so the
+  // review panel always appears and the user can correct misread values manually.
   let spec: PuzzleSpec | null = null;
   let specError: string | null = null;
+  let usedTotals = cageTotals;
   try {
-    spec = validateCageLayout(cageTotals, bestBorderX, bestBorderY);
-  } catch (err) {
-    specError = String(err);
+    spec = validateCageLayout(usedTotals, bestBorderX, bestBorderY);
+  } catch (strictErr) {
+    // If the error is a range error (not a structural one), repair and retry.
+    if (!(strictErr instanceof Error && (strictErr.constructor.name === 'ProcessingError' || (strictErr as Error).message.includes('reassigned') || (strictErr as Error).message.includes('unassigned')))) {
+      const { repaired, warnings } = repairCageTotals(usedTotals, bestBorderX, bestBorderY);
+      usedTotals = repaired;
+      try {
+        spec = validateCageLayout(usedTotals, bestBorderX, bestBorderY);
+        specError = `Some cage totals were out of range and have been reset — please correct: ${warnings.join('; ')}`;
+      } catch (repairErr) {
+        specError = String(repairErr);
+      }
+    } else {
+      specError = String(strictErr);
+    }
+  }
+
+  if (spec !== null) {
+    const totalSum = usedTotals.reduce((s, col) => s + col.reduce((a, b) => a + b, 0), 0);
+    if (totalSum < 360 || totalSum > 450) {
+      specError = (specError ? specError + '. ' : '') +
+        `Cage totals sum to ${totalSum} (expected 405) — some may be misread; please review.`;
+    }
   }
 
   return { spec, specError, puzzleType: 'killer', givenDigits: null, warpedImageData: warpedImgData };
@@ -487,13 +506,8 @@ function prepareGrayMat(cv: Cv, imageData: ImageData, resolution: number): [Open
     gry = up;
   }
 
-  // Add 3-pixel black border (ensures contours near edges are closed).
-  const gryMat = new cv.Mat();
-  cv.copyMakeBorder(gry, gryMat, 3, 3, 3, 3, cv.BORDER_CONSTANT, new cv.Scalar(0, 0, 0, 0));
-  gry.delete();
-
   // Return a clone so the two handles are independent (caller deletes both).
-  return [gryMat.clone(), gryMat];
+  return [gry.clone(), gry];
 }
 
 /**

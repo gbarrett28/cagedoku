@@ -13,6 +13,7 @@ import { defaultRules } from '../engine/rules/index.js';
 import type { Cell } from '../engine/types.js';
 import { parsePuzzleImage } from '../image/inpImage.js';
 import { defaultImagePipelineConfig } from '../image/config.js';
+import { validateCageLayout } from '../image/validation.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import {
   buildEngine,
@@ -119,20 +120,38 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
     warpedImageUrl = URL.createObjectURL(blob);
   }
 
-  // Convert uploaded File to a data URL for the original photo display
   const originalImageUrl = await fileToDataUrl(file);
+  const settings = loadSettings();
 
-  const spec = result.spec;
-  const warning = result.specError;
+  let spec = result.spec;
+  let warning = result.specError;
 
+  // On OCR failure show a blank canvas (no borders, no totals) so the user can
+  // build the layout from scratch.  A blank spec is a single 81-cell region —
+  // the user adds borders to partition it into cages.
   if (spec === null) {
-    throw new Error(result.specError ?? 'OCR pipeline failed');
+    warning = (warning ? warning + ' ' : '') + 'Cage layout could not be detected — starting with a blank grid.';
+    const blankBorderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(false));
+    const blankBorderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
+    const blankTotals  = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    spec = validateCageLayout(blankTotals, blankBorderX, blankBorderY);
   }
 
-  const settings = loadSettings();
+  // validateCageLayout builds regions and cageTotals in [col][row] order; the rest of
+  // the codebase (drawGrid, dataToSpec, applyDraftLayout) expects [row][col].
+  const transposedSpec: PuzzleSpec = {
+    ...spec,
+    regions: Array.from({ length: 9 }, (_, r) =>
+      Array.from({ length: 9 }, (__, c) => spec.regions[c]![r]!),
+    ),
+    cageTotals: Array.from({ length: 9 }, (_, r) =>
+      Array.from({ length: 9 }, (__, c) => spec.cageTotals[c]![r]!),
+    ),
+  };
+
   const state: PuzzleState = {
-    specData: specToData(spec),
-    cageStates: specToCageStates(spec),
+    specData: specToData(transposedSpec),
+    cageStates: specToCageStates(transposedSpec),
     userGrid: null,
     virtualCages: [],
     turns: [],
@@ -173,6 +192,120 @@ export function patchCage(label: string, total: number): PuzzleState {
   const updated: PuzzleState = { ...state, cageStates: newCages };
   setState(updated);
   return updated;
+}
+
+/**
+ * Toggle a cage border in the review spec, then rebuild the cage structure.
+ *
+ * axis='X': horizontal border — borderX[col][rowGap] between rows rowGap and rowGap+1.
+ * axis='Y': vertical border  — borderY[colGap][row] between cols colGap and colGap+1.
+ *
+ * When cages merge (border removed) the new cage total is the sum of both old totals.
+ * When a cage splits (border added) the component containing the old head keeps its
+ * total; the new component gets the minimum valid total for its size.
+ */
+// patchBorder removed — border editing uses deferred-validation edit mode in main.ts.
+// Call applyDraftLayout() when the user is done editing.
+// Applies a set of draft cage borders, rebuilding cage totals from the
+// existing cageStates (merging → sum; splitting → minimum for new sub-cages).
+// Called from main.ts when the user finishes editing in grid-edit mode.
+export function applyDraftLayout(
+  borderX: readonly (readonly boolean[])[],    // [col][rowGap]
+  borderY: readonly (readonly boolean[])[],    // [colGap][row]
+  cellTotals: readonly (readonly number[])[],  // [row][col] — any cell may be non-zero
+): { state: PuzzleState; errorCells: Set<string>; warnings: string[] } {
+  const state = requireState();
+  if (state.userGrid !== null) throw new Error('Cannot edit layout after confirming');
+
+  // Union-find: keys are "${col},${row}"
+  const rmap = new Map<string, string>();
+  const members = new Map<string, Set<string>>();
+  for (let c = 0; c < 9; c++) {
+    for (let r = 0; r < 9; r++) {
+      const k = `${c},${r}`;
+      rmap.set(k, k); members.set(k, new Set([k]));
+    }
+  }
+  const find = (k: string): string => rmap.get(k)!;
+  const union = (a: string, b: string) => {
+    const ra = find(a); const rb = find(b);
+    if (ra === rb) return;
+    const [keep, drop] = ra < rb ? [ra, rb] : [rb, ra];
+    for (const p of members.get(drop)!) rmap.set(p, keep);
+    const ks = members.get(keep)!;
+    for (const p of members.get(drop)!) ks.add(p);
+    members.delete(drop);
+  };
+  for (let c = 0; c < 9; c++)
+    for (let r = 0; r < 8; r++)
+      if (!borderX[c]![r]!) union(`${c},${r}`, `${c},${r + 1}`);
+  for (let cg = 0; cg < 8; cg++)
+    for (let r = 0; r < 9; r++)
+      if (!borderY[cg]![r]!) union(`${cg},${r}`, `${cg + 1},${r}`);
+
+  // Validate each cage: exactly one non-zero total, within the valid range for its size.
+  // errorCells uses "row,col" keys (matches drawGrid's highlight convention).
+  const errorCells = new Set<string>();
+  const headTotals: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+  const seen = new Set<string>();
+
+  for (let c = 0; c < 9; c++) {
+    for (let r = 0; r < 9; r++) {
+      const rep = find(`${c},${r}`);
+      if (seen.has(rep)) continue;
+      seen.add(rep);
+
+      const cageCells = members.get(rep)!;
+      const n = cageCells.size;
+      const lo = (n * (n + 1)) / 2;
+      const hi = (n * (19 - n)) / 2;
+
+      let nonZeroCount = 0;
+      let headC = -1; let headR = -1; let headTotal = 0;
+      for (const k of cageCells) {
+        const [kc, kr] = k.split(',').map(Number) as [number, number];
+        const total = cellTotals[kr]![kc]!; // [row][col]
+        if (total !== 0) {
+          nonZeroCount++;
+          headC = kc; headR = kr; headTotal = total;
+        }
+      }
+
+      const structuralError = nonZeroCount !== 1;
+      const rangeError = nonZeroCount === 1 && (headTotal < lo || headTotal > hi);
+
+      if (structuralError || rangeError) {
+        for (const k of cageCells) {
+          const [kc, kr] = k.split(',').map(Number) as [number, number];
+          errorCells.add(`${kr},${kc}`); // "row,col" for drawGrid
+        }
+      } else {
+        headTotals[headC]![headR] = headTotal; // [col][row] for validateCageLayout
+      }
+    }
+  }
+
+  if (errorCells.size > 0) {
+    return { state, errorCells, warnings: [] };
+  }
+
+  const bxMut = borderX.map(col => [...col]) as boolean[][];
+  const byMut = borderY.map(row => [...row]) as boolean[][];
+  const spec = validateCageLayout(headTotals, bxMut, byMut);
+
+  const totalSum = headTotals.flat().reduce((a, b) => a + b, 0);
+  // A valid 9×9 killer sudoku always sums to exactly 405 (digits 1–9 each appear 9 times).
+  const warnings = totalSum !== 405
+    ? [`Cage totals sum to ${totalSum} (expected 405) — please correct before confirming`]
+    : [];
+
+  const updated: PuzzleState = {
+    ...state,
+    specData: specToData(spec),
+    cageStates: specToCageStates(spec),
+  };
+  setState(updated);
+  return { state: updated, errorCells: new Set(), warnings };
 }
 
 // ---------------------------------------------------------------------------

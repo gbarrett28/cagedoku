@@ -45,15 +45,18 @@
     <div id="images-row">
       <div class="image-col">
         <h2 id="detected-layout-heading">Detected Layout</h2>
-        <canvas id="grid-canvas"></canvas>
+        <div id="canvas-wrapper">
+          <canvas id="grid-canvas"></canvas>
+          <input id="cage-total-edit" type="number" min="1" max="45">
+        </div>
+      </div>
+      <div class="image-col" id="warped-col">
+        <h2>Warped Grid</h2>
+        <img id="warped-img" alt="Perspective-corrected grid">
       </div>
       <div class="image-col" id="original-col">
         <h2>Original Photo</h2>
         <img id="original-img" alt="Uploaded puzzle photo">
-      </div>
-      <div class="image-col" id="warped-col" hidden>
-        <h2>Warped Grid</h2>
-        <img id="warped-img" alt="Perspective-corrected grid">
       </div>
       <div class="image-col" id="inspector-col" hidden>
         <h2 id="inspector-heading"></h2>
@@ -82,29 +85,13 @@
     </p>
 
     <div class="form-actions" id="review-actions">
-      <button id="confirm-btn">Looks correct — solve!</button>
-      <button id="edit-btn" class="btn-secondary">Edit cage totals</button>
-    </div>
-
-    <!-- Hidden until user requests cage editing -->
-    <div id="editor-section" hidden>
-      <h2>Cage Totals</h2>
-      <p class="hint-text">Correct any OCR errors below, then solve.</p>
-      <div id="cage-table-wrap">
-        <table id="cage-table">
-          <thead>
-            <tr>
-              <th>Cage</th>
-              <th>Cells</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody id="cage-tbody"></tbody>
-        </table>
-      </div>
-      <div class="form-actions">
-        <button id="solve-btn">Solve puzzle</button>
-      </div>
+      <button id="confirm-btn">Confirm &amp; Solve</button>
+      <label class="field-label" for="puzzle-type-select" style="margin-left:1rem">Type</label>
+      <select id="puzzle-type-select" class="puzzle-type-select">
+        <option value="killer">Killer</option>
+        <option value="classic">Classic</option>
+      </select>
+      <span id="review-status-msg" class="status" style="margin-left:1rem"></span>
     </div>
 
     <!-- Playing mode actions — hidden until user confirms layout -->
@@ -118,6 +105,20 @@
         <button id="help-candidates-btn" class="btn-secondary" hidden>?</button>
         <button id="inspect-cage-btn" class="btn-secondary" hidden>Inspect cage</button>
         <button id="virtual-cage-btn" class="btn-secondary" hidden>Virtual cage</button>
+        <button id="reveal-btn" class="btn-secondary" hidden>Reveal</button>
+        <button id="export-btn" class="btn-secondary" hidden>Export training data</button>
+      </div>
+      <div class="digit-pad">
+        <button id="digit-1" class="digit-btn">1</button>
+        <button id="digit-2" class="digit-btn">2</button>
+        <button id="digit-3" class="digit-btn">3</button>
+        <button id="digit-4" class="digit-btn">4</button>
+        <button id="digit-5" class="digit-btn">5</button>
+        <button id="digit-6" class="digit-btn">6</button>
+        <button id="digit-7" class="digit-btn">7</button>
+        <button id="digit-8" class="digit-btn">8</button>
+        <button id="digit-9" class="digit-btn">9</button>
+        <button id="digit-0" class="digit-btn digit-clear">&#x2715;</button>
       </div>
     </div>
 
@@ -253,6 +254,7 @@
   </div>
 </dialog>
 
+<div id="version-banner"></div>
 <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

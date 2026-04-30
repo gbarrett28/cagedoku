@@ -36,6 +36,13 @@ const devSwPoisonPill: Plugin = {
 
 export default defineConfig({
   plugins: [devSwPoisonPill],
+  define: {
+    // Injected at dev-server start / build time; displayed in the version banner
+    // so it's always clear which code revision is running in the browser.
+    __BUILD_TIME__: JSON.stringify(
+      new Date().toISOString().slice(0, 16).replace('T', ' ')
+    ),
+  },
   base: './', // relative paths for GitHub Pages subpath deployment
   // Treat .bin files (num_recogniser.bin) as static assets, not JS modules.
   assetsInclude: ['**/*.bin'],

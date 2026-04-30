@@ -28,16 +28,27 @@ type Cv = OpenCVModule;
  * @returns 4×2 Float32Array [TL, TR, BR, BL] in source-image coordinates,
  *   or null if no suitable quadrilateral is found.
  */
-export function contourQuad(cv: Cv, blk: OpenCVMat, minAspect: number = 0.5): Float32Array | null {
+export function contourQuad(
+  cv: Cv,
+  blk: OpenCVMat,
+  minAspect: number = 0.5,
+  minAreaFraction: number = 0.05,
+): Float32Array | null {
   const contours = new cv.MatVector();
   const hierarchy = new cv.Mat();
   cv.findContours(blk, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
   hierarchy.delete();
 
-  // Sort contours by area descending, check largest 10.
+  // Reject contours smaller than minAreaFraction of the image area.
+  // This prevents artefacts (e.g. a thin border frame added to the image)
+  // from being mistakenly identified as the grid quadrilateral.
+  const imageArea = blk.rows * blk.cols;
+  const minArea = imageArea * minAreaFraction;
+
   const areas: Array<[number, number]> = [];
   for (let i = 0; i < contours.size(); i++) {
-    areas.push([cv.contourArea(contours.get(i)), i]);
+    const a = cv.contourArea(contours.get(i));
+    if (a >= minArea) areas.push([a, i]);
   }
   areas.sort((a, b) => b[0] - a[0]);
 
