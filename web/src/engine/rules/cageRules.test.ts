@@ -50,15 +50,16 @@ describe('SolutionMapFilter', () => {
   it('eliminates per-cell infeasible digits (3-cell cage test)', () => {
     // Regression test for coarse-vs-per-cell gap (mirrors Python's
     // test_solution_map_filter_eliminates_per_cell_infeasible_digits):
-    // 3-cell cage total=12; restrict (0,0) and (0,1) to {1,2} → (0,2) forced to 9.
+    // 3-cell cage (row=0,col=0),(row=1,col=0),(row=2,col=0); total=12.
+    // Restrict (row=0,col=0) and (row=1,col=0) to {1,2} → (row=2,col=0) forced to 9.
     const spec = makeThreeCellCageSpec();
     const bs = new BoardState(spec);
-    const cageIdx = bs.regions[0]![0]!;
+    const cageIdx = bs.regions[0]![0]!;  // head at (row=0, col=0)
     expect(bs.units[27 + cageIdx]!.cells.length).toBe(3);
 
-    bs.candidates[0]![0]! = new Set([1, 2]);
-    bs.candidates[0]![1]! = new Set([1, 2]);
-    // (0,2) retains full candidates
+    bs.candidates[0]![0]! = new Set([1, 2]);  // (row=0, col=0)
+    bs.candidates[1]![0]! = new Set([1, 2]);  // (row=1, col=0)
+    // (row=2, col=0) retains full candidates
 
     const result = new SolutionMapFilter().apply(cageCtx(bs, 27 + cageIdx));
     const elimsByCell = new Map<string, Set<number>>();
@@ -67,8 +68,8 @@ describe('SolutionMapFilter', () => {
       if (!elimsByCell.has(key)) elimsByCell.set(key, new Set());
       elimsByCell.get(key)!.add(e.digit);
     }
-    // (0,2) must be 9: all digits 1-8 should be eliminated
-    const elimsC = elimsByCell.get('0,2') ?? new Set();
+    // (row=2,col=0) must be 9: all digits 1-8 should be eliminated
+    const elimsC = elimsByCell.get('2,0') ?? new Set();
     for (let d = 1; d <= 8; d++) {
       expect(elimsC.has(d)).toBe(true);
     }

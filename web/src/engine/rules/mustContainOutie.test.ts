@@ -12,7 +12,9 @@ import { makeOutieSpec, makeTrivialSpec } from '../fixtures.js';
 /** Build a BoardState with the outie cage set up for must-contain {6,8,9}. */
 function boardWithOutie(): { bs: BoardState; cageIdx: number } {
   const bs = new BoardState(makeOutieSpec());
-  const cageIdx = bs.regions[0]![5]!;
+  // Cage is at (row=5,col=0),(row=6,col=0),(row=7,col=0),(row=7,col=1).
+  // regions[row][col] — head at (row=5, col=0).
+  const cageIdx = bs.regions[5]![0]!;
 
   // Override cage solutions so must-contain = {6,8,9}
   bs.cageSolns[cageIdx]! = [
@@ -21,17 +23,19 @@ function boardWithOutie(): { bs: BoardState; cageIdx: number } {
     [6, 7, 8, 9],
   ];
 
-  // External cell (0,2): candidates = {6,8,9}
-  bs.candidates[0]![2]! = new Set([6, 8, 9]);
-  // Outie (1,7): all digits available
-  bs.candidates[1]![7]! = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  // External cell in col=0 at (row=2, col=0): candidates = {6,8,9}
+  bs.candidates[2]![0]! = new Set([6, 8, 9]);
+  // Outie (row=7, col=1): all digits available
+  bs.candidates[7]![1]! = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
   return { bs, cageIdx };
 }
 
-function rowCtx(bs: BoardState): RuleContext {
+function colCtx(bs: BoardState): RuleContext {
+  // The 4-cell outie cage occupies 3 cells in visual col 0 (rows 5,6,7) with
+  // one outie at (row=7,col=1).  Trigger via colUnitId(0) = visual column 0.
   return {
-    unit: bs.units[bs.rowUnitId(0)] ?? null,
+    unit: bs.units[bs.colUnitId(0)] ?? null,
     cell: null,
     board: bs,
     hint: Trigger.COUNT_DECREASED,
@@ -52,12 +56,14 @@ describe('MustContainOutie', () => {
     expect(Array.isArray(new MustContainOutie().apply(ctx).eliminations)).toBe(true);
   });
 
-  it('restricts outie (1,7) to {6,8,9} when triggered by row unit', () => {
+  it('restricts outie (row=7,col=1) to {6,8,9} when triggered by col unit', () => {
+    // Cage at (5,0),(6,0),(7,0),(7,1).  Trigger on col 0: 3 cage cells inside,
+    // outie at (row=7,col=1).
     const { bs } = boardWithOutie();
-    const elims = new MustContainOutie().apply(rowCtx(bs)).eliminations;
+    const elims = new MustContainOutie().apply(colCtx(bs)).eliminations;
     const outieElims = new Map<number, boolean>();
     for (const e of elims) {
-      if (e.cell[0] === 1 && e.cell[1] === 7) outieElims.set(e.digit, true);
+      if (e.cell[0] === 7 && e.cell[1] === 1) outieElims.set(e.digit, true);
     }
     for (let d = 1; d <= 9; d++) {
       if ([6, 8, 9].includes(d)) {
@@ -80,7 +86,7 @@ describe('MustContainOutie', () => {
     const elims = new MustContainOutie().apply(ctx).eliminations;
     const outieElims = new Map<number, boolean>();
     for (const e of elims) {
-      if (e.cell[0] === 1 && e.cell[1] === 7) outieElims.set(e.digit, true);
+      if (e.cell[0] === 7 && e.cell[1] === 1) outieElims.set(e.digit, true);
     }
     for (let d = 1; d <= 9; d++) {
       if ([6, 8, 9].includes(d)) {
@@ -93,27 +99,30 @@ describe('MustContainOutie', () => {
 
   it('does not fire when two external cells qualify', () => {
     const { bs } = boardWithOutie();
-    bs.candidates[0]![3]! = new Set([6, 8, 9]); // second qualifying external cell
-    const elims = new MustContainOutie().apply(rowCtx(bs)).eliminations;
-    const outieElims = elims.filter(e => e.cell[0] === 1 && e.cell[1] === 7);
+    // Second qualifying external cell in col=0, at row=3.
+    bs.candidates[3]![0]! = new Set([6, 8, 9]);
+    const elims = new MustContainOutie().apply(colCtx(bs)).eliminations;
+    const outieElims = elims.filter(e => e.cell[0] === 7 && e.cell[1] === 1);
     expect(outieElims).toEqual([]);
   });
 
   it('does not fire when external candidates include non-must digit', () => {
     const { bs } = boardWithOutie();
-    bs.candidates[0]![2]! = new Set([6, 7, 8, 9]); // 7 is not in must-contain
-    const elims = new MustContainOutie().apply(rowCtx(bs)).eliminations;
-    const outieElims = elims.filter(e => e.cell[0] === 1 && e.cell[1] === 7);
+    // External cell at (row=2,col=0): now includes 7, which is not in must-contain.
+    bs.candidates[2]![0]! = new Set([6, 7, 8, 9]);
+    const elims = new MustContainOutie().apply(colCtx(bs)).eliminations;
+    const outieElims = elims.filter(e => e.cell[0] === 7 && e.cell[1] === 1);
     expect(outieElims).toEqual([]);
   });
 
-  it('does not fire when column unit has multiple outies', () => {
+  it('does not fire when unit has multiple outies', () => {
     const { bs } = boardWithOutie();
-    bs.candidates[0]![2]! = new Set([6, 8, 9]);
-    // col 5 contains only (0,5) from the cage; outside = (0,6),(0,7),(1,7) — 3 outies
-    const col5Uid = bs.colUnitId(5);
+    bs.candidates[2]![0]! = new Set([6, 8, 9]);
+    // Row 5 contains only (row=5,col=0) from the cage; the other 3 cage cells
+    // (6,0),(7,0),(7,1) are outies — rule requires exactly 1 outie, so no fire.
+    const row5Uid = bs.rowUnitId(5);
     const ctx: RuleContext = {
-      unit: bs.units[col5Uid] ?? null,
+      unit: bs.units[row5Uid] ?? null,
       cell: null,
       board: bs,
       hint: Trigger.COUNT_DECREASED,
@@ -122,7 +131,7 @@ describe('MustContainOutie', () => {
     const elims = new MustContainOutie().apply(ctx).eliminations;
     const cageOutieElims = elims.filter(e => {
       const [r, c] = e.cell as unknown as [number, number];
-      return (r === 0 && c === 6) || (r === 0 && c === 7) || (r === 1 && c === 7);
+      return (r === 6 && c === 0) || (r === 7 && c === 0) || (r === 7 && c === 1);
     });
     expect(cageOutieElims).toEqual([]);
   });

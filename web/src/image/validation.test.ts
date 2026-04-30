@@ -41,10 +41,10 @@ describe('validateCageLayout — valid inputs', () => {
       allWallsBorderY(),
     );
     expect(spec.regions).toHaveLength(9);
-    // All 81 cells are assigned
-    for (let c = 0; c < 9; c++)
-      for (let r = 0; r < 9; r++)
-        expect(spec.regions[c]![r]!).toBeGreaterThan(0);
+    // All 81 cells are assigned — regions[row][col] > 0 for every cell
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++)
+        expect(spec.regions[r]![c]!).toBeGreaterThan(0);
   });
 
   it('produces 81 distinct cage indices for trivial spec', () => {
@@ -54,41 +54,44 @@ describe('validateCageLayout — valid inputs', () => {
       allWallsBorderY(),
     );
     const indices = new Set<number>();
-    for (let c = 0; c < 9; c++)
-      for (let r = 0; r < 9; r++)
-        indices.add(spec.regions[c]![r]!);
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++)
+        indices.add(spec.regions[r]![c]!);
     expect(indices.size).toBe(81);
   });
 
-  it('accepts a valid 2-cell horizontal cage (rows 0-1 in col 0)', () => {
+  it('accepts a valid 2-cell cage spanning rows 0-1 in col 0 (vertical neighbours)', () => {
+    // borderX[col][rowGap] = false opens the horizontal wall between rows 0 and 1 in col 0.
     const borderX = allWallsBorderX();
-    borderX[0]![0] = false; // open wall between row 0 and row 1 in col 0
+    borderX[0]![0] = false;
 
+    // Row-major: head at (row=0, col=0); merged cell at (row=1, col=0).
     const totals = trivialCageTotals();
-    totals[0]![0] = 9; // head of the 2-cell cage (total in [3,17])
-    totals[0]![1] = 0; // not a cage head — merged into (0,0)
+    totals[0]![0] = 9;  // row=0, col=0 is the cage head
+    totals[1]![0] = 0;  // row=1, col=0 is merged (no head)
 
     const spec = validateCageLayout(totals, borderX, allWallsBorderY());
-    // (0,0) and (0,1) must share the same cage index
-    expect(spec.regions[0]![0]!).toBe(spec.regions[0]![1]!);
-    // All other cells are distinct from that cage
-    expect(spec.regions[0]![2]!).not.toBe(spec.regions[0]![0]!);
+    // regions[row=0][col=0] and regions[row=1][col=0] share the same cage
+    expect(spec.regions[0]![0]!).toBe(spec.regions[1]![0]!);
+    // A cell in a different row is in its own cage
+    expect(spec.regions[2]![0]!).not.toBe(spec.regions[0]![0]!);
   });
 
-  it('accepts a valid 2-cell vertical cage (cols 0-1 in row 0)', () => {
+  it('accepts a valid 2-cell cage spanning cols 0-1 in row 0 (horizontal neighbours)', () => {
+    // borderY[colGap][row] = false opens the vertical wall between cols 0 and 1 in row 0.
     const borderY = allWallsBorderY();
-    borderY[0]![0] = false; // open wall between col 0 and col 1 in row 0
+    borderY[0]![0] = false;
 
+    // Row-major: head at (row=0, col=0); merged cell at (row=0, col=1).
     const totals = trivialCageTotals();
-    totals[0]![0] = 9; // head of the 2-cell cage
-    totals[1]![0] = 0; // merged into (0,0)
+    totals[0]![0] = 9;  // row=0, col=0 is the cage head
+    totals[0]![1] = 0;  // row=0, col=1 is merged (no head)
 
-    const spec = validateCageLayout(trivialCageTotals().map((col, c) =>
-      c === 0 ? col.map((v, r) => (r === 0 ? 9 : v)) : col,
-    ).map((col, c) => c === 1 ? col.map((v, r) => (r === 0 ? 0 : v)) : col),
-    allWallsBorderX(), borderY);
-
-    expect(spec.regions[0]![0]!).toBe(spec.regions[1]![0]!);
+    const spec = validateCageLayout(totals, allWallsBorderX(), borderY);
+    // regions[row=0][col=0] and regions[row=0][col=1] share the same cage
+    expect(spec.regions[0]![0]!).toBe(spec.regions[0]![1]!);
+    // A cell in a different column is in its own cage
+    expect(spec.regions[0]![2]!).not.toBe(spec.regions[0]![0]!);
   });
 
   it('passes through borderX/borderY unchanged', () => {
@@ -138,10 +141,12 @@ describe('validateCageLayout — cage total range', () => {
   });
 
   it('accepts a 2-cell cage with total=3 (minimum for size 2)', () => {
+    // borderX[col=0][rowGap=0]: open wall between row 0 and row 1 in col 0.
     const borderX = allWallsBorderX();
     borderX[0]![0] = false;
+    // Row-major: head at (row=0, col=0); merged at (row=1, col=0).
     const totals = trivialCageTotals();
-    totals[0]![0] = 3; totals[0]![1] = 0;
+    totals[0]![0] = 3; totals[1]![0] = 0;
     expect(() =>
       validateCageLayout(totals, borderX, allWallsBorderY()),
     ).not.toThrow();
@@ -150,8 +155,9 @@ describe('validateCageLayout — cage total range', () => {
   it('throws for a 2-cell cage with total=2 (< minimum 3)', () => {
     const borderX = allWallsBorderX();
     borderX[0]![0] = false;
+    // Row-major: head at (row=0, col=0); merged at (row=1, col=0).
     const totals = trivialCageTotals();
-    totals[0]![0] = 2; totals[0]![1] = 0;
+    totals[0]![0] = 2; totals[1]![0] = 0;
     expect(() =>
       validateCageLayout(totals, borderX, allWallsBorderY()),
     ).toThrow();
@@ -164,13 +170,15 @@ describe('validateCageLayout — cage total range', () => {
 
 describe('validateCageLayout — region_reassigned', () => {
   it('throws ProcessingError when two heads map to the same component', () => {
+    // borderX[col=0][rowGap=0] = false: open wall between row 0 and row 1 in col 0.
     const borderX = allWallsBorderX();
-    borderX[0]![0] = false; // merge (0,0) and (0,1) into one component
+    borderX[0]![0] = false;
 
     const totals = trivialCageTotals();
-    // Both cells in the merged component have non-zero totals — two heads, one cage.
-    totals[0]![0] = 5;
-    totals[0]![1] = 5;
+    // Row-major: both (row=0,col=0) and (row=1,col=0) are in the merged component
+    // and both have non-zero totals — two heads in one cage.
+    totals[0]![0] = 5;  // row=0, col=0
+    totals[1]![0] = 5;  // row=1, col=0
 
     expect(() =>
       validateCageLayout(totals, borderX, allWallsBorderY()),

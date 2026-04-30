@@ -56,21 +56,23 @@ export function makeTrivialSpec(): PuzzleSpec {
  * (0,0) and (0,1).
  */
 export function makeTwoCellCageSpec(): PuzzleSpec {
-  const total = KNOWN_SOLUTION[0]![0]! + KNOWN_SOLUTION[0]![1]!; // 8
+  // Row-major: cage at (row=0,col=0) and (row=1,col=0), connected by open horizontal
+  // wall in col 0 between rows 0 and 1.
+  const total = KNOWN_SOLUTION[0]![0]! + KNOWN_SOLUTION[1]![0]!;
   const cageTotals: number[][] = KNOWN_SOLUTION.map(row => [...row]);
-  cageTotals[0]![0] = total;
-  cageTotals[0]![1] = 0;
+  cageTotals[0]![0] = total;  // row=0, col=0 is the cage head
+  cageTotals[1]![0] = 0;      // row=1, col=0 is merged (no head)
 
   const borderX: boolean[][] = Array.from({ length: 9 }, () =>
     Array.from({ length: 8 }, () => true));
-  borderX[0]![0] = false; // open wall between (col=0,row=0) and (col=0,row=1)
+  borderX[0]![0] = false; // borderX[col=0][rowGap=0]: open wall between rows 0 and 1 in col 0
 
   const borderY: boolean[][] = Array.from({ length: 8 }, () =>
     Array.from({ length: 9 }, () => true));
   return validateCageLayout(cageTotals, borderX, borderY);
 }
 
-export const TWO_CELL_CAGE_TOTAL = KNOWN_SOLUTION[0]![0]! + KNOWN_SOLUTION[0]![1]!; // 8
+export const TWO_CELL_CAGE_TOTAL = KNOWN_SOLUTION[0]![0]! + KNOWN_SOLUTION[1]![0]!; // 5+6=11; // 8
 
 /**
  * Return a PuzzleSpec where each 3×3 box forms its own 9-cell cage with total 45.
@@ -81,17 +83,20 @@ export const TWO_CELL_CAGE_TOTAL = KNOWN_SOLUTION[0]![0]! + KNOWN_SOLUTION[0]![1
  * (no auto-placement), making digit-entry and undo behaviour testable.
  */
 export function makeBoxCageSpec(): PuzzleSpec {
+  // 9 cages, one per 3×3 box.  Head cells at (row=boxRow, col=boxCol) for
+  // boxRow, boxCol ∈ {0,3,6}.  All cells within a box are connected (no inner
+  // walls); boxes are separated by walls at row-gaps 2,5 and col-gaps 2,5.
   const cageTotals: number[][] = Array.from({ length: 9 }, () =>
     new Array<number>(9).fill(0));
   for (const boxRow of [0, 3, 6]) {
     for (const boxCol of [0, 3, 6]) {
-      cageTotals[boxCol]![boxRow] = 45;
+      cageTotals[boxRow]![boxCol] = 45;  // row-major: cageTotals[row][col]
     }
   }
-  // Within each box: no borders (false). Between boxes: wall at row-gap 2 and 5.
+  // borderX[col][rowGap]: wall present only at row-gaps 2 and 5 (box boundaries).
   const borderX: boolean[][] = Array.from({ length: 9 }, () =>
     Array.from({ length: 8 }, (_, rowGap) => rowGap === 2 || rowGap === 5));
-  // Between boxes: wall at col-gap 2 and 5; none within boxes.
+  // borderY[colGap][row]: wall present only at col-gaps 2 and 5.
   const borderY: boolean[][] = Array.from({ length: 8 }, (_, colGap) =>
     Array.from({ length: 9 }, () => colGap === 2 || colGap === 5));
   return validateCageLayout(cageTotals, borderX, borderY);
@@ -126,15 +131,17 @@ export function makeTrivialBorderY(): boolean[][] {
  * walls between BS(0,0)↔(0,1) and BS(0,1)↔(0,2) respectively.
  */
 export function makeThreeCellCageSpec(): PuzzleSpec {
-  const total = KNOWN_SOLUTION[0]![0]! + KNOWN_SOLUTION[0]![1]! + KNOWN_SOLUTION[0]![2]!; // 12
+  // Row-major: cage at (row=0,col=0), (row=1,col=0), (row=2,col=0) — a 3-cell
+  // vertical run in column 0.  Connected by two open horizontal walls in col 0.
+  const total = KNOWN_SOLUTION[0]![0]! + KNOWN_SOLUTION[1]![0]! + KNOWN_SOLUTION[2]![0]!;
   const cageTotals = makeTrivialCageTotals();
-  cageTotals[0]![0] = total;
-  cageTotals[0]![1] = 0;
-  cageTotals[0]![2] = 0;
+  cageTotals[0]![0] = total;  // row=0, col=0 is the cage head
+  cageTotals[1]![0] = 0;      // row=1, col=0 is merged
+  cageTotals[2]![0] = 0;      // row=2, col=0 is merged
 
   const borderX = makeTrivialBorderX();
-  borderX[0]![0] = false;
-  borderX[0]![1] = false;
+  borderX[0]![0] = false;  // borderX[col=0][rowGap=0]: open between rows 0 and 1
+  borderX[0]![1] = false;  // borderX[col=0][rowGap=1]: open between rows 1 and 2
 
   return validateCageLayout(cageTotals, borderX, makeTrivialBorderY());
 }
@@ -151,18 +158,22 @@ export function makeThreeCellCageSpec(): PuzzleSpec {
  *   borderY[0][7] = false → BS(0,7)↔BS(1,7)
  */
 export function makeOutieSpec(): PuzzleSpec {
+  // 4-cell cage at (row=5,col=0), (row=6,col=0), (row=7,col=0), (row=7,col=1)
+  // — an L-shape in the bottom-left area.  Head at (row=5,col=0), total=24.
+  // Connected by two open horizontal walls in col=0 and one open vertical wall
+  // in row=7.
   const cageTotals = makeTrivialCageTotals();
-  cageTotals[0]![5] = 24;
-  cageTotals[0]![6] = 0;
-  cageTotals[0]![7] = 0;
-  cageTotals[1]![7] = 0;
+  cageTotals[5]![0] = 24;  // row=5, col=0 — cage head
+  cageTotals[6]![0] = 0;   // row=6, col=0 — merged
+  cageTotals[7]![0] = 0;   // row=7, col=0 — merged
+  cageTotals[7]![1] = 0;   // row=7, col=1 — merged
 
   const borderX = makeTrivialBorderX();
-  borderX[0]![5] = false;
-  borderX[0]![6] = false;
+  borderX[0]![5] = false;  // borderX[col=0][rowGap=5]: open between rows 5 and 6
+  borderX[0]![6] = false;  // borderX[col=0][rowGap=6]: open between rows 6 and 7
 
   const borderY = makeTrivialBorderY();
-  borderY[0]![7] = false;
+  borderY[0]![7] = false;  // borderY[colGap=0][row=7]: open between col 0 and 1 in row 7
 
   return validateCageLayout(cageTotals, borderX, borderY);
 }
