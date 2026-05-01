@@ -86,7 +86,7 @@ export interface Recognition {
 function ovoVote(
   nSamples: number,
   nClasses: number,
-  nClassifiers: number,
+  _nClassifiers: number,
   scoreForPair: (s: number, clfIdx: number) => number,
   classes: Int32Array,
   threshold: number,
@@ -108,7 +108,8 @@ function ovoVote(
     for (let c = 1; c < nClasses; c++) {
       if (votes[s * nClasses + c]! > votes[s * nClasses + best]!) best = c;
     }
-    result.push({ label: classes[best]!, confident: votes[s * nClasses + best]! / nClassifiers >= threshold });
+    // Normalise by (nClasses-1): max votes any class can receive in OVO, not total classifiers.
+    result.push({ label: classes[best]!, confident: votes[s * nClasses + best]! / (nClasses - 1) >= threshold });
   }
   return result;
 }
