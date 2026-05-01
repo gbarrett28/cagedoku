@@ -36,6 +36,7 @@ import type {
   HintItem,
   PuzzleState,
 } from './session/types.js';
+import type { Cell } from './engine/types.js';
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -59,6 +60,12 @@ const GRID_PX = MARGIN * 2 + 9 * CELL;
 
 // ---------------------------------------------------------------------------
 // UI state
+//
+// These module-level variables are the single source of truth for all UI
+// modes. Known design debt: consolidating them into an immutable state object
+// with functional updates would make event handlers easier to test and reduce
+// the risk of handlers reading stale values. See docs/architecture.md §Known
+// Design Issues.
 // ---------------------------------------------------------------------------
 
 let currentState: PuzzleState | null = null;
@@ -352,8 +359,8 @@ async function fetchCandidates(): Promise<void> {
     setCandidatesCache(data);
     redrawGrid();
     renderVirtualCagePanel();
-  } catch {
-    // best effort — grid renders without candidates
+  } catch (e) {
+    console.warn('[fetchCandidates]', e);
   }
 }
 
@@ -427,7 +434,7 @@ function updateRevealButton(): void {
 async function handleReveal(): Promise<void> {
   if (currentState === null || selectedCell === null) return;
   const { row, col } = selectedCell;
-  if (!confirm(`Reveal solution for r${row}c${col}?`)) return;
+  if (!confirm(`Reveal solution for ${cellLabel([row - 1, col - 1] as Cell)}?`)) return;
   setLoading(true);
   try {
     const data = solvePuzzle();
@@ -744,7 +751,7 @@ async function handleConfirm(): Promise<void> {
             URL.revokeObjectURL(url);
             setStatus(`Exported ${data.sampleCount} training sample${data.sampleCount !== 1 ? 's' : ''}`);
           })
-          .catch(() => { /* export is best-effort, don't disrupt play */ });
+          .catch(e => { console.warn('[training export]', e); });
       }
     }
   } catch (e) { setStatus(`Confirm failed: ${String(e)}`, true); }
@@ -758,7 +765,7 @@ async function handleCellEntry(digit: number): Promise<void> {
     currentState = state;
     refreshDisplay();
     updateUndoButton(state);
-  } catch { /* best effort */ }
+  } catch (e) { setStatus(String(e), true); }
 }
 
 async function handleUndo(): Promise<void> {
@@ -767,7 +774,7 @@ async function handleUndo(): Promise<void> {
     currentState = state;
     refreshDisplay();
     updateUndoButton(state);
-  } catch { /* nothing to undo */ }
+  } catch (e) { console.warn('[handleUndo]', e); }
 }
 
 async function handleCandidateCycle(row1b: number, col1b: number, digit: number): Promise<void> {
@@ -775,7 +782,7 @@ async function handleCandidateCycle(row1b: number, col1b: number, digit: number)
     const state = cycleCandidate(row1b, col1b, digit);
     currentState = state;
     refreshDisplay();
-  } catch { /* best effort */ }
+  } catch (e) { setStatus(String(e), true); }
 }
 
 async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number): Promise<void> {
@@ -1035,7 +1042,7 @@ document.addEventListener('DOMContentLoaded', () => {
     clearHintHighlight();
 
     if (hint.rewindToTurnIdx !== null) {
-      try { currentState = rewind(hint.rewindToTurnIdx); refreshDisplay(); updateUndoButton(currentState); } catch { /* */ }
+      try { currentState = rewind(hint.rewindToTurnIdx); refreshDisplay(); updateUndoButton(currentState); } catch (e) { setStatus(String(e), true); }
     } else if (hint.placement !== null) {
       void handleCellEntry(hint.placement[2]);
     } else if (hint.virtualCageSuggestion !== null) {

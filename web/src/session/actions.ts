@@ -268,7 +268,7 @@ export function applyDraftLayout(
           errorCells.add(`${kr},${kc}`); // "row,col" for drawGrid
         }
       } else {
-        headTotals[headC]![headR] = headTotal; // [col][row] for validateCageLayout
+        headTotals[headR]![headC] = headTotal; // [row][col]
       }
     }
   }
