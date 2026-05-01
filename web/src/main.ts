@@ -60,6 +60,12 @@ const GRID_PX = MARGIN * 2 + 9 * CELL;
 
 // ---------------------------------------------------------------------------
 // UI state
+//
+// These module-level variables are the single source of truth for all UI
+// modes. Known design debt: consolidating them into an immutable state object
+// with functional updates would make event handlers easier to test and reduce
+// the risk of handlers reading stale values. See docs/architecture.md §Known
+// Design Issues.
 // ---------------------------------------------------------------------------
 
 let currentState: PuzzleState | null = null;

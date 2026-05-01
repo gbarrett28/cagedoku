@@ -388,3 +388,9 @@ Environment overrides:
 4. **19 rules in `default_rules()` have no hint implementations** and cannot be
    promoted via the config modal. They should either receive hint implementations
    or be removed from `default_rules()`. See `docs/rules.md`.
+
+5. **`main.ts` UI state is scattered across 16 module-level mutable variables.**
+   All rendering and event handlers share these globals directly. Consolidating
+   them into a single immutable state object with functional updates would make
+   the code easier to test and eliminate the risk of an event handler reading a
+   stale value after an async gap.
