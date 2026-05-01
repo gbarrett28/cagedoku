@@ -35,6 +35,10 @@ describe('PointingPairs', () => {
     for (let c = 3; c < 9; c++) {
       expect(elimMap.has(`0,${c}`)).toBe(true);
     }
+
+    const hints = new PointingPairs().asHints(ctx, elims);
+    expect(hints.length).toBeGreaterThan(0);
+    expect(hints[0]!.displayName).toBe('Pointing Pairs');
   });
 
   it('eliminates a digit confined to one column within a box from the rest of that col', () => {
