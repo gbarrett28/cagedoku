@@ -45,23 +45,31 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+import cv2  # type: ignore[import-untyped]
 import numpy as np
 from numpy.typing import NDArray
 from scipy.ndimage import binary_dilation, binary_erosion, shift
-from sklearn.decomposition import PCA
 from sklearn.svm import SVC
 
 # ---------------------------------------------------------------------------
-# Constants — must match the TypeScript pipeline (web/src/image/config.ts)
+# Constants — must match the TypeScript pipeline (web/src/image/numberRecognition.ts)
 # ---------------------------------------------------------------------------
 
 THUMBNAIL_SIZE = 64        # splitNum output: 64×64 binary image per digit
 N_DIGITS = 10              # digits 0–9
 DEFAULT_DITHER = 30        # augmented variants per source sample
-VARIANCE_THRESHOLD = 0.99  # minimum cumulative PCA variance to retain
-TEMPLATE_THRESHOLD = 0.7   # matchTemplate score above which template wins
-SVM_C = 5.0
-SVM_GAMMA = "scale"
+CONFIDENCE_THRESHOLD = 0.7 # OVO vote fraction to mark a read as confident
+SVM_C = 10.0
+SVM_GAMMA = 0.01
+
+# HOG descriptor parameters — identical values used in cv.HOGDescriptor (TypeScript).
+HOG_WIN_SIZE     = 64
+HOG_CELL_SIZE    = 8
+HOG_BLOCK_SIZE   = 16
+HOG_BLOCK_STRIDE = 8
+HOG_NBINS        = 9
+# ((64-16)/8+1)^2 * (16/8)^2 * 9 = 7^2 * 4 * 9
+HOG_FEAT         = 1764
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +92,89 @@ def load_training_file(path: Path) -> list[tuple[int, NDArray[np.uint8]]]:
         )
         samples.append((digit, img))
     return samples
+
+
+# ---------------------------------------------------------------------------
+# Synthetic font generation
+# ---------------------------------------------------------------------------
+
+def generate_synthetic_samples(
+    win_size: int = THUMBNAIL_SIZE,
+    pt_sizes: tuple[int, ...] = (32, 48, 64),
+) -> list[tuple[int, NDArray[np.uint8]]]:
+    """Render digits 1–9 in all discoverable system TTF fonts via Pillow.
+
+    Returns (label, win_size×win_size uint8) pairs in the same format as
+    load_training_file, supplementing browser-exported samples with coverage
+    across common newspaper and system typefaces.
+    """
+    import matplotlib.font_manager as fm  # type: ignore[import-untyped]
+    from PIL import Image, ImageDraw, ImageFont  # type: ignore[import-untyped]
+
+    font_paths = fm.findSystemFonts(fontext="ttf")
+    samples: list[tuple[int, NDArray[np.uint8]]] = []
+
+    for font_path in font_paths:
+        for pt in pt_sizes:
+            for digit in range(1, 10):
+                try:
+                    font = ImageFont.truetype(font_path, pt)
+                except Exception:
+                    continue
+                canvas = win_size * 2
+                img = Image.new("L", (canvas, canvas), 0)
+                draw = ImageDraw.Draw(img)
+                text = str(digit)
+                bbox = draw.textbbox((0, 0), text, font=font)
+                w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+                if w == 0 or h == 0:
+                    continue
+                x = (canvas - w) // 2 - bbox[0]
+                y = (canvas - h) // 2 - bbox[1]
+                draw.text((x, y), text, fill=255, font=font)
+                arr = np.array(img, dtype=np.uint8)
+                ys, xs = np.where(arr > 0)
+                if len(ys) == 0:
+                    continue
+                margin = 4
+                y0 = max(0, int(ys.min()) - margin)
+                y1 = min(arr.shape[0], int(ys.max()) + margin + 1)
+                x0 = max(0, int(xs.min()) - margin)
+                x1 = min(arr.shape[1], int(xs.max()) + margin + 1)
+                crop = arr[y0:y1, x0:x1]
+                out = np.array(
+                    Image.fromarray(crop).resize((win_size, win_size), Image.LANCZOS),
+                    dtype=np.uint8,
+                )
+                if out.max() > 0:
+                    samples.append((digit, out))
+
+    return samples
+
+
+# ---------------------------------------------------------------------------
+# HOG feature extraction
+# ---------------------------------------------------------------------------
+
+def extract_hog(imgs: list[NDArray[np.uint8]]) -> NDArray[np.float64]:
+    """Extract HOG feature vectors from win_size×win_size uint8 images.
+
+    Uses cv2.HOGDescriptor with identical parameters to the browser's
+    cv.HOGDescriptor — guarantees training/inference feature parity.
+    Each image produces a HOG_FEAT-dimensional float64 vector.
+    """
+    hog = cv2.HOGDescriptor(
+        (HOG_WIN_SIZE,     HOG_WIN_SIZE),
+        (HOG_BLOCK_SIZE,   HOG_BLOCK_SIZE),
+        (HOG_BLOCK_STRIDE, HOG_BLOCK_STRIDE),
+        (HOG_CELL_SIZE,    HOG_CELL_SIZE),
+        HOG_NBINS,
+    )
+    rows: list[NDArray[np.float64]] = []
+    for img in imgs:
+        desc = hog.compute(img)          # shape (HOG_FEAT, 1)
+        rows.append(desc.flatten().astype(np.float64))
+    return np.array(rows, dtype=np.float64)
 
 
 def load_existing_templates(
