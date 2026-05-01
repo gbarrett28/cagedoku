@@ -11,12 +11,14 @@
 import type { HintResult } from '../hint.js';
 import type { RuleContext } from '../rule.js';
 import {
+  Cell,
   Elimination,
   emptyResult,
   RuleResult,
   Trigger,
   UnitKind,
 } from '../types.js';
+import { cellLabel } from './_labels.js';
 
 export class NakedSingle {
   readonly name = 'NakedSingle';
@@ -38,7 +40,7 @@ export class NakedSingle {
     return [{
       ruleName: this.name,
       displayName: 'Naked Single',
-      explanation: `Cell r${r + 1}c${c + 1} has only one remaining candidate: ${d}. Place ${d} there.`,
+      explanation: `Cell ${cellLabel([r, c] as Cell)} has only one remaining candidate: ${d}. Place ${d} there.`,
       highlightCells: [ctx.cell],
       eliminations: [],
       placement: [r, c, d],

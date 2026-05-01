@@ -15,6 +15,7 @@
 import type { HintResult } from '../hint.js';
 import type { RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
+import { cellLabel } from './_labels.js';
 
 export class SumPairConstraint {
   readonly name = 'SumPairConstraint';
@@ -67,8 +68,8 @@ export class SumPairConstraint {
 
         hints.push({
           ruleName: this.name,
-          displayName: `Sum: r${a[0]+1}c${a[1]+1} + r${b[0]+1}c${b[1]+1} = ${total}`,
-          explanation: `The cage-sum equations show r${a[0]+1}c${a[1]+1} + r${b[0]+1}c${b[1]+1} = ${total}. Each cell's candidates must be consistent with the other's — any digit d is ruled out if (${total} \u2212 d) is not a candidate in the partner cell.`,
+          displayName: `Sum: ${cellLabel(a)} + ${cellLabel(b)} = ${total}`,
+          explanation: `The cage-sum equations show ${cellLabel(a)} + ${cellLabel(b)} = ${total}. Each cell's candidates must be consistent with the other's — any digit d is ruled out if (${total} \u2212 d) is not a candidate in the partner cell.`,
           highlightCells: [a, b],
           eliminations: pairElims,
           placement: null,

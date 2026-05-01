@@ -10,6 +10,7 @@
 
 import type { HintResult } from '../hint.js';
 import type { RuleContext } from '../rule.js';
+import { cellLabel } from './_labels.js';
 import {
   Cell,
   Elimination,
@@ -51,7 +52,7 @@ export class CageCandidateFilter {
     const solns = board.cageSolns[cageIdx]!;
     const soln4 = solns.slice(0, 4).map(s => '{' + [...s].sort((a, b) => a - b).join(',') + '}');
     const solnDisplay = soln4.join(', ') + (solns.length > 4 ? '...' : '');
-    const elimParts = [...eliminations].sort().map(e => `${e.digit} from r${e.cell[0] + 1}c${e.cell[1] + 1}`);
+    const elimParts = [...eliminations].sort().map(e => `${e.digit} from ${cellLabel(e.cell)}`);
     return [{
       ruleName: this.name,
       displayName: 'Cage candidate filter',

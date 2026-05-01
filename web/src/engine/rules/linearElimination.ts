@@ -12,6 +12,7 @@
 import type { HintResult } from '../hint.js';
 import type { RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
+import { cellLabel } from './_labels.js';
 
 export class LinearElimination {
   readonly name = 'LinearElimination';
@@ -53,8 +54,8 @@ export class LinearElimination {
       const digit = remaining[0]!;
       hints.push({
         ruleName: this.name,
-        displayName: `Algebra: r${r+1}c${c+1} = ${digit}`,
-        explanation: `The cage-sum equations (combined with row, column and box totals) uniquely determine r${r+1}c${c+1} = ${digit}.`,
+        displayName: `Algebra: ${cellLabel([r, c] as Cell)} = ${digit}`,
+        explanation: `The cage-sum equations (combined with row, column and box totals) uniquely determine ${cellLabel([r, c] as Cell)} = ${digit}.`,
         highlightCells: [[r, c] as Cell],
         eliminations: cellElims,
         placement: [r, c, digit],
@@ -79,7 +80,7 @@ export class LinearElimination {
       if ((vcells as Cell[]).length < 2 || (vcells as Cell[]).length > 3) continue;
       const key = (vcells as Cell[]).map(([r,c]) => `${r},${c}`).sort().join('|');
       if (userVcCellSets.has(key)) continue;
-      const cellLabels = (vcells as Cell[]).map(([r,c]) => `r${r+1}c${c+1}`).join(' + ');
+      const cellLabels = (vcells as Cell[]).map(cell => cellLabel(cell)).join(' + ');
       hints.push({
         ruleName: this.name,
         displayName: `Virtual cage: ${(vcells as Cell[]).length} cells = ${vtotal}`,

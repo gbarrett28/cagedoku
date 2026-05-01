@@ -7,6 +7,7 @@
  */
 
 import { loadCV, loadRec, setCandidatesCache, getCV } from './session/store.js';
+import { cellLabel } from './engine/rules/_labels.js';
 import { extractTrainingData } from './image/trainingExport.js';
 import { dataToSpec } from './session/specUtils.js';
 import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec } from './engine/fixtures.js';
@@ -520,7 +521,7 @@ function renderVirtualCagePanel(): void {
     const item = document.createElement('div'); item.className = 'vc-item';
     const header = document.createElement('div'); header.className = 'vc-item-header';
     header.textContent = `total ${vc.total} — ${vc.cells.length} cells: ` +
-      vc.cells.map(([r, c]) => `r${r + 1}c${c + 1}`).join(' ');
+      vc.cells.map(cell => cellLabel(cell)).join(' ');
     item.appendChild(header);
 
     const solnsDiv = document.createElement('div'); solnsDiv.className = 'vc-solutions';

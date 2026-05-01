@@ -11,6 +11,7 @@
 import type { HintResult } from '../hint.js';
 import type { RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
+import { cellLabel } from './_labels.js';
 
 export class DeltaConstraint {
   readonly name = 'DeltaConstraint';
@@ -64,7 +65,7 @@ export class DeltaConstraint {
         for (const d of board.cands(q[0], q[1])) { if (!validQ.has(d)) pairElims.push({ cell: q, digit: d }); }
         if (!pairElims.length) continue;
 
-        const nameP = `r${p[0]+1}c${p[1]+1}`, nameQ = `r${q[0]+1}c${q[1]+1}`;
+        const nameP = cellLabel(p), nameQ = cellLabel(q);
         const sign = delta >= 0 ? '+' : '-';
         hints.push({
           ruleName: this.name,
