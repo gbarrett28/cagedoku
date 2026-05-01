@@ -36,6 +36,7 @@ import type {
   HintItem,
   PuzzleState,
 } from './session/types.js';
+import type { Cell } from './engine/types.js';
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -427,7 +428,7 @@ function updateRevealButton(): void {
 async function handleReveal(): Promise<void> {
   if (currentState === null || selectedCell === null) return;
   const { row, col } = selectedCell;
-  if (!confirm(`Reveal solution for r${row}c${col}?`)) return;
+  if (!confirm(`Reveal solution for ${cellLabel([row - 1, col - 1] as Cell)}?`)) return;
   setLoading(true);
   try {
     const data = solvePuzzle();
