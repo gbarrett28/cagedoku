@@ -353,8 +353,8 @@ async function fetchCandidates(): Promise<void> {
     setCandidatesCache(data);
     redrawGrid();
     renderVirtualCagePanel();
-  } catch {
-    // best effort — grid renders without candidates
+  } catch (e) {
+    console.warn('[fetchCandidates]', e);
   }
 }
 
@@ -745,7 +745,7 @@ async function handleConfirm(): Promise<void> {
             URL.revokeObjectURL(url);
             setStatus(`Exported ${data.sampleCount} training sample${data.sampleCount !== 1 ? 's' : ''}`);
           })
-          .catch(() => { /* export is best-effort, don't disrupt play */ });
+          .catch(e => { console.warn('[training export]', e); });
       }
     }
   } catch (e) { setStatus(`Confirm failed: ${String(e)}`, true); }
@@ -759,7 +759,7 @@ async function handleCellEntry(digit: number): Promise<void> {
     currentState = state;
     refreshDisplay();
     updateUndoButton(state);
-  } catch { /* best effort */ }
+  } catch (e) { setStatus(String(e), true); }
 }
 
 async function handleUndo(): Promise<void> {
@@ -768,7 +768,7 @@ async function handleUndo(): Promise<void> {
     currentState = state;
     refreshDisplay();
     updateUndoButton(state);
-  } catch { /* nothing to undo */ }
+  } catch (e) { console.warn('[handleUndo]', e); }
 }
 
 async function handleCandidateCycle(row1b: number, col1b: number, digit: number): Promise<void> {
@@ -776,7 +776,7 @@ async function handleCandidateCycle(row1b: number, col1b: number, digit: number)
     const state = cycleCandidate(row1b, col1b, digit);
     currentState = state;
     refreshDisplay();
-  } catch { /* best effort */ }
+  } catch (e) { setStatus(String(e), true); }
 }
 
 async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number): Promise<void> {
@@ -1036,7 +1036,7 @@ document.addEventListener('DOMContentLoaded', () => {
     clearHintHighlight();
 
     if (hint.rewindToTurnIdx !== null) {
-      try { currentState = rewind(hint.rewindToTurnIdx); refreshDisplay(); updateUndoButton(currentState); } catch { /* */ }
+      try { currentState = rewind(hint.rewindToTurnIdx); refreshDisplay(); updateUndoButton(currentState); } catch (e) { setStatus(String(e), true); }
     } else if (hint.placement !== null) {
       void handleCellEntry(hint.placement[2]);
     } else if (hint.virtualCageSuggestion !== null) {
