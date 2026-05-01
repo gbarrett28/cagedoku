@@ -16,8 +16,8 @@ import type { PuzzleSpec } from '../solver/puzzleSpec.js';
  * Build a string key for a cell to use as a Map key.
  * Using a string key avoids reference-equality pitfalls with arrays.
  */
-function cellKey(col: number, row: number): string {
-  return `${col},${row}`;
+function rowColKey(row: number, col: number): string {
+  return `${row},${col}`;
 }
 
 /**
@@ -47,14 +47,14 @@ export function validateCageLayout(
   borderX: boolean[][],
   borderY: boolean[][],
 ): PuzzleSpec {
-  // Union-find: rmap[cellKey] → representative cell key.
-  // members[repKey] → set of cell keys in that component.
+  // Union-find: rmap[rowColKey] -> representative cell key.
+  // members[repKey] -> set of cell keys in that component.
   const rmap = new Map<string, string>();
   const members = new Map<string, Set<string>>();
 
-  for (let c = 0; c < 9; c++) {
-    for (let r = 0; r < 9; r++) {
-      const k = cellKey(c, r);
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const k = rowColKey(r, c);
       rmap.set(k, k);
       members.set(k, new Set([k]));
     }
@@ -83,9 +83,9 @@ export function validateCageLayout(
   // Merge cells across open horizontal borders (no wall between rows).
   // borderX[col][rowGap] = true means wall between rows rowGap and rowGap+1 in col.
   for (let col = 0; col < 9; col++) {
-    for (let row = 0; row < 8; row++) {
-      if (!borderX[col]![row]!) {
-        union(cellKey(col, row), cellKey(col, row + 1));
+    for (let rowGap = 0; rowGap < 8; rowGap++) {
+      if (!borderX[col]![rowGap]!) {
+        union(rowColKey(rowGap, col), rowColKey(rowGap + 1, col));
       }
     }
   }
@@ -95,27 +95,27 @@ export function validateCageLayout(
   for (let colGap = 0; colGap < 8; colGap++) {
     for (let row = 0; row < 9; row++) {
       if (!borderY[colGap]![row]!) {
-        union(cellKey(colGap, row), cellKey(colGap + 1, row));
+        union(rowColKey(row, colGap), rowColKey(row, colGap + 1));
       }
     }
   }
 
   const brdrs = buildBrdrs(borderX, borderY);
 
-  // (9, 9) regions array, [col][row], 1-based cage indices.
+  // (9×9) regions array, [row][col], 1-based cage indices.
   const regions: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
   let reg = 0;
 
-  for (let col = 0; col < 9; col++) {
-    for (let row = 0; row < 9; row++) {
-      if (cageTotals[col]![row]! !== 0) {
-        const repKey = find(cellKey(col, row));
+  for (let row = 0; row < 9; row++) {
+    for (let col = 0; col < 9; col++) {
+      if (cageTotals[row]![col]! !== 0) {
+        const repKey = find(rowColKey(row, col));
         const component = members.get(repKey)!;
 
         // Check no cell in this component has already been assigned.
         for (const k of component) {
-          const [c, r] = k.split(',').map(Number) as [number, number];
-          if (regions[c]![r]! !== 0) {
+          const [r, c] = k.split(',').map(Number) as [number, number];
+          if (regions[r]![c]! !== 0) {
             throw new ProcessingError('region reassigned', regions, brdrs);
           }
         }
@@ -124,25 +124,25 @@ export function validateCageLayout(
         const n = component.size;
         const lo = (n * (n + 1)) / 2;
         const hi = (n * (19 - n)) / 2;
-        const total = cageTotals[col]![row]!;
+        const total = cageTotals[row]![col]!;
         if (total < lo || total > hi) {
           throw new Error(
-            `cagesize=${n}, total=${total} at col=${col + 1},row=${row + 1}: must be in [${lo}, ${hi}]`,
+            `cagesize=${n}, total=${total} at row=${row + 1},col=${col + 1}: must be in [${lo}, ${hi}]`,
           );
         }
 
         for (const k of component) {
-          const [c, r] = k.split(',').map(Number) as [number, number];
-          regions[c]![r] = reg;
+          const [r, c] = k.split(',').map(Number) as [number, number];
+          regions[r]![c] = reg;
         }
       }
     }
   }
 
   // Check all cells have been assigned to a cage.
-  for (let c = 0; c < 9; c++) {
-    for (let r = 0; r < 9; r++) {
-      if (regions[c]![r]! === 0) {
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      if (regions[r]![c]! === 0) {
         throw new ProcessingError('unassigned region', regions, brdrs);
       }
     }
@@ -169,9 +169,9 @@ export function repairCageTotals(
 ): { repaired: number[][]; warnings: string[] } {
   const rmap = new Map<string, string>();
   const members = new Map<string, Set<string>>();
-  for (let c = 0; c < 9; c++) {
-    for (let r = 0; r < 9; r++) {
-      const k = cellKey(c, r);
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const k = rowColKey(r, c);
       rmap.set(k, k);
       members.set(k, new Set([k]));
     }
@@ -187,25 +187,25 @@ export function repairCageTotals(
     members.delete(drop);
   };
   for (let col = 0; col < 9; col++)
-    for (let row = 0; row < 8; row++)
-      if (!borderX[col]![row]!) union(cellKey(col, row), cellKey(col, row + 1));
+    for (let rowGap = 0; rowGap < 8; rowGap++)
+      if (!borderX[col]![rowGap]!) union(rowColKey(rowGap, col), rowColKey(rowGap + 1, col));
   for (let colGap = 0; colGap < 8; colGap++)
     for (let row = 0; row < 9; row++)
-      if (!borderY[colGap]![row]!) union(cellKey(colGap, row), cellKey(colGap + 1, row));
+      if (!borderY[colGap]![row]!) union(rowColKey(row, colGap), rowColKey(row, colGap + 1));
 
-  const repaired = cageTotals.map(col => [...col]);
+  const repaired = cageTotals.map(row => [...row]);
   const warnings: string[] = [];
-  for (let col = 0; col < 9; col++) {
-    for (let row = 0; row < 9; row++) {
-      const total = repaired[col]![row]!;
+  for (let row = 0; row < 9; row++) {
+    for (let col = 0; col < 9; col++) {
+      const total = repaired[row]![col]!;
       if (total === 0) continue;
-      const n = members.get(find(cellKey(col, row)))!.size;
+      const n = members.get(find(rowColKey(row, col)))!.size;
       const lo = (n * (n + 1)) / 2;
       const hi = (n * (19 - n)) / 2;
       if (total < lo || total > hi) {
         const clamped = total < lo ? lo : hi;
-        repaired[col]![row] = clamped;
-        warnings.push(`col=${col + 1},row=${row + 1}: read ${total}, clamped to ${clamped} (${n}-cell cage range [${lo}, ${hi}])`);
+        repaired[row]![col] = clamped;
+        warnings.push(`row=${row + 1},col=${col + 1}: read ${total}, clamped to ${clamped} (${n}-cell cage range [${lo}, ${hi}])`);
       }
     }
   }

@@ -137,21 +137,9 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
     spec = validateCageLayout(blankTotals, blankBorderX, blankBorderY);
   }
 
-  // validateCageLayout builds regions and cageTotals in [col][row] order; the rest of
-  // the codebase (drawGrid, dataToSpec, applyDraftLayout) expects [row][col].
-  const transposedSpec: PuzzleSpec = {
-    ...spec,
-    regions: Array.from({ length: 9 }, (_, r) =>
-      Array.from({ length: 9 }, (__, c) => spec.regions[c]![r]!),
-    ),
-    cageTotals: Array.from({ length: 9 }, (_, r) =>
-      Array.from({ length: 9 }, (__, c) => spec.cageTotals[c]![r]!),
-    ),
-  };
-
   const state: PuzzleState = {
-    specData: specToData(transposedSpec),
-    cageStates: specToCageStates(transposedSpec),
+    specData: specToData(spec),
+    cageStates: specToCageStates(spec),
     userGrid: null,
     virtualCages: [],
     turns: [],

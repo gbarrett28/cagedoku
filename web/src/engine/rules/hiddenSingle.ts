@@ -11,7 +11,7 @@
 import type { HintResult } from '../hint.js';
 import type { RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
-import { unitLabel } from './_labels.js';
+import { cellLabel, unitLabel } from './_labels.js';
 
 export class HiddenSingle {
   readonly name = 'HiddenSingle';
@@ -46,8 +46,8 @@ export class HiddenSingle {
     const sole = eliminations[0]!.cell;
     const [r, c] = sole;
     const explanation = ctx.unit.kind === UnitKind.CAGE
-      ? `${d} is the only candidate for r${r+1}c${c+1} in this cage, and ${d} is essential to every remaining cage solution. Place ${d} there by eliminating all other candidates.`
-      : `${d} can only go in r${r+1}c${c+1} within ${unitLabel(ctx.unit)}. Eliminate all other candidates from that cell to place ${d}.`;
+      ? `${d} is the only candidate for ${cellLabel([r, c] as Cell)} in this cage, and ${d} is essential to every remaining cage solution. Place ${d} there by eliminating all other candidates.`
+      : `${d} can only go in ${cellLabel([r, c] as Cell)} within ${unitLabel(ctx.unit)}. Eliminate all other candidates from that cell to place ${d}.`;
     return [{
       ruleName: this.name,
       displayName: 'Hidden Single',

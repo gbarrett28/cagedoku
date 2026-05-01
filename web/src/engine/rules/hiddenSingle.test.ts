@@ -38,6 +38,21 @@ describe('HiddenSingle', () => {
     expect(elims.length).toBe(bs.cands(0, 4).size - 1);
   });
 
+  it('asHints returns a hint with display name and correct eliminations', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    const rowUid = bs.rowUnitId(0);
+    for (let c = 0; c < 9; c++) {
+      if (c !== 4) bs.cands(0, c).delete(7);
+    }
+    bs.counts[rowUid]![7] = 1;
+    const ctx = makeCtx(bs, rowUid, 7);
+    const elims = new HiddenSingle().apply(ctx).eliminations;
+    const hints = new HiddenSingle().asHints(ctx, [...elims]);
+    expect(hints).toHaveLength(1);
+    expect(hints[0]!.displayName).toBe('Hidden Single');
+    expect(hints[0]!.eliminations).toStrictEqual(elims);
+  });
+
   it('returns empty eliminations when digit is absent from all cells', () => {
     const bs = new BoardState(makeTrivialSpec());
     const rowUid = bs.rowUnitId(0);

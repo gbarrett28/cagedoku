@@ -48,6 +48,11 @@ describe('NakedPair', () => {
     // Pair cells (0,0) and (0,1) are NOT targets
     expect(elimMap.has('0,0')).toBe(false);
     expect(elimMap.has('0,1')).toBe(false);
+
+    const hints = new NakedPair().asHints(ctx, [...elims]);
+    expect(hints).toHaveLength(1);
+    expect(hints[0]!.displayName).toBe('Naked Pair');
+    expect(hints[0]!.eliminations).toStrictEqual(elims);
   });
 
   it('returns empty when two cells do not share the same pair', () => {

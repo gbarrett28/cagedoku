@@ -17,6 +17,7 @@ import {
   Trigger,
   UnitKind,
 } from '../types.js';
+import { cellLabel } from './_labels.js';
 
 export class CellSolutionElimination {
   readonly name = 'CellSolutionElimination';
@@ -48,12 +49,12 @@ export class CellSolutionElimination {
     const d = ctx.hintDigit;
     const peerLabels = [...eliminations]
       .sort((a, b) => a.cell[0] - b.cell[0] || a.cell[1] - b.cell[1])
-      .map(e => `r${e.cell[0] + 1}c${e.cell[1] + 1}`)
+      .map(e => cellLabel(e.cell))
       .join(', ');
     return [{
       ruleName: this.name,
       displayName: 'Naked Single',
-      explanation: `Cell r${r + 1}c${c + 1} is ${d}. Eliminating ${d} from peers: ${peerLabels}.`,
+      explanation: `Cell ${cellLabel([r, c] as Cell)} is ${d}. Eliminating ${d} from peers: ${peerLabels}.`,
       highlightCells: [[r, c] as Cell, ...eliminations.map(e => e.cell)],
       eliminations: [...eliminations],
       placement: null,
