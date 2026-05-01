@@ -1,28 +1,25 @@
 #!/usr/bin/env python3
 """
-Retrain the web digit recogniser from browser-exported training JSON files.
+Train the web digit recogniser using HOG features + RBF-SVM.
 
-Merges new labelled samples (exported by the "Export training data" button
-in the web app) with per-digit mean templates from the existing model, applies
-dithering to augment both sources, fits PCA + RBF-SVM, and writes the updated
-model to web/dist/num_recogniser.{json,bin}.
+Generates synthetic digit images from system fonts, optionally merges
+browser-exported labelled samples, augments all sources with dithering,
+extracts HOG features via cv2.HOGDescriptor (identical to the browser's
+cv.HOGDescriptor), and writes the trained model to web/public/.
 
 Usage
 -----
-    python web/train_recogniser.py TRAINING_JSON [...]
+    # Train from synthetic fonts only (no puzzle data needed):
+    python web/train_recogniser.py --out web/public
 
-    # Specify a different output directory:
-    python web/train_recogniser.py --out web/dist training-*.json
+    # Merge browser-exported samples with synthetic fonts:
+    python web/train_recogniser.py --out web/public training.json
 
-    # Skip loading existing templates (retrain from new data only):
-    python web/train_recogniser.py --no-templates training.json
+    # Skip synthetic font generation:
+    python web/train_recogniser.py --no-synthetic training.json
 
-    # More augmentation (default 30 variants per source sample):
-    python web/train_recogniser.py --dither 50 training.json
-
-Examples
---------
-    python web/train_recogniser.py ~/Downloads/training-2026-04-29T19-46-44.json
+    # More augmentation (default 30 dither variants per sample):
+    python web/train_recogniser.py --dither 50
 
 Workflow
 --------
@@ -31,10 +28,9 @@ needed): reload the web app in the browser and the new model is fetched.
 
 Model format
 ------------
-The binary format is documented in web/src/image/numberRecognition.ts
-(loadNumRecogniser).  Arrays are written in the order listed in pack_arrays()
-below; the JSON manifest records each array's name, dtype, shape, byte offset,
-and byte length.
+The binary layout is documented in web/src/image/numberRecognition.ts
+(loadNumRecogniser).  The JSON manifest records each array's name, dtype,
+shape, byte offset, and byte length.
 """
 
 from __future__ import annotations
@@ -177,66 +173,6 @@ def extract_hog(imgs: list[NDArray[np.uint8]]) -> NDArray[np.float64]:
     return np.array(rows, dtype=np.float64)
 
 
-def load_existing_templates(
-    json_path: Path, bin_path: Path
-) -> dict[int, NDArray[np.float32]]:
-    """Read per-digit mean template images from the existing model files.
-
-    These are the float32 64×64 arrays stored as template_0…template_9 in
-    the binary model.  They are used as anchor training examples for any
-    digit class absent from the new labelled samples.
-
-    Templates with near-uniform ink (> 95% filled) are rejected as corrupted
-    — this prevents a bad template from self-reinforcing across retraining
-    rounds via dithering.
-    """
-    if not json_path.exists() or not bin_path.exists():
-        return {}
-
-    manifest: dict[str, Any] = json.loads(
-        json_path.read_text(encoding="utf-8")
-    )["arrays"]
-    blob = bin_path.read_bytes()
-
-    templates: dict[int, NDArray[np.float32]] = {}
-    for d in range(N_DIGITS):
-        key = f"template_{d}"
-        if key not in manifest:
-            continue
-        info = manifest[key]
-        raw = blob[info["offset"] : info["offset"] + info["byteLength"]]
-        arr = np.frombuffer(raw, dtype=np.float32).reshape(info["shape"]).copy()
-        ink = float((arr > 0.3).mean())
-        if ink > 0.95:
-            print(f"  Rejecting template_{d}: ink={ink:.1%} (corrupted — all white)")
-            continue
-        templates[d] = arr
-    return templates
-
-
-def synthesise_missing_templates(
-    templates: dict[int, NDArray[np.float32]],
-    new_sample_digits: set[int],
-) -> dict[int, NDArray[np.float32]]:
-    """Fill in templates for digits that have neither real samples nor a usable
-    template, using simple geometric relationships between digits:
-
-    - 6 ≈ 180° rotation of 9 (loop at bottom instead of top)
-
-    Only applied when the digit is completely absent from new training data.
-    """
-    result = dict(templates)
-
-    if 6 not in new_sample_digits and 6 not in result:
-        if 9 in result:
-            result[6] = np.rot90(result[9], k=2).copy()
-            print("  Synthesised template_6 from template_9 (180° rotation)")
-        else:
-            print("  Warning: no template or samples for digit 6 and no template_9 to derive from")
-
-    return result
-
-
 # ---------------------------------------------------------------------------
 # Augmentation
 # ---------------------------------------------------------------------------
@@ -309,18 +245,28 @@ def build_dataset(
 def fit_model(
     X: NDArray[np.float64],
     y: NDArray[np.int64],
+    classifier: str = "linear",
     svm_c: float = SVM_C,
     svm_gamma: float | str = SVM_GAMMA,
 ) -> dict[str, Any]:
-    """Train an RBF SVM directly on HOG feature vectors — no PCA step."""
-    svc = SVC(
-        kernel="rbf",
-        C=svm_c,
-        gamma=svm_gamma,
-        decision_function_shape="ovo",
-    )
-    svc.fit(X, y)
-    return {"svc": svc}
+    """Train a digit classifier on HOG feature vectors.
+
+    classifier='linear': OneVsOneClassifier(LinearSVC) — small model (~500 KB),
+        fast inference, vote-fraction confidence identical to RBF OVO.
+    classifier='rbf': SVC(kernel='rbf') OVO — more expressive but large model.
+    """
+    if classifier == "linear":
+        from sklearn.multiclass import OneVsOneClassifier  # type: ignore[import-untyped]
+        from sklearn.svm import LinearSVC  # type: ignore[import-untyped]
+        clf = OneVsOneClassifier(LinearSVC(C=svm_c, max_iter=10000))
+        clf.fit(X, y)
+        coefs = np.vstack([est.coef_[0] for est in clf.estimators_])
+        intercepts = np.array([est.intercept_[0] for est in clf.estimators_])
+        return {"kind": "linear", "clf": clf, "coefs": coefs, "intercepts": intercepts}
+    else:
+        svc = SVC(kernel="rbf", C=svm_c, gamma=svm_gamma, decision_function_shape="ovo")
+        svc.fit(X, y)
+        return {"kind": "rbf", "clf": svc}
 
 
 # ---------------------------------------------------------------------------
@@ -332,32 +278,50 @@ def save_model(
     out_dir: Path,
     confidence_threshold: float = CONFIDENCE_THRESHOLD,
 ) -> None:
-    """Write num_recogniser.{json,bin} with HOG params + SVM weights.
+    """Write num_recogniser.{json,bin} with HOG params + classifier weights.
 
-    Array names and layout must match loadNumRecogniser in
-    web/src/image/numberRecognition.ts.
+    The manifest top-level includes 'classifier_type' so loadNumRecogniser in
+    web/src/image/numberRecognition.ts can select the right inference path.
+    Common arrays (hog_*, confidence_threshold, classes) are always present.
+    Classifier-specific arrays (linear_coef/intercept or rbf_*) follow.
     """
-    svc: SVC = model["svc"]
-    try:
-        gamma = float(svc._gamma)  # computed value; available after fit()
-    except AttributeError:
-        gamma = 1.0 / (float(svc.support_vectors_.shape[1]) * float(svc.support_vectors_.var()))
+    kind: str = model["kind"]
+    clf = model["clf"]
 
-    named: list[tuple[str, np.ndarray, str]] = [
+    common: list[tuple[str, np.ndarray, str]] = [
         ("hog_win_size",         np.array(HOG_WIN_SIZE,         dtype=np.int32),   "int32"),
         ("hog_cell_size",        np.array(HOG_CELL_SIZE,        dtype=np.int32),   "int32"),
         ("hog_block_size",       np.array(HOG_BLOCK_SIZE,       dtype=np.int32),   "int32"),
         ("hog_block_stride",     np.array(HOG_BLOCK_STRIDE,     dtype=np.int32),   "int32"),
         ("hog_nbins",            np.array(HOG_NBINS,            dtype=np.int32),   "int32"),
         ("confidence_threshold", np.array(confidence_threshold, dtype=np.float64), "float64"),
-        ("rbf_support_vectors",  svc.support_vectors_.astype(np.float64),          "float64"),
-        ("rbf_dual_coef",        svc.dual_coef_.astype(np.float64),                "float64"),
-        ("rbf_intercept",        svc.intercept_.astype(np.float64),                "float64"),
-        ("rbf_n_support",        svc.n_support_.astype(np.int32),                  "int32"),
-        ("rbf_gamma",            np.array([gamma],              dtype=np.float64), "float64"),
-        ("rbf_classes",          svc.classes_.astype(np.int32),                    "int32"),
+        ("classes",              clf.classes_.astype(np.int32),                    "int32"),
     ]
 
+    if kind == "linear":
+        coefs: NDArray[np.float64] = model["coefs"]
+        intercepts: NDArray[np.float64] = model["intercepts"]
+        classifier_arrays: list[tuple[str, np.ndarray, str]] = [
+            ("linear_coef",      coefs.astype(np.float64),       "float64"),
+            ("linear_intercept", intercepts.astype(np.float64),   "float64"),
+        ]
+        size_info = f"  Linear OVO: {len(clf.estimators_)} classifiers x {coefs.shape[1]} features"
+    else:
+        svc: SVC = clf
+        try:
+            gamma = float(svc._gamma)
+        except AttributeError:
+            gamma = 1.0 / (float(svc.support_vectors_.shape[1]) * float(svc.support_vectors_.var()))
+        classifier_arrays = [
+            ("rbf_support_vectors", svc.support_vectors_.astype(np.float64), "float64"),
+            ("rbf_dual_coef",       svc.dual_coef_.astype(np.float64),       "float64"),
+            ("rbf_intercept",       svc.intercept_.astype(np.float64),       "float64"),
+            ("rbf_n_support",       svc.n_support_.astype(np.int32),         "int32"),
+            ("rbf_gamma",           np.array([gamma], dtype=np.float64),     "float64"),
+        ]
+        size_info = f"  RBF OVO: {svc.support_vectors_.shape[0]} support vectors"
+
+    named = common + classifier_arrays
     blob = bytearray()
     manifest_arrays: dict[str, dict[str, Any]] = {}
     for name, arr, dtype_str in named:
@@ -374,13 +338,13 @@ def save_model(
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "num_recogniser.bin").write_bytes(bytes(blob))
     (out_dir / "num_recogniser.json").write_text(
-        json.dumps({"arrays": manifest_arrays}, indent=2), encoding="utf-8"
+        json.dumps({"classifier_type": kind, "arrays": manifest_arrays}, indent=2),
+        encoding="utf-8",
     )
 
-    n_sv = svc.support_vectors_.shape[0]
-    print(f"\nSaved to {out_dir}/")
-    print(f"  HOG: {HOG_WIN_SIZE}px win / {HOG_CELL_SIZE}px cells / {HOG_BLOCK_SIZE}px block / {HOG_NBINS} bins → {HOG_FEAT} features")
-    print(f"  SVM: {n_sv} support vectors, classes {svc.classes_.tolist()}")
+    print(f"\nSaved to {out_dir}/ [{kind}]")
+    print(f"  HOG: {HOG_WIN_SIZE}px win / {HOG_CELL_SIZE}px cells / {HOG_BLOCK_SIZE}px block / {HOG_NBINS} bins = {HOG_FEAT} features")
+    print(size_info)
     print(f"  Bin size: {len(blob):,} bytes")
 
 
@@ -394,8 +358,8 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "training_json", nargs="+", type=Path,
-        help="Browser-exported training JSON file(s)",
+        "training_json", nargs="*", type=Path,
+        help="Browser-exported training JSON file(s) (optional if synthetic is enabled)",
     )
     parser.add_argument(
         "--out", type=Path, default=Path("web/public"),
@@ -406,49 +370,58 @@ def main() -> None:
         help=f"Augmented variants per source sample (default: {DEFAULT_DITHER})",
     )
     parser.add_argument(
-        "--no-templates", action="store_true",
-        help="Skip loading existing model templates (retrain from new data only)",
+        "--no-synthetic", action="store_true",
+        help="Skip system-font synthetic digit generation",
     )
+    parser.add_argument(
+        "--confidence-threshold", type=float, default=CONFIDENCE_THRESHOLD, metavar="T",
+        help=f"OVO vote fraction to mark a read as confident (default: {CONFIDENCE_THRESHOLD})",
+    )
+    parser.add_argument(
+        "--classifier", choices=["linear", "rbf"], default="linear",
+        help="Classifier type: 'linear' (OVO LinearSVC, default) or 'rbf' (OVO SVC)",
+    )
+    parser.add_argument("--svm-c",     type=float, default=SVM_C,
+                        help=f"SVM regularisation C (default: {SVM_C})")
+    parser.add_argument("--svm-gamma", type=str,   default=str(SVM_GAMMA),
+                        help=f"SVM gamma — float or 'scale'/'auto'; rbf only (default: {SVM_GAMMA})")
     args = parser.parse_args()
 
-    # ── Load new training samples ──────────────────────────────────────────
     all_samples: list[tuple[int, NDArray[np.uint8]]] = []
+
     for path in args.training_json:
         samples = load_training_file(path)
         print(f"Loaded {len(samples)} samples from {path.name}")
         all_samples.extend(samples)
 
+    if not args.no_synthetic:
+        print("Generating synthetic font samples…")
+        synth = generate_synthetic_samples()
+        print(f"Generated {len(synth)} synthetic samples")
+        all_samples.extend(synth)
+
     if not all_samples:
-        print("No samples found — nothing to do.", file=__import__("sys").stderr)
+        import sys as _sys
+        print("No samples — pass JSON files or omit --no-synthetic.", file=_sys.stderr)
         raise SystemExit(1)
 
     dist = dict(sorted(Counter(d for d, _ in all_samples).items()))
-    print(f"Digit distribution in new data: {dist}")
+    print(f"Digit distribution: {dist}")
 
-    # ── Load existing templates ────────────────────────────────────────────
-    templates: dict[int, NDArray[np.float32]] = {}
-    if not args.no_templates:
-        tmpl_json = args.out / "num_recogniser.json"
-        tmpl_bin = args.out / "num_recogniser.bin"
-        templates = load_existing_templates(tmpl_json, tmpl_bin)
-        covered_by_new = {d for d, _ in all_samples}
-        templates = synthesise_missing_templates(templates, covered_by_new)
-        if templates:
-            template_only = sorted(set(range(N_DIGITS)) - covered_by_new)
-            print(f"Loaded/synthesised templates: {sorted(templates.keys())}")
-            print(f"Template-only coverage (absent from new data): {template_only}")
+    print(f"\nAugmenting with {args.dither} dither variants per sample…")
+    X, y = build_dataset(all_samples, args.dither)
+    print(f"Dataset: {X.shape[0]} samples × {X.shape[1]} HOG features")
 
-    # ── Build augmented dataset and train ─────────────────────────────────
-    print(f"\nAugmenting with {args.dither} variants per source sample…")
-    X, y = build_dataset(all_samples, templates, args.dither)
-    aug_dist = dict(sorted(Counter(y.tolist()).items()))
-    print(f"Augmented dataset: {len(X)} total samples")
-    print(f"Per-class counts:  {aug_dist}")
+    svm_gamma: float | str = args.svm_gamma
+    try:
+        svm_gamma = float(args.svm_gamma)
+    except ValueError:
+        pass  # keep as 'scale' or 'auto'
 
-    print("\nFitting PCA + RBF SVM…")
-    model = fit_model(X, y)
+    print(f"Training {args.classifier} classifier…")
+    model = fit_model(X, y, classifier=args.classifier, svm_c=args.svm_c, svm_gamma=svm_gamma)
 
-    save_model(model, args.out)
+    save_model(model, Path(args.out), confidence_threshold=args.confidence_threshold)
 
 
 if __name__ == "__main__":

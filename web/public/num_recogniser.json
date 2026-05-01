@@ -1,177 +1,66 @@
 {
+  "classifier_type": "linear",
   "arrays": {
-    "pca_components": {
-      "dtype": "float64",
-      "shape": [
-        10,
-        4096
-      ],
-      "offset": 0,
-      "byteLength": 327680
-    },
-    "pca_mean": {
-      "dtype": "float64",
-      "shape": [
-        4096
-      ],
-      "offset": 327680,
-      "byteLength": 32768
-    },
-    "dims": {
+    "hog_win_size": {
       "dtype": "int32",
-      "shape": [
-        1
-      ],
-      "offset": 360448,
+      "shape": [],
+      "offset": 0,
       "byteLength": 4
     },
-    "rbf_support_vectors": {
+    "hog_cell_size": {
+      "dtype": "int32",
+      "shape": [],
+      "offset": 4,
+      "byteLength": 4
+    },
+    "hog_block_size": {
+      "dtype": "int32",
+      "shape": [],
+      "offset": 8,
+      "byteLength": 4
+    },
+    "hog_block_stride": {
+      "dtype": "int32",
+      "shape": [],
+      "offset": 12,
+      "byteLength": 4
+    },
+    "hog_nbins": {
+      "dtype": "int32",
+      "shape": [],
+      "offset": 16,
+      "byteLength": 4
+    },
+    "confidence_threshold": {
       "dtype": "float64",
+      "shape": [],
+      "offset": 20,
+      "byteLength": 8
+    },
+    "classes": {
+      "dtype": "int32",
       "shape": [
-        499,
         9
       ],
-      "offset": 360452,
-      "byteLength": 35928
+      "offset": 28,
+      "byteLength": 36
     },
-    "rbf_dual_coef": {
+    "linear_coef": {
       "dtype": "float64",
       "shape": [
-        9,
-        499
+        36,
+        1764
       ],
-      "offset": 396380,
-      "byteLength": 35928
+      "offset": 64,
+      "byteLength": 508032
     },
-    "rbf_intercept": {
+    "linear_intercept": {
       "dtype": "float64",
       "shape": [
-        45
+        36
       ],
-      "offset": 432308,
-      "byteLength": 360
-    },
-    "rbf_n_support": {
-      "dtype": "int32",
-      "shape": [
-        10
-      ],
-      "offset": 432668,
-      "byteLength": 40
-    },
-    "rbf_gamma": {
-      "dtype": "float64",
-      "shape": [
-        1
-      ],
-      "offset": 432708,
-      "byteLength": 8
-    },
-    "rbf_classes": {
-      "dtype": "int32",
-      "shape": [
-        10
-      ],
-      "offset": 432716,
-      "byteLength": 40
-    },
-    "template_threshold": {
-      "dtype": "float64",
-      "shape": [
-        1
-      ],
-      "offset": 432756,
-      "byteLength": 8
-    },
-    "template_0": {
-      "dtype": "float32",
-      "shape": [
-        64,
-        64
-      ],
-      "offset": 432764,
-      "byteLength": 16384
-    },
-    "template_1": {
-      "dtype": "float32",
-      "shape": [
-        64,
-        64
-      ],
-      "offset": 449148,
-      "byteLength": 16384
-    },
-    "template_2": {
-      "dtype": "float32",
-      "shape": [
-        64,
-        64
-      ],
-      "offset": 465532,
-      "byteLength": 16384
-    },
-    "template_3": {
-      "dtype": "float32",
-      "shape": [
-        64,
-        64
-      ],
-      "offset": 481916,
-      "byteLength": 16384
-    },
-    "template_4": {
-      "dtype": "float32",
-      "shape": [
-        64,
-        64
-      ],
-      "offset": 498300,
-      "byteLength": 16384
-    },
-    "template_5": {
-      "dtype": "float32",
-      "shape": [
-        64,
-        64
-      ],
-      "offset": 514684,
-      "byteLength": 16384
-    },
-    "template_6": {
-      "dtype": "float32",
-      "shape": [
-        64,
-        64
-      ],
-      "offset": 531068,
-      "byteLength": 16384
-    },
-    "template_7": {
-      "dtype": "float32",
-      "shape": [
-        64,
-        64
-      ],
-      "offset": 547452,
-      "byteLength": 16384
-    },
-    "template_8": {
-      "dtype": "float32",
-      "shape": [
-        64,
-        64
-      ],
-      "offset": 563836,
-      "byteLength": 16384
-    },
-    "template_9": {
-      "dtype": "float32",
-      "shape": [
-        64,
-        64
-      ],
-      "offset": 580220,
-      "byteLength": 16384
+      "offset": 508096,
+      "byteLength": 288
     }
   }
 }

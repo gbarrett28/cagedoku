@@ -38,27 +38,44 @@ def _make_samples() -> list[tuple[int, np.ndarray]]:
 def test_build_dataset_shape():
     samples = _make_samples()
     X, y = build_dataset(samples, n_dither=2)
-    # 9 digits × (1 original + 2 dither) = 27
+    # 9 digits x (1 original + 2 dither) = 27
     assert X.shape == (27, HOG_FEAT)
     assert y.shape == (27,)
     assert set(y.tolist()) == set(range(1, 10))
 
 
-def test_save_model_keys():
+_COMMON_KEYS = {
+    "hog_win_size", "hog_cell_size", "hog_block_size", "hog_block_stride",
+    "hog_nbins", "confidence_threshold", "classes",
+}
+
+
+def _train_and_save(classifier: str) -> dict:
     samples = _make_samples()
     X, y = build_dataset(samples, n_dither=1)
-    model = fit_model(X, y)
+    model = fit_model(X, y, classifier=classifier)
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
         save_model(model, out, confidence_threshold=CONFIDENCE_THRESHOLD)
         manifest = json.loads((out / "num_recogniser.json").read_text())
+    return manifest
+
+
+def test_save_model_linear_keys():
+    manifest = _train_and_save("linear")
+    assert manifest["classifier_type"] == "linear"
     keys = set(manifest["arrays"].keys())
-    expected = {
-        "hog_win_size", "hog_cell_size", "hog_block_size", "hog_block_stride",
-        "hog_nbins", "confidence_threshold",
-        "rbf_support_vectors", "rbf_dual_coef", "rbf_intercept",
-        "rbf_n_support", "rbf_gamma", "rbf_classes",
-    }
-    assert keys == expected
+    assert keys == _COMMON_KEYS | {"linear_coef", "linear_intercept"}
+    # 9 classes -> C(9,2)=36 binary classifiers
+    coef_shape = manifest["arrays"]["linear_coef"]["shape"]
+    assert coef_shape == [36, HOG_FEAT], f"Unexpected coef shape: {coef_shape}"
+
+
+def test_save_model_rbf_keys():
+    manifest = _train_and_save("rbf")
+    assert manifest["classifier_type"] == "rbf"
+    keys = set(manifest["arrays"].keys())
+    assert keys == _COMMON_KEYS | {"rbf_support_vectors", "rbf_dual_coef",
+                                    "rbf_intercept", "rbf_n_support", "rbf_gamma"}
     assert not any(k.startswith("pca") or k.startswith("template") or k == "dims"
                    for k in keys)
