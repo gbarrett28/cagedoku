@@ -281,48 +281,25 @@ def dither(
 # ---------------------------------------------------------------------------
 
 def build_dataset(
-    new_samples: list[tuple[int, NDArray[np.uint8]]],
-    templates: dict[int, NDArray[np.float32]],
+    samples: list[tuple[int, NDArray[np.uint8]]],
     n_dither: int,
 ) -> tuple[NDArray[np.float64], NDArray[np.int64]]:
-    """Build an augmented (X, y) dataset from new samples and existing templates.
+    """Augment samples with dithering and extract HOG features.
 
-    For each digit class:
-    - New labelled samples are each dithered to produce n_dither+1 variants.
-    - The existing model template (mean image) is dithered to produce a further
-      n_dither+1 variants — this fills in digit classes absent from new_samples
-      and adds prior knowledge from the historical training set.
-
-    The result is class-balanced in the sense that every digit has at least
-    n_dither+1 examples (from the template), even if it never appeared in the
-    new training file.
+    Each (digit, img) pair produces n_dither+1 variants (original + n_dither
+    augmented copies).  All variants are fed through extract_hog.
     """
     rng = np.random.default_rng(0)
+    aug_imgs: list[NDArray[np.uint8]] = []
+    aug_labels: list[int] = []
 
-    X_parts: list[NDArray[np.float64]] = []
-    y_parts: list[NDArray[np.int64]] = []
+    for digit, img in samples:
+        for v in dither(img, n_dither, rng):
+            aug_imgs.append((v * 255).clip(0, 255).astype(np.uint8))
+            aug_labels.append(digit)
 
-    new_by_digit: dict[int, list[NDArray[np.uint8]]] = {}
-    for digit, img in new_samples:
-        new_by_digit.setdefault(digit, []).append(img)
-
-    for d in range(N_DIGITS):
-        variants: list[NDArray[np.float64]] = []
-
-        for img in new_by_digit.get(d, []):
-            variants.extend(dither(img, n_dither, rng))
-
-        if d in templates:
-            tmpl_u8 = (templates[d] * 255).clip(0, 255).astype(np.uint8)
-            variants.extend(dither(tmpl_u8, n_dither, rng))
-
-        if not variants:
-            continue
-
-        X_parts.append(np.stack([v.flatten() for v in variants]))
-        y_parts.append(np.full(len(variants), d, dtype=np.int64))
-
-    return np.concatenate(X_parts), np.concatenate(y_parts)
+    X = extract_hog(aug_imgs)
+    return X, np.array(aug_labels, dtype=np.int64)
 
 
 # ---------------------------------------------------------------------------
@@ -330,97 +307,61 @@ def build_dataset(
 # ---------------------------------------------------------------------------
 
 def fit_model(
-    X: NDArray[np.float64], y: NDArray[np.int64]
+    X: NDArray[np.float64],
+    y: NDArray[np.int64],
+    svm_c: float = SVM_C,
+    svm_gamma: float | str = SVM_GAMMA,
 ) -> dict[str, Any]:
-    """Fit PCA + RBF SVM and collect template images.
-
-    PCA is fitted on the per-class mean images (T2 pipeline convention from
-    docs/image-pipeline.md).  The number of components kept is the minimum
-    that explains VARIANCE_THRESHOLD of cumulative variance.
-    """
-    classes = sorted(set(y.tolist()))
-    n_classes = len(classes)
-
-    means = np.array([X[y == c].mean(axis=0) for c in classes])
-    pca = PCA(n_components=n_classes)
-    pca.fit(means)
-
-    cumvar = np.cumsum(pca.explained_variance_ratio_)
-    dims = int(np.searchsorted(cumvar, VARIANCE_THRESHOLD) + 1)
-    dims = max(2, min(dims, n_classes))
-
-    X_pca = pca.transform(X)[:, :dims]
-
+    """Train an RBF SVM directly on HOG feature vectors — no PCA step."""
     svc = SVC(
         kernel="rbf",
-        C=SVM_C,
-        gamma=SVM_GAMMA,
+        C=svm_c,
+        gamma=svm_gamma,
         decision_function_shape="ovo",
     )
-    svc.fit(X_pca, y)
-
-    # Per-digit mean templates for fast template-matching at inference.
-    templates_out: dict[int, NDArray[np.float32]] = {}
-    for c in range(N_DIGITS):
-        mask = y == c
-        if mask.any():
-            tmpl = X[mask].mean(axis=0).reshape(THUMBNAIL_SIZE, THUMBNAIL_SIZE)
-        else:
-            tmpl = np.zeros((THUMBNAIL_SIZE, THUMBNAIL_SIZE))
-        templates_out[c] = tmpl.astype(np.float32)
-
-    return {
-        "pca": pca,
-        "dims": dims,
-        "svc": svc,
-        "X_pca": X_pca,
-        "classes": classes,
-        "templates": templates_out,
-    }
+    svc.fit(X, y)
+    return {"svc": svc}
 
 
 # ---------------------------------------------------------------------------
 # I/O — saving
 # ---------------------------------------------------------------------------
 
-def save_model(model: dict[str, Any], out_dir: Path) -> None:
-    """Write num_recogniser.json (manifest) and num_recogniser.bin (arrays).
+def save_model(
+    model: dict[str, Any],
+    out_dir: Path,
+    confidence_threshold: float = CONFIDENCE_THRESHOLD,
+) -> None:
+    """Write num_recogniser.{json,bin} with HOG params + SVM weights.
 
-    The binary layout must match the array names and dtypes expected by
-    loadNumRecogniser in web/src/image/numberRecognition.ts.
+    Array names and layout must match loadNumRecogniser in
+    web/src/image/numberRecognition.ts.
     """
-    pca: PCA = model["pca"]
     svc: SVC = model["svc"]
-    dims: int = model["dims"]
-    X_pca: NDArray[np.float64] = model["X_pca"]
-
-    # Compute the effective gamma that sklearn used (gamma='scale').
     try:
-        gamma = float(svc._gamma)  # available after fit(); sklearn >= 0.22
+        gamma = float(svc._gamma)  # computed value; available after fit()
     except AttributeError:
-        gamma = 1.0 / (float(X_pca.shape[1]) * float(X_pca.var()))
+        gamma = 1.0 / (float(svc.support_vectors_.shape[1]) * float(svc.support_vectors_.var()))
 
-    # Arrays in the order they appear in the binary file.
     named: list[tuple[str, np.ndarray, str]] = [
-        ("pca_components",      pca.components_.astype(np.float64), "float64"),
-        ("pca_mean",            pca.mean_.astype(np.float64),       "float64"),
-        ("dims",                np.array([dims], dtype=np.int32),   "int32"),
-        ("rbf_support_vectors", svc.support_vectors_.astype(np.float64), "float64"),
-        ("rbf_dual_coef",       svc.dual_coef_.astype(np.float64),  "float64"),
-        ("rbf_intercept",       svc.intercept_.astype(np.float64),  "float64"),
-        ("rbf_n_support",       svc.n_support_.astype(np.int32),    "int32"),
-        ("rbf_gamma",           np.array([gamma], dtype=np.float64),"float64"),
-        ("rbf_classes",         svc.classes_.astype(np.int32),      "int32"),
-        ("template_threshold",
-         np.array([TEMPLATE_THRESHOLD], dtype=np.float64),          "float64"),
+        ("hog_win_size",         np.array(HOG_WIN_SIZE,         dtype=np.int32),   "int32"),
+        ("hog_cell_size",        np.array(HOG_CELL_SIZE,        dtype=np.int32),   "int32"),
+        ("hog_block_size",       np.array(HOG_BLOCK_SIZE,       dtype=np.int32),   "int32"),
+        ("hog_block_stride",     np.array(HOG_BLOCK_STRIDE,     dtype=np.int32),   "int32"),
+        ("hog_nbins",            np.array(HOG_NBINS,            dtype=np.int32),   "int32"),
+        ("confidence_threshold", np.array(confidence_threshold, dtype=np.float64), "float64"),
+        ("rbf_support_vectors",  svc.support_vectors_.astype(np.float64),          "float64"),
+        ("rbf_dual_coef",        svc.dual_coef_.astype(np.float64),                "float64"),
+        ("rbf_intercept",        svc.intercept_.astype(np.float64),                "float64"),
+        ("rbf_n_support",        svc.n_support_.astype(np.int32),                  "int32"),
+        ("rbf_gamma",            np.array([gamma],              dtype=np.float64), "float64"),
+        ("rbf_classes",          svc.classes_.astype(np.int32),                    "int32"),
     ]
-    for d, tmpl in sorted(model["templates"].items()):
-        named.append((f"template_{d}", tmpl, "float32"))
 
     blob = bytearray()
     manifest_arrays: dict[str, dict[str, Any]] = {}
-
     for name, arr, dtype_str in named:
+        arr = np.asarray(arr)
         data = arr.tobytes()
         manifest_arrays[name] = {
             "dtype": dtype_str,
@@ -438,10 +379,9 @@ def save_model(model: dict[str, Any], out_dir: Path) -> None:
 
     n_sv = svc.support_vectors_.shape[0]
     print(f"\nSaved to {out_dir}/")
-    print(f"  PCA:       {pca.components_.shape[0]} components, {dims} active dims")
-    print(f"  SVM:       {n_sv} support vectors, classes {svc.classes_.tolist()}")
-    print(f"  Templates: digits 0–9 ({THUMBNAIL_SIZE}×{THUMBNAIL_SIZE} float32)")
-    print(f"  Bin size:  {len(blob):,} bytes")
+    print(f"  HOG: {HOG_WIN_SIZE}px win / {HOG_CELL_SIZE}px cells / {HOG_BLOCK_SIZE}px block / {HOG_NBINS} bins → {HOG_FEAT} features")
+    print(f"  SVM: {n_sv} support vectors, classes {svc.classes_.tolist()}")
+    print(f"  Bin size: {len(blob):,} bytes")
 
 
 # ---------------------------------------------------------------------------
