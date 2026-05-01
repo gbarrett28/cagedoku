@@ -2,12 +2,14 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
+  // flow.spec.ts uses window.__testLoad which is a DEV-only hook — run it via
+  // playwright.dev.config.ts against `vite dev` instead.
+  testIgnore: ['**/flow.spec.ts'],
   timeout: 10_000,
   retries: 0,
   use: {
     baseURL: 'http://localhost:4173',
     headless: true,
-    // Capture screenshots and traces on failure for diagnosis.
     screenshot: 'only-on-failure',
     trace: 'on-first-retry',
   },

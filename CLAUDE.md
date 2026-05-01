@@ -163,7 +163,12 @@ Run from the `web/` directory:
 tsc --noEmit
 npm test -- --reporter=verbose
 npx playwright test
+npx playwright test --config playwright.dev.config.ts
 ```
+
+`playwright.config.ts` runs `app.spec.ts` and `offline.spec.ts` against `vite preview`
+(production build). `playwright.dev.config.ts` runs `flow.spec.ts` against `vite dev`
+because `flow.spec.ts` uses `window.__testLoad`, a hook only available in dev builds.
 
 Run Playwright only when touching UI rendering, image pipeline, or session flow —
 it runs against the production build and takes ~2–3 min.
