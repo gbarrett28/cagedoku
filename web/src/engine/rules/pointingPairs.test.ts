@@ -36,7 +36,7 @@ describe('PointingPairs', () => {
       expect(elimMap.has(`0,${c}`)).toBe(true);
     }
 
-    const hints = new PointingPairs().asHints(ctx, elims);
+    const hints = new PointingPairs().asHints(ctx, [...elims]);
     expect(hints.length).toBeGreaterThan(0);
     expect(hints[0]!.displayName).toBe('Pointing Pairs');
   });

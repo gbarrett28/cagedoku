@@ -47,7 +47,7 @@ describe('HiddenSingle', () => {
     bs.counts[rowUid]![7] = 1;
     const ctx = makeCtx(bs, rowUid, 7);
     const elims = new HiddenSingle().apply(ctx).eliminations;
-    const hints = new HiddenSingle().asHints(ctx, elims);
+    const hints = new HiddenSingle().asHints(ctx, [...elims]);
     expect(hints).toHaveLength(1);
     expect(hints[0]!.displayName).toBe('Hidden Single');
     expect(hints[0]!.eliminations).toStrictEqual(elims);
