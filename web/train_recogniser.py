@@ -41,7 +41,6 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-import cv2  # type: ignore[import-untyped]
 import numpy as np
 from numpy.typing import NDArray
 from scipy.ndimage import binary_dilation, binary_erosion, shift
@@ -153,24 +152,60 @@ def generate_synthetic_samples(
 # ---------------------------------------------------------------------------
 
 def extract_hog(imgs: list[NDArray[np.uint8]]) -> NDArray[np.float64]:
-    """Extract HOG feature vectors from win_size×win_size uint8 images.
+    """Extract HOG feature vectors matching the TypeScript hogExtract implementation.
 
-    Uses cv2.HOGDescriptor with identical parameters to the browser's
-    cv.HOGDescriptor — guarantees training/inference feature parity.
-    Each image produces a HOG_FEAT-dimensional float64 vector.
+    Uses: centered differences (clamped at borders), unsigned gradients via
+    atan2(|Gy|, Gx) mod 180, nearest-bin voting, L2 block normalisation.
+    Both this function and hogExtract in numberRecognition.ts perform identical
+    floating-point operations, guaranteeing training/inference feature parity.
     """
-    hog = cv2.HOGDescriptor(
-        (HOG_WIN_SIZE,     HOG_WIN_SIZE),
-        (HOG_BLOCK_SIZE,   HOG_BLOCK_SIZE),
-        (HOG_BLOCK_STRIDE, HOG_BLOCK_STRIDE),
-        (HOG_CELL_SIZE,    HOG_CELL_SIZE),
-        HOG_NBINS,
-    )
-    rows: list[NDArray[np.float64]] = []
-    for img in imgs:
-        desc = hog.compute(img)          # shape (HOG_FEAT, 1)
-        rows.append(desc.flatten().astype(np.float64))
-    return np.array(rows, dtype=np.float64)
+    n = len(imgs)
+    n_cells = HOG_WIN_SIZE // HOG_CELL_SIZE                             # 8
+    cpb = HOG_BLOCK_SIZE // HOG_CELL_SIZE                               # cells per block side = 2
+    n_blocks = (HOG_WIN_SIZE - HOG_BLOCK_SIZE) // HOG_BLOCK_STRIDE + 1 # 7
+    bin_width = 180.0 / HOG_NBINS                                       # 20.0°
+    eps = 1e-6
+    result = np.zeros((n, HOG_FEAT), dtype=np.float64)
+
+    for idx, img in enumerate(imgs):
+        f = img.astype(np.float32)
+
+        # Centered differences with clamped borders.
+        Gx = np.empty_like(f)
+        Gy = np.empty_like(f)
+        Gx[:, 1:-1] = f[:, 2:] - f[:, :-2]
+        Gx[:, 0]    = f[:, 1]  - f[:, 0]
+        Gx[:, -1]   = f[:, -1] - f[:, -2]
+        Gy[1:-1, :] = f[2:, :] - f[:-2, :]
+        Gy[0, :]    = f[1, :]  - f[0, :]
+        Gy[-1, :]   = f[-1, :] - f[-2, :]
+
+        mag = np.sqrt(Gx ** 2 + Gy ** 2)
+        # Unsigned angle in [0, 180): atan2(|Gy|, Gx) → degrees → mod 180.
+        ang = np.degrees(np.arctan2(np.abs(Gy), Gx)) % 180.0
+        bins = (ang / bin_width).astype(np.int32) % HOG_NBINS
+
+        # Cell histograms — vectorised over cells.
+        cell_hists = np.zeros((n_cells, n_cells, HOG_NBINS), dtype=np.float32)
+        for cy in range(n_cells):
+            for cx in range(n_cells):
+                y0, x0 = cy * HOG_CELL_SIZE, cx * HOG_CELL_SIZE
+                np.add.at(
+                    cell_hists[cy, cx],
+                    bins[y0:y0 + HOG_CELL_SIZE, x0:x0 + HOG_CELL_SIZE].ravel(),
+                    mag [y0:y0 + HOG_CELL_SIZE, x0:x0 + HOG_CELL_SIZE].ravel(),
+                )
+
+        # Block descriptors with L2 normalisation.
+        feat_idx = 0
+        for by in range(n_blocks):
+            for bx in range(n_blocks):
+                block = cell_hists[by:by + cpb, bx:bx + cpb].ravel().astype(np.float64)
+                norm = np.sqrt(np.dot(block, block) + eps * eps)
+                result[idx, feat_idx:feat_idx + len(block)] = block / norm
+                feat_idx += len(block)
+
+    return result
 
 
 # ---------------------------------------------------------------------------

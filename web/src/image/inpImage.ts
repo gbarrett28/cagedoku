@@ -26,7 +26,7 @@ import { scanCells, detectRotation, detectPuzzleType } from './cellScan.js';
 import { clusterBorders } from './borderClustering.js';
 import type { GrayImage } from './borderClustering.js';
 import {
-  getSums, splitNum, contourHier, getNumContours, readClassicDigits,
+  recognise, splitNum, contourHier, getNumContours, readClassicDigits,
 } from './numberRecognition.js';
 import type { NumRecogniser } from './numberRecognition.js';
 import { validateCageLayout, repairCageTotals } from './validation.js';
@@ -406,7 +406,7 @@ export function buildCageTotals(
     for (let col = 0; col < 9; col++) {
       const sums = numPixels[row]![col]!;
       if (sums !== null) {
-        const ntrs = getSums(cv, rec, sums);
+        const ntrs = recognise(rec, sums);
         if (ntrs.length > 4) {
           throw new ProcessingError(
             `Too many digits (${ntrs.length}) in cell (row=${row},col=${col})`,
@@ -414,8 +414,9 @@ export function buildCageTotals(
             brdrs,
           );
         }
-        for (const v of ntrs) {
-          if (v >= 0) cageTotals[row]![col] = 10 * cageTotals[row]![col]! + v;
+        for (const { label, confident } of ntrs) {
+          if (!confident) console.warn(`Low-confidence digit read in (row=${row},col=${col})`);
+          if (label >= 0) cageTotals[row]![col] = 10 * cageTotals[row]![col]! + label;
         }
       }
     }
