@@ -50,10 +50,14 @@ export function virtualCageKey(cells: readonly Cell[], total: number): string {
  * regions[row][col] and cageTotals[row][col] — no transposition needed
  * because PuzzleSpec.regions already uses [row][col] ordering in TS.
  */
-export function specToData(spec: PuzzleSpec): PuzzleSpecData {
+export function specToData(
+  spec: PuzzleSpec,
+  cellThumbs: ReadonlyMap<string, Uint8Array[]> = new Map(),
+): PuzzleSpecData {
   return {
     regions: spec.regions.map(row => [...row]),
     cageTotals: spec.cageTotals.map(row => [...row]),
+    cellThumbs,
   };
 }
 

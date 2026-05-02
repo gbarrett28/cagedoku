@@ -18,6 +18,8 @@ import type { Cell } from '../engine/types.js';
 export interface PuzzleSpecData {
   readonly regions: number[][];
   readonly cageTotals: number[][];
+  /** Thumbnails from the digit recogniser, keyed "row,col". May be absent for classic puzzles or test fixtures. */
+  readonly cellThumbs?: ReadonlyMap<string, Uint8Array[]>;
 }
 
 // ---------------------------------------------------------------------------

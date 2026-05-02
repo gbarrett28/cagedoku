@@ -138,7 +138,7 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
   }
 
   const state: PuzzleState = {
-    specData: specToData(spec),
+    specData: specToData(spec, result.cellThumbs),
     cageStates: specToCageStates(spec),
     userGrid: null,
     virtualCages: [],
