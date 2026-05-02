@@ -408,8 +408,7 @@ button:hover:not(:disabled) {
   font-size: 0.65rem;
   color: var(--text-muted);
   opacity: 0.5;
-  pointer-events: none;
-  user-select: none;
+  user-select: text;
   z-index: 9999;
 }
 

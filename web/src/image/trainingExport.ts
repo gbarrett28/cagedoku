@@ -22,6 +22,8 @@ export interface TrainingSample {
 export interface TrainingExport {
   version: 1;
   exportedAt: string;
+  /** App build timestamp — identifies which recogniser generated these samples. */
+  appVersion: string;
   puzzleType: 'killer' | 'classic';
   /** Pixels per cell side used during pipeline processing (default 128). */
   subres: number;
@@ -133,6 +135,7 @@ export async function extractTrainingData(
   return {
     version: 1,
     exportedAt: new Date().toISOString(),
+    appVersion: __BUILD_TIME__,
     puzzleType,
     subres,
     thumbnailSize: 64,
