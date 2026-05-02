@@ -11,6 +11,7 @@ type Cv = OpenCVModule;
 import { adaptiveBlockSize, defaultImagePipelineConfig, subres as cfgSubres } from './config.js';
 import type { ImagePipelineConfig } from './config.js';
 import { contourHier, getNumContours, splitNum } from './numberRecognition.js';
+import { cellLabel } from '../engine/rules/_labels.js';
 
 export interface TrainingSample {
   /** Digit label (0–9). */
@@ -120,7 +121,15 @@ export async function extractTrainingData(
       if (confirmed <= 0) continue;
 
       const digits = String(confirmed).split('').map(Number);
-      if (digits.length !== thumbArr.length) continue;
+      if (digits.length !== thumbArr.length) {
+        // Diagnostic: tells us which cells are failing so we can investigate.
+        console.warn(
+          `[trainingExport] ${cellLabel([row, col])}: confirmed=${confirmed} ` +
+          `(${digits.length} digit${digits.length > 1 ? 's' : ''}) ` +
+          `but found ${thumbArr.length} thumbnail${thumbArr.length !== 1 ? 's' : ''} — skipped`,
+        );
+        continue;
+      }
 
       for (let i = 0; i < digits.length; i++) {
         samples.push({ digit: digits[i]!, pixels: Array.from(thumbArr[i]!) });
