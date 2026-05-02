@@ -295,8 +295,11 @@ def fit_model(
         from sklearn.svm import LinearSVC  # type: ignore[import-untyped]
         clf = OneVsOneClassifier(LinearSVC(C=svm_c, max_iter=10000))
         clf.fit(X, y)
-        coefs = np.vstack([est.coef_[0] for est in clf.estimators_])
-        intercepts = np.array([est.intercept_[0] for est in clf.estimators_])
+        # Negate: LinearSVC uses score>0→classes_[1] (higher class), but the
+        # TypeScript ovoVote loop uses score>0→class at lower index (i).
+        # Negating here makes both conventions consistent.
+        coefs = np.vstack([-est.coef_[0] for est in clf.estimators_])
+        intercepts = np.array([-est.intercept_[0] for est in clf.estimators_])
         return {"kind": "linear", "clf": clf, "coefs": coefs, "intercepts": intercepts}
     else:
         svc = SVC(kernel="rbf", C=svm_c, gamma=svm_gamma, decision_function_shape="ovo")
