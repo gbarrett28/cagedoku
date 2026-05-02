@@ -126,14 +126,15 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
   let spec = result.spec;
   let warning = result.specError;
 
-  // On OCR failure show a blank canvas (no borders, no totals) so the user can
-  // build the layout from scratch.  A blank spec is a single 81-cell region —
-  // the user adds borders to partition it into cages.
+  // On OCR failure show a blank canvas so the user can build from scratch.
+  // A blank spec is a single 81-cell region with one placeholder cage total —
+  // all-zero totals cause validateCageLayout to throw 'unassigned region'.
   if (spec === null) {
     warning = (warning ? warning + ' ' : '') + 'Cage layout could not be detected — starting with a blank grid.';
     const blankBorderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(false));
     const blankBorderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
     const blankTotals  = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    blankTotals[0]![0] = 1; // placeholder cage head — prevents 'unassigned region'
     spec = validateCageLayout(blankTotals, blankBorderX, blankBorderY);
   }
 
