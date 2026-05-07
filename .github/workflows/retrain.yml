@@ -1,0 +1,153 @@
+name: Retrain digit recogniser
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'   # 03:00 UTC every Sunday
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: pip install scikit-learn numpy scipy pillow matplotlib
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install wrangler
+        run: npm install -g wrangler
+
+      - name: List pending R2 uploads
+        id: list
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          python3 - <<'EOF' > /tmp/r2_keys.txt
+          import subprocess, json, sys
+          result = subprocess.run(
+            ['wrangler', 'r2', 'object', 'list', 'cagedoku-training', '--prefix', 'training/', '--json'],
+            capture_output=True, text=True
+          )
+          if result.returncode != 0:
+            print(result.stderr, file=sys.stderr)
+            sys.exit(result.returncode)
+          data = json.loads(result.stdout)
+          keys = [obj['key'] for obj in data.get('objects', [])]
+          for k in keys:
+            print(k)
+          EOF
+          COUNT=$(wc -l < /tmp/r2_keys.txt | tr -d ' ')
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Found $COUNT pending upload(s)."
+
+      - name: Exit early if no pending uploads
+        if: steps.list.outputs.count == '0'
+        run: |
+          echo "No pending uploads — skipping retrain."
+          exit 0
+
+      - name: Download pending uploads
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          mkdir -p /tmp/training
+          while IFS= read -r key; do
+            filename=$(basename "$key")
+            wrangler r2 object get cagedoku-training "$key" --file "/tmp/training/$filename"
+          done < /tmp/r2_keys.txt
+
+      - name: Retrain
+        run: |
+          python web/train_recogniser.py \
+            --browser-weight 1000 --svm-c 100 \
+            web/browser_train.json /tmp/training/*.json
+
+      - name: Evaluate accuracy
+        id: eval
+        run: |
+          if [ -f web/public/eval_report.json ]; then
+            python -m killer_sudoku.training.evaluate \
+              --puzzle-dir killer_sudoku/guardian \
+              --compare web/public/eval_report.json
+          else
+            echo "No baseline eval_report.json — skipping comparison (first retrain)."
+          fi
+
+      - name: Open failure issue on regression
+        if: failure() && steps.eval.conclusion == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "Retrain regression detected $(date -u +%Y-%m-%d)" \
+            --body "The scheduled retrain detected an accuracy regression. Check the failed run for details. The model was NOT updated." \
+            --label "bug"
+
+      - name: Commit updated model
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add web/public/num_recogniser.json web/public/num_recogniser.bin
+          git diff --cached --quiet && echo "No model changes." || \
+            git commit -m "chore: retrain digit recogniser with new browser samples"
+
+      - name: Merge samples into browser_train.json
+        run: |
+          python3 - <<'EOF'
+          import json, glob, pathlib
+          base_path = pathlib.Path('web/browser_train.json')
+          base = json.loads(base_path.read_text()) if base_path.exists() else {'version': 1, 'samples': []}
+          for f in sorted(glob.glob('/tmp/training/*.json')):
+              incoming = json.loads(pathlib.Path(f).read_text())
+              base['samples'].extend(incoming.get('samples', []))
+          base['sampleCount'] = len(base['samples'])
+          base_path.write_text(json.dumps(base, separators=(',', ':')))
+          EOF
+          git add web/browser_train.json
+          git diff --cached --quiet && echo "No sample changes." || \
+            git commit -m "chore: merge new browser samples into browser_train.json"
+
+      - name: Push commits
+        run: git push
+
+      - name: Delete processed R2 objects
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          while IFS= read -r key; do
+            echo "Deleting $key"
+            wrangler r2 object delete cagedoku-training "$key"
+          done < /tmp/r2_keys.txt
+
+      - name: React to processed GitHub Issue comments
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api /repos/gbarrett28/cagedoku/issues/1/comments --jq '.[].id' | \
+          while IFS= read -r comment_id; do
+            body=$(gh api "/repos/gbarrett28/cagedoku/issues/comments/$comment_id" --jq '.body // ""')
+            if echo "$body" | grep -q 'training/'; then
+              echo "Reacting to comment $comment_id"
+              gh api "/repos/gbarrett28/cagedoku/issues/comments/$comment_id/reactions" \
+                -f content='+1' > /dev/null
+            fi
+          done
