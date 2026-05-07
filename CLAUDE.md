@@ -189,8 +189,12 @@ npx playwright test --config playwright.dev.config.ts
 **If ANY step fails, DO NOT MERGE.**
 
 Then verify manually — these checks are part of the gate, not optional:
-- Every spec in `docs/specs/` has been incorporated into the relevant live doc (`docs/architecture.md`, `docs/image-pipeline.md`, etc.) — then **delete the spec file**.
-- Every plan in `docs/plans/` has all steps completed — then **delete the plan file**.
+- Every spec in `docs/specs/` (and `docs/superpowers/specs/`) has been incorporated
+  into the relevant live doc (`docs/architecture.md`, `docs/image-pipeline.md`, etc.)
+  with the actual implementation details — not just a pointer to the spec.
+  Then **delete the spec file**.
+- Every plan in `docs/plans/` (and `docs/superpowers/plans/`) has all steps completed
+  — then **delete the plan file**.
 
 **Do not merge if either doc check fails.**
 
