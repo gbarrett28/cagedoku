@@ -36,9 +36,9 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    S[(SOLVED puzzles)] -.->|cage total images| T1[T1: Collect Numerals]
+    S[(browser sessions)] -.->|labelled thumbnails| T1[T1: Collect Numerals]
     T1 --> T2[T2: Train Number Recogniser]
-    T2 -.->|nums_pca_s.pkl| F[Stage 5: Digit Recognition]
+    T2 -.->|num_recogniser.bin/.json| F[Stage 5: Digit Recognition]
 ```
 
 **Key design principles:**
@@ -270,47 +270,45 @@ formats without format-specific training.
 ## Stage 5: Full Digit Recognition
 
 Cage totals are printed in the top-left of the cage's top-left cell.  This stage
-classifies each contour candidate (located in Stage 3) using PCA + KNN.
+classifies each contour candidate (located in Stage 3) using HOG features + LinearSVC.
 
-Each digit thumbnail is warped to a canonical `(subres/2) x (subres/2)` square.
-`CayenneNumber.get_sums` projects each flattened thumbnail through the trained PCA
-transform (8 components), then classifies with the stored KNN.
+Each digit thumbnail is a 64×64 binary uint8 image produced by `splitNum`.  Wide
+bounding boxes (two adjacent digits merged in the contour tree) are split at the peak
+of the column profile before classification.
 
-Wide bounding boxes (two adjacent digits merged in the contour tree) are split at
-the peak of the column profile.
+HOG features are extracted via `cv.HOGDescriptor` (OpenCV.js) with a 64 px window,
+8 px cells, 16 px blocks, and 9 orientation bins — producing a 1764-dimensional vector.
+An OvO LinearSVC (45 binary classifiers) produces a vote count per class; the winner
+is the predicted digit.  Confidence is the winner's vote fraction; reads below 0.7 are
+flagged as uncertain.
 
 ```mermaid
 flowchart TD
-    A[contour candidates from Stage 3\nbinary blk + M] --> B[warpPerspective each rect\nto subres/2 x subres/2 thumbnail]
+    A[contour candidates from Stage 3\nbinary blk + M] --> B[warpPerspective each rect\nto 64x64 thumbnail]
     B --> C{bounding rect\nw >= h?}
-    C -- yes two digits --> D[split_num:\nfind column-profile peak\n-> two sub-rects]
+    C -- yes two digits --> D[splitNum:\nfind column-profile peak\n-> two sub-rects]
     C -- no one digit --> E[single rect]
-    D --> F[CayenneNumber.get_sums:\nflatten -> PCA 8 dims -> KNN predict]
+    D --> F[hogExtract:\ncv.HOGDescriptor 64px/8c/16b/9bins\n-> 1764-dim vector]
     E --> F
-    F --> G[P digit label 0-9 per candidate]
-    G --> H[accumulate candidates per cell\n-> digit_candidates 9x9]
+    F --> G[LinearSVC OvO 45 classifiers\n-> vote count per digit]
+    G --> H[Recognition: label + confident flag\nper candidate]
+    H --> I[accumulate candidates per cell\n-> digit_candidates 9x9]
 ```
 
-**Output:** `P(digit d)` per candidate position; confidence is the KNN vote fraction.
+**Output:** `{ label: number, confident: boolean }` per candidate position.
 
 **Parameters:**
 
 | Parameter | Value | Derivation |
 |-----------|-------|------------|
-| `subres/16 <= w < subres/2` | 8–63 px | Width bounds for digit bounding rect.  Lower bound excludes thin lines (~2 px); upper bound excludes whole-cell features. |
-| `subres/8 <= h < subres/2` | 16–63 px | Height bounds.  Digits are taller than wide; same derivation method. |
-| `height=4` in `find_peaks` | 4 px | Minimum peak height for splitting two-digit bounding rects.  Derive as minimum ink density at the centre of a digit (~4 px at subres=128). |
-| PCA dims | 8 (auto) | Minimum dims explaining 99% of variance in mean digit images. |
-| KNN k | 5 | sklearn default.  Tune by k-fold cross-validation; plot accuracy vs k and select the elbow. |
-
-[gb] All the subres fractions are derived by trial and error.  Is there a better way?
-How can we deal with rotated puzzles?
-
-[gb] PCA + KNN does not seem to be as accurate as the literature suggests.
-Is there a better approach altogether?
-
-[gb] The training is done by labelling clusters by hand.  Can we be cleverer,
-e.g. injecting known integers into the process and seeing which cluster they end up in?
+| Thumbnail size | 64 × 64 px | HOG window size; matches `splitNum` output |
+| HOG cell size | 8 × 8 px | 8 cells/dim; captures local edge orientation |
+| HOG block size | 16 × 16 px | 2×2 cells; block normalisation neighbourhood |
+| HOG bins | 9 | Unsigned gradient; ~40° per bin |
+| Feature length | 1764 | `((64−16)/8+1)² × (16/8)² × 9` |
+| OVO pairs | 45 | `10 × 9 / 2` for digits 0–9 |
+| Confidence threshold | 0.7 | Vote fraction above which a read is `confident` |
+| Split peak height | 4 px | Minimum column-profile peak to split a two-digit rect |
 
 ---
 
@@ -388,34 +386,38 @@ remain; T3 (Observer border detector) is being retired — see [Migration Plan](
 
 ### T1: Collect Numerals
 
-For each `SOLVED` puzzle, re-run contour detection on the raw image and classify each
-digit thumbnail using the current model.  The resulting `(label, pixel_image)` pairs
-are saved to `numerals.pkl`.
+The web app collects training data in-browser.  After the user reviews and corrects
+the OCR output, the app exports a JSON file (`browser_train.json`) containing labelled
+64×64 binary thumbnails for each digit extracted from that session.  Multiple export
+files are merged into `web/browser_train.json` over time.
 
 ```mermaid
 flowchart LR
-    A[SOLVED .jpg files] --> B[grid location + warp]
-    B --> C[contour detection\n+ size filter]
-    C --> D[split multi-digit rects]
-    D --> E[CayenneNumber.get_sums\n-> digit labels]
-    E --> F[numerals.pkl\nlist of label pixel pairs]
+    A[user scans puzzle\nin browser] --> B[OCR pipeline\nextracts digit thumbnails]
+    B --> C[user reviews +\ncorrects labels]
+    C --> D[Export Training button\n-> browser_train.json]
+    D --> E[merge into\nweb/browser_train.json]
 ```
 
 ### T2: Train Number Recogniser
 
-Groups digit images by label, computes per-label mean image, fits PCA on those 10
-means, selects minimum PCA dims explaining 99% of variance, trains KNN on all
-projected images.
+Loads browser-exported labelled thumbnails, optionally merges synthetic font samples,
+augments with dithering, extracts HOG features, and fits a LinearSVC OvO classifier.
+
+```bash
+python web/train_recogniser.py --no-synthetic --svm-c 100000 web/browser_train.json
+```
 
 ```mermaid
 flowchart LR
-    A[numerals.pkl] --> B[group by digit label]
-    B --> C[compute mean image\nper label]
-    C --> D[PCA on 10 mean images]
-    D --> E[select dims: cumsum\nexplained variance > 99%]
-    E --> F[transform all images\nto PCA space]
-    F --> G[KNN.fit on\nPCA-projected images]
-    G --> H[CayenneNumber model\n-> nums_pca_s.pkl]
+    A[browser_train.json] --> B[load labelled\n64x64 thumbnails]
+    B --> C{synthetic fonts?}
+    C -- yes --> D[generate_synthetic_samples\nPillow + system fonts]
+    C -- no --> E[dither augmentation\ntranslation / morph / noise]
+    D --> E
+    E --> F[extract_hog\ncv2.HOGDescriptor\n1764-dim vectors]
+    F --> G[LinearSVC OvO fit\n--svm-c]
+    G --> H[num_recogniser.bin + .json\nweb/public/]
 ```
 
 ### T3: Observer Border Detector (RETIRING)

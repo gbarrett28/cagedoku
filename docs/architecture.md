@@ -98,27 +98,29 @@ protocol, save/load contract, and re-training workflow.
 
 ### Web Recogniser Training
 
-The web app uses a browser-side image pipeline with a bundled model in
-`web/dist/num_recogniser.{json,bin}`.  After a user corrects OCR errors and
-confirms a killer puzzle, the app automatically exports a training JSON file
-containing the digit thumbnails paired with user-verified labels.
+The web app uses a browser-side image pipeline with a bundled HOG + LinearSVC model
+in `web/public/num_recogniser.{json,bin}`.  After a user corrects OCR errors and
+confirms a puzzle, the app exports a training JSON file with digit thumbnails paired
+with user-verified labels, accumulated in `web/browser_train.json`.
 
-To update the model from collected training files:
+To retrain from accumulated browser data:
 
 ```bash
-python web/train_recogniser.py ~/Downloads/training-*.json
-# Writes updated web/dist/num_recogniser.{json,bin}
+python web/train_recogniser.py --no-synthetic --svm-c 100000 web/browser_train.json
+# Writes updated web/public/num_recogniser.{json,bin}
 ```
 
 The script (`web/train_recogniser.py`):
-1. Loads labelled digit thumbnails (64×64 binary, uint8) from the JSON exports
-2. Loads per-digit mean templates from the existing model to cover any digit
-   classes absent from the new data (e.g. `0` and `6` which are rare cage heads)
-3. Applies dithering (translation ±2 px, morphological step, 1% pixel noise) to
-   produce ~30 variants per source sample
-4. Fits PCA on per-class means (retaining dims that explain ≥ 99% of variance)
-5. Fits an RBF-kernel SVM (OvO, C=5, γ=scale) on PCA-projected samples
+1. Loads labelled digit thumbnails (64×64 binary, uint8) from `browser_train.json`
+2. Optionally generates synthetic font samples (disabled with `--no-synthetic`)
+3. Applies dithering (translation ±2 px, morphological step, 1% pixel noise)
+4. Extracts HOG features — 64 px window / 8 px cells / 16 px blocks / 9 bins = 1764 dims
+5. Fits a LinearSVC OvO classifier (45 binary SVMs for digits 0–9)
 6. Saves updated model files; the web app picks them up on next page reload
+
+`--svm-c 100000` forces memorisation of all browser samples (correct for small
+datasets, < 100 samples).  For larger browser + synthetic mixes use
+`--svm-c 100 --browser-weight 1000` instead.
 
 See **`docs/classic-sudoku.md`** for the classic sudoku recognition feature design
 (puzzle type detection, center digit reading, locked given digits, cage-structure
@@ -179,218 +181,3 @@ flowchart TD
 ```
 
 The solver has no tunable thresholds — it is exact by construction.
-
----
-
-## Coaching App
-
-The coaching app (`api/`, `static/`) bridges the image pipeline and coaching engine
-with a browser-based interactive UI.
-
-### Design Principles
-
-The coach is organised around **rules and highlights**:
-
-- **Always-apply rules** run automatically on every state change, keeping
-  candidates current without user intervention.
-- **Hint-only rules** are surfaced on demand when the user requests hints.
-  They do not modify the board automatically.
-
-**Essential highlight** (salmon colour): digits that must appear in a cage
-regardless of which valid solution is chosen. Computed automatically from cage
-solutions; configurable (show/hide) via the config modal.
-
-**User actions** are limited to three things:
-1. Enter a digit in a cell (or clear it)
-2. Eliminate or restore a candidate digit in a cell
-3. Eliminate or restore a solution combination for a cage
-
-**Auto-application** is bootstrapped by two always-apply rules:
-1. `CageCandidateFilter` — narrows each cell's candidates to the union of its
-   cage's remaining solutions
-2. `SolvedCellElimination` — eliminates a determined digit from all row/col/box
-   peers
-
-All other rules are hint-only by default. Users can promote rules to always-apply
-via the config modal.
-
-### Session Lifecycle
-
-```
-POST /api/puzzle?newspaper=guardian  (upload image)
-         │
-         ▼
-   OCR Review Phase
-   ─────────────────────────────────────────────────────
-   User edits cage totals, subdivides cages
-   PATCH /api/puzzle/{id}/cage/{label}
-   POST  /api/puzzle/{id}/cage/{label}/subdivide
-   POST  /api/puzzle/{id}/solve  (optional preview solve)
-         │
-         │  POST /api/puzzle/{id}/confirm
-         ▼
-   Playing Phase
-   ─────────────────────────────────────────────────────
-   Golden solution computed; candidate grid initialised
-   POST /api/puzzle/{id}/cell              enter/clear a digit
-   POST /api/puzzle/{id}/undo              undo last digit entry
-   POST /api/puzzle/{id}/candidates/cell   cycle a candidate
-   GET  /api/puzzle/{id}/cage/{l}/solutions          view solutions
-   POST /api/puzzle/{id}/cage/{l}/solutions/eliminate toggle elimination
-   GET  /api/puzzle/{id}/hints             get applicable hints
-   POST /api/puzzle/{id}/hints/apply       apply a hint's eliminations
-   POST /api/puzzle/{id}/refresh           recompute candidates from settings
-```
-
-Sessions are identified by UUID and persisted as JSON files in the sessions
-directory (default: `sessions/`). The full session state is `PuzzleState`.
-
-### State Model
-
-All types are in `killer_sudoku/api/schemas.py`.
-
-**`PuzzleState`** — complete session state
-
-| Field | Type | Notes |
-|---|---|---|
-| `session_id` | `str` | UUID |
-| `newspaper` | `"guardian"` \| `"observer"` | determines OCR model |
-| `cages` | `list[CageState]` | label, total, cells, subdivisions, user-eliminated solutions |
-| `spec_data` | `PuzzleSpecData` | serialised `PuzzleSpec` arrays for canvas rendering |
-| `original_image_b64` | `str` | base64 JPEG of uploaded photo |
-| `golden_solution` | `list[list[int]] \| None` | None before /confirm; 9×9 after |
-| `user_grid` | `list[list[int]] \| None` | None before /confirm; 0 = unfilled cell |
-| `move_history` | `list[MoveRecord]` | chronological digit entries/clears |
-| `candidate_grid` | `CandidateGrid \| None` | None before /confirm |
-
-**`CoachSettings`** — persisted user preferences
-
-`always_apply_rules: list[str]` — names of rules applied automatically on every
-state change. Stored in `sessions/settings.json` (or `COACH_SESSIONS_DIR`).
-
-`show_essential: bool` — whether to render essential digits in salmon (default
-`true`). Toggled via the config modal.
-
-`DEFAULT_ALWAYS_APPLY_RULES` in `schemas.py` is the cold-start value:
-`["CageCandidateFilter", "SolvedCellElimination"]`.
-
-### Rules and Hints Integration
-
-The coaching app touches the rules engine at three points in
-`api/routers/puzzle.py`:
-
-**1. Candidate computation** (`_build_engine`): called after every state change
-(`/cell`, `/undo`, `/candidates/cell`, `/confirm`, `/refresh`). Builds a fresh
-board, runs always-apply rules to convergence, then derives `auto_candidates`
-and `auto_essential` per cell.
-
-**2. Hint collection** (`GET /{id}/hints`): rebuilds board state, runs
-always-apply rules, then reads `engine.pending_hints` — hint-only rules buffer
-their results here during the solve loop rather than applying them. This ensures
-the coaching and batch solver code paths share the same rule logic.
-
-**3. Config modal** (`GET /api/settings`): returns all hintable rules with their
-`display_name` and `description` fields. No hardcoded rule list anywhere in the
-API or frontend.
-
-For the full rules architecture — triggers, `HintResult`, `BoardState` API,
-how to add or upgrade a rule — see `docs/rules.md`.
-
-### API Reference
-
-All endpoints are under `/api/`. Full request/response schemas at
-`http://127.0.0.1:8000/docs`.
-
-**Settings**
-
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/api/settings` | Current settings + catalogue of all hintable rules (with descriptions) |
-| `PATCH` | `/api/settings` | Update `always_apply_rules` and `show_essential` |
-
-**Puzzle — OCR review phase**
-
-| Method | Path | Purpose |
-|---|---|---|
-| `POST` | `/api/puzzle?newspaper=...` | Upload image; run OCR; create session |
-| `GET` | `/api/puzzle/{id}` | Get full `PuzzleState` |
-| `PATCH` | `/api/puzzle/{id}/cage/{label}` | Correct cage total |
-| `POST` | `/api/puzzle/{id}/cage/{label}/subdivide` | Split cage into sub-cages |
-| `POST` | `/api/puzzle/{id}/solve` | Run batch solver; return golden solution |
-| `POST` | `/api/puzzle/{id}/confirm` | Confirm layout; transition to playing phase |
-
-**Puzzle — playing phase**
-
-| Method | Path | Purpose |
-|---|---|---|
-| `POST` | `/api/puzzle/{id}/cell` | Enter or clear a digit |
-| `POST` | `/api/puzzle/{id}/undo` | Undo last digit entry |
-| `POST` | `/api/puzzle/{id}/candidates/cell` | Cycle one candidate (possible ↔ removed) |
-| `POST` | `/api/puzzle/{id}/refresh` | Recompute candidates from current settings |
-| `GET` | `/api/puzzle/{id}/cage/{label}/solutions` | All/impossible/user-eliminated solutions |
-| `POST` | `/api/puzzle/{id}/cage/{label}/solutions/eliminate` | Toggle a cage solution |
-| `GET` | `/api/puzzle/{id}/hints` | All currently applicable hints, sorted by impact |
-| `POST` | `/api/puzzle/{id}/hints/apply` | Apply a hint's eliminations to candidate grid |
-
-### Frontend
-
-**Source:** `killer_sudoku/static/main.ts` (TypeScript, committed).  
-**Compiled output:** `killer_sudoku/static/main.js` (NOT committed — generate before running).
-
-```bash
-npm install -g typescript   # once
-tsc                         # from project root
-```
-
-The frontend is intentionally thin. It handles:
-- Canvas rendering: grid lines, cage borders, digit entries, candidates,
-  essential highlights
-- User interactions: digit entry, arrow-key navigation, candidate cycling, undo
-- Config modal: reads hintable rules from `GET /api/settings`, POSTs updates
-- Hint dropdown: reads hints from `GET /api/puzzle/{id}/hints`, POSTs applies
-
-All business logic lives on the server.
-
-### Developer Setup
-
-```bash
-pip install -e ".[dev]"
-tsc                     # compile TypeScript (required before first run)
-coach                   # start server + open browser
-coach --no-browser      # start server only
-# API:      http://127.0.0.1:8000
-# OpenAPI:  http://127.0.0.1:8000/docs
-```
-
-Environment overrides:
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `COACH_GUARDIAN_DIR` | `guardian` | Guardian model/puzzle directory |
-| `COACH_OBSERVER_DIR` | `observer` | Observer model/puzzle directory |
-| `COACH_SESSIONS_DIR` | `sessions` | JSON session persistence directory |
-| `COACH_HOST` | `127.0.0.1` | Bind address |
-| `COACH_PORT` | `8000` | Port |
-
-### Known Design Issues
-
-1. **NakedSingle hints are vacuous when SolvedCellElimination is always-apply.**
-   NakedSingle needs to be reconceived as a placement hint — highlight the cell,
-   tell the user what digit to place — rather than an elimination hint.
-
-2. **Rule triggers are not sensitive to user candidate changes.** When the user
-   manually removes a candidate, always-apply rules do not re-fire.
-
-3. **Some rules narrow solution sets internally without reflecting this in the
-   candidate view.** A rule may prune `board.cage_solns` during `apply()` without
-   emitting `SOLUTION_PRUNED` events, causing stale candidate display.
-
-4. **19 rules in `default_rules()` have no hint implementations** and cannot be
-   promoted via the config modal. They should either receive hint implementations
-   or be removed from `default_rules()`. See `docs/rules.md`.
-
-5. **`main.ts` UI state is scattered across 16 module-level mutable variables.**
-   All rendering and event handlers share these globals directly. Consolidating
-   them into a single immutable state object with functional updates would make
-   the code easier to test and eliminate the risk of an event handler reading a
-   stale value after an async gap.
