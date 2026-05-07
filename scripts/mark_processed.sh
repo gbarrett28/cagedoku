@@ -19,18 +19,17 @@ for jsonfile in "$DIR"/*.json; do
   filename=$(basename "$jsonfile")
   key="training/$filename"
   echo "  deleting $key"
-  wrangler r2 object delete "$BUCKET" "$key"
+  npx wrangler r2 object delete "$BUCKET/$key"
 done
 
 echo ""
 echo "Reacting to processed GitHub Issue comments..."
-gh api "/repos/$REPO/issues/$ISSUE/comments" --jq '.[].id' | \
+gh api "repos/$REPO/issues/$ISSUE/comments" --jq '.[].id' | \
 while IFS= read -r comment_id; do
-  body=$(gh api "/repos/$REPO/issues/comments/$comment_id" --jq '.body // ""')
+  body=$(gh api "repos/$REPO/issues/comments/$comment_id" --jq '.body // ""')
   if echo "$body" | grep -q 'training/'; then
     echo "  ✅ comment $comment_id"
-    gh api "/repos/$REPO/issues/comments/$comment_id/reactions" \
-      -f content='+1' > /dev/null
+    gh api "repos/$REPO/issues/comments/$comment_id/reactions" -f content='+1' > /dev/null
   fi
 done
 

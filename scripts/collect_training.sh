@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Download all pending training uploads from R2.
-# Prints the path of each downloaded file to stdout.
+#
+# Requires wrangler login (local) or CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID (CI).
 #
 # Usage: bash scripts/collect_training.sh <output_dir>
-# Example: bash scripts/collect_training.sh /tmp/training
 
 set -euo pipefail
 
@@ -13,13 +13,7 @@ OUTPUT_DIR="${1:?Usage: $0 <output_dir>}"
 mkdir -p "$OUTPUT_DIR"
 
 echo "Listing pending uploads in R2..."
-KEYS=$(wrangler r2 object list "$BUCKET" --prefix training/ --json 2>/dev/null \
-  | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-for obj in data.get('objects', []):
-    print(obj['key'])
-")
+KEYS=$(python3 scripts/_r2_list.py "$BUCKET" training/)
 
 if [ -z "$KEYS" ]; then
   echo "No pending uploads found."
@@ -33,7 +27,7 @@ echo "$KEYS" | while IFS= read -r key; do
   filename=$(basename "$key")
   outfile="$OUTPUT_DIR/$filename"
   echo "  $key → $outfile"
-  wrangler r2 object get "$BUCKET" "$key" --file "$outfile"
+  npx wrangler r2 object get "$BUCKET/$key" > "$outfile"
 done
 
 echo ""

@@ -39,20 +39,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          python3 - <<'EOF' > /tmp/r2_keys.txt
-          import subprocess, json, sys
-          result = subprocess.run(
-            ['wrangler', 'r2', 'object', 'list', 'cagedoku-training', '--prefix', 'training/', '--json'],
-            capture_output=True, text=True
-          )
-          if result.returncode != 0:
-            print(result.stderr, file=sys.stderr)
-            sys.exit(result.returncode)
-          data = json.loads(result.stdout)
-          keys = [obj['key'] for obj in data.get('objects', [])]
-          for k in keys:
-            print(k)
-          EOF
+          # wrangler v4 removed 'r2 object list'; use Cloudflare REST API instead.
+          python3 scripts/_r2_list.py cagedoku-training training/ > /tmp/r2_keys.txt
           COUNT=$(wc -l < /tmp/r2_keys.txt | tr -d ' ')
           echo "count=$COUNT" >> "$GITHUB_OUTPUT"
           echo "Found $COUNT pending upload(s)."
@@ -71,7 +59,7 @@ jobs:
           mkdir -p /tmp/training
           while IFS= read -r key; do
             filename=$(basename "$key")
-            wrangler r2 object get cagedoku-training "$key" --file "/tmp/training/$filename"
+            npx wrangler r2 object get "cagedoku-training/$key" > "/tmp/training/$filename"
           done < /tmp/r2_keys.txt
 
       - name: Retrain
@@ -135,19 +123,19 @@ jobs:
         run: |
           while IFS= read -r key; do
             echo "Deleting $key"
-            wrangler r2 object delete cagedoku-training "$key"
+            npx wrangler r2 object delete "cagedoku-training/$key"
           done < /tmp/r2_keys.txt
 
       - name: React to processed GitHub Issue comments
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh api /repos/gbarrett28/cagedoku/issues/1/comments --jq '.[].id' | \
+          gh api repos/gbarrett28/cagedoku/issues/1/comments --jq '.[].id' | \
           while IFS= read -r comment_id; do
-            body=$(gh api "/repos/gbarrett28/cagedoku/issues/comments/$comment_id" --jq '.body // ""')
+            body=$(gh api "repos/gbarrett28/cagedoku/issues/comments/$comment_id" --jq '.body // ""')
             if echo "$body" | grep -q 'training/'; then
               echo "Reacting to comment $comment_id"
-              gh api "/repos/gbarrett28/cagedoku/issues/comments/$comment_id/reactions" \
+              gh api "repos/gbarrett28/cagedoku/issues/comments/$comment_id/reactions" \
                 -f content='+1' > /dev/null
             fi
           done
