@@ -143,6 +143,14 @@ Do NOT fall back to filesystem tools while serena is merely disabled.
 - **Bronze gate must pass before every commit** on any branch.
 - **Silver gate must pass before merging to `master`**.
 
+## Doc Conventions
+
+| Kind | Location | Lifecycle |
+|---|---|---|
+| **Spec** | `docs/specs/<name>.md` | Design intent for a feature under development. Deleted once incorporated into a live doc. |
+| **Plan** | `docs/plans/<name>.md` | Step-by-step implementation plan with `- [ ]` checkboxes. Deleted once all steps are done. |
+| **Live doc** | `docs/architecture.md`, `docs/image-pipeline.md`, etc. | Permanent reference; always reflects the current codebase. |
+
 ---
 
 # Quality Gates
@@ -161,6 +169,10 @@ npm test
 
 **This sequence is MANDATORY before git commit. If ANY step fails, DO NOT COMMIT.**
 
+Also check manually before committing:
+- Every spec in `docs/specs/` still accurately describes the intended design — update it if the implementation has diverged.
+- Every plan in `docs/plans/` has its completed steps checked off.
+
 ## Silver Gate (REQUIRED before merging to `master`)
 
 Run from the `web/` directory:
@@ -171,6 +183,10 @@ npm test -- --reporter=verbose
 npx playwright test
 npx playwright test --config playwright.dev.config.ts
 ```
+
+Also check manually before merging:
+- Every spec in `docs/specs/` has been incorporated into the relevant live doc (`docs/architecture.md`, `docs/image-pipeline.md`, etc.) — then **delete the spec file**.
+- Every plan in `docs/plans/` has all steps completed — then **delete the plan file**.
 
 `playwright.config.ts` runs `app.spec.ts` and `offline.spec.ts` against `vite preview`
 (production build). `playwright.dev.config.ts` runs `flow.spec.ts` against `vite dev`
