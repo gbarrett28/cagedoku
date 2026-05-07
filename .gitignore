@@ -16,8 +16,9 @@ build/
 .mcp.json
 no_gutter.py
 
-# Generated training data conversion artifacts
+# Generated training data conversion artifacts (keep the canonical accumulated set)
 *_train.json
+!web/browser_train.json
 
 # Runtime artifacts
 sessions/
