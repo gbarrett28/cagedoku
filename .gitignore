@@ -32,6 +32,7 @@ tests/fixtures/sudoku/*.png
 # Web build artifacts
 web/dist/
 web/node_modules/
+worker/node_modules/
 
 # opencv.js committed directly — custom core+imgproc build from build-opencv-wsl.sh.
 # CI uses this file; the download step in pages.yml is skipped when it is present.
