@@ -155,6 +155,7 @@ Run from the `web/` directory:
 
 ```bash
 tsc --noEmit
+tsc -p tsconfig.node.json --noEmit
 npm test
 ```
 

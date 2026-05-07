@@ -1,36 +1,48 @@
 #!/usr/bin/env python3
 """
-Train the web digit recogniser using HOG features + RBF-SVM.
+Train the web digit recogniser using HOG features + LinearSVC.
 
 Generates synthetic digit images from system fonts, optionally merges
 browser-exported labelled samples, augments all sources with dithering,
-extracts HOG features via cv2.HOGDescriptor (identical to the browser's
-cv.HOGDescriptor), and writes the trained model to web/public/.
+extracts HOG features (identical to hogExtract in numberRecognition.ts),
+and writes the trained model to web/public/.
 
 Usage
 -----
+    # Standard retrain from accumulated browser training data:
+    python web/train_recogniser.py --out web/public --browser-weight 1000 --svm-c 100 web/browser_train.json
+
     # Train from synthetic fonts only (no puzzle data needed):
     python web/train_recogniser.py --out web/public
 
-    # Merge browser-exported samples with synthetic fonts:
-    python web/train_recogniser.py --out web/public training.json
-
     # Skip synthetic font generation:
-    python web/train_recogniser.py --no-synthetic training.json
+    python web/train_recogniser.py --no-synthetic web/browser_train.json
 
-    # More augmentation (default 30 dither variants per sample):
-    python web/train_recogniser.py --dither 50
+    # Asymmetric dithering (more browser variants, fewer synthetic):
+    python web/train_recogniser.py --dither 200 --synth-dither 5 web/browser_train.json
 
 Workflow
 --------
-After running this script, the updated model is live immediately (no rebuild
-needed): reload the web app in the browser and the new model is fetched.
+1. Export training data from the browser (OCR review screen → Export Training).
+2. Run the merge step to add it to web/browser_train.json (or provide the
+   exported JSON directly as an additional positional argument).
+3. Run this script with --browser-weight 1000 --svm-c 100.
+4. The updated model is live immediately: reload the web app.
 
 Model format
 ------------
 The binary layout is documented in web/src/image/numberRecognition.ts
 (loadNumRecogniser).  The JSON manifest records each array's name, dtype,
 shape, byte offset, and byte length.
+
+Sample weights
+--------------
+--browser-weight upweights browser-exported samples relative to synthetic
+font samples.  With ~9k synthetic samples and ~66 browser samples, auto-
+balance (weight=0) sets weight≈137; weight=1000 gives browser samples
+strong priority without causing SVM convergence problems (unlike weight>2000).
+--svm-c 100 (vs default 10) enforces a harder margin, ensuring all browser
+samples are correctly classified even when they fall near the boundary.
 """
 
 from __future__ import annotations
@@ -254,23 +266,31 @@ def dither(
 def build_dataset(
     samples: list[tuple[int, NDArray[np.uint8]]],
     n_dither: int,
-) -> tuple[NDArray[np.float64], NDArray[np.int64]]:
+    sample_weights: list[float] | None = None,
+) -> tuple[NDArray[np.float64], NDArray[np.int64], NDArray[np.float64]]:
     """Augment samples with dithering and extract HOG features.
 
     Each (digit, img) pair produces n_dither+1 variants (original + n_dither
     augmented copies).  All variants are fed through extract_hog.
+
+    sample_weights assigns a per-source weight (before augmentation); all
+    augmented variants from a source share the same weight.  None means 1.0
+    for all samples.  Returns (X, y, weights).
     """
     rng = np.random.default_rng(0)
     aug_imgs: list[NDArray[np.uint8]] = []
     aug_labels: list[int] = []
+    aug_weights: list[float] = []
 
-    for digit, img in samples:
+    for i, (digit, img) in enumerate(samples):
+        w = sample_weights[i] if sample_weights is not None else 1.0
         for v in dither(img, n_dither, rng):
             aug_imgs.append((v * 255).clip(0, 255).astype(np.uint8))
             aug_labels.append(digit)
+            aug_weights.append(w)
 
     X = extract_hog(aug_imgs)
-    return X, np.array(aug_labels, dtype=np.int64)
+    return X, np.array(aug_labels, dtype=np.int64), np.array(aug_weights, dtype=np.float64)
 
 
 # ---------------------------------------------------------------------------
@@ -283,18 +303,25 @@ def fit_model(
     classifier: str = "linear",
     svm_c: float = SVM_C,
     svm_gamma: float | str = SVM_GAMMA,
+    sample_weights: NDArray[np.float64] | None = None,
 ) -> dict[str, Any]:
     """Train a digit classifier on HOG feature vectors.
 
     classifier='linear': OneVsOneClassifier(LinearSVC) — small model (~500 KB),
         fast inference, vote-fraction confidence identical to RBF OVO.
     classifier='rbf': SVC(kernel='rbf') OVO — more expressive but large model.
+
+    sample_weights, if provided, is passed to clf.fit() to upweight specific
+    samples (e.g. browser-exported samples vs synthetic font samples).
     """
     if classifier == "linear":
+        import sklearn  # type: ignore[import-untyped]
         from sklearn.multiclass import OneVsOneClassifier  # type: ignore[import-untyped]
         from sklearn.svm import LinearSVC  # type: ignore[import-untyped]
-        clf = OneVsOneClassifier(LinearSVC(C=svm_c, max_iter=10000))
-        clf.fit(X, y)
+        sklearn.set_config(enable_metadata_routing=True)
+        base = LinearSVC(C=svm_c, max_iter=10000).set_fit_request(sample_weight=True)
+        clf = OneVsOneClassifier(base, n_jobs=-1)
+        clf.fit(X, y, sample_weight=sample_weights)
         # Negate: LinearSVC uses score>0→classes_[1] (higher class), but the
         # TypeScript ovoVote loop uses score>0→class at lower index (i).
         # Negating here makes both conventions consistent.
@@ -303,7 +330,7 @@ def fit_model(
         return {"kind": "linear", "clf": clf, "coefs": coefs, "intercepts": intercepts}
     else:
         svc = SVC(kernel="rbf", C=svm_c, gamma=svm_gamma, decision_function_shape="ovo")
-        svc.fit(X, y)
+        svc.fit(X, y, sample_weight=sample_weights)
         return {"kind": "rbf", "clf": svc}
 
 
@@ -423,6 +450,14 @@ def main() -> None:
                         help=f"SVM regularisation C (default: {SVM_C})")
     parser.add_argument("--svm-gamma", type=str,   default=str(SVM_GAMMA),
                         help=f"SVM gamma — float or 'scale'/'auto'; rbf only (default: {SVM_GAMMA})")
+    parser.add_argument(
+        "--synth-dither", type=int, default=-1, metavar="N",
+        help="Dither variants for synthetic samples; -1 = same as --dither (default: -1)",
+    )
+    parser.add_argument(
+        "--browser-weight", type=float, default=0.0, metavar="W",
+        help="Per-sample weight for browser-exported samples (uniform dither path only; 0 = auto-balance)",
+    )
     args = parser.parse_args()
 
     all_samples: list[tuple[int, NDArray[np.uint8]]] = []
@@ -431,6 +466,8 @@ def main() -> None:
         samples = load_training_file(path)
         print(f"Loaded {len(samples)} samples from {path.name}")
         all_samples.extend(samples)
+
+    n_browser = len(all_samples)  # count before adding synthetic
 
     if not args.no_synthetic:
         print("Generating synthetic font samples…")
@@ -443,11 +480,41 @@ def main() -> None:
         print("No samples — pass JSON files or omit --no-synthetic.", file=_sys.stderr)
         raise SystemExit(1)
 
+    n_synth = len(all_samples) - n_browser
     dist = dict(sorted(Counter(d for d, _ in all_samples).items()))
     print(f"Digit distribution: {dist}")
 
-    print(f"\nAugmenting with {args.dither} dither variants per sample…")
-    X, y = build_dataset(all_samples, args.dither)
+    # When --synth-dither is set, use different dither counts for browser vs
+    # synthetic samples so browser samples dominate by count (not by extreme
+    # weights that cause SVM convergence problems).
+    synth_dither = args.synth_dither if args.synth_dither >= 0 else args.dither
+    if n_browser > 0 and n_synth > 0 and synth_dither != args.dither:
+        rng = np.random.default_rng(0)
+        aug_imgs: list[NDArray[np.uint8]] = []
+        aug_labels: list[int] = []
+        for digit, img in all_samples[:n_browser]:
+            for v in dither(img, args.dither, rng):
+                aug_imgs.append((v * 255).clip(0, 255).astype(np.uint8))
+                aug_labels.append(digit)
+        for digit, img in all_samples[n_browser:]:
+            for v in dither(img, synth_dither, rng):
+                aug_imgs.append((v * 255).clip(0, 255).astype(np.uint8))
+                aug_labels.append(digit)
+        n_browser_aug = n_browser * (args.dither + 1)
+        n_synth_aug   = n_synth   * (synth_dither + 1)
+        print(f"Dither: browser {args.dither} variants ({n_browser_aug} aug), synth {synth_dither} variants ({n_synth_aug} aug)")
+        X = extract_hog(aug_imgs)
+        y = np.array(aug_labels, dtype=np.int64)
+        weights: NDArray[np.float64] | None = None
+    else:
+        # Uniform dither; use sample_weight to balance browser vs synthetic.
+        sample_weights: list[float] | None = None
+        if n_browser > 0 and n_synth > 0:
+            bw = args.browser_weight if args.browser_weight > 0 else float(n_synth) / n_browser
+            sample_weights = [bw] * n_browser + [1.0] * n_synth
+            print(f"Browser sample weight: {bw:.1f}× ({n_browser} browser, {n_synth} synthetic)")
+        X, y, weights = build_dataset(all_samples, args.dither, sample_weights)
+
     print(f"Dataset: {X.shape[0]} samples × {X.shape[1]} HOG features")
 
     svm_gamma: float | str = args.svm_gamma
@@ -457,7 +524,13 @@ def main() -> None:
         pass  # keep as 'scale' or 'auto'
 
     print(f"Training {args.classifier} classifier…")
-    model = fit_model(X, y, classifier=args.classifier, svm_c=args.svm_c, svm_gamma=svm_gamma)
+    model = fit_model(
+        X, y,
+        classifier=args.classifier,
+        svm_c=args.svm_c,
+        svm_gamma=svm_gamma,
+        sample_weights=weights,
+    )
 
     save_model(model, Path(args.out), confidence_threshold=args.confidence_threshold)
 

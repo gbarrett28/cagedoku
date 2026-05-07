@@ -40,27 +40,27 @@
     "classes": {
       "dtype": "int32",
       "shape": [
-        9
+        10
       ],
       "offset": 28,
-      "byteLength": 36
+      "byteLength": 40
     },
     "linear_coef": {
       "dtype": "float64",
       "shape": [
-        36,
+        45,
         1764
       ],
-      "offset": 64,
-      "byteLength": 508032
+      "offset": 68,
+      "byteLength": 635040
     },
     "linear_intercept": {
       "dtype": "float64",
       "shape": [
-        36
+        45
       ],
-      "offset": 508096,
-      "byteLength": 288
+      "offset": 635108,
+      "byteLength": 360
     }
   }
 }
