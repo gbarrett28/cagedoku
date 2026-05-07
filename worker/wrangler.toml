@@ -1,0 +1,13 @@
+name = "cagedoku-training"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[[r2_buckets]]
+binding = "TRAINING_BUCKET"
+bucket_name = "cagedoku-training"
+
+[vars]
+GITHUB_REPO = "gbarrett28/cagedoku"
+GITHUB_ISSUE_NUMBER = "1"
+MAX_PENDING_UPLOADS = "50"
+ENVIRONMENT = "production"
