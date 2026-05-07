@@ -46,22 +46,22 @@ Cloudflare Worker  (worker/src/index.ts)
   ├─ schema validation → 400 if invalid
   ├─ R2 list check     → 429 if pending count >= MAX_PENDING_UPLOADS
   ├─ R2 PUT            → training/<exportedAt>-<uuid>.json
-  ├─ KV get OPEN_ISSUE_NUMBER
-  │    ├─ absent  → create GitHub Issue, store number in KV (no TTL)
-  │    └─ present → GET /issues/{number}
-  │                   open   → add comment to issue
-  │                   closed → create new issue, overwrite KV with new number
+  ├─ KV get ISSUE_NUMBER
+  │    ├─ absent  → create GitHub Issue, store number in KV (permanent, never reset)
+  │    └─ present → add comment to that issue
   └─ 200
 
 Cloudflare R2 bucket  (killer-sudoku-training)
   └─ one object per upload, key = training/<exportedAt>-<uuid>.json
 
 Cloudflare KV namespace  (killer-sudoku-notifications)
-  └─ OPEN_ISSUE_NUMBER  — GitHub issue number (string); absent = no open issue
+  └─ ISSUE_NUMBER  — set once on first upload, never deleted; absent only before
+                     the very first upload ever
 
 GitHub Issues
-  └─ one persistent issue; subsequent uploads add comments
-     Phase 2 retrain workflow closes it and deletes the KV key when done
+  └─ one permanent thread; each upload adds a comment
+     processed uploads: R2 object deleted + ✅ reaction added to the comment
+     issue stays open indefinitely
 ```
 
 ---
@@ -144,11 +144,9 @@ POST /
        count >= MAX_PENDING_UPLOADS → 429 (silent to user)
   6. R2 PUT: key=training/<exportedAt>-<uuid>.json
        customMetadata: { appVersion, puzzleType, sampleCount }
-  7. KV GET: OPEN_ISSUE_NUMBER
-       absent  → create GitHub Issue, KV PUT (no TTL)
-       present → GET /issues/{number}
-                   open   → POST /issues/{number}/comments
-                   closed → create new GitHub Issue, KV PUT (overwrite)
+  7. KV GET: ISSUE_NUMBER
+       absent  → POST /issues (create), KV PUT ISSUE_NUMBER (no TTL)
+       present → POST /issues/{number}/comments
   8. Return 200
 ```
 
@@ -220,7 +218,7 @@ ENVIRONMENT = "production"
 
 ## Phase 1 — Developer Workflow (manual)
 
-### When a GitHub Issue appears (or gains a comment)
+### When the GitHub Issue gains a new comment
 
 1. List all pending uploads:
    ```
@@ -236,15 +234,15 @@ ENVIRONMENT = "production"
      web/browser_train.json <key1>.json <key2>.json ...
    ```
 4. Verify accuracy (existing evaluate scripts), commit updated model files.
-5. Delete all processed R2 objects to reset the pending count:
+5. Delete processed R2 objects (resets the pending count for the 429 gate):
    ```
    wrangler r2 object delete killer-sudoku-training training/<key>
    ```
-6. Delete the KV key so the next upload opens a fresh issue:
-   ```
-   wrangler kv key delete --namespace-id <id> OPEN_ISSUE_NUMBER
-   ```
-7. Close the GitHub Issue.
+6. Add a ✅ reaction to each processed comment on the GitHub Issue
+   (via `gh api /repos/{owner}/{repo}/issues/comments/{id}/reactions -f content='+1'`).
+
+The issue remains open permanently. The ✅ reactions and R2 deletions are the record
+that an upload has been processed. The KV key is never reset.
 
 A helper script (`scripts/collect_training.sh`) should automate steps 1–2 and 5–6.
 
@@ -282,8 +280,9 @@ steps:
   9. git push
  10. Merge new samples into web/browser_train.json, commit
  11. Delete processed R2 objects
- 12. wrangler kv key delete OPEN_ISSUE_NUMBER
- 13. Close the GitHub Issue (gh issue close {number})
+ 12. Add ✅ reaction to each processed comment on the tracking issue
+       gh api /repos/{owner}/{repo}/issues/comments/{id}/reactions -f content='+1'
+ 13. Issue remains open; no KV changes needed
 ```
 
 ### Additional secrets required for Phase 2
