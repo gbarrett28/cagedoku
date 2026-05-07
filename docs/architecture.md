@@ -98,29 +98,76 @@ protocol, save/load contract, and re-training workflow.
 
 ### Web Recogniser Training
 
-The web app uses a browser-side image pipeline with a bundled HOG + LinearSVC model
-in `web/public/num_recogniser.{json,bin}`.  After a user corrects OCR errors and
-confirms a puzzle, the app exports a training JSON file with digit thumbnails paired
-with user-verified labels, accumulated in `web/browser_train.json`.
+The web app bundles a HOG + LinearSVC model in `web/public/num_recogniser.{json,bin}`.
+When a user corrects OCR errors and confirms a killer puzzle, the app automatically
+uploads the digit thumbnails (user-verified labels, 64×64 uint8) to a remote
+collection pipeline. A consent modal is shown on first upload; "Always send" sets a
+1-year cookie that silences it thereafter.
 
-To retrain from accumulated browser data:
+#### Remote collection pipeline
 
-```bash
-python web/train_recogniser.py --no-synthetic --svm-c 100000 web/browser_train.json
-# Writes updated web/public/num_recogniser.{json,bin}
+```
+Browser  →  POST /  →  Cloudflare Worker (cagedoku-training.gbarrett28.workers.dev)
+                              │
+                         validates schema, checks R2 pending count (cap: 50)
+                              │
+                         R2 PUT  training/<timestamp>-<uuid>.json
+                              │
+                         GitHub Issue #1 comment  (gbarrett28/cagedoku)
 ```
 
-The script (`web/train_recogniser.py`):
-1. Loads labelled digit thumbnails (64×64 binary, uint8) from `browser_train.json`
-2. Optionally generates synthetic font samples (disabled with `--no-synthetic`)
+Key files:
+
+| File | Purpose |
+|---|---|
+| `web/src/image/trainingUpload.ts` | `hasConsent`, `grantConsent`, `uploadTrainingData`, `initiateUpload` |
+| `worker/src/index.ts` | Cloudflare Worker fetch handler |
+| `worker/src/validate.ts` | `isTrainingExport()` schema guard |
+| `worker/wrangler.toml` | Worker + R2 binding config |
+| `scripts/collect_training.sh` | Download pending R2 uploads locally |
+| `scripts/mark_processed.sh` | Delete R2 objects + react ✅ to Issue #1 comments |
+| `scripts/_r2_list.py` | R2 object listing via Cloudflare API (wrangler v4 removed `r2 object list`) |
+
+#### Phase 1 — manual retrain workflow
+
+When new data appears as a comment on Issue #1:
+
+```bash
+bash scripts/collect_training.sh /tmp/training
+python web/train_recogniser.py --browser-weight 1000 --svm-c 100 \
+  web/browser_train.json /tmp/training/*.json
+# verify accuracy, then:
+bash scripts/mark_processed.sh /tmp/training
+```
+
+`train_recogniser.py` steps:
+1. Loads labelled thumbnails from each JSON file
+2. Optionally generates synthetic font samples
 3. Applies dithering (translation ±2 px, morphological step, 1% pixel noise)
 4. Extracts HOG features — 64 px window / 8 px cells / 16 px blocks / 9 bins = 1764 dims
 5. Fits a LinearSVC OvO classifier (45 binary SVMs for digits 0–9)
 6. Saves updated model files; the web app picks them up on next page reload
 
-`--svm-c 100000` forces memorisation of all browser samples (correct for small
-datasets, < 100 samples).  For larger browser + synthetic mixes use
-`--svm-c 100 --browser-weight 1000` instead.
+`--browser-weight 1000 --svm-c 100` up-weights real samples over synthetic fonts.
+For purely synthetic training (no real data), omit both flags.
+
+#### Phase 2 — scheduled auto-retrain
+
+`.github/workflows/retrain.yml` runs weekly (03:00 UTC Sunday) and on
+`workflow_dispatch`. It downloads pending R2 uploads, retrains, compares accuracy
+against `web/public/eval_report.json`, commits the updated model on pass, and opens
+a failure Issue on regression. Requires `CLOUDFLARE_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID` repository secrets.
+
+#### Infrastructure
+
+| Resource | Name / URL |
+|---|---|
+| Cloudflare Worker | `https://cagedoku-training.gbarrett28.workers.dev` |
+| R2 bucket | `cagedoku-training` (Cloudflare account `b6c5bf0f26c81c4901c4434c6a3ca23f`) |
+| GitHub notification thread | `gbarrett28/cagedoku` Issue #1 |
+| Worker secrets | `GITHUB_TOKEN` (issues:write PAT) |
+| GitHub Actions secrets | `TRAINING_WORKER_URL`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` |
 
 See **`docs/classic-sudoku.md`** for the classic sudoku recognition feature design
 (puzzle type detection, center digit reading, locked given digits, cage-structure
