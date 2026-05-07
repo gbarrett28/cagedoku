@@ -16,6 +16,9 @@ build/
 .mcp.json
 no_gutter.py
 
+# Generated training data conversion artifacts
+*_train.json
+
 # Runtime artifacts
 sessions/
 killer_sudoku/static/main.js

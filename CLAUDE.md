@@ -1,5 +1,10 @@
 # Agent Behaviour
 
+## Git Worktrees
+
+Do **not** use git worktrees — not all tools work correctly inside them.
+Use a feature branch in the main working directory instead.
+
 ## Token Efficiency
 
 When there is a choice of approaches, always prefer the one that achieves the final
@@ -150,6 +155,7 @@ Run from the `web/` directory:
 
 ```bash
 tsc --noEmit
+tsc -p tsconfig.node.json --noEmit
 npm test
 ```
 

@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM"],
+    "types": ["node", "vite/client"]
+  },
+  "include": ["src/image/numberRecognition.test.ts"],
+  "exclude": ["node_modules", "dist"]
+}

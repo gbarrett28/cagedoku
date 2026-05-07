@@ -26,7 +26,7 @@ import { scanCells, detectRotation, detectPuzzleType } from './cellScan.js';
 import { clusterBorders } from './borderClustering.js';
 import type { GrayImage } from './borderClustering.js';
 import {
-  getSums, splitNum, contourHier, getNumContours, readClassicDigits,
+  recognise, splitNum, contourHier, getNumContours, readClassicDigits,
 } from './numberRecognition.js';
 import type { NumRecogniser } from './numberRecognition.js';
 import { validateCageLayout, repairCageTotals } from './validation.js';
@@ -58,6 +58,11 @@ export interface ParseResult {
    * Null if the pipeline failed before producing a warped image.
    */
   warpedImageData: ImageData | null;
+  /**
+   * Thumbnails presented to the digit recogniser, keyed "row,col".
+   * Used by extractTrainingData — avoids re-processing from JPEG.
+   */
+  cellThumbs: ReadonlyMap<string, Uint8Array[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -216,7 +221,7 @@ export async function parsePuzzleImage(
     } catch (err) {
       specError = String(err);
     }
-    return { spec, specError, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData };
+    return { spec, specError, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: new Map() };
   }
 
   // --- Killer path: Stage 4 border clustering ---
@@ -232,9 +237,10 @@ export async function parsePuzzleImage(
   let initialBorderY = byProb.map(row => row.map(v => v > 0.5));
 
   let cageTotals: number[][] | null = null;
+  let cellThumbs = new Map<string, Uint8Array[]>();
   try {
     const brdrs = buildBrdrs(initialBorderX, initialBorderY);
-    cageTotals = buildCageTotals(cv, warpedBlkMat, rec, subres, brdrs);
+    ({ cageTotals, cellThumbs } = buildCageTotals(cv, warpedBlkMat, rec, subres, brdrs));
   } catch {
     // Can't score polarities without cage totals; proceed with initial estimate.
   }
@@ -275,7 +281,7 @@ export async function parsePuzzleImage(
     // Retry cage total extraction with best borders.
     try {
       const brdrs2 = buildBrdrs(bestBorderX, bestBorderY);
-      cageTotals = buildCageTotals(cv, warpedBlkMat, rec, subres, brdrs2);
+      ({ cageTotals, cellThumbs } = buildCageTotals(cv, warpedBlkMat, rec, subres, brdrs2));
 
       const totalSum = cageTotals.reduce((s, col) => s + col.reduce((a, b) => a + b, 0), 0);
       if (totalSum < 360 || totalSum > 450) {
@@ -287,7 +293,7 @@ export async function parsePuzzleImage(
           (subres >> 2) | 1, config.numberRecognition.contourFallbackAdaptiveC,
         );
         try {
-          cageTotals = buildCageTotals(cv, adaptiveBlk, rec, subres, brdrs2);
+          ({ cageTotals, cellThumbs } = buildCageTotals(cv, adaptiveBlk, rec, subres, brdrs2));
         } finally {
           adaptiveBlk.delete();
         }
@@ -307,6 +313,7 @@ export async function parsePuzzleImage(
       puzzleType: 'killer',
       givenDigits: null,
       warpedImageData: warpedImgData,
+      cellThumbs: new Map(),
     };
   }
 
@@ -341,7 +348,7 @@ export async function parsePuzzleImage(
     }
   }
 
-  return { spec, specError, puzzleType: 'killer', givenDigits: null, warpedImageData: warpedImgData };
+  return { spec, specError, puzzleType: 'killer', givenDigits: null, warpedImageData: warpedImgData, cellThumbs };
 }
 
 // ---------------------------------------------------------------------------
@@ -353,13 +360,19 @@ export async function parsePuzzleImage(
  *
  * Finds all digit contours, classifies them, and assembles the grid.
  */
+export interface CageTotalsResult {
+  cageTotals: number[][];
+  /** Thumbnails presented to the digit recogniser, keyed "row,col". */
+  cellThumbs: Map<string, Uint8Array[]>;
+}
+
 export function buildCageTotals(
   cv: Cv,
   warpedBlk: OpenCVMat,
   rec: NumRecogniser,
   subres: number,
   brdrs: Brdrs,
-): number[][] {
+): CageTotalsResult {
   // numPixels[row][col]: contour thumbnails found in each grid cell.
   // col = bx/subres (x-pixel → column), row = by/subres (y-pixel → row).
   const numPixels: Array<Array<Uint8Array[] | null>> = Array.from(
@@ -402,11 +415,12 @@ export function buildCageTotals(
 
   // Row-major: cageTotals[row][col]
   const cageTotals: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+  const cellThumbs = new Map<string, Uint8Array[]>();
   for (let row = 0; row < 9; row++) {
     for (let col = 0; col < 9; col++) {
       const sums = numPixels[row]![col]!;
       if (sums !== null) {
-        const ntrs = getSums(cv, rec, sums);
+        const ntrs = recognise(rec, sums);
         if (ntrs.length > 4) {
           throw new ProcessingError(
             `Too many digits (${ntrs.length}) in cell (row=${row},col=${col})`,
@@ -414,13 +428,15 @@ export function buildCageTotals(
             brdrs,
           );
         }
-        for (const v of ntrs) {
-          if (v >= 0) cageTotals[row]![col] = 10 * cageTotals[row]![col]! + v;
+        for (const { label, confident } of ntrs) {
+          if (!confident) console.warn(`Low-confidence digit read in (row=${row},col=${col})`);
+          if (label >= 0) cageTotals[row]![col] = 10 * cageTotals[row]![col]! + label;
         }
+        cellThumbs.set(`${row},${col}`, sums);
       }
     }
   }
-  return cageTotals;
+  return { cageTotals, cellThumbs };
 }
 
 /**

@@ -6,9 +6,10 @@
  * State lives in session/store.ts; no server required.
  */
 
-import { loadCV, loadRec, setCandidatesCache, getCV } from './session/store.js';
+import { loadCV, loadRec, setCandidatesCache } from './session/store.js';
 import { cellLabel } from './engine/rules/_labels.js';
 import { extractTrainingData } from './image/trainingExport.js';
+import { defaultImagePipelineConfig } from './image/config.js';
 import { dataToSpec } from './session/specUtils.js';
 import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec } from './engine/fixtures.js';
 import {
@@ -447,29 +448,19 @@ async function handleReveal(): Promise<void> {
   finally { setLoading(false); }
 }
 
-async function handleExport(): Promise<void> {
-  if (currentState === null || currentState.warpedImageUrl === null) return;
-  const cv = getCV();
-  if (cv === null) { setStatus('Image pipeline not ready', true); return; }
-  setLoading(true);
-  try {
-    const data = await extractTrainingData(
-      cv,
-      currentState.warpedImageUrl,
-      currentState.specData.cageTotals,
-      currentState.puzzleType,
-    );
-    const json = JSON.stringify(data);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `training-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setStatus(`Exported ${data.sampleCount} training sample${data.sampleCount !== 1 ? 's' : ''}`);
-  } catch (e) { setStatus(`Export failed: ${String(e)}`, true); }
-  finally { setLoading(false); }
+function handleExport(): void {
+  if (currentState === null) return;
+  const { cellThumbs = new Map(), cageTotals } = currentState.specData;
+  const data = extractTrainingData(cellThumbs, cageTotals, currentState.puzzleType, defaultImagePipelineConfig().numberRecognition.subres);
+  const json = JSON.stringify(data);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `training-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  setStatus(`Exported ${data.sampleCount} training sample${data.sampleCount !== 1 ? 's' : ''}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -708,10 +699,11 @@ async function handleConfirm(): Promise<void> {
   if (currentState === null) return;
   setLoading(true);
   try {
-    // Capture user-edited totals and warped image URL before state is replaced.
-    const exportTotals = currentState.specData.cageTotals;
-    const exportWarpedUrl = currentState.warpedImageUrl;
+    // Capture thumbnails and confirmed totals before state is replaced.
+    const exportThumbs   = currentState.specData.cellThumbs ?? new Map();
+    const exportTotals   = currentState.specData.cageTotals;
     const exportPuzzleType = currentState.puzzleType;
+    const exportSubres   = defaultImagePipelineConfig().numberRecognition.subres;
 
     const result = applyDraftLayout(
       draftBorderX, draftBorderY, currentState.specData.cageTotals,
@@ -735,23 +727,18 @@ async function handleConfirm(): Promise<void> {
 
     // Fire-and-forget training export — only when the user has corrected something,
     // so unedited OCR results (which may contain errors) are never written to disk.
-    if (draftEdited && exportPuzzleType !== 'classic' && exportWarpedUrl !== null) {
-      const cv = getCV();
-      if (cv !== null) {
-        void extractTrainingData(cv, exportWarpedUrl, exportTotals, exportPuzzleType)
-          .then(data => {
-            if (data.sampleCount === 0) return;
-            const json = JSON.stringify(data);
-            const blob = new Blob([json], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `training-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-            setStatus(`Exported ${data.sampleCount} training sample${data.sampleCount !== 1 ? 's' : ''}`);
-          })
-          .catch(e => { console.warn('[training export]', e); });
+    if (draftEdited && exportPuzzleType !== 'classic') {
+      const data = extractTrainingData(exportThumbs, exportTotals, exportPuzzleType, exportSubres);
+      if (data.sampleCount > 0) {
+        const json = JSON.stringify(data);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `training-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        setStatus(`Exported ${data.sampleCount} training sample${data.sampleCount !== 1 ? 's' : ''}`);
       }
     }
   } catch (e) { setStatus(`Confirm failed: ${String(e)}`, true); }
