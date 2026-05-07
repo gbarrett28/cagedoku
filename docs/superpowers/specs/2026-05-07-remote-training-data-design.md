@@ -46,22 +46,15 @@ Cloudflare Worker  (worker/src/index.ts)
   ├─ schema validation → 400 if invalid
   ├─ R2 list check     → 429 if pending count >= MAX_PENDING_UPLOADS
   ├─ R2 PUT            → training/<exportedAt>-<uuid>.json
-  ├─ KV get ISSUE_NUMBER
-  │    ├─ absent  → create GitHub Issue, store number in KV (permanent, never reset)
-  │    └─ present → add comment to that issue
-  └─ 200
+  └─ POST /issues/{GITHUB_ISSUE_NUMBER}/comments → 200
 
 Cloudflare R2 bucket  (killer-sudoku-training)
   └─ one object per upload, key = training/<exportedAt>-<uuid>.json
 
-Cloudflare KV namespace  (killer-sudoku-notifications)
-  └─ ISSUE_NUMBER  — set once on first upload, never deleted; absent only before
-                     the very first upload ever
-
 GitHub Issues
-  └─ one permanent thread; each upload adds a comment
+  └─ one permanent pre-opened thread; each upload adds a comment
      processed uploads: R2 object deleted + ✅ reaction added to the comment
-     issue stays open indefinitely
+     issue stays open indefinitely; no KV needed
 ```
 
 ---
@@ -144,9 +137,7 @@ POST /
        count >= MAX_PENDING_UPLOADS → 429 (silent to user)
   6. R2 PUT: key=training/<exportedAt>-<uuid>.json
        customMetadata: { appVersion, puzzleType, sampleCount }
-  7. KV GET: ISSUE_NUMBER
-       absent  → POST /issues (create), KV PUT ISSUE_NUMBER (no TTL)
-       present → POST /issues/{number}/comments
+  7. POST /issues/{GITHUB_ISSUE_NUMBER}/comments
   8. Return 200
 ```
 
@@ -189,27 +180,25 @@ R2 key: `training/{exportedAt}-{uuid}.json`
 | Name | Kind | Description |
 |---|---|---|
 | `GITHUB_TOKEN` | Secret | Fine-grained PAT: `issues: write` on this repo only |
-| `GITHUB_REPO` | Var | `owner/repo` string, e.g. `gbarrett28/killer-sudoku` |
+| `GITHUB_REPO` | Var | `owner/repo` — `gbarrett28/cagedoku` |
+| `GITHUB_ISSUE_NUMBER` | Var | Number of the pre-opened training thread issue |
 | `MAX_PENDING_UPLOADS` | Var | Integer cap on R2 objects before 429; default `50` |
 | `ENVIRONMENT` | Var | `production` or `development` (controls CORS) |
 
 ### `wrangler.toml` (outline)
 
 ```toml
-name = "killer-sudoku-training"
+name = "cagedoku-training"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
 [[r2_buckets]]
 binding = "TRAINING_BUCKET"
-bucket_name = "killer-sudoku-training"
-
-[[kv_namespaces]]
-binding = "NOTIFICATION_KV"
-id = "<namespace-id>"
+bucket_name = "cagedoku-training"
 
 [vars]
-GITHUB_REPO = "gbarrett28/killer-sudoku"
+GITHUB_REPO = "gbarrett28/cagedoku"
+GITHUB_ISSUE_NUMBER = "1"
 MAX_PENDING_UPLOADS = "50"
 ENVIRONMENT = "production"
 ```
@@ -280,9 +269,9 @@ steps:
   9. git push
  10. Merge new samples into web/browser_train.json, commit
  11. Delete processed R2 objects
- 12. Add ✅ reaction to each processed comment on the tracking issue
-       gh api /repos/{owner}/{repo}/issues/comments/{id}/reactions -f content='+1'
- 13. Issue remains open; no KV changes needed
+ 12. Add ✅ reaction to each processed comment:
+       gh api /repos/gbarrett28/cagedoku/issues/comments/{id}/reactions -f content='+1'
+ 13. Issue stays open; no further cleanup needed
 ```
 
 ### Additional secrets required for Phase 2
@@ -306,12 +295,13 @@ regression failure.
 
 ## Infrastructure Setup (one-time)
 
-1. Create R2 bucket: `wrangler r2 bucket create killer-sudoku-training`
-2. Create KV namespace: `wrangler kv namespace create killer-sudoku-notifications`
-3. Add KV namespace ID to `wrangler.toml`
-4. Create a fine-grained GitHub PAT with `issues: write` scoped to this repo only
-5. Store PAT as Worker secret: `wrangler secret put GITHUB_TOKEN`
-6. Add `VITE_TRAINING_WORKER_URL=https://killer-sudoku-training.<account>.workers.dev`
+1. Pre-open the permanent training thread issue in GitHub — done:
+   https://github.com/gbarrett28/cagedoku/issues/1
+2. Create R2 bucket: `wrangler r2 bucket create cagedoku-training`
+3. Create a fine-grained GitHub PAT with `issues: write` scoped to `gbarrett28/cagedoku`
+4. Store PAT as Worker secret: `wrangler secret put GITHUB_TOKEN`
+5. Set `GITHUB_ISSUE_NUMBER` in `wrangler.toml` to the pre-opened issue number
+6. Add `VITE_TRAINING_WORKER_URL=https://cagedoku-training.<account>.workers.dev`
    to `.env.production` (not committed; injected in CI via GitHub Actions secret)
 7. Add `TRAINING_WORKER_URL` as a repository secret in GitHub Actions
 8. Update `.github/workflows/pages.yml` — add `env` to the Build step:
