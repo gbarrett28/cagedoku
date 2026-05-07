@@ -1,0 +1,4 @@
+[      67ms] [LOG] [CV] loading ./opencv.js @ http://localhost:5173/src/session/store.ts?t=1777660531045:34
+[      73ms] [LOG] [CV] progress fetch started, Content-Length: 4097780 @ http://localhost:5173/src/session/store.ts?t=1777660531045:59
+[      99ms] [LOG] [CV] script loaded, waiting for WASM init… @ http://localhost:5173/src/session/store.ts?t=1777660531045:39
+[     117ms] [LOG] [CV] ready @ http://localhost:5173/src/session/store.ts?t=1777660531045:42

@@ -1,0 +1,29 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - heading "COACH" [level=1] [ref=e4]
+      - generic [ref=e5]: Killer Sudoku Coaching App
+      - button "New puzzle" [ref=e17] [cursor=pointer]
+      - button "Help" [ref=e6] [cursor=pointer]
+      - button "Config" [ref=e7] [cursor=pointer]
+  - main [ref=e8]:
+    - generic [ref=e18]:
+      - heading "Detected Layout — Killer Sudoku" [level=2] [ref=e21]
+      - generic [ref=e34]:
+        - generic [ref=e35]:
+          - button "Undo" [disabled] [ref=e36]
+          - button "Hints" [ref=e37] [cursor=pointer]
+          - button "Show candidates" [ref=e38] [cursor=pointer]
+          - button "Inspect cage" [ref=e39] [cursor=pointer]
+          - button "Virtual cage" [ref=e40] [cursor=pointer]
+        - generic [ref=e42]:
+          - button "1" [ref=e43] [cursor=pointer]
+          - button "2" [ref=e44] [cursor=pointer]
+          - button "3" [ref=e45] [cursor=pointer]
+          - button "4" [ref=e46] [cursor=pointer]
+          - button "5" [ref=e47] [cursor=pointer]
+          - button "6" [ref=e48] [cursor=pointer]
+          - button "7" [ref=e49] [cursor=pointer]
+          - button "8" [ref=e50] [cursor=pointer]
+          - button "9" [ref=e51] [cursor=pointer]
+          - button "✕" [ref=e52] [cursor=pointer]

@@ -1,0 +1,24 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - heading "COACH" [level=1] [ref=e4]
+      - generic [ref=e5]: Killer Sudoku Coaching App
+      - button "New puzzle" [ref=e17] [cursor=pointer]
+      - button "Help" [ref=e6] [cursor=pointer]
+      - button "Config" [ref=e7] [cursor=pointer]
+  - main [ref=e8]:
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - heading "Detected Layout — Killer Sudoku" [level=2] [ref=e21]
+        - generic [ref=e24]:
+          - heading "Warped Grid" [level=2] [ref=e25]
+          - img "Perspective-corrected grid" [ref=e26]
+        - generic [ref=e27]:
+          - heading "Original Photo" [level=2] [ref=e28]
+          - img "Uploaded puzzle photo" [ref=e29]
+      - generic [ref=e30]:
+        - button "Confirm & Solve" [ref=e31] [cursor=pointer]
+        - generic [ref=e32]: Type
+        - combobox "Type" [ref=e33]:
+          - option "Killer" [selected]
+          - option "Classic"

@@ -1,0 +1,8 @@
+[     111ms] TypeError: Cannot read properties of null (reading 'style')
+    at HTMLDocument.<anonymous> (http://localhost:5173/src/main.ts:763:9)
+[     130ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/favicon.ico:0
+[    3111ms] [LOG] [CV] loading ./opencv.js @ http://localhost:5173/src/session/store.ts:34
+[    3127ms] [LOG] [CV] progress fetch started, Content-Length: 4097780 @ http://localhost:5173/src/session/store.ts:59
+[    3192ms] [LOG] [CV] script loaded, waiting for WASM init… @ http://localhost:5173/src/session/store.ts:39
+[    3211ms] [LOG] [CV] ready @ http://localhost:5173/src/session/store.ts:42
+[  344915ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/src/session/store.js:0

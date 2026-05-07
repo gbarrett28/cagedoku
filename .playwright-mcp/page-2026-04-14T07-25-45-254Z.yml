@@ -1,0 +1,21 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - heading "COACH" [level=1] [ref=e4]
+      - generic [ref=e5]: Killer Sudoku Coaching App
+      - generic [ref=e6]: loaded 8:24:25 AM
+      - button "New puzzle" [ref=e18] [cursor=pointer]
+      - button "Help" [ref=e7] [cursor=pointer]
+      - button "Config" [ref=e8] [cursor=pointer]
+      - button "Quit server" [ref=e9] [cursor=pointer]
+  - main [ref=e10]:
+    - generic [ref=e19]:
+      - generic [ref=e20]:
+        - heading "Detected Layout — Classic Sudoku" [level=2] [ref=e22]
+        - generic [ref=e24]:
+          - heading "Original Photo" [level=2] [ref=e25]
+          - img "Uploaded puzzle photo" [ref=e26]
+      - paragraph [ref=e27]: Click a cell, then type a digit to correct OCR errors. Backspace clears a cell. Duplicate digits are highlighted in red.
+      - generic [ref=e28]:
+        - button "Looks correct — solve!" [ref=e29] [cursor=pointer]
+        - button "Edit cage totals" [ref=e30] [cursor=pointer]

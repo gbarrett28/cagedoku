@@ -1,0 +1,26 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - heading "COACH" [level=1] [ref=e4]
+      - generic [ref=e5]: Killer Sudoku Coaching App
+      - button "New puzzle" [ref=e18] [cursor=pointer]
+      - button "Help" [ref=e6] [cursor=pointer]
+      - button "Config" [ref=e7] [cursor=pointer]
+  - main [ref=e8]:
+    - generic [ref=e19]:
+      - generic [ref=e20]:
+        - heading "Detected Layout — Killer Sudoku" [level=2] [ref=e22]
+        - generic [ref=e25]:
+          - heading "Warped Grid" [level=2] [ref=e26]
+          - img "Perspective-corrected grid" [ref=e27]
+        - generic [ref=e28]:
+          - heading "Original Photo" [level=2] [ref=e29]
+          - img "Uploaded puzzle photo" [ref=e30]
+      - generic [ref=e31]:
+        - button "Confirm & Solve" [ref=e32] [cursor=pointer]
+        - generic [ref=e33]: Type
+        - combobox "Type" [ref=e34]:
+          - option "Killer" [selected]
+          - option "Classic"
+        - generic [ref=e35]: "Warning: Some cage totals were out of range and have been reset — please correct: row=1,col=1: read 5, clamped to 6 (3-cell cage range [6, 24]); row=1,col=2: read 54, clamped to 24 (3-cell cage range [6, 24]); row=1,col=5: read 57, clamped to 17 (2-cell cage range [3, 17]); row=1,col=7: read 54, clamped to 24 (3-cell cage range [6, 24]); row=1,col=8: read 55, clamped to 30 (4-cell cage range [10, 30]); row=2,col=3: read 85, clamped to 17 (2-cell cage range [3, 17]); row=2,col=5: read 1, clamped to 3 (2-cell cage range [3, 17]); row=3,col=1: read 51, clamped to 24 (3-cell cage range [6, 24]); row=3,col=2: read 66, clamped to 24 (3-cell cage range [6, 24]); row=3,col=5: read 5, clamped to 6 (3-cell cage range [6, 24]); row=3,col=7: read 55, clamped to 17 (2-cell cage range [3, 17]); row=5,col=1: read 54, clamped to 17 (2-cell cage range [3, 17]); row=5,col=2: read 52, clamped to 17 (2-cell cage range [3, 17]); row=5,col=4: read 51, clamped to 24 (3-cell cage range [6, 24]); row=5,col=5: read 55, clamped to 24 (3-cell cage range [6, 24]); row=5,col=6: read 56, clamped to 30 (4-cell cage range [10, 30]); row=5,col=7: read 1, clamped to 3 (2-cell cage range [3, 17]); row=6,col=7: read 55, clamped to 30 (4-cell cage range [10, 30]); row=6,col=8: read 2, clamped to 3 (2-cell cage range [3, 17]); row=7,col=1: read 56, clamped to 30 (4-cell cage range [10, 30]); row=7,col=9: read 55, clamped to 17 (2-cell cage range [3, 17]); row=8,col=5: read 55, clamped to 30 (4-cell cage range [10, 30]); row=8,col=7: read 55, clamped to 24 (3-cell cage range [6, 24]); row=9,col=1: read 55, clamped to 17 (2-cell cage range [3, 17]). Cage totals sum to 512 (expected 405) — some may be misread; please review."
+  - generic: dev 2026-05-01 18:01

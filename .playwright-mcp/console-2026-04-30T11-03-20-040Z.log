@@ -1,0 +1,3 @@
+[    2340ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/@vite/client:0
+[    2341ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/src/main.ts:0
+[    2592ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/favicon.ico:0

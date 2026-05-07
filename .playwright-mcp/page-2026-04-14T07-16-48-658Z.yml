@@ -1,0 +1,16 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - heading "COACH" [level=1] [ref=e4]
+      - generic [ref=e5]: Killer Sudoku Coaching App
+      - generic [ref=e6]: loaded 8:16:48 AM
+      - button "Help" [ref=e7] [cursor=pointer]
+      - button "Config" [ref=e8] [cursor=pointer]
+      - button "Quit server" [ref=e9] [cursor=pointer]
+  - main [ref=e10]:
+    - generic [ref=e11]:
+      - heading "Open Puzzle" [level=2] [ref=e12]
+      - generic [ref=e13]:
+        - generic [ref=e14]: Puzzle image
+        - button "Puzzle image" [ref=e15]
+      - button "Process image" [ref=e17] [cursor=pointer]
