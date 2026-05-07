@@ -121,3 +121,40 @@ test('new puzzle button returns to upload panel', async ({ page }) => {
   await expect(page.locator('#upload-panel')).toBeVisible();
   await expect(page.locator('#review-panel')).toBeHidden();
 });
+
+// ---------------------------------------------------------------------------
+// Training consent modal
+// ---------------------------------------------------------------------------
+
+async function openConsentModal(page: Page): Promise<void> {
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => '__testShowConsentModal' in window);
+  await page.evaluate(() => {
+    (window as unknown as Record<string, () => void>)['__testShowConsentModal']!();
+  });
+  await expect(page.locator('#training-consent-modal')).toBeVisible({ timeout: 3_000 });
+}
+
+test('consent modal appears and closes on Skip without setting cookie', async ({ page }) => {
+  await openConsentModal(page);
+  await page.locator('#training-consent-skip-btn').click();
+  await expect(page.locator('#training-consent-modal')).toBeHidden();
+  const cookies = await page.context().cookies();
+  expect(cookies.find(c => c.name === 'training_consent')).toBeUndefined();
+});
+
+test('consent modal Always send sets training_consent=granted cookie', async ({ page }) => {
+  await openConsentModal(page);
+  await page.locator('#training-consent-always-btn').click();
+  await expect(page.locator('#training-consent-modal')).toBeHidden();
+  const cookies = await page.context().cookies();
+  expect(cookies.find(c => c.name === 'training_consent')?.value).toBe('granted');
+});
+
+test('consent modal Send this time closes modal without setting cookie', async ({ page }) => {
+  await openConsentModal(page);
+  await page.locator('#training-consent-once-btn').click();
+  await expect(page.locator('#training-consent-modal')).toBeHidden();
+  const cookies = await page.context().cookies();
+  expect(cookies.find(c => c.name === 'training_consent')).toBeUndefined();
+});

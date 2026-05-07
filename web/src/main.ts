@@ -11,7 +11,7 @@ import { cellLabel } from './engine/rules/_labels.js';
 import { extractTrainingData } from './image/trainingExport.js';
 import type { TrainingExport } from './image/trainingExport.js';
 import { defaultImagePipelineConfig } from './image/config.js';
-import { hasConsent, grantConsent, uploadTrainingData } from './image/trainingUpload.js';
+import { initiateUpload, grantConsent, uploadTrainingData } from './image/trainingUpload.js';
 import { dataToSpec } from './session/specUtils.js';
 import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec } from './engine/fixtures.js';
 import {
@@ -718,11 +718,7 @@ async function handleConfirm(): Promise<void> {
       );
       pendingCellThumbs = new Map();
       if (data.sampleCount > 0) {
-        if (hasConsent()) {
-          uploadTrainingData(data);
-        } else {
-          showTrainingConsentModal(data);
-        }
+        initiateUpload(data, showTrainingConsentModal);
       }
     } else {
       pendingCellThumbs = new Map();
@@ -1179,6 +1175,21 @@ document.addEventListener('DOMContentLoaded', () => {
       else spec = makeTrivialSpec();
       const { state, warpedImageUrl, warning } = loadSpecDirect(spec);
       applyUploadResult(state, warpedImageUrl, warning);
+    };
+
+    // Exposes window.__testShowConsentModal() so Playwright tests can exercise
+    // the consent modal without needing a real OCR result.
+    (window as unknown as Record<string, unknown>)['__testShowConsentModal'] = () => {
+      showTrainingConsentModal({
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        appVersion: __BUILD_TIME__,
+        puzzleType: 'killer',
+        subres: 128,
+        thumbnailSize: 64,
+        sampleCount: 1,
+        samples: [{ digit: 3, pixels: Array<number>(4096).fill(128) }],
+      });
     };
   }
 });

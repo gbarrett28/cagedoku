@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { hasConsent, grantConsent, uploadTrainingData } from './trainingUpload.js';
+import { hasConsent, grantConsent, uploadTrainingData, initiateUpload } from './trainingUpload.js';
 
 function clearCookies(): void {
   document.cookie.split(';').forEach(c => {
@@ -84,5 +84,34 @@ describe('uploadTrainingData', () => {
     expect(() => uploadTrainingData(minimalExport)).not.toThrow();
     // Drain microtask queue so the rejection is handled before the test exits.
     await new Promise(r => setTimeout(r, 0));
+  });
+});
+
+describe('initiateUpload', () => {
+  beforeEach(clearCookies);
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); clearCookies(); });
+
+  it('calls uploadTrainingData directly when consent cookie is set', () => {
+    document.cookie = 'training_consent=granted';
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://worker.example.com');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('OK'));
+    const showModal = vi.fn();
+
+    initiateUpload(minimalExport, showModal);
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(showModal).not.toHaveBeenCalled();
+  });
+
+  it('calls showConsentModal when no consent cookie is set', () => {
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://worker.example.com');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const showModal = vi.fn();
+
+    initiateUpload(minimalExport, showModal);
+
+    expect(showModal).toHaveBeenCalledOnce();
+    expect(showModal).toHaveBeenCalledWith(minimalExport);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
