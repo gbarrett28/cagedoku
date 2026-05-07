@@ -71,6 +71,7 @@ export interface UploadResult {
   state: PuzzleState;
   warpedImageUrl: string | null;
   warning: string | null;
+  cellThumbs: ReadonlyMap<string, Uint8Array[]>;
 }
 
 /**
@@ -95,7 +96,7 @@ export function loadSpecDirect(spec: PuzzleSpec): UploadResult {
     warpedImageUrl: null,
   };
   setState(state);
-  return { state, warpedImageUrl: null, warning: null };
+  return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map() };
 }
 
 /**
@@ -139,7 +140,7 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
   }
 
   const state: PuzzleState = {
-    specData: specToData(spec, result.cellThumbs),
+    specData: specToData(spec),
     cageStates: specToCageStates(spec),
     userGrid: null,
     virtualCages: [],
@@ -153,7 +154,7 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
   };
 
   setState(state);
-  return { state, warpedImageUrl, warning };
+  return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs };
 }
 
 async function fileToDataUrl(file: File): Promise<string> {
