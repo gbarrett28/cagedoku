@@ -167,11 +167,13 @@ tsc -p tsconfig.node.json --noEmit
 npm test
 ```
 
-**This sequence is MANDATORY before git commit. If ANY step fails, DO NOT COMMIT.**
+**If ANY step fails, DO NOT COMMIT.**
 
-Also check manually before committing:
-- Every spec in `docs/specs/` still accurately describes the intended design — update it if the implementation has diverged.
+Then verify manually — these checks are part of the gate, not optional:
+- Every spec in `docs/specs/` still accurately describes the intended design. Update it if the implementation has diverged.
 - Every plan in `docs/plans/` has its completed steps checked off.
+
+**Do not commit if either doc check fails.**
 
 ## Silver Gate (REQUIRED before merging to `master`)
 
@@ -184,9 +186,13 @@ npx playwright test
 npx playwright test --config playwright.dev.config.ts
 ```
 
-Also check manually before merging:
+**If ANY step fails, DO NOT MERGE.**
+
+Then verify manually — these checks are part of the gate, not optional:
 - Every spec in `docs/specs/` has been incorporated into the relevant live doc (`docs/architecture.md`, `docs/image-pipeline.md`, etc.) — then **delete the spec file**.
 - Every plan in `docs/plans/` has all steps completed — then **delete the plan file**.
+
+**Do not merge if either doc check fails.**
 
 `playwright.config.ts` runs `app.spec.ts` and `offline.spec.ts` against `vite preview`
 (production build). `playwright.dev.config.ts` runs `flow.spec.ts` against `vite dev`
