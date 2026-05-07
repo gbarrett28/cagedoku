@@ -9,17 +9,18 @@
 
 The app currently lets users export labelled digit thumbnails as a local JSON download.
 This spec replaces that manual flow with automatic, consent-gated upload to a Cloudflare
-Worker that stores data in R2 and notifies the developer via a GitHub Issue.
+Worker that stores data in R2 and notifies the developer via a single persistent GitHub
+Issue. Subsequent uploads add comments to the same issue rather than opening new ones.
 
 The developer goal is to accumulate real-newspaper digit samples from multiple users,
 retrain the recogniser periodically, and deploy an improved model.
 
-**Immediate scope (this spec):** manual retrain workflow — collect, download, retrain,
-redeploy by hand.
+**Phase 1 (this spec):** manual retrain workflow — collect from R2, retrain, redeploy
+by hand.
 
-**Future goal (not in scope):** automated retrain pipeline triggered by the Worker
-(GitHub Actions downloads from R2, runs `train_recogniser.py`, verifies accuracy against
-`browser_train.json`, commits updated model on pass).
+**Phase 2 (this spec, not built first):** scheduled GitHub Actions workflow that
+downloads from R2, retrains, validates accuracy, and commits the updated model
+automatically.
 
 ---
 
@@ -38,26 +39,29 @@ redeploy by hand.
 Browser (GitHub Pages)
   └─ trainingUpload.ts
        ├─ consent cookie check
-       ├─ consent modal (on first upload per session without cookie)
+       ├─ consent modal (when no cookie)
        └─ fire-and-forget POST → Worker
 
 Cloudflare Worker  (worker/src/index.ts)
   ├─ schema validation → 400 if invalid
   ├─ R2 list check     → 429 if pending count >= MAX_PENDING_UPLOADS
-  ├─ R2 PUT            → training/<ISO-timestamp>-<uuid>.json
-  ├─ KV get PENDING_ISSUE
-  │    ├─ absent → GitHub Issues POST + KV PUT PENDING_ISSUE (30-day TTL)
-  │    └─ present → silent
+  ├─ R2 PUT            → training/<exportedAt>-<uuid>.json
+  ├─ KV get OPEN_ISSUE_NUMBER
+  │    ├─ absent  → create GitHub Issue, store number in KV (no TTL)
+  │    └─ present → GET /issues/{number}
+  │                   open   → add comment to issue
+  │                   closed → create new issue, overwrite KV with new number
   └─ 200
 
 Cloudflare R2 bucket  (killer-sudoku-training)
-  └─ one object per upload, key = training/<timestamp>-<uuid>.json
+  └─ one object per upload, key = training/<exportedAt>-<uuid>.json
 
 Cloudflare KV namespace  (killer-sudoku-notifications)
-  └─ PENDING_ISSUE  — present means a notification issue is already open
+  └─ OPEN_ISSUE_NUMBER  — GitHub issue number (string); absent = no open issue
 
 GitHub Issues
-  └─ one issue per notification window; body contains metadata + R2 key list
+  └─ one persistent issue; subsequent uploads add comments
+     Phase 2 retrain workflow closes it and deletes the KV key when done
 ```
 
 ---
@@ -140,9 +144,11 @@ POST /
        count >= MAX_PENDING_UPLOADS → 429 (silent to user)
   6. R2 PUT: key=training/<exportedAt>-<uuid>.json
        customMetadata: { appVersion, puzzleType, sampleCount }
-  7. KV GET: PENDING_ISSUE
-       absent  → GitHub Issues POST + KV PUT (TTL = 30 days)
-       present → skip
+  7. KV GET: OPEN_ISSUE_NUMBER
+       absent  → create GitHub Issue, KV PUT (no TTL)
+       present → GET /issues/{number}
+                   open   → POST /issues/{number}/comments
+                   closed → create new GitHub Issue, KV PUT (overwrite)
   8. Return 200
 ```
 
@@ -156,7 +162,7 @@ sampleCount matches samples.length, each sample has a `digit` 0–9 and a `pixel
 of exactly 4096 numbers in range 0–255). Rejects anything that fails — bad data must
 not reach R2.
 
-### GitHub Issue body
+### GitHub Issue — initial body
 
 ```markdown
 ## New training data available
@@ -164,20 +170,20 @@ not reach R2.
 | Field | Value |
 |---|---|
 | Sample count | {sampleCount} |
-| Puzzle type | {puzzleType} |
-| App version | {appVersion} |
-| Uploaded at | {exportedAt} |
-| R2 key | `training/{timestamp}-{uuid}.json` |
+| Puzzle type  | {puzzleType} |
+| App version  | {appVersion} |
+| Uploaded at  | {exportedAt} |
+| R2 key       | `training/{exportedAt}-{uuid}.json` |
 
-To collect all pending uploads, run:
+Subsequent uploads will be added as comments on this issue.
+To collect all pending uploads and retrain, see the Developer Workflow in the spec.
 ```
-wrangler r2 object list killer-sudoku-training --prefix training/
-```
-Then download each key and pass to `train_recogniser.py`.
-After retraining, clear the notification flag:
-```
-wrangler kv key delete --namespace-id <id> PENDING_ISSUE
-```
+
+### GitHub Issue — comment body (subsequent uploads)
+
+```markdown
+**New upload** — {sampleCount} samples ({puzzleType}), app {appVersion}, {exportedAt}
+R2 key: `training/{exportedAt}-{uuid}.json`
 ```
 
 ### Environment variables and secrets
@@ -212,9 +218,9 @@ ENVIRONMENT = "production"
 
 ---
 
-## Developer Workflow
+## Phase 1 — Developer Workflow (manual)
 
-### When a GitHub Issue appears
+### When a GitHub Issue appears (or gains a comment)
 
 1. List all pending uploads:
    ```
@@ -230,13 +236,72 @@ ENVIRONMENT = "production"
      web/browser_train.json <key1>.json <key2>.json ...
    ```
 4. Verify accuracy (existing evaluate scripts), commit updated model files.
-5. Clear the notification flag so the next upload triggers a new issue:
+5. Delete all processed R2 objects to reset the pending count:
    ```
-   wrangler kv key delete --namespace-id <id> PENDING_ISSUE
+   wrangler r2 object delete killer-sudoku-training training/<key>
    ```
-6. Close the GitHub Issue.
+6. Delete the KV key so the next upload opens a fresh issue:
+   ```
+   wrangler kv key delete --namespace-id <id> OPEN_ISSUE_NUMBER
+   ```
+7. Close the GitHub Issue.
 
-A helper script (`scripts/collect_training.sh`) should be added to automate steps 1–2.
+A helper script (`scripts/collect_training.sh`) should automate steps 1–2 and 5–6.
+
+---
+
+## Phase 2 — Scheduled Retrain Workflow
+
+### Overview
+
+A GitHub Actions workflow runs on a weekly cron schedule (and can be triggered manually
+via `workflow_dispatch`). It downloads all pending R2 objects, retrains the recogniser,
+validates accuracy against the existing baseline, and commits the updated model if the
+accuracy check passes. On completion it closes the tracking issue and resets the KV key.
+
+### Workflow — `.github/workflows/retrain.yml`
+
+```
+on:
+  schedule: cron '0 3 * * 0'   # 03:00 UTC every Sunday
+  workflow_dispatch:
+
+steps:
+  1. Checkout repo
+  2. Set up Python + install dependencies (scikit-learn, numpy, etc.)
+  3. Install wrangler (npm install -g wrangler)
+  4. List R2 objects (prefix=training/)
+       none found → exit early, no commit
+  5. Download all objects to /tmp/training/
+  6. python web/train_recogniser.py --browser-weight 1000 --svm-c 100
+       web/browser_train.json /tmp/training/*.json
+  7. python killer_sudoku/training/evaluate.py
+       compare new model accuracy to baseline stored in web/browser_train.json
+       regression detected → open a GitHub Issue flagging the failure, exit 1
+  8. git commit web/public/num_recogniser.{json,bin}
+  9. git push
+ 10. Merge new samples into web/browser_train.json, commit
+ 11. Delete processed R2 objects
+ 12. wrangler kv key delete OPEN_ISSUE_NUMBER
+ 13. Close the GitHub Issue (gh issue close {number})
+```
+
+### Additional secrets required for Phase 2
+
+| Name | Kind | Description |
+|---|---|---|
+| `CLOUDFLARE_API_TOKEN` | Repo secret | Wrangler API token (R2 + KV read/write/delete) |
+| `CLOUDFLARE_ACCOUNT_ID` | Repo secret | Cloudflare account ID |
+
+The existing `GITHUB_TOKEN` provided automatically by Actions is sufficient for git push,
+issue close, and opening failure issues — no additional PAT needed.
+
+### Accuracy baseline
+
+`evaluate.py` compares the new model's per-digit accuracy against the scores recorded in
+`web/browser_train.json` (or a separate `accuracy_baseline.json` if preferred). Any
+digit whose accuracy drops by more than a configurable threshold (e.g. 2%) triggers a
+regression failure.
 
 ---
 
@@ -246,7 +311,7 @@ A helper script (`scripts/collect_training.sh`) should be added to automate step
 2. Create KV namespace: `wrangler kv namespace create killer-sudoku-notifications`
 3. Add KV namespace ID to `wrangler.toml`
 4. Create a fine-grained GitHub PAT with `issues: write` scoped to this repo only
-5. Store PAT: `wrangler secret put GITHUB_TOKEN`
+5. Store PAT as Worker secret: `wrangler secret put GITHUB_TOKEN`
 6. Add `VITE_TRAINING_WORKER_URL=https://killer-sudoku-training.<account>.workers.dev`
    to `.env.production` (not committed; injected in CI via GitHub Actions secret)
 7. Add `TRAINING_WORKER_URL` as a repository secret in GitHub Actions
@@ -258,13 +323,14 @@ A helper script (`scripts/collect_training.sh`) should be added to automate step
        VITE_TRAINING_WORKER_URL: ${{ secrets.TRAINING_WORKER_URL }}
      run: npm run build
    ```
+9. *(Phase 2 only)* Add `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as
+   repository secrets for the retrain workflow.
 
 ---
 
 ## Out of Scope
 
-- Automated retrain pipeline (future Approach C)
 - Deduplication of identical samples across uploads
-- Admin endpoint to clear the KV flag via HTTP (use `wrangler kv` CLI instead)
+- Admin endpoint to clear the KV key via HTTP (use `wrangler kv` CLI instead)
 - Opt-out / data deletion mechanism (no PII is collected, so GDPR exposure is minimal;
   revisit if the app is used in the EU at scale)
