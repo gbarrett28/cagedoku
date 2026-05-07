@@ -34,6 +34,9 @@ web/dist/
 web/node_modules/
 worker/node_modules/
 
+# Local build env — contains Worker URL; injected as CI secret
+web/.env.production
+
 # opencv.js committed directly — custom core+imgproc build from build-opencv-wsl.sh.
 # CI uses this file; the download step in pages.yml is skipped when it is present.
 

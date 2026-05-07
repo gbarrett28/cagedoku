@@ -54,6 +54,8 @@ jobs:
 
       - name: Build
         working-directory: web
+        env:
+          VITE_TRAINING_WORKER_URL: ${{ secrets.TRAINING_WORKER_URL }}
         run: npm run build
 
       - name: Configure Pages
