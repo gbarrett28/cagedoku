@@ -148,10 +148,9 @@ independent solvers that serve different purposes:
 command-line workflow and as the golden-solution oracle for the coaching app.  Runs
 constraint propagation to completion and falls back to a CSP solver if it stalls.
 
-**Coaching engine** (`solver/engine/`): used by the coaching app for interactive
+**Coaching engine** (`web/src/engine/`): used by the web app for interactive
 candidate tracking and hint generation.  Event-driven, rule-based, designed for
 partial application and incremental updates.  Does not solve to completion.
-See `docs/rules.md`.
 
 The batch solver receives `cage_totals` (a 9×9 array where non-zero cells are cage
 heads) and `brdrs` (a 9×9×4 boolean array of [up, right, down, left] borders per
@@ -181,3 +180,72 @@ flowchart TD
 ```
 
 The solver has no tunable thresholds — it is exact by construction.
+
+---
+
+## Rule Contract
+
+All solver rules live in `web/src/engine/rules/`.  Every rule implements the
+`SolverRule` interface (`web/src/engine/rule.ts`):
+
+```typescript
+interface SolverRule {
+  readonly name: string;           // matches class name exactly
+  readonly description: string;    // shown in the config modal (i) tooltip
+  readonly priority: number;       // lower = higher priority = fired first
+  readonly triggers: ReadonlySet<Trigger>;
+  readonly unitKinds: ReadonlySet<UnitKind>; // empty = GLOBAL or cell-scoped
+
+  apply(ctx: RuleContext): RuleResult;
+  asHints(ctx: RuleContext, eliminations: readonly Elimination[]): HintResult[];
+}
+```
+
+**`apply(ctx)`** must be pure — it reads `ctx.board` and returns a `RuleResult`
+(eliminations, placements, solution eliminations, virtual cage additions).  It
+must not mutate board state.
+
+**`asHints(ctx, eliminations)`** converts the same deduction into human-readable
+`HintResult[]` for the coaching UI.  It receives the eliminations that `apply()`
+just produced, so both paths share the same detection logic.  Return `[]` if the
+rule should not surface hints (always-apply-only rules).
+
+**`RuleResult`** (`web/src/engine/types.ts`):
+
+```typescript
+interface RuleResult {
+  eliminations:        readonly Elimination[];          // { cell, digit }
+  placements:          readonly Placement[];            // { cell, digit }
+  solutionEliminations: readonly SolutionElimination[]; // { cageIdx, solution }
+  virtualCageAdditions: readonly VirtualCageAddition[]; // { cells, total }
+}
+```
+
+Use `emptyResult()` to return no progress.
+
+**`HintResult`** (`web/src/engine/hint.ts`):
+
+```typescript
+interface HintResult {
+  ruleName:     string;
+  displayName:  string;
+  explanation:  string;                              // plain English; use cellLabel()
+  highlightCells: readonly Cell[];                   // 0-based [row, col]
+  eliminations: readonly Elimination[];
+  placement:    readonly [number, number, number] | null;  // [row, col, digit] or null
+  virtualCageSuggestion: readonly [readonly Cell[], number] | null;
+}
+```
+
+**Adding a new rule:**
+
+1. Create `web/src/engine/rules/<camelCaseName>.ts` — one class per file.
+2. Implement `SolverRule`.  Import types from `../types.js`, `../rule.js`, `../hint.js`.
+3. Add it to `defaultRules()` in `web/src/engine/rules/index.ts` at the right priority.
+4. Co-locate tests as `<camelCaseName>.test.ts` using `makeTrivialSpec()` from
+   `web/src/engine/fixtures.ts`.
+5. Use `cellLabel([row, col])` from `web/src/engine/rules/_labels.ts` for all
+   cell references in hint explanations — never inline `r${r+1}c${c+1}`.
+
+The priority order and trigger assignments for all active rules are listed in the
+comment block at the top of `web/src/engine/rules/index.ts`.

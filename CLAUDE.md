@@ -38,7 +38,7 @@ deductions. All processing runs client-side.
 
 ## Key Reference Documents
 
-- **`docs/rules.md`** — read before touching any rule or coaching engine component (`web/src/engine/rules/`)
+- **`docs/architecture.md`** § *Rule Contract* — read before touching any rule or coaching engine component (`web/src/engine/rules/`)
 - **`docs/architecture.md`** — read before working on the image pipeline, session lifecycle, or engine
 - **`docs/ui.md`** — read before working on the frontend (`web/src/main.ts`)
 

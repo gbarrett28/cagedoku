@@ -2,7 +2,7 @@
 
 > Read this before working on the frontend (`web/src/`) or any behaviour
 > visible to the user. For the coaching API and session lifecycle see
-> `docs/architecture.md`. For rule internals see `docs/rules.md`.
+> `docs/architecture.md`. For rule internals see `docs/architecture.md` § *Rule Contract*.
 
 ---
 
