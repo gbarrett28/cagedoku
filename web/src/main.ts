@@ -9,7 +9,9 @@
 import { loadCV, loadRec, setCandidatesCache } from './session/store.js';
 import { cellLabel } from './engine/rules/_labels.js';
 import { extractTrainingData } from './image/trainingExport.js';
+import type { TrainingExport } from './image/trainingExport.js';
 import { defaultImagePipelineConfig } from './image/config.js';
+import { hasConsent, grantConsent, uploadTrainingData } from './image/trainingUpload.js';
 import { dataToSpec } from './session/specUtils.js';
 import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec } from './engine/fixtures.js';
 import {
@@ -84,6 +86,7 @@ let inspectCageMode = false;
 let draftBorderX: boolean[][] = [];   // [col][rowGap] — cage horizontal walls
 let draftBorderY: boolean[][] = [];   // [colGap][row] — cage vertical walls
 let draftEdited = false;              // true once the user changes any total or border
+let pendingCellThumbs = new Map<string, Uint8Array[]>(); // OCR thumbnails, held until Confirm
 let totalEditCell: { row: number; col: number } | null = null;  // 0-based, active overlay
 let totalEditPrev = 0;
 let reviewErrorCells = new Set<string>(); // "row,col" keys — cages failing Confirm validation
@@ -417,7 +420,6 @@ function renderPlayingMode(state: PuzzleState): void {
   const isKiller = state.puzzleType !== 'classic';
   el<HTMLButtonElement>('inspect-cage-btn').hidden = !isKiller;
   el<HTMLButtonElement>('virtual-cage-btn').hidden = !isKiller;
-  el<HTMLButtonElement>('export-btn').hidden = !isKiller || state.warpedImageUrl === null;
 }
 
 function updateUndoButton(state: PuzzleState): void {
@@ -446,21 +448,6 @@ async function handleReveal(): Promise<void> {
     updateRevealButton();
   } catch (e) { setStatus(String(e), true); }
   finally { setLoading(false); }
-}
-
-function handleExport(): void {
-  if (currentState === null) return;
-  const { cellThumbs = new Map(), cageTotals } = currentState.specData;
-  const data = extractTrainingData(cellThumbs, cageTotals, currentState.puzzleType, defaultImagePipelineConfig().numberRecognition.subres);
-  const json = JSON.stringify(data);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `training-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-  setStatus(`Exported ${data.sampleCount} training sample${data.sampleCount !== 1 ? 's' : ''}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -685,7 +672,8 @@ async function handleProcess(): Promise<void> {
   if (!fileInput.files || fileInput.files.length === 0) { setStatus('Please select an image file.', true); return; }
   setLoading(true);
   try {
-    const { state, warpedImageUrl, warning } = await uploadPuzzle(fileInput.files[0]!);
+    const { state, warpedImageUrl, warning, cellThumbs } = await uploadPuzzle(fileInput.files[0]!);
+    pendingCellThumbs = new Map(cellThumbs);
     applyUploadResult(state, warpedImageUrl, warning);
   } catch (e) {
     // uploadPuzzle only throws on hard failures (e.g. not an image).
@@ -699,12 +687,6 @@ async function handleConfirm(): Promise<void> {
   if (currentState === null) return;
   setLoading(true);
   try {
-    // Capture thumbnails and confirmed totals before state is replaced.
-    const exportThumbs   = currentState.specData.cellThumbs ?? new Map();
-    const exportTotals   = currentState.specData.cageTotals;
-    const exportPuzzleType = currentState.puzzleType;
-    const exportSubres   = defaultImagePipelineConfig().numberRecognition.subres;
-
     const result = applyDraftLayout(
       draftBorderX, draftBorderY, currentState.specData.cageTotals,
     );
@@ -725,24 +707,40 @@ async function handleConfirm(): Promise<void> {
     renderPlayingMode(playing);
     setStatus('');
 
-    // Fire-and-forget training export — only when the user has corrected something,
-    // so unedited OCR results (which may contain errors) are never written to disk.
-    if (draftEdited && exportPuzzleType !== 'classic') {
-      const data = extractTrainingData(exportThumbs, exportTotals, exportPuzzleType, exportSubres);
+    // Upload training samples when the user confirmed a killer puzzle with edits.
+    // Thumbnails are captured before state replacement; clear them now regardless.
+    if (draftEdited && currentState.puzzleType !== 'classic') {
+      const data = extractTrainingData(
+        pendingCellThumbs,
+        currentState.specData.cageTotals,
+        currentState.puzzleType,
+        defaultImagePipelineConfig().numberRecognition.subres,
+      );
+      pendingCellThumbs = new Map();
       if (data.sampleCount > 0) {
-        const json = JSON.stringify(data);
-        const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `training-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-        setStatus(`Exported ${data.sampleCount} training sample${data.sampleCount !== 1 ? 's' : ''}`);
+        if (hasConsent()) {
+          uploadTrainingData(data);
+        } else {
+          showTrainingConsentModal(data);
+        }
       }
+    } else {
+      pendingCellThumbs = new Map();
     }
   } catch (e) { setStatus(`Confirm failed: ${String(e)}`, true); }
   finally { setLoading(false); }
+}
+
+function showTrainingConsentModal(data: TrainingExport): void {
+  const modal = el<HTMLDialogElement>('training-consent-modal');
+  const onceBtn   = el<HTMLButtonElement>('training-consent-once-btn');
+  const alwaysBtn = el<HTMLButtonElement>('training-consent-always-btn');
+  const skipBtn   = el<HTMLButtonElement>('training-consent-skip-btn');
+  const close = (): void => { modal.close(); };
+  onceBtn.onclick   = () => { uploadTrainingData(data); close(); };
+  alwaysBtn.onclick = () => { grantConsent(); uploadTrainingData(data); close(); };
+  skipBtn.onclick   = close;
+  modal.showModal();
 }
 
 async function handleCellEntry(digit: number): Promise<void> {
@@ -869,7 +867,6 @@ document.addEventListener('DOMContentLoaded', () => {
   el<HTMLButtonElement>('confirm-btn').addEventListener('click', () => { void handleConfirm(); });
   el<HTMLButtonElement>('undo-btn').addEventListener('click', () => { void handleUndo(); });
   el<HTMLButtonElement>('reveal-btn').addEventListener('click', () => { void handleReveal(); });
-  el<HTMLButtonElement>('export-btn').addEventListener('click', () => { void handleExport(); });
 
   el<HTMLSelectElement>('puzzle-type-select').addEventListener('change', (e) => {
     if (currentState === null) return;

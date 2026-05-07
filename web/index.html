@@ -106,7 +106,6 @@
         <button id="inspect-cage-btn" class="btn-secondary" hidden>Inspect cage</button>
         <button id="virtual-cage-btn" class="btn-secondary" hidden>Virtual cage</button>
         <button id="reveal-btn" class="btn-secondary" hidden>Reveal</button>
-        <button id="export-btn" class="btn-secondary" hidden>Export training data</button>
       </div>
       <div class="digit-pad">
         <button id="digit-1" class="digit-btn">1</button>
@@ -251,6 +250,18 @@
 
   <div class="form-actions">
     <button id="general-help-close-btn" class="btn-secondary">Close</button>
+  </div>
+</dialog>
+
+<dialog id="training-consent-modal">
+  <h2>Help improve digit recognition</h2>
+  <p>The digit images extracted from your puzzle will be sent anonymously &mdash;
+     64&times;64&nbsp;pixel thumbnails of cage total numbers only.
+     No puzzle layout, personal information, or newspaper image is included.</p>
+  <div class="modal-actions">
+    <button id="training-consent-once-btn">Send this time</button>
+    <button id="training-consent-always-btn">Always send</button>
+    <button id="training-consent-skip-btn" class="btn-secondary">Skip</button>
   </div>
 </dialog>
 
