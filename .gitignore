@@ -29,8 +29,8 @@ tests/fixtures/sudoku/*.jpg
 tests/fixtures/sudoku/*.jpeg
 tests/fixtures/sudoku/*.png
 
-# Web build artifacts
-web/dist/
+# node_modules at any level (including root from npx calls)
+node_modules/
 web/node_modules/
 worker/node_modules/
 
