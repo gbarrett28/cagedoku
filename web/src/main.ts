@@ -627,7 +627,7 @@ function openConfigModal(): void {
   for (const rule of data.hintableRules) {
     const row = document.createElement('div'); row.className = 'config-rule-row';
     const nameSpan = document.createElement('span'); nameSpan.className = 'config-rule-name'; nameSpan.textContent = rule.displayName;
-    const infoBtn = document.createElement('button'); infoBtn.className = 'btn-rule-info'; infoBtn.textContent = '\u24d8'; infoBtn.title = 'About this rule';
+    const infoBtn = document.createElement('button'); infoBtn.className = 'btn-rule-info'; infoBtn.textContent = 'ⓘ'; infoBtn.title = 'About this rule';
     infoBtn.addEventListener('click', () => {
       el<HTMLHeadingElement>('rule-info-title').textContent = rule.displayName;
       el<HTMLParagraphElement>('rule-info-description').textContent = rule.description;
@@ -677,9 +677,10 @@ async function handleProcess(): Promise<void> {
     draftBorderY = ocrSpec.borderY.map(row => [...row]);
     draftEdited = false;
 
-    // Attempt auto-confirm: skip the review screen when OCR is clean,
+    // Attempt auto-confirm (Killer only): skip the review screen when OCR is clean,
     // the cage layout is valid, and the solver finds a complete solution.
-    if (warning === null) {
+    // Classic puzzles always go to the review screen so the user can verify digits.
+    if (warning === null && state.puzzleType !== 'classic') {
       const layoutResult = applyDraftLayout(draftBorderX, draftBorderY, state.specData.cageTotals);
       if (layoutResult.errorCells.size === 0 && layoutResult.warnings.length === 0) {
         const { board, usedBacktracking } = solveCurrentSpec();
@@ -714,10 +715,9 @@ async function handleProcess(): Promise<void> {
       return;
     }
 
-    // OCR produced a warning (pipeline error or blank grid) — go straight to review.
-    // uploadPuzzle only throws on hard failures (e.g. not an image).
-    // Partial OCR failures return a placeholder state with a warning instead.
-    applyUploadResult(state, warpedImageUrl, warning);
+    // Reach here when: OCR produced a warning, or this is a Classic puzzle (never auto-confirmed).
+    // Classic with no OCR warning gets an informational prompt instead of an error.
+    applyUploadResult(state, warpedImageUrl, warning ?? 'Review the detected digits and press Confirm & Solve');
   } catch (e) {
     setStatus(`Processing failed: ${String(e)}`, true);
   }
@@ -920,7 +920,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderState(updated);
   });
 
-  // ── Inline cage total editing overlay ──────────────────────────────────────
+  // ── Inline cage total editing overlay ───────────────────────────────────────────
   const cageTotalInput = el<HTMLInputElement>('cage-total-edit');
 
   function commitTotalEdit(): void {
@@ -1128,7 +1128,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const r0 = Math.floor(y / CELL);  // 0-based
     if (c0 < 0 || c0 > 8 || r0 < 0 || r0 > 8) return;
 
-    // ── Review-mode interaction (before confirm) ─────────────────────────
+    // ── Review-mode interaction (before confirm) ───────────────────────────────────
     if (currentState.userGrid === null && currentState.puzzleType !== 'classic') {
       // Review mode: borders always togglable; interior click handled by Chunk 2 (total overlay).
       const BORDER_ZONE = 7; // px

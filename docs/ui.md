@@ -36,6 +36,9 @@ The upload panel collapses once processing completes. Navigating back via
 
 ### Auto-Confirm Logic (implementation)
 
+Auto-confirm applies to **Killer puzzles only**. Classic puzzles always proceed to
+the OCR Review Screen so the user can verify the detected given digits.
+
 `handleProcess()` runs these checks in order on the raw OCR output
 (no draft edits applied):
 
@@ -79,17 +82,17 @@ without making manual corrections.
 
 - After processing, an auto-confirm attempt is made (see Application Flow).
   If it succeeds the user lands directly in Playing mode; the review screen
-  is never shown.
-- If auto-confirm fails, the upload panel hides and the OCR Review Screen
-  appears with a non-empty error or warning message explaining what needs
-  correction. On total OCR failure a blank canvas is shown (no borders, no
-  cage totals) so the user can build the layout from scratch.
-- The only exception to reaching Playing mode or the review screen is an
-  unrecognised file format: if the browser cannot decode the selected file as
-  an image, an error is shown on the upload screen and the user is asked to
-  choose a different file.  All other failures (grid not found, pipeline
-  errors, etc.) return a blank-grid placeholder and fall through to the
-  auto-confirm path, which then shows the review screen.
+  is never shown. Auto-confirm only applies to Killer puzzles — Classic
+  puzzles always proceed to the review screen.
+- If auto-confirm fails (or the puzzle is Classic), the upload panel hides and
+  the OCR Review Screen appears with a non-empty status message. On total OCR
+  failure a blank canvas is shown (no borders, no cage totals) so the user can
+  build the layout from scratch.
+- The only exception to reaching the review screen is an unrecognised file
+  format: if the browser cannot decode the selected file as an image, an error
+  is shown on the upload screen and the user is asked to choose a different
+  file.  All other failures (grid not found, pipeline errors, etc.) return a
+  blank-grid placeholder and proceed to the review screen.
 
 **PDF support (planned, not yet implemented)**
 
