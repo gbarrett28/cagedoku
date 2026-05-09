@@ -37,6 +37,18 @@ import type { Brdrs } from '../solver/errors.js';
 import { boundaryKind, BoundaryKind } from './borderClustering.js';
 
 // ---------------------------------------------------------------------------
+// Error types
+// ---------------------------------------------------------------------------
+
+/** Thrown when the input file cannot be decoded as an image. */
+export class ImageDecodeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ImageDecodeError';
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Result type
 // ---------------------------------------------------------------------------
 
@@ -491,7 +503,12 @@ function connectivityScore(
  * Decode an image File to an ImageData using an OffscreenCanvas.
  */
 async function decodeImageFile(file: File): Promise<ImageData> {
-  const bitmap = await createImageBitmap(file);
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    throw new ImageDecodeError(`"${file.name}" is not a recognised image format`);
+  }
   const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
   const ctx = canvas.getContext('2d')!;
   ctx.drawImage(bitmap, 0, 0);

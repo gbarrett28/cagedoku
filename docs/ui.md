@@ -84,8 +84,12 @@ without making manual corrections.
   appears with a non-empty error or warning message explaining what needs
   correction. On total OCR failure a blank canvas is shown (no borders, no
   cage totals) so the user can build the layout from scratch.
-- The upload panel never blocks with a hard error; the user always reaches
-  either Playing mode or the review screen.
+- The only exception to reaching Playing mode or the review screen is an
+  unrecognised file format: if the browser cannot decode the selected file as
+  an image, an error is shown on the upload screen and the user is asked to
+  choose a different file.  All other failures (grid not found, pipeline
+  errors, etc.) return a blank-grid placeholder and fall through to the
+  auto-confirm path, which then shows the review screen.
 
 **PDF support (planned, not yet implemented)**
 
