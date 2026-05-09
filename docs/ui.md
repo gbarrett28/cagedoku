@@ -39,10 +39,12 @@ succeeded. Navigating back via "New puzzle" returns to the upload screen.
   appears — even if OCR failed to detect cages. On total failure a blank canvas
   is shown (no borders, no cage totals) with a warning message so the user can
   build the layout from scratch.
+- The only exception is an unrecognised file format: if the browser cannot decode
+  the selected file as an image, an error is shown on the upload screen and the
+  user is asked to choose a different file.  All other failures (grid not found,
+  pipeline errors, etc.) still proceed to the review screen with a blank grid.
 - If a warning was produced (e.g. cage totals out of range, sum ≠ 405), it
   appears in the status bar below the review columns.
-- The upload panel never blocks with a hard error; the user always reaches the
-  review screen.
 
 **PDF support (planned, not yet implemented)**
 

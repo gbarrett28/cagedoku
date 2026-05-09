@@ -676,8 +676,8 @@ async function handleProcess(): Promise<void> {
     pendingCellThumbs = new Map(cellThumbs);
     applyUploadResult(state, warpedImageUrl, warning);
   } catch (e) {
-    // uploadPuzzle only throws on hard failures (e.g. not an image).
-    // Partial OCR failures return a placeholder state instead.
+    // uploadPuzzle only throws ImageDecodeError (unrecognised image format).
+    // All pipeline failures return a placeholder state so the review panel always appears.
     setStatus(`Processing failed: ${String(e)}`, true);
   }
   finally { setLoading(false); }

@@ -11,7 +11,8 @@ import { solve } from '../engine/index.js';
 import { solSums } from '../solver/equation.js';
 import { defaultRules } from '../engine/rules/index.js';
 import type { Cell } from '../engine/types.js';
-import { parsePuzzleImage } from '../image/inpImage.js';
+import { parsePuzzleImage, ImageDecodeError } from '../image/inpImage.js';
+import type { ParseResult } from '../image/inpImage.js';
 import { defaultImagePipelineConfig } from '../image/config.js';
 import { validateCageLayout } from '../image/validation.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
@@ -109,7 +110,21 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
   if (cv === null || rec === null) throw new Error('Image pipeline not loaded — call loadCV() and loadRec() first');
 
   const config = defaultImagePipelineConfig();
-  const result = await parsePuzzleImage(cv, file, rec, config);
+  let result: ParseResult;
+  try {
+    result = await parsePuzzleImage(cv, file, rec, config);
+  } catch (e) {
+    if (e instanceof ImageDecodeError) throw e;
+    // Any other pipeline error (grid not found, etc.) → proceed to review with blank grid.
+    result = {
+      spec: null,
+      specError: `Image pipeline failed: ${String(e)}`,
+      puzzleType: 'killer',
+      givenDigits: null,
+      warpedImageData: null,
+      cellThumbs: new Map(),
+    };
+  }
 
   // Convert warpedImageData to a data URL for <img> display
   let warpedImageUrl: string | null = null;
