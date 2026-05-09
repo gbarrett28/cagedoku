@@ -109,20 +109,34 @@ collection pipeline. A consent modal is shown on first upload; "Always send" set
 ```
 Browser  →  POST /  →  Cloudflare Worker (cagedoku-training.gbarrett28.workers.dev)
                               │
-                         validates schema, checks R2 pending count (cap: 50)
+                         validates schema (version 1 or 2), checks R2 pending count (cap: 50)
                               │
-                         R2 PUT  training/<timestamp>-<uuid>.json
+                         R2 PUT  training/<timestamp>-<uuid>.json      (digit thumbnails)
+                              or  puzzle-spec/<timestamp>-<uuid>.json  (backtracking specs)
                               │
                          GitHub Issue #1 comment  (gbarrett28/cagedoku)
 ```
+
+Two payload schemas are accepted:
+
+| Version | Type | Trigger | R2 prefix |
+|---|---|---|---|
+| 1 | `TrainingExport` | User confirms killer puzzle with manual OCR edits | `training/` |
+| 2 | `PuzzleSpecExport` | Solver required MRV backtracking (rules alone stalled) | `puzzle-spec/` |
+
+`PuzzleSpecExport` uploads silently (no consent modal) but only when the user has already
+granted consent for digit training. Puzzle specs contain cage layout + totals and are used
+to identify hard puzzles where constraint propagation alone fails, to guide rule-engine
+improvement.
 
 Key files:
 
 | File | Purpose |
 |---|---|
-| `web/src/image/trainingUpload.ts` | `hasConsent`, `grantConsent`, `uploadTrainingData`, `initiateUpload` |
-| `worker/src/index.ts` | Cloudflare Worker fetch handler |
-| `worker/src/validate.ts` | `isTrainingExport()` schema guard |
+| `web/src/image/trainingExport.ts` | `TrainingExport`, `PuzzleSpecExport`, `extractTrainingData`, `buildPuzzleSpecExport` |
+| `web/src/image/trainingUpload.ts` | `hasConsent`, `grantConsent`, `uploadTrainingData`, `uploadPuzzleSpec`, `initiateUpload` |
+| `worker/src/index.ts` | Cloudflare Worker fetch handler — routes by schema version |
+| `worker/src/validate.ts` | `isTrainingExport()`, `isPuzzleSpecExport()` schema guards |
 | `worker/wrangler.toml` | Worker + R2 binding config |
 | `scripts/collect_training.sh` | Download pending R2 uploads locally |
 | `scripts/mark_processed.sh` | Delete R2 objects + react ✅ to Issue #1 comments |

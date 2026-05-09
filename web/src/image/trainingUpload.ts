@@ -1,4 +1,4 @@
-import type { TrainingExport } from './trainingExport.js';
+import type { PuzzleSpecExport, TrainingExport } from './trainingExport.js';
 
 const CONSENT_COOKIE = 'training_consent';
 
@@ -24,7 +24,7 @@ export function initiateUpload(
 
 /** Fire-and-forget POST to the Cloudflare Worker. Network errors are swallowed
  *  intentionally — a failed upload must never interrupt the solve flow. */
-export function uploadTrainingData(data: TrainingExport): void {
+function postToWorker(data: TrainingExport | PuzzleSpecExport): void {
   const workerUrl = import.meta.env['VITE_TRAINING_WORKER_URL'] as string | undefined;
   if (!workerUrl) return;
   void fetch(workerUrl, {
@@ -34,4 +34,16 @@ export function uploadTrainingData(data: TrainingExport): void {
   }).catch((err: unknown) => {
     console.error('[trainingUpload] upload failed:', err);
   });
+}
+
+export function uploadTrainingData(data: TrainingExport): void {
+  postToWorker(data);
+}
+
+/** Upload a puzzle spec that required MRV backtracking — if consent is already
+ *  granted.  Does not show the consent modal; the spec is low-priority signal
+ *  that silently piggybacks on existing consent. */
+export function uploadPuzzleSpec(data: PuzzleSpecExport): void {
+  if (!hasConsent()) return;
+  postToWorker(data);
 }

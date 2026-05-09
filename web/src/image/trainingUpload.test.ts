@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { hasConsent, grantConsent, uploadTrainingData, initiateUpload } from './trainingUpload.js';
+import { hasConsent, grantConsent, uploadTrainingData, uploadPuzzleSpec, initiateUpload } from './trainingUpload.js';
+import type { PuzzleSpecExport } from './trainingExport.js';
 
 function clearCookies(): void {
   document.cookie.split(';').forEach(c => {
@@ -84,6 +85,55 @@ describe('uploadTrainingData', () => {
     expect(() => uploadTrainingData(minimalExport)).not.toThrow();
     // Drain microtask queue so the rejection is handled before the test exits.
     await new Promise(r => setTimeout(r, 0));
+  });
+});
+
+const minimalPuzzleSpec: PuzzleSpecExport = {
+  version: 2,
+  exportedAt: '2026-05-09T00:00:00.000Z',
+  appVersion: 'test',
+  puzzleType: 'killer',
+  regions: Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, (__, c) => r * 9 + c + 1)),
+  cageTotals: Array.from({ length: 9 }, () => new Array<number>(9).fill(0)),
+  borderX: Array.from({ length: 9 }, () => new Array<boolean>(8).fill(false)),
+  borderY: Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false)),
+};
+
+describe('uploadPuzzleSpec', () => {
+  beforeEach(clearCookies);
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); clearCookies(); });
+
+  it('POSTs to worker when consent is granted and VITE_TRAINING_WORKER_URL is set', () => {
+    document.cookie = 'training_consent=granted';
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://test-worker.example.com');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('OK'));
+
+    uploadPuzzleSpec(minimalPuzzleSpec);
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://test-worker.example.com',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('does NOT POST when consent is not granted', () => {
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://test-worker.example.com');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    uploadPuzzleSpec(minimalPuzzleSpec);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('does NOT POST when VITE_TRAINING_WORKER_URL is empty (even with consent)', () => {
+    document.cookie = 'training_consent=granted';
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', '');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    uploadPuzzleSpec(minimalPuzzleSpec);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 

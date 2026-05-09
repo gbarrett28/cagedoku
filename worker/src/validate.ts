@@ -14,6 +14,64 @@ export interface TrainingExport {
   samples: TrainingSample[];
 }
 
+export interface PuzzleSpecExport {
+  version: 2;
+  exportedAt: string;
+  appVersion: string;
+  puzzleType: 'killer';
+  regions: number[][];
+  cageTotals: number[][];
+  borderX: boolean[][];
+  borderY: boolean[][];
+}
+
+export function isPuzzleSpecExport(value: unknown): value is PuzzleSpecExport {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (v['version'] !== 2) return false;
+  if (typeof v['exportedAt'] !== 'string') return false;
+  if (typeof v['appVersion'] !== 'string') return false;
+  if (v['puzzleType'] !== 'killer') return false;
+  if (!is9x9NumberGrid(v['regions'])) return false;
+  if (!is9x9NumberGrid(v['cageTotals'])) return false;
+  if (!isBorderX(v['borderX'])) return false;
+  if (!isBorderY(v['borderY'])) return false;
+  return true;
+}
+
+function is9x9NumberGrid(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length !== 9) return false;
+  for (const row of value as unknown[]) {
+    if (!Array.isArray(row) || (row as unknown[]).length !== 9) return false;
+    for (const cell of row as unknown[]) {
+      if (typeof cell !== 'number') return false;
+    }
+  }
+  return true;
+}
+
+function isBorderX(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length !== 9) return false;
+  for (const col of value as unknown[]) {
+    if (!Array.isArray(col) || (col as unknown[]).length !== 8) return false;
+    for (const cell of col as unknown[]) {
+      if (typeof cell !== 'boolean') return false;
+    }
+  }
+  return true;
+}
+
+function isBorderY(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length !== 8) return false;
+  for (const colGap of value as unknown[]) {
+    if (!Array.isArray(colGap) || (colGap as unknown[]).length !== 9) return false;
+    for (const cell of colGap as unknown[]) {
+      if (typeof cell !== 'boolean') return false;
+    }
+  }
+  return true;
+}
+
 export function isTrainingExport(value: unknown): value is TrainingExport {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;

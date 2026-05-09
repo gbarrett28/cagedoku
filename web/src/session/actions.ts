@@ -7,7 +7,7 @@
  * main.ts can call them as drop-in replacements.
  */
 
-import { solve, BoardState } from '../engine/index.js';
+import { solve, BoardState, SolveResult } from '../engine/index.js';
 import { solSums } from '../solver/equation.js';
 import { defaultRules } from '../engine/rules/index.js';
 import type { Cell } from '../engine/types.js';
@@ -128,15 +128,16 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
   let warning = result.specError;
 
   // On OCR failure show a blank canvas so the user can build from scratch.
-  // A blank spec is a single 81-cell region with one placeholder cage total —
-  // all-zero totals cause validateCageLayout to throw 'unassigned region'.
+  // Build the PuzzleSpec directly without calling validateCageLayout — an 81-cell
+  // cage with any total fails the achievable-range check and would throw.
   if (spec === null) {
     warning = (warning ? warning + ' ' : '') + 'Cage layout could not be detected — starting with a blank grid.';
     const blankBorderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(false));
     const blankBorderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
     const blankTotals  = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-    blankTotals[0]![0] = 1; // placeholder cage head — prevents 'unassigned region'
-    spec = validateCageLayout(blankTotals, blankBorderX, blankBorderY);
+    blankTotals[0]![0] = 1; // placeholder cage head at row=0, col=0
+    const blankRegions = Array.from({ length: 9 }, () => new Array<number>(9).fill(1));
+    spec = { regions: blankRegions, cageTotals: blankTotals, borderX: blankBorderX, borderY: blankBorderY };
   }
 
   const state: PuzzleState = {
@@ -303,14 +304,14 @@ export function applyDraftLayout(
 // ---------------------------------------------------------------------------
 
 /**
- * Runs the solver on the current pre-confirm spec and returns the BoardState.
+ * Runs the solver on the current pre-confirm spec.
  * Call this before confirmPuzzle() to obtain the board to pass in.
  *
- * Separating solve from confirm lets callers inspect the board (e.g. check
- * completeness for auto-confirm) without a second solver pass. Throws if
- * called after confirming.
+ * Returns both the solved board and whether MRV backtracking was needed
+ * (i.e. constraint propagation alone could not fully solve the puzzle).
+ * Throws if called after confirming.
  */
-export function solveCurrentSpec(): BoardState {
+export function solveCurrentSpec(): SolveResult {
   const state = requireState();
   if (state.userGrid !== null) throw new Error('Already confirmed');
   const spec = cageStatesToSpec(state.cageStates, state.specData);
@@ -571,7 +572,7 @@ export function solvePuzzle(): SolveResponse {
   const state = requireState();
   const spec = cageStatesToSpec(state.cageStates, state.specData);
   try {
-    const board = solve(spec);
+    const { board } = solve(spec);
     const grid: number[][] = Array.from({ length: 9 }, (_, r) =>
       Array.from({ length: 9 }, (__, c) => {
         const cands = board.cands(r, c);
