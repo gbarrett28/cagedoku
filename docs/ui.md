@@ -34,6 +34,32 @@ message when the review screen is shown.
 The upload panel collapses once processing completes. Navigating back via
 "New puzzle" returns to the upload screen.
 
+### Auto-Confirm Logic (implementation)
+
+`handleProcess()` runs these checks in order on the raw OCR output
+(no draft edits applied):
+
+| # | Check | Failure → status message |
+|---|---|---|
+| 1 | **OCR warning** — `uploadPuzzle()` returned a non-null `warning` | `Warning: <text>` — go straight to review |
+| 2 | **Layout validation** — `applyDraftLayout()` returns no `errorCells` | *"Each cage needs exactly one total in its valid range — highlighted in red"* + amber highlights |
+| 3 | **Sum** — cage totals sum to exactly 405 (returned as `warnings` by `applyDraftLayout()`) | *"Cage totals sum to N (expected 405) — please correct the totals before confirming"* |
+| 4 | **Solver completion** — `solverFindsCompleteSolution()` returns `true` | *"Solver could not determine all cells — please check the cage layout and totals"* |
+
+`solverFindsCompleteSolution()` (`web/src/session/actions.ts`) runs
+`solve()` without mutating state and returns `true` if every cell has
+exactly one candidate. `solve()` uses constraint-propagation rules first
+and falls back to MRV backtracking if stalled. This is not a uniqueness
+proof — it finds one complete assignment. For OCR'd newspaper puzzles
+(always uniquely solvable) this is the appropriate proxy: a complete
+assignment signals a plausible layout. The check adds one extra solver
+pass (< 100 ms); `confirmPuzzle()` then runs a second pass on the
+happy path.
+
+No training data is uploaded on auto-confirm (`draftEdited` is `false`),
+consistent with the existing behaviour when the user clicks "Confirm & Solve"
+without making manual corrections.
+
 ---
 
 ## Upload Screen
