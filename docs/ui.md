@@ -44,17 +44,20 @@ The upload panel collapses once processing completes. Navigating back via
 | 1 | **OCR warning** — `uploadPuzzle()` returned a non-null `warning` | `Warning: <text>` — go straight to review |
 | 2 | **Layout validation** — `applyDraftLayout()` returns no `errorCells` | *"Each cage needs exactly one total in its valid range — highlighted in red"* + amber highlights |
 | 3 | **Sum** — cage totals sum to exactly 405 (returned as `warnings` by `applyDraftLayout()`) | *"Cage totals sum to N (expected 405) — please correct the totals before confirming"* |
-| 4 | **Solver completion** — `solverFindsCompleteSolution()` returns `true` | *"Solver could not determine all cells — please check the cage layout and totals"* |
+| 4 | **Solver completion** — `solveCurrentSpec()` returns a board where every cell has exactly one candidate | *"Solver could not determine all cells — please check the cage layout and totals"* |
 
-`solverFindsCompleteSolution()` (`web/src/session/actions.ts`) runs
-`solve()` without mutating state and returns `true` if every cell has
-exactly one candidate. `solve()` uses constraint-propagation rules first
-and falls back to MRV backtracking if stalled. This is not a uniqueness
-proof — it finds one complete assignment. For OCR'd newspaper puzzles
-(always uniquely solvable) this is the appropriate proxy: a complete
-assignment signals a plausible layout. The check adds one extra solver
-pass (< 100 ms); `confirmPuzzle()` then runs a second pass on the
-happy path.
+`solveCurrentSpec()` (`web/src/session/actions.ts`) runs `solve()` without
+mutating state and returns a `BoardState`. `solve()` uses constraint-propagation
+rules first and falls back to MRV backtracking if stalled. The completeness
+check (all 81 cells with a single candidate) is done inline in `handleProcess()`.
+This is not a uniqueness proof — it finds one complete assignment. For OCR'd
+newspaper puzzles (always uniquely solvable) this is the appropriate proxy: a
+complete assignment signals a plausible layout.
+
+`confirmPuzzle(board: BoardState)` takes the board as a mandatory parameter —
+it does not call the solver internally. On the auto-confirm path only one solver
+pass occurs total (in `solveCurrentSpec()`); on the manual "Confirm & Solve"
+path `handleConfirm()` calls `confirmPuzzle(solveCurrentSpec())` — also one pass.
 
 No training data is uploaded on auto-confirm (`draftEdited` is `false`),
 consistent with the existing behaviour when the user clicks "Confirm & Solve"

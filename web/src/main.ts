@@ -31,7 +31,7 @@ import {
   getHints,
   applyHint,
   applyDraftLayout,
-  solverFindsCompleteSolution,
+  solveCurrentSpec,
   getSettingsData,
   saveSettingsData,
 } from './session/actions.js';
@@ -681,13 +681,19 @@ async function handleProcess(): Promise<void> {
     // the cage layout is valid, and the solver finds a complete solution.
     if (warning === null) {
       const layoutResult = applyDraftLayout(draftBorderX, draftBorderY, state.specData.cageTotals);
-      if (layoutResult.errorCells.size === 0 && layoutResult.warnings.length === 0
-          && solverFindsCompleteSolution()) {
-        const playing = confirmPuzzle();
-        renderPlayingMode(playing);
-        pendingCellThumbs = new Map();
-        setStatus('');
-        return;
+      if (layoutResult.errorCells.size === 0 && layoutResult.warnings.length === 0) {
+        const board = solveCurrentSpec();
+        let boardComplete = true;
+        for (let r = 0; r < 9 && boardComplete; r++)
+          for (let c = 0; c < 9 && boardComplete; c++)
+            if (board.cands(r, c).size !== 1) boardComplete = false;
+        if (boardComplete) {
+          const playing = confirmPuzzle(board);
+          renderPlayingMode(playing);
+          pendingCellThumbs = new Map();
+          setStatus('');
+          return;
+        }
       }
       // Auto-confirm failed — show review screen with the specific error.
       // applyDraftLayout returns the original state unchanged when errorCells exist.
@@ -735,7 +741,7 @@ async function handleConfirm(): Promise<void> {
     }
     reviewErrorCells = new Set();
     currentState = result.state;
-    const playing = confirmPuzzle();
+    const playing = confirmPuzzle(solveCurrentSpec());
     renderPlayingMode(playing);
     setStatus('');
 
