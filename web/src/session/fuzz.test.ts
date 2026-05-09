@@ -19,6 +19,7 @@ import { makeThreeCellCageSpec } from '../engine/fixtures.js';
 import { setState, getState } from './store.js';
 import {
   confirmPuzzle,
+  solveCurrentSpec,
   enterCell,
   cycleCandidate,
   undo,
@@ -49,7 +50,7 @@ function makeConfirmedState(): PuzzleState {
     warpedImageUrl: null,
   };
   setState(pre);
-  return confirmPuzzle();
+  return confirmPuzzle(solveCurrentSpec());
 }
 
 /** Seeded LCG for reproducible pseudo-random sequences. */

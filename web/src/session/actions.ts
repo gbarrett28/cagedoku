@@ -7,7 +7,7 @@
  * main.ts can call them as drop-in replacements.
  */
 
-import { solve } from '../engine/index.js';
+import { solve, BoardState } from '../engine/index.js';
 import { solSums } from '../solver/equation.js';
 import { defaultRules } from '../engine/rules/index.js';
 import type { Cell } from '../engine/types.js';
@@ -303,16 +303,32 @@ export function applyDraftLayout(
 // ---------------------------------------------------------------------------
 
 /**
- * Runs the solver, builds the golden solution, and transitions to playing
- * mode. Replaces POST /confirm.
+ * Runs the solver on the current pre-confirm spec and returns the BoardState.
+ * Call this before confirmPuzzle() to obtain the board to pass in.
+ *
+ * Separating solve from confirm lets callers inspect the board (e.g. check
+ * completeness for auto-confirm) without a second solver pass. Throws if
+ * called after confirming.
  */
-export function confirmPuzzle(): PuzzleState {
+export function solveCurrentSpec(): BoardState {
   const state = requireState();
-  if (state.userGrid !== null) throw new Error('Session already confirmed');
-
+  if (state.userGrid !== null) throw new Error('Already confirmed');
   const spec = cageStatesToSpec(state.cageStates, state.specData);
   const givenDigits = state.givenDigits ?? undefined;
-  const board = solve(spec, givenDigits);
+  return solve(spec, givenDigits);
+}
+
+/**
+ * Builds the golden solution from a pre-computed board and transitions to
+ * playing mode. Replaces POST /confirm.
+ *
+ * The board must have been produced by solveCurrentSpec() for the current
+ * spec. Passing the board avoids a second solver run when the caller has
+ * already solved (e.g. the auto-confirm path in handleProcess).
+ */
+export function confirmPuzzle(board: BoardState): PuzzleState {
+  const state = requireState();
+  if (state.userGrid !== null) throw new Error('Session already confirmed');
 
   // Extract golden solution — 0 for cells the solver could not determine
   const goldenSolution: number[][] = Array.from({ length: 9 }, (_, r) =>
@@ -353,27 +369,6 @@ export function confirmPuzzle(): PuzzleState {
   updated = applyAutoPlacements(updated);
   setState(updated);
   return updated;
-}
-
-/**
- * Returns true if solve() produces a complete assignment for all 81 cells
- * (every cell reduced to exactly one candidate). Does not mutate state.
- *
- * This is NOT a uniqueness proof — solve() finds one solution via MRV
- * backtracking and does not search for a second. For OCR'd newspaper puzzles
- * this is the appropriate proxy: a complete assignment signals a plausible
- * cage layout. Throws if called after confirming.
- */
-export function solverFindsCompleteSolution(): boolean {
-  const state = requireState();
-  if (state.userGrid !== null) throw new Error('Already confirmed');
-  const spec = cageStatesToSpec(state.cageStates, state.specData);
-  const givenDigits = state.givenDigits ?? undefined;
-  const board = solve(spec, givenDigits);
-  for (let r = 0; r < 9; r++)
-    for (let c = 0; c < 9; c++)
-      if (board.cands(r, c).size !== 1) return false;
-  return true;
 }
 
 // ---------------------------------------------------------------------------
