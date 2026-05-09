@@ -8,10 +8,10 @@
 
 import { loadCV, loadRec, setCandidatesCache } from './session/store.js';
 import { cellLabel } from './engine/rules/_labels.js';
-import { extractTrainingData } from './image/trainingExport.js';
+import { extractTrainingData, buildPuzzleSpecExport } from './image/trainingExport.js';
 import type { TrainingExport } from './image/trainingExport.js';
 import { defaultImagePipelineConfig } from './image/config.js';
-import { initiateUpload, grantConsent, uploadTrainingData } from './image/trainingUpload.js';
+import { initiateUpload, grantConsent, uploadTrainingData, uploadPuzzleSpec } from './image/trainingUpload.js';
 import { dataToSpec } from './session/specUtils.js';
 import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec } from './engine/fixtures.js';
 import {
@@ -31,6 +31,7 @@ import {
   getHints,
   applyHint,
   applyDraftLayout,
+  solveCurrentSpec,
   getSettingsData,
   saveSettingsData,
 } from './session/actions.js';
@@ -626,7 +627,7 @@ function openConfigModal(): void {
   for (const rule of data.hintableRules) {
     const row = document.createElement('div'); row.className = 'config-rule-row';
     const nameSpan = document.createElement('span'); nameSpan.className = 'config-rule-name'; nameSpan.textContent = rule.displayName;
-    const infoBtn = document.createElement('button'); infoBtn.className = 'btn-rule-info'; infoBtn.textContent = '\u24d8'; infoBtn.title = 'About this rule';
+    const infoBtn = document.createElement('button'); infoBtn.className = 'btn-rule-info'; infoBtn.textContent = 'ⓘ'; infoBtn.title = 'About this rule';
     infoBtn.addEventListener('click', () => {
       el<HTMLHeadingElement>('rule-info-title').textContent = rule.displayName;
       el<HTMLParagraphElement>('rule-info-description').textContent = rule.description;
@@ -650,11 +651,6 @@ function openConfigModal(): void {
 function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, warning: string | null): void {
   reviewErrorCells = new Set();
   renderState(state);
-  // Initialise draft borders from the OCR result so edit mode is immediately active.
-  const spec = dataToSpec(state.specData);
-  draftBorderX = spec.borderX.map(col => [...col]);
-  draftBorderY = spec.borderY.map(row => [...row]);
-  draftEdited = false;
   const warpedCol = el<HTMLElement>('warped-col');
   const warpedImg = el<HTMLImageElement>('warped-img');
   if (warpedImageUrl) { warpedImg.src = warpedImageUrl; }
@@ -674,6 +670,50 @@ async function handleProcess(): Promise<void> {
   try {
     const { state, warpedImageUrl, warning, cellThumbs } = await uploadPuzzle(fileInput.files[0]!);
     pendingCellThumbs = new Map(cellThumbs);
+
+    // Initialise draft borders from the OCR result (used in both paths below).
+    const ocrSpec = dataToSpec(state.specData);
+    draftBorderX = ocrSpec.borderX.map(col => [...col]);
+    draftBorderY = ocrSpec.borderY.map(row => [...row]);
+    draftEdited = false;
+
+    // Attempt auto-confirm: skip the review screen when OCR is clean,
+    // the cage layout is valid, and the solver finds a complete solution.
+    if (warning === null) {
+      const layoutResult = applyDraftLayout(draftBorderX, draftBorderY, state.specData.cageTotals);
+      if (layoutResult.errorCells.size === 0 && layoutResult.warnings.length === 0) {
+        const { board, usedBacktracking } = solveCurrentSpec();
+        let boardComplete = true;
+        for (let r = 0; r < 9 && boardComplete; r++)
+          for (let c = 0; c < 9 && boardComplete; c++)
+            if (board.cands(r, c).size !== 1) boardComplete = false;
+        if (boardComplete) {
+          const playing = confirmPuzzle(board);
+          renderPlayingMode(playing);
+          pendingCellThumbs = new Map();
+          setStatus('');
+          if (usedBacktracking) {
+            uploadPuzzleSpec(buildPuzzleSpecExport(dataToSpec(layoutResult.state.specData)));
+          }
+          return;
+        }
+      }
+      // Auto-confirm failed — show review screen with the specific error.
+      // applyDraftLayout returns the original state unchanged when errorCells exist.
+      const stateToShow = layoutResult.errorCells.size > 0 ? state : layoutResult.state;
+      applyUploadResult(stateToShow, warpedImageUrl, null);
+      if (layoutResult.errorCells.size > 0) {
+        reviewErrorCells = layoutResult.errorCells;
+        redrawGrid();
+        setStatus('Each cage needs exactly one total in its valid range — highlighted in red', true);
+      } else if (layoutResult.warnings.length > 0) {
+        setStatus(layoutResult.warnings.join('; ') + ' — please correct the totals before confirming', true);
+      } else {
+        setStatus('Solver could not determine all cells — please check the cage layout and totals', true);
+      }
+      return;
+    }
+
     applyUploadResult(state, warpedImageUrl, warning);
   } catch (e) {
     // uploadPuzzle only throws ImageDecodeError (unrecognised image format).
@@ -703,9 +743,15 @@ async function handleConfirm(): Promise<void> {
     }
     reviewErrorCells = new Set();
     currentState = result.state;
-    const playing = confirmPuzzle();
+    const { board: confirmedBoard, usedBacktracking: confirmUsedBacktracking } = solveCurrentSpec();
+    const playing = confirmPuzzle(confirmedBoard);
     renderPlayingMode(playing);
     setStatus('');
+
+    // Upload puzzle spec when backtracking was needed (rules alone couldn't solve it).
+    if (confirmUsedBacktracking && currentState.puzzleType !== 'classic') {
+      uploadPuzzleSpec(buildPuzzleSpecExport(dataToSpec(currentState.specData)));
+    }
 
     // Upload training samples when the user confirmed a killer puzzle with edits.
     // Thumbnails are captured before state replacement; clear them now regardless.
@@ -1174,6 +1220,9 @@ document.addEventListener('DOMContentLoaded', () => {
       else if (specName === 'boxCage') spec = makeBoxCageSpec();
       else spec = makeTrivialSpec();
       const { state, warpedImageUrl, warning } = loadSpecDirect(spec);
+      draftBorderX = spec.borderX.map(col => [...col]);
+      draftBorderY = spec.borderY.map(row => [...row]);
+      draftEdited = false;
       applyUploadResult(state, warpedImageUrl, warning);
     };
 

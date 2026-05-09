@@ -10,16 +10,58 @@
 
 ```
 Upload Screen
-    │  image processed (success or OCR failure)
+    │  image processed
     ▼
-OCR Review Screen
-    │  "Confirm & Solve" pressed, layout valid
-    ▼
-Playing Screen ──► Solution Screen (puzzle complete)
+Auto-confirm attempt
+    │ clean OCR + valid layout + solver complete        │ any check fails
+    ▼                                                    ▼
+Playing Screen ──► Solution Screen (puzzle complete)    OCR Review Screen (always has error message)
+                                                             │  "Confirm & Solve" pressed, layout valid
+                                                             ▼
+                                                        Playing Screen ──► Solution Screen
 ```
 
-The upload panel collapses once processing completes, whether or not OCR
-succeeded. Navigating back via "New puzzle" returns to the upload screen.
+After processing, the app attempts to auto-confirm the OCR result:
+if the cage layout is structurally valid, totals sum to 405, and the solver
+finds a complete assignment for all 81 cells, the review screen is skipped
+entirely and the user lands directly in Playing mode.
+
+The OCR Review Screen only appears when auto-confirm fails (OCR pipeline
+warning, invalid cage layout, incorrect total sum, or solver stall).
+**Invariant:** the status bar always contains a non-empty error or warning
+message when the review screen is shown.
+
+The upload panel collapses once processing completes. Navigating back via
+"New puzzle" returns to the upload screen.
+
+### Auto-Confirm Logic (implementation)
+
+`handleProcess()` runs these checks in order on the raw OCR output
+(no draft edits applied):
+
+| # | Check | Failure → status message |
+|---|---|---|
+| 1 | **OCR warning** — `uploadPuzzle()` returned a non-null `warning` | `Warning: <text>` — go straight to review |
+| 2 | **Layout validation** — `applyDraftLayout()` returns no `errorCells` | *"Each cage needs exactly one total in its valid range — highlighted in red"* + amber highlights |
+| 3 | **Sum** — cage totals sum to exactly 405 (returned as `warnings` by `applyDraftLayout()`) | *"Cage totals sum to N (expected 405) — please correct the totals before confirming"* |
+| 4 | **Solver completion** — `solveCurrentSpec()` returns a board where every cell has exactly one candidate | *"Solver could not determine all cells — please check the cage layout and totals"* |
+
+`solveCurrentSpec()` (`web/src/session/actions.ts`) runs `solve()` without
+mutating state and returns a `BoardState`. `solve()` uses constraint-propagation
+rules first and falls back to MRV backtracking if stalled. The completeness
+check (all 81 cells with a single candidate) is done inline in `handleProcess()`.
+This is not a uniqueness proof — it finds one complete assignment. For OCR'd
+newspaper puzzles (always uniquely solvable) this is the appropriate proxy: a
+complete assignment signals a plausible layout.
+
+`confirmPuzzle(board: BoardState)` takes the board as a mandatory parameter —
+it does not call the solver internally. On the auto-confirm path only one solver
+pass occurs total (in `solveCurrentSpec()`); on the manual "Confirm & Solve"
+path `handleConfirm()` calls `confirmPuzzle(solveCurrentSpec())` — also one pass.
+
+No training data is uploaded on auto-confirm (`draftEdited` is `false`),
+consistent with the existing behaviour when the user clicks "Confirm & Solve"
+without making manual corrections.
 
 ---
 
@@ -35,16 +77,19 @@ succeeded. Navigating back via "New puzzle" returns to the upload screen.
 
 **Behaviour**
 
-- After processing, the upload panel hides and the OCR Review Screen always
-  appears — even if OCR failed to detect cages. On total failure a blank canvas
-  is shown (no borders, no cage totals) with a warning message so the user can
-  build the layout from scratch.
-- The only exception is an unrecognised file format: if the browser cannot decode
-  the selected file as an image, an error is shown on the upload screen and the
-  user is asked to choose a different file.  All other failures (grid not found,
-  pipeline errors, etc.) still proceed to the review screen with a blank grid.
-- If a warning was produced (e.g. cage totals out of range, sum ≠ 405), it
-  appears in the status bar below the review columns.
+- After processing, an auto-confirm attempt is made (see Application Flow).
+  If it succeeds the user lands directly in Playing mode; the review screen
+  is never shown.
+- If auto-confirm fails, the upload panel hides and the OCR Review Screen
+  appears with a non-empty error or warning message explaining what needs
+  correction. On total OCR failure a blank canvas is shown (no borders, no
+  cage totals) so the user can build the layout from scratch.
+- The only exception to reaching Playing mode or the review screen is an
+  unrecognised file format: if the browser cannot decode the selected file as
+  an image, an error is shown on the upload screen and the user is asked to
+  choose a different file.  All other failures (grid not found, pipeline
+  errors, etc.) return a blank-grid placeholder and fall through to the
+  auto-confirm path, which then shows the review screen.
 
 **PDF support (planned, not yet implemented)**
 
@@ -55,6 +100,9 @@ required.
 ---
 
 ## OCR Review Screen
+
+The review screen is only shown when auto-confirm fails; it always has a
+non-empty error or warning message in the status bar when it appears.
 
 The review screen is always in **edit mode** from the moment it appears.
 There is no separate "edit" button or confirmation step before editing.
