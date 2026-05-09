@@ -355,6 +355,27 @@ export function confirmPuzzle(): PuzzleState {
   return updated;
 }
 
+/**
+ * Returns true if solve() produces a complete assignment for all 81 cells
+ * (every cell reduced to exactly one candidate). Does not mutate state.
+ *
+ * This is NOT a uniqueness proof — solve() finds one solution via MRV
+ * backtracking and does not search for a second. For OCR'd newspaper puzzles
+ * this is the appropriate proxy: a complete assignment signals a plausible
+ * cage layout. Throws if called after confirming.
+ */
+export function solverFindsCompleteSolution(): boolean {
+  const state = requireState();
+  if (state.userGrid !== null) throw new Error('Already confirmed');
+  const spec = cageStatesToSpec(state.cageStates, state.specData);
+  const givenDigits = state.givenDigits ?? undefined;
+  const board = solve(spec, givenDigits);
+  for (let r = 0; r < 9; r++)
+    for (let c = 0; c < 9; c++)
+      if (board.cands(r, c).size !== 1) return false;
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Candidates
 // ---------------------------------------------------------------------------
