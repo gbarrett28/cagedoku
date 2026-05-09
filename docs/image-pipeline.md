@@ -120,7 +120,8 @@ predictions at (0,0), (0,9), (9,0), (9,9).
 flowchart TD
     A[grayscale gry] --> B[pixel histogram 16-bin 0-255]
     B --> C[walk from bright end\nfind valley -> isblack - offset]
-    C --> D[cv2.inRange 0..isblack\n-> binary blk]
+    C --> Cclamp[clamp isblack to >= 16\nguard for monotone histograms]
+    Cclamp --> D[cv2.inRange 0..isblack\n-> binary blk]
     D --> E[_contour_quad:\nfindContours RETR_EXTERNAL\nsort by area descending]
     E --> F{largest 10:\nquadrilateral\naspect >= 0.5?}
     F -- yes --> G[order corners TL TR BR BL\n-> rect]
@@ -141,7 +142,7 @@ flowchart TD
 
 | Parameter | Value | Derivation |
 |-----------|-------|------------|
-| `isblack_offset` | 56 | After finding the histogram valley, back off by this many grey levels to account for JPEG compression smearing dark ink.  Derive as the mean difference between Otsu's optimal threshold and the histogram-valley estimate on a representative image set. |
+| `isblack_offset` | 56 | After finding the histogram valley, back off by this many grey levels to account for JPEG compression smearing dark ink.  Derive as the mean difference between Otsu's optimal threshold and the histogram-valley estimate on a representative image set.  When the histogram is monotonically decreasing (no valley — common for clean digital screenshots), the loop reaches bin 0, giving `isblack = 0 - offset = -56`; `isblack` is therefore clamped to a minimum of 16 to ensure near-black pixels are always captured. |
 | `min_aspect` | 0.5 | Minimum short/long side ratio for a contour to be accepted as the grid rectangle.  Grids photographed at an angle can be quite skewed; 0.5 rejects thin slivers while accepting moderate perspective distortion. |
 | `rho` | 2 px | Hough fallback: line position resolution.  Coarser than 1 px reduces noise sensitivity. |
 | `hough_lines_theta_divisor` | 16 -> theta=pi/16 | HoughLines angular resolution (~11 degree steps).  Grid lines are within +/- 1 degree of horizontal/vertical, so coarse resolution is fine. |

@@ -138,6 +138,9 @@ export function locateGrid(
     }
   }
   isblack -= isblackOffset;
+  // Guard against monotonically-decreasing histograms (clean digital screenshots
+  // with no medium-grey valley): ensure at least near-black pixels are captured.
+  isblack = Math.max(isblack, 16);
 
   // Threshold: pixels darker than isblack become 255 (white = dark region).
   // Use 1×1 Mat bounds with Scalar fill — cv.inRange requires Mat (not Scalar) bounds.
