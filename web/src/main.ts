@@ -728,22 +728,25 @@ async function handleConfirm(): Promise<void> {
   if (currentState === null) return;
   setLoading(true);
   try {
-    const result = applyDraftLayout(
-      draftBorderX, draftBorderY, currentState.specData.cageTotals,
-    );
-    if (result.errorCells.size > 0) {
-      reviewErrorCells = result.errorCells;
-      redrawGrid();
-      setStatus('Each cage needs exactly one total in its valid range — highlighted in red', true);
-      return;
+    // Cage layout validation is Killer-only — Classic has no cage totals.
+    if (currentState.puzzleType !== 'classic') {
+      const result = applyDraftLayout(
+        draftBorderX, draftBorderY, currentState.specData.cageTotals,
+      );
+      if (result.errorCells.size > 0) {
+        reviewErrorCells = result.errorCells;
+        redrawGrid();
+        setStatus('Each cage needs exactly one total in its valid range — highlighted in red', true);
+        return;
+      }
+      // Sum outside [360, 450] is a strong signal of OCR errors — block and require correction.
+      if (result.warnings.length > 0) {
+        setStatus(result.warnings.join('; ') + ' — please correct the totals before confirming', true);
+        return;
+      }
+      reviewErrorCells = new Set();
+      currentState = result.state;
     }
-    // Sum outside [360, 450] is a strong signal of OCR errors — block and require correction.
-    if (result.warnings.length > 0) {
-      setStatus(result.warnings.join('; ') + ' — please correct the totals before confirming', true);
-      return;
-    }
-    reviewErrorCells = new Set();
-    currentState = result.state;
     const { board: confirmedBoard, usedBacktracking: confirmUsedBacktracking } = solveCurrentSpec();
     const playing = confirmPuzzle(confirmedBoard);
     renderPlayingMode(playing);
@@ -1200,13 +1203,20 @@ document.addEventListener('DOMContentLoaded', () => {
     updateRevealButton();
   });
 
-  // Digit buttons
+  // Digit buttons — in pre-confirm Classic review, edit given digits; otherwise playing mode.
+  function handleDigitButton(d: number): void {
+    if (currentState?.userGrid === null && currentState?.puzzleType === 'classic' && selectedCell !== null) {
+      void handleGivenDigitEdit(selectedCell.row, selectedCell.col, d);
+    } else {
+      void handleCellEntry(d);
+    }
+  }
   for (let d = 1; d <= 9; d++) {
     const btn = document.getElementById(`digit-${d}`);
-    if (btn) btn.addEventListener('click', () => { void handleCellEntry(d); });
+    if (btn) btn.addEventListener('click', () => handleDigitButton(d));
   }
   const clearBtn = document.getElementById('digit-0');
-  if (clearBtn) clearBtn.addEventListener('click', () => { void handleCellEntry(0); });
+  if (clearBtn) clearBtn.addEventListener('click', () => handleDigitButton(0));
 
   // Dev/test hook — skipped in production builds by Vite's dead-code elimination.
   // Exposes window.__testLoad() so Playwright tests can exercise the full

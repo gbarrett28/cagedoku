@@ -143,9 +143,9 @@ Any cell can hold a cage total. Click any cell on the canvas:
 
 **Classic digit correction**
 
-Click a cell, then type a digit (1–9) to correct an OCR misread. Backspace
-clears the cell. Duplicate digits in the same row, column, or box are
-highlighted in red.
+Click a cell to select it (blue highlight), then tap a digit button or type a
+digit (1–9) to correct an OCR misread. Tap 0 / Backspace to clear the cell.
+Duplicate digits in the same row, column, or box are highlighted in red.
 
 **Action bar**
 
@@ -154,7 +154,7 @@ highlighted in red.
 | Confirm & Solve | Validates the layout and transitions to Playing mode |
 | Type dropdown | `Killer` / `Classic` — changeable if OCR misdetected |
 
-Confirm runs the following checks in order:
+**Killer** — Confirm runs the following checks in order:
 
 1. **Structural**: each cage (connected component from border toggles) must have
    exactly one non-zero total cell.
@@ -170,6 +170,9 @@ Confirm runs the following checks in order:
 
 If any of checks 1–3 fail, the review screen remains open with an error message
 and the problematic cages highlighted in amber on the canvas.
+
+**Classic** — no cage validation. Confirm immediately runs the solver on the
+detected (and optionally corrected) given digits and transitions to Playing mode.
 
 ---
 
