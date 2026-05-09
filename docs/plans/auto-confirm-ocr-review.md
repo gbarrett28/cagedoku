@@ -4,13 +4,13 @@ Spec: `docs/specs/auto-confirm-ocr-review.md`
 
 ---
 
-## Step 1 — Add `checkUniqueSolution()` to `actions.ts`
+## Step 1 — Add `solverFindsCompleteSolution()` to `actions.ts`
 
 - [ ] In `web/src/session/actions.ts`, add a new exported function after
   `confirmPuzzle()`:
 
   ```typescript
-  export function checkUniqueSolution(): boolean {
+  export function solverFindsCompleteSolution(): boolean {
     const state = requireState();
     if (state.userGrid !== null) throw new Error('Already confirmed');
     const spec = cageStatesToSpec(state.cageStates, state.specData);
@@ -23,7 +23,7 @@ Spec: `docs/specs/auto-confirm-ocr-review.md`
   }
   ```
 
-- [ ] Add `checkUniqueSolution` to the import list in `main.ts`.
+- [ ] Add `solverFindsCompleteSolution` to the import list in `main.ts`.
 
 ---
 
@@ -59,7 +59,7 @@ auto-confirm attempt, so extract them:
     draftBorderX, draftBorderY, state.specData.cageTotals,
   );
   if (layoutResult.errorCells.size === 0 && layoutResult.warnings.length === 0
-      && checkUniqueSolution()) {
+      && solverFindsCompleteSolution()) {
     const playing = confirmPuzzle();
     renderPlayingMode(playing);
     pendingCellThumbs = new Map();
@@ -78,8 +78,8 @@ auto-confirm attempt, so extract them:
     - Then: `setStatus('Each cage needs exactly one total in its valid range — highlighted in red', true)`
   - Sum warnings (`layoutResult.warnings.length > 0`):
     - After `applyUploadResult()`: `setStatus(layoutResult.warnings.join('; ') + ' — please correct the totals before confirming', true)`
-  - Validation passed but `checkUniqueSolution()` returned false:
-    - After `applyUploadResult()`: `setStatus('Solver could not find a unique solution — please check the cage layout and totals', true)`
+  - Validation passed but `solverFindsCompleteSolution()` returned false:
+    - After `applyUploadResult()`: `setStatus('Solver could not determine all cells — please check the cage layout and totals', true)`
 
   Note: `applyUploadResult()` currently sets `currentState` via `renderState()`. In
   the fallback, pass `layoutResult.state` (the updated state from `applyDraftLayout()`)
