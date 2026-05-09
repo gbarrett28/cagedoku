@@ -50,7 +50,7 @@ function makeConfirmedState(): PuzzleState {
     warpedImageUrl: null,
   };
   setState(pre);
-  return confirmPuzzle(solveCurrentSpec());
+  return confirmPuzzle(solveCurrentSpec().board);
 }
 
 /** Seeded LCG for reproducible pseudo-random sequences. */

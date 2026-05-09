@@ -20,6 +20,13 @@ export { SolverEngine } from './solverEngine.js';
 export { defaultRules } from './rules/index.js';
 export type { HintResult } from './hint.js';
 
+export interface SolveResult {
+  board: BoardState;
+  /** True when constraint propagation alone could not fully solve the puzzle
+   *  and MRV backtracking was required to find a complete assignment. */
+  usedBacktracking: boolean;
+}
+
 /**
  * Run the full solver engine on a validated PuzzleSpec.
  *
@@ -31,7 +38,7 @@ export type { HintResult } from './hint.js';
  *
  * Falls back to MRV backtracking if the rule engine stalls.
  */
-export function solve(spec: PuzzleSpec, givenDigits?: number[][]): BoardState {
+export function solve(spec: PuzzleSpec, givenDigits?: number[][]): SolveResult {
   const board = new BoardState(spec, { includeVirtualCages: false });
   const engine = new SolverEngine(board, defaultRules());
 
@@ -67,7 +74,7 @@ export function solve(spec: PuzzleSpec, givenDigits?: number[][]): BoardState {
     }
   }
 
-  return board;
+  return { board, usedBacktracking: stalled };
 }
 
 /**

@@ -8,10 +8,10 @@
 
 import { loadCV, loadRec, setCandidatesCache } from './session/store.js';
 import { cellLabel } from './engine/rules/_labels.js';
-import { extractTrainingData } from './image/trainingExport.js';
+import { extractTrainingData, buildPuzzleSpecExport } from './image/trainingExport.js';
 import type { TrainingExport } from './image/trainingExport.js';
 import { defaultImagePipelineConfig } from './image/config.js';
-import { initiateUpload, grantConsent, uploadTrainingData } from './image/trainingUpload.js';
+import { initiateUpload, grantConsent, uploadTrainingData, uploadPuzzleSpec } from './image/trainingUpload.js';
 import { dataToSpec } from './session/specUtils.js';
 import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec } from './engine/fixtures.js';
 import {
@@ -682,7 +682,7 @@ async function handleProcess(): Promise<void> {
     if (warning === null) {
       const layoutResult = applyDraftLayout(draftBorderX, draftBorderY, state.specData.cageTotals);
       if (layoutResult.errorCells.size === 0 && layoutResult.warnings.length === 0) {
-        const board = solveCurrentSpec();
+        const { board, usedBacktracking } = solveCurrentSpec();
         let boardComplete = true;
         for (let r = 0; r < 9 && boardComplete; r++)
           for (let c = 0; c < 9 && boardComplete; c++)
@@ -692,6 +692,9 @@ async function handleProcess(): Promise<void> {
           renderPlayingMode(playing);
           pendingCellThumbs = new Map();
           setStatus('');
+          if (usedBacktracking) {
+            uploadPuzzleSpec(buildPuzzleSpecExport(dataToSpec(layoutResult.state.specData)));
+          }
           return;
         }
       }
@@ -741,9 +744,15 @@ async function handleConfirm(): Promise<void> {
     }
     reviewErrorCells = new Set();
     currentState = result.state;
-    const playing = confirmPuzzle(solveCurrentSpec());
+    const { board: confirmedBoard, usedBacktracking: confirmUsedBacktracking } = solveCurrentSpec();
+    const playing = confirmPuzzle(confirmedBoard);
     renderPlayingMode(playing);
     setStatus('');
+
+    // Upload puzzle spec when backtracking was needed (rules alone couldn't solve it).
+    if (confirmUsedBacktracking && currentState.puzzleType !== 'classic') {
+      uploadPuzzleSpec(buildPuzzleSpecExport(dataToSpec(currentState.specData)));
+    }
 
     // Upload training samples when the user confirmed a killer puzzle with edits.
     // Thumbnails are captured before state replacement; clear them now regardless.

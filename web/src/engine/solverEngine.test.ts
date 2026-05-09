@@ -51,7 +51,7 @@ describe('SolverEngine.solve', () => {
   });
 
   it('solve() with all default rules produces the correct solution', () => {
-    const board = solve(makeTrivialSpec());
+    const { board } = solve(makeTrivialSpec());
     for (let r = 0; r < 9; r++)
       for (let c = 0; c < 9; c++)
         expect(board.candidates[r]![c]!).toEqual(new Set([KNOWN_SOLUTION[r]![c]!]));
