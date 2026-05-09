@@ -593,15 +593,18 @@ export function readClassicDigits(
   classicConf: number[][],
 ): number[][] {
   const half = subres >> 1;
+  // Match scanCells: use the same margin/patchSize so tall digits aren't clipped.
+  const margin = (subres / 6) | 0;
+  const patchSize = subres - 2 * margin;
   const givenDigits: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
 
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
       if (classicConf[r]![c]! === 0) continue;
 
-      const y0 = r * subres + (subres >> 2);
-      const x0 = c * subres + (subres >> 2);
-      const patch = warpedBlk.roi(new cv.Rect(x0, y0, half, half));
+      const y0 = r * subres + margin;
+      const x0 = c * subres + margin;
+      const patch = warpedBlk.roi(new cv.Rect(x0, y0, patchSize, patchSize));
 
       const cnts = new cv.MatVector();
       const hier = new cv.Mat();

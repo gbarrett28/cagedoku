@@ -62,10 +62,17 @@ This produces 9 row-shaped cages each with total 45.
 
 ### `readClassicDigits`
 
-For each cell `(r, c)` where `classicDigitConf[r][c] > 0`, extracts the central
-`(subres/2) × (subres/2)` crop of the warped binary image, finds the largest
-contour, warps it to a 64×64 thumbnail, and passes it to `recognise()` (the HOG
-+ LinearSVC path — same recogniser used for cage totals).
+For each cell `(r, c)` where `classicDigitConf[r][c] > 0`, extracts a
+`patchSize × patchSize` crop (where `patchSize = subres - 2 * margin`,
+`margin = subres / 6 | 0`, matching the detection region used by `scanCells`)
+starting at `[margin, margin]` within the cell of the warped binary image.
+It finds the largest contour within that crop, warps the contour's bounding rect
+to a 64×64 thumbnail via `getWarpFromRect`, and passes it to `recognise()` (the
+HOG + LinearSVC path — same recogniser used for cage totals).
+
+Using the same `margin`/`patchSize` as `scanCells` prevents tall digits from being
+clipped: a digit whose top edge is above `subres/4` (the old hardcoded offset) would
+produce a clipped bounding rect and a distorted 64×64 thumbnail.
 
 Returns `givenDigits[row][col]` — a 9×9 array where 0 means empty.
 
