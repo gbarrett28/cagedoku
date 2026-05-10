@@ -49,14 +49,40 @@
           <canvas id="grid-canvas"></canvas>
           <input id="cage-total-edit" type="number" min="1" max="45">
         </div>
-      </div>
-      <div class="image-col" id="warped-col">
-        <h2>Warped Grid</h2>
-        <img id="warped-img" alt="Perspective-corrected grid">
+        <!-- Playing mode actions: digit pad in Classic review; full action bar in playing mode -->
+        <div id="playing-actions" hidden>
+          <div id="action-group" class="form-actions hints-anchor">
+            <button id="undo-btn" class="btn-secondary" disabled>Undo</button>
+            <button id="hints-btn" class="btn-secondary" disabled>Hints</button>
+            <div id="hints-dropdown" class="hints-dropdown" hidden></div>
+            <button id="candidates-btn" class="btn-secondary" disabled>Show candidates</button>
+            <button id="edit-candidates-btn" class="btn-secondary" hidden>Edit candidates</button>
+            <button id="help-candidates-btn" class="btn-secondary" hidden>?</button>
+            <button id="inspect-cage-btn" class="btn-secondary" hidden>Inspect cage</button>
+            <button id="virtual-cage-btn" class="btn-secondary" hidden>Virtual cage</button>
+            <button id="reveal-btn" class="btn-secondary" hidden>Reveal</button>
+          </div>
+          <div class="digit-pad">
+            <button id="digit-1" class="digit-btn">1</button>
+            <button id="digit-2" class="digit-btn">2</button>
+            <button id="digit-3" class="digit-btn">3</button>
+            <button id="digit-4" class="digit-btn">4</button>
+            <button id="digit-5" class="digit-btn">5</button>
+            <button id="digit-6" class="digit-btn">6</button>
+            <button id="digit-7" class="digit-btn">7</button>
+            <button id="digit-8" class="digit-btn">8</button>
+            <button id="digit-9" class="digit-btn">9</button>
+            <button id="digit-0" class="digit-btn digit-clear">&#x2715;</button>
+          </div>
+        </div>
       </div>
       <div class="image-col" id="original-col">
         <h2>Original Photo</h2>
         <img id="original-img" alt="Uploaded puzzle photo">
+      </div>
+      <div class="image-col" id="warped-col">
+        <h2>Warped Grid</h2>
+        <img id="warped-img" alt="Perspective-corrected grid">
       </div>
       <div class="image-col" id="inspector-col" hidden>
         <h2 id="inspector-heading"></h2>
@@ -92,33 +118,6 @@
         <option value="classic">Classic</option>
       </select>
       <span id="review-status-msg" class="status" style="margin-left:1rem"></span>
-    </div>
-
-    <!-- Playing mode actions — hidden until user confirms layout -->
-    <div id="playing-actions" hidden>
-      <div id="action-group" class="form-actions hints-anchor">
-        <button id="undo-btn" class="btn-secondary" disabled>Undo</button>
-        <button id="hints-btn" class="btn-secondary" disabled>Hints</button>
-        <div id="hints-dropdown" class="hints-dropdown" hidden></div>
-        <button id="candidates-btn" class="btn-secondary" disabled>Show candidates</button>
-        <button id="edit-candidates-btn" class="btn-secondary" hidden>Edit candidates</button>
-        <button id="help-candidates-btn" class="btn-secondary" hidden>?</button>
-        <button id="inspect-cage-btn" class="btn-secondary" hidden>Inspect cage</button>
-        <button id="virtual-cage-btn" class="btn-secondary" hidden>Virtual cage</button>
-        <button id="reveal-btn" class="btn-secondary" hidden>Reveal</button>
-      </div>
-      <div class="digit-pad">
-        <button id="digit-1" class="digit-btn">1</button>
-        <button id="digit-2" class="digit-btn">2</button>
-        <button id="digit-3" class="digit-btn">3</button>
-        <button id="digit-4" class="digit-btn">4</button>
-        <button id="digit-5" class="digit-btn">5</button>
-        <button id="digit-6" class="digit-btn">6</button>
-        <button id="digit-7" class="digit-btn">7</button>
-        <button id="digit-8" class="digit-btn">8</button>
-        <button id="digit-9" class="digit-btn">9</button>
-        <button id="digit-0" class="digit-btn digit-clear">&#x2715;</button>
-      </div>
     </div>
 
   </section>
