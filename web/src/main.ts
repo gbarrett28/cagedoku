@@ -706,7 +706,7 @@ async function handleProcess(): Promise<void> {
       if (layoutResult.errorCells.size > 0) {
         reviewErrorCells = layoutResult.errorCells;
         redrawGrid();
-        setStatus('Each cage needs exactly one total in its valid range — highlighted in red', true);
+        setStatus('Each cage needs exactly one total in its valid range — highlighted in red. If this is a Classic sudoku, change the type dropdown above.', true);
       } else if (layoutResult.warnings.length > 0) {
         setStatus(layoutResult.warnings.join('; ') + ' — please correct the totals before confirming', true);
       } else {
