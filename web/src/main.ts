@@ -657,8 +657,8 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
   const warpedCol = el<HTMLElement>('warped-col');
   const warpedImg = el<HTMLImageElement>('warped-img');
   if (warpedImageUrl) { warpedImg.src = warpedImageUrl; }
-  el<HTMLElement>('original-col').hidden = false;
-  warpedCol.hidden = false;
+  el<HTMLElement>('original-col').hidden = state.originalImageUrl === null;
+  warpedCol.hidden = warpedImageUrl === null;
   el<HTMLElement>('review-actions').hidden = false;
   // For Classic puzzles, show the digit pad so the user can correct OCR digits
   // by clicking buttons (not just keyboard). The action-group (undo, hints, etc.)
