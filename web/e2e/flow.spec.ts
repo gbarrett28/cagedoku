@@ -123,6 +123,185 @@ test('new puzzle button returns to upload panel', async ({ page }) => {
 });
 
 // ---------------------------------------------------------------------------
+// Classic puzzle flow
+// ---------------------------------------------------------------------------
+
+/** Inject the 'classic' spec (partial given-digits grid) and wait for review. */
+async function loadClassicPuzzle(page: Page): Promise<void> {
+  await loadSpec(page, 'classic');
+}
+
+/** Load Classic puzzle then confirm to reach playing mode. */
+async function loadClassicAndConfirm(page: Page): Promise<void> {
+  await loadClassicPuzzle(page);
+  await page.locator('#confirm-btn').click();
+  await expect(page.locator('#playing-actions')).toBeVisible({ timeout: 5_000 });
+}
+
+test('classic puzzle: review panel shows Classic heading and type dropdown', async ({ page }) => {
+  await loadClassicPuzzle(page);
+  // Heading changes to "Classic Sudoku" for classic puzzles
+  await expect(page.locator('#detected-layout-heading')).toContainText(/classic/i);
+  // Type dropdown reflects the detected type
+  const dropdownValue = await page.locator('#puzzle-type-select').inputValue();
+  expect(dropdownValue).toBe('classic');
+});
+
+test('classic puzzle: digit pad visible during review (action buttons hidden)', async ({ page }) => {
+  await loadClassicPuzzle(page);
+  // The digit pad is inside #playing-actions which is shown for Classic review
+  await expect(page.locator('#playing-actions')).toBeVisible();
+  // The action-group (undo, hints, candidates) is hidden during review
+  await expect(page.locator('#action-group')).toBeHidden();
+  // Individual digit buttons are reachable
+  await expect(page.locator('#digit-5')).toBeVisible();
+});
+
+test('classic puzzle: classic-edit-hint is visible during review', async ({ page }) => {
+  await loadClassicPuzzle(page);
+  await expect(page.locator('#classic-edit-hint')).toBeVisible();
+});
+
+test('classic puzzle: digit button click during review corrects blank cell', async ({ page }) => {
+  await loadClassicPuzzle(page);
+  // The fixture has cell (row=0, col=0) blanked — click it then press a digit button.
+  const canvas = page.locator('#grid-canvas');
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  const cellSize = box!.width / 9;
+  await canvas.click({ position: { x: cellSize * 0.5, y: cellSize * 0.5 } }); // top-left cell
+  await page.locator('#digit-5').click();
+  // After clicking a digit button the cell should now hold that digit;
+  // no error (the undo button is irrelevant here — undo is in action-group which is hidden).
+  // Verify by confirming: the solver should run and accept the digit.
+  await page.locator('#confirm-btn').click();
+  await expect(page.locator('#playing-actions')).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('#action-group')).toBeVisible();
+});
+
+test('classic puzzle: keyboard digit entry during review is accepted', async ({ page }) => {
+  await loadClassicPuzzle(page);
+  const canvas = page.locator('#grid-canvas');
+  const box = await canvas.boundingBox();
+  const cellSize = box!.width / 9;
+  await canvas.click({ position: { x: cellSize * 0.5, y: cellSize * 0.5 } }); // top-left cell
+  await page.keyboard.press('5');
+  // Confirm should succeed (digit fills the blank, puzzle is solvable)
+  await page.locator('#confirm-btn').click();
+  await expect(page.locator('#playing-actions')).toBeVisible({ timeout: 5_000 });
+});
+
+test('classic puzzle: confirm transitions to playing mode', async ({ page }) => {
+  await loadClassicAndConfirm(page);
+  await expect(page.locator('#review-actions')).toBeHidden();
+  await expect(page.locator('#action-group')).toBeVisible();
+});
+
+test('classic puzzle: inspect-cage and virtual-cage buttons hidden in Classic playing mode', async ({ page }) => {
+  await loadClassicAndConfirm(page);
+  await expect(page.locator('#inspect-cage-btn')).toBeHidden();
+  await expect(page.locator('#virtual-cage-btn')).toBeHidden();
+});
+
+// ---------------------------------------------------------------------------
+// Killer playing screen — button visibility
+// ---------------------------------------------------------------------------
+
+test('killer playing: inspect-cage and virtual-cage buttons visible from start', async ({ page }) => {
+  // These are Killer-only controls visible as soon as playing mode begins.
+  await loadBoxCageAndConfirm(page);
+  await expect(page.locator('#inspect-cage-btn')).toBeVisible();
+  await expect(page.locator('#virtual-cage-btn')).toBeVisible();
+});
+
+test('candidates button shows edit-candidates and help-candidates buttons', async ({ page }) => {
+  await loadBoxCageAndConfirm(page);
+  // Before toggling candidates these extra buttons are hidden
+  await expect(page.locator('#edit-candidates-btn')).toBeHidden();
+  await expect(page.locator('#help-candidates-btn')).toBeHidden();
+  await page.locator('#candidates-btn').click();
+  await expect(page.locator('#edit-candidates-btn')).toBeVisible();
+  await expect(page.locator('#help-candidates-btn')).toBeVisible();
+});
+
+test('hiding candidates re-hides edit-candidates and help-candidates buttons', async ({ page }) => {
+  await loadBoxCageAndConfirm(page);
+  await page.locator('#candidates-btn').click(); // show
+  await expect(page.locator('#edit-candidates-btn')).toBeVisible();
+  await page.locator('#candidates-btn').click(); // hide
+  await expect(page.locator('#edit-candidates-btn')).toBeHidden();
+  await expect(page.locator('#help-candidates-btn')).toBeHidden();
+});
+
+test('reveal button hidden initially; visible after cell selected', async ({ page }) => {
+  await loadBoxCageAndConfirm(page);
+  await expect(page.locator('#reveal-btn')).toBeHidden();
+  const canvas = page.locator('#grid-canvas');
+  const box = await canvas.boundingBox();
+  const cellSize = box!.width / 9;
+  await canvas.click({ position: { x: cellSize * 0.5, y: cellSize * 0.5 } });
+  await expect(page.locator('#reveal-btn')).toBeVisible();
+});
+
+test('digit button click places digit and enables undo', async ({ page }) => {
+  // Uses box-cage so no cells are auto-placed and digit entry creates a user turn.
+  await loadBoxCageAndConfirm(page);
+  const canvas = page.locator('#grid-canvas');
+  const box = await canvas.boundingBox();
+  const cellSize = box!.width / 9;
+  await canvas.click({ position: { x: cellSize * 0.5, y: cellSize * 0.5 } });
+  await page.locator('#digit-5').click();
+  await expect(page.locator('#undo-btn')).not.toBeDisabled();
+});
+
+test('digit-0 button clears a placed digit', async ({ page }) => {
+  await loadBoxCageAndConfirm(page);
+  const canvas = page.locator('#grid-canvas');
+  const box = await canvas.boundingBox();
+  const cellSize = box!.width / 9;
+  await canvas.click({ position: { x: cellSize * 0.5, y: cellSize * 0.5 } });
+  await page.locator('#digit-5').click();
+  await expect(page.locator('#undo-btn')).not.toBeDisabled();
+  await page.locator('#digit-0').click(); // clear
+  // Undo stack now has two turns (place then clear), so undo is still enabled
+  await expect(page.locator('#undo-btn')).not.toBeDisabled();
+});
+
+// ---------------------------------------------------------------------------
+// Header modals
+// ---------------------------------------------------------------------------
+
+test('help button opens general-help-modal', async ({ page }) => {
+  await loadAndConfirm(page);
+  await page.locator('#help-btn').click();
+  await expect(page.locator('#general-help-modal')).toBeVisible();
+  await page.locator('#general-help-close-btn').click();
+  await expect(page.locator('#general-help-modal')).toBeHidden();
+});
+
+test('config button opens config-modal', async ({ page }) => {
+  await loadAndConfirm(page);
+  await page.locator('#config-btn').click();
+  await expect(page.locator('#config-modal')).toBeVisible();
+  await page.locator('#config-cancel-btn').click();
+  await expect(page.locator('#config-modal')).toBeHidden();
+});
+
+// ---------------------------------------------------------------------------
+// Hints dropdown
+// ---------------------------------------------------------------------------
+
+test('hints button opens dropdown after confirm', async ({ page }) => {
+  await loadAndConfirm(page);
+  await expect(page.locator('#hints-dropdown')).toBeHidden();
+  await page.locator('#hints-btn').click();
+  await expect(page.locator('#hints-dropdown')).toBeVisible();
+  // Toggle off
+  await page.locator('#hints-btn').click();
+  await expect(page.locator('#hints-dropdown')).toBeHidden();
+});
+
+// ---------------------------------------------------------------------------
 // Training consent modal
 // ---------------------------------------------------------------------------
 

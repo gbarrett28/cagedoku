@@ -101,6 +101,47 @@ export function loadSpecDirect(spec: PuzzleSpec): UploadResult {
 }
 
 /**
+ * Build a PuzzleState for a Classic puzzle, bypassing the image pipeline.
+ *
+ * Used in dev/test mode via the `__testLoad('classic')` hook. The caller
+ * must pass a 9×9 given-digits grid (0 = blank cell). A trivial spec (all
+ * borders present, no cage totals) is used for the layout; cage display is
+ * suppressed because `puzzleType` is `'classic'`.
+ */
+export function loadClassicDirect(givenDigits: readonly (readonly number[])[]): UploadResult {
+  // Build the spec directly without validateCageLayout — the cage layout is irrelevant
+  // for Classic puzzles (solver uses givenDigits, not cage constraints). Use the same
+  // blank-canvas pattern as the OCR-failure path: one dummy cage covering all 81 cells.
+  const borderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(false));
+  const borderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
+  const cageTotals = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+  cageTotals[0]![0] = 1; // placeholder cage head so specToCageStates doesn't produce zero cages
+  const regions = Array.from({ length: 9 }, () => new Array<number>(9).fill(1));
+  const spec: PuzzleSpec = { regions, cageTotals, borderX, borderY };
+  const settings = loadSettings();
+  const state: PuzzleState = {
+    specData: specToData(spec),
+    cageStates: specToCageStates(spec),
+    userGrid: null,
+    virtualCages: [],
+    turns: [],
+    alwaysApplyRules: [...settings.alwaysApplyRules],
+    goldenSolution: null,
+    puzzleType: 'classic',
+    givenDigits: givenDigits.map(row => [...row]),
+    originalImageUrl: null,
+    warpedImageUrl: null,
+  };
+  setState(state);
+  return {
+    state,
+    warpedImageUrl: null,
+    warning: 'Review the detected digits and press Confirm & Solve',
+    cellThumbs: new Map(),
+  };
+}
+
+/**
  * Runs the image pipeline on the given File, creates a PuzzleState in the
  * store, and returns the result for rendering. Replaces POST /api/puzzle.
  */
