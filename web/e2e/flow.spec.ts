@@ -302,6 +302,104 @@ test('hints button opens dropdown after confirm', async ({ page }) => {
 });
 
 // ---------------------------------------------------------------------------
+// Classic playing mode — button audit
+// ---------------------------------------------------------------------------
+
+test('classic playing: hints and candidates buttons enabled after confirm', async ({ page }) => {
+  await loadClassicAndConfirm(page);
+  // These are valid for Classic — candidates use row/col/box rules, hints work without cages.
+  await expect(page.locator('#hints-btn')).not.toBeDisabled();
+  await expect(page.locator('#candidates-btn')).not.toBeDisabled();
+});
+
+test('classic playing: undo is disabled (all cells are given digits)', async ({ page }) => {
+  // makeClassicGivenDigits blanks only one cell; the test flow fills it before confirm,
+  // so every cell is a given digit — undo must not undo given placements.
+  await loadClassicAndConfirm(page);
+  await expect(page.locator('#undo-btn')).toBeDisabled();
+});
+
+test('classic playing: type dropdown absent (it lives in review-actions which is hidden)', async ({ page }) => {
+  await loadClassicAndConfirm(page);
+  await expect(page.locator('#review-actions')).toBeHidden();
+  // Type dropdown is inside review-actions, so it is implicitly hidden.
+  await expect(page.locator('#puzzle-type-select')).toBeHidden();
+});
+
+// ---------------------------------------------------------------------------
+// Mobile layout — 375 × 667 viewport
+// ---------------------------------------------------------------------------
+
+/** Run a test at iPhone-SE width to exercise the responsive layout. */
+async function atMobileViewport(page: Page): Promise<void> {
+  await page.setViewportSize({ width: 375, height: 667 });
+}
+
+/** Return true if any content is wider than the viewport (horizontal overflow). */
+async function hasHorizontalOverflow(page: Page): Promise<boolean> {
+  return page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+}
+
+test('mobile: killer review — no horizontal overflow', async ({ page }) => {
+  await atMobileViewport(page);
+  await loadTrivialPuzzle(page);
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+});
+
+test('mobile: killer playing — action buttons visible at 375 px', async ({ page }) => {
+  await atMobileViewport(page);
+  await loadBoxCageAndConfirm(page);
+  await expect(page.locator('#undo-btn')).toBeVisible();
+  await expect(page.locator('#hints-btn')).toBeVisible();
+  await expect(page.locator('#candidates-btn')).toBeVisible();
+});
+
+test('mobile: killer playing — digit pad visible at 375 px', async ({ page }) => {
+  await atMobileViewport(page);
+  await loadBoxCageAndConfirm(page);
+  // All digit buttons should be on-screen
+  for (const d of [1, 5, 9]) {
+    await expect(page.locator(`#digit-${d}`)).toBeVisible();
+  }
+});
+
+test('mobile: killer playing — no horizontal overflow', async ({ page }) => {
+  await atMobileViewport(page);
+  await loadBoxCageAndConfirm(page);
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+});
+
+test('mobile: classic review — digit pad visible and no overflow', async ({ page }) => {
+  await atMobileViewport(page);
+  await loadClassicPuzzle(page);
+  await expect(page.locator('#digit-5')).toBeVisible();
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+});
+
+test('mobile: classic playing — key buttons visible; killer-only buttons absent', async ({ page }) => {
+  await atMobileViewport(page);
+  await loadClassicAndConfirm(page);
+  await expect(page.locator('#hints-btn')).toBeVisible();
+  await expect(page.locator('#candidates-btn')).toBeVisible();
+  await expect(page.locator('#inspect-cage-btn')).toBeHidden();
+  await expect(page.locator('#virtual-cage-btn')).toBeHidden();
+});
+
+test('mobile: classic playing — no horizontal overflow', async ({ page }) => {
+  await atMobileViewport(page);
+  await loadClassicAndConfirm(page);
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+});
+
+test('mobile: header buttons visible at 375 px', async ({ page }) => {
+  await atMobileViewport(page);
+  await loadBoxCageAndConfirm(page);
+  await expect(page.locator('#help-btn')).toBeVisible();
+  await expect(page.locator('#config-btn')).toBeVisible();
+  await expect(page.locator('#new-puzzle-btn')).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------
 // Training consent modal
 // ---------------------------------------------------------------------------
 

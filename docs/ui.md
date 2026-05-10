@@ -397,3 +397,10 @@ The element IDs match the HTML (`index.html`).
 
 3. **Arrow navigation not implemented.** Keyboard arrow keys do not move cell
    selection.
+
+4. **Cage-total edit overlay mis-positioned on narrow viewports.** The canvas
+   is CSS-scaled to fit mobile screens (the click handler already accounts for
+   the scale ratio via `getBoundingClientRect()`), but the `#cage-total-edit`
+   overlay is positioned and sized in unscaled canvas pixels. On viewports
+   narrower than ~460 px the overlay drifts and may be oversized relative to
+   the visible cell. Only affects Killer OCR review mode on mobile.
