@@ -401,6 +401,7 @@ function renderState(state: PuzzleState): void {
   }
 
   el<HTMLSelectElement>('puzzle-type-select').value = state.puzzleType;
+  el<HTMLElement>('review-panel').dataset['puzzleType'] = state.puzzleType;
 
   el<HTMLElement>('review-panel').hidden = false;
   el<HTMLElement>('solution-panel').hidden = true;
