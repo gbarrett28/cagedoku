@@ -315,6 +315,11 @@ export async function parsePuzzleImage(
     }
   }
 
+  // Read classic digits before deleting mats — classicConf is all-zero for true Killer
+  // puzzles (cheap no-op), but captures given digits if OCR misdetected the type so that
+  // the user can switch to Classic via the type dropdown and still get a correct solution.
+  const givenDigits = readClassicDigits(cv, warpedBlkMat, rec, subres, classicConf);
+
   warpedGryMat.delete();
   warpedBlkMat.delete();
 
@@ -323,7 +328,7 @@ export async function parsePuzzleImage(
       spec: null,
       specError: 'Could not extract cage totals',
       puzzleType: 'killer',
-      givenDigits: null,
+      givenDigits,
       warpedImageData: warpedImgData,
       cellThumbs: new Map(),
     };
@@ -360,7 +365,7 @@ export async function parsePuzzleImage(
     }
   }
 
-  return { spec, specError, puzzleType: 'killer', givenDigits: null, warpedImageData: warpedImgData, cellThumbs };
+  return { spec, specError, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs };
 }
 
 // ---------------------------------------------------------------------------

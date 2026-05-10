@@ -706,7 +706,7 @@ async function handleProcess(): Promise<void> {
       if (layoutResult.errorCells.size > 0) {
         reviewErrorCells = layoutResult.errorCells;
         redrawGrid();
-        setStatus('Each cage needs exactly one total in its valid range — highlighted in red', true);
+        setStatus('Each cage needs exactly one total in its valid range — highlighted in red. If this is a Classic sudoku, change the Type dropdown to Classic.', true);
       } else if (layoutResult.warnings.length > 0) {
         setStatus(layoutResult.warnings.join('; ') + ' — please correct the totals before confirming', true);
       } else {
@@ -923,7 +923,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderState(updated);
   });
 
-  // ── Inline cage total editing overlay ───────────────────────────────────────────
+  // ── Inline cage total editing overlay ───────────────────────────────────────────────────────────────────────────────────────
   const cageTotalInput = el<HTMLInputElement>('cage-total-edit');
 
   function commitTotalEdit(): void {
@@ -951,7 +951,7 @@ document.addEventListener('DOMContentLoaded', () => {
       redrawGrid();
     }
   });
-  // ───────────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────────────────────
 
   el<HTMLButtonElement>('new-puzzle-btn').addEventListener('click', () => {
     currentState = null; currentCandidates = null; selectedCell = null;
@@ -1131,8 +1131,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const r0 = Math.floor(y / CELL);  // 0-based
     if (c0 < 0 || c0 > 8 || r0 < 0 || r0 > 8) return;
 
-    // ── Review-mode interaction (before confirm) ───────────────────────────────────
-    if (currentState.userGrid === null && currentState.puzzleType !== 'classic') {
+    // ── Review-mode interaction (before confirm) ─────────────────────────────────────────────────────────────────────────────────────\n    if (currentState.userGrid === null && currentState.puzzleType !== 'classic') {
       // Review mode: borders always togglable; interior click handled by Chunk 2 (total overlay).
       const BORDER_ZONE = 7; // px
       for (let r = 1; r < 9; r++) {
@@ -1164,7 +1163,7 @@ document.addEventListener('DOMContentLoaded', () => {
       inp.select();
       return;
     }
-    // ─────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────────────────
 
     if (virtualCageMode) {
       const key = `${r0},${c0}`;
