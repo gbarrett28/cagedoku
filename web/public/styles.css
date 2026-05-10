@@ -205,6 +205,7 @@ button:hover:not(:disabled) {
   border-radius: 3px;
   border: 1px solid var(--border);
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 #cage-total-edit {
@@ -482,6 +483,14 @@ button:hover:not(:disabled) {
   #grid-canvas {
     width: 100%;
     aspect-ratio: 1;
+  }
+
+  /* Classic review: hide reference photos so the digit pad is reachable without
+     scrolling past two full-height images. The photos are mainly for verifying
+     cage borders (Killer), which is not needed in Classic digit-correction mode. */
+  #review-panel[data-puzzle-type="classic"] #original-col,
+  #review-panel[data-puzzle-type="classic"] #warped-col {
+    display: none;
   }
 }
 
