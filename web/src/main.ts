@@ -6,7 +6,7 @@
  * State lives in session/store.ts; no server required.
  */
 
-import { loadCV, loadRec, setCandidatesCache } from './session/store.js';
+import { loadCV, loadRec, setCandidatesCache, setState } from './session/store.js';
 import { cellLabel } from './engine/rules/_labels.js';
 import { extractTrainingData, buildPuzzleSpecExport } from './image/trainingExport.js';
 import type { TrainingExport } from './image/trainingExport.js';
@@ -831,6 +831,7 @@ async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number)
     : Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
   givenDigits[row1b - 1]![col1b - 1] = digit;
   currentState = { ...currentState, givenDigits };
+  setState(currentState);
   redrawGrid();
 }
 
