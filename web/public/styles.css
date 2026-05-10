@@ -485,13 +485,11 @@ button:hover:not(:disabled) {
     aspect-ratio: 1;
   }
 
-  /* Classic review: hide reference photos so the digit pad is reachable without
-     scrolling past two full-height images. The photos are mainly for verifying
-     cage borders (Killer), which is not needed in Classic digit-correction mode. */
-  #review-panel[data-puzzle-type="classic"] #original-col,
-  #review-panel[data-puzzle-type="classic"] #warped-col {
-    display: none;
-  }
+  /* Canvas column appears last in the HTML (after the reference photos) so that
+     on desktop the reading order is: original → warped → detected. On mobile the
+     flex column would put it last, so use order to hoist it to the top. */
+  #canvas-col { order: -1; }
+  #original-col, #warped-col { order: 0; }
 }
 
 #version-banner {
