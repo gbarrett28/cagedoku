@@ -143,9 +143,10 @@ Any cell can hold a cage total. Click any cell on the canvas:
 
 **Classic digit correction**
 
-Click a cell to select it (blue highlight), then tap a digit button or type a
-digit (1–9) to correct an OCR misread. Tap 0 / Backspace to clear the cell.
-Duplicate digits in the same row, column, or box are highlighted in red.
+Click a cell to select it (blue highlight), then tap a digit button (the digit
+pad is shown below the review action bar for Classic puzzles) or type a digit
+(1–9) to correct an OCR misread. Tap the ✕ button or Backspace to clear the
+cell. Duplicate digits in the same row, column, or box are highlighted in red.
 
 **Action bar**
 
@@ -216,8 +217,8 @@ Renders the 9×9 sudoku grid with the following layers (back → front):
 | Show candidates | Always (disabled until confirmed) | Toggle candidate sub-grid |
 | Edit candidates | Visible when candidates shown | Enter candidate editing mode |
 | ? | Visible when candidates shown | Open candidates help modal |
-| Inspect cage | Visible when candidates shown | Enter cage inspection mode |
-| Virtual cage | Visible when candidates shown | Enter virtual cage drawing mode |
+| Inspect cage | Visible in **Killer** playing mode (always) | Enter cage inspection mode |
+| Virtual cage | Visible in **Killer** playing mode (always) | Enter virtual cage drawing mode |
 | Reveal | Visible when a cell is selected | Reveal the solution digit for the selected cell after a confirmation popup |
 
 ### Reveal
@@ -319,6 +320,72 @@ A small modal triggered by the (i) button next to each rule. Shows:
 
 ---
 
+---
+
+## Button / Control Inventory
+
+Complete reference mapping every interactive element to the screen and state where it is visible.
+The element IDs match the HTML (`index.html`).
+
+### Header (always visible once a puzzle is loaded)
+
+| Element | ID | Visible when |
+|---|---|---|
+| New puzzle button | `#new-puzzle-btn` | Review or Playing screen (hidden on Upload) |
+| Help button | `#help-btn` | Always |
+| Config button | `#config-btn` | Always |
+
+### Upload Screen
+
+| Element | ID | Notes |
+|---|---|---|
+| File input | `#file-input` | `accept="image/*"` |
+| Process button | `#process-btn` | Triggers OCR pipeline |
+| Status message | `#status-msg` | Shows progress / error |
+| Pipeline progress | `#cv-loading-row` | Visible while OpenCV is loading |
+
+### OCR Review Screen (`#review-panel` visible, `#review-actions` visible)
+
+| Element | ID | Visible when |
+|---|---|---|
+| Grid canvas | `#grid-canvas` | Always |
+| Warped image | `#warped-img` (`#warped-col`) | Always |
+| Original image | `#original-img` (`#original-col`) | Always |
+| Cage total editor | `#cage-total-edit` | Overlays a cell while a Killer total is being edited |
+| Classic edit hint | `#classic-edit-hint` | Classic review only (`puzzleType === 'classic'`, before confirm) |
+| Confirm & Solve | `#confirm-btn` | Always |
+| Type dropdown | `#puzzle-type-select` | Always; values `killer` / `classic` |
+| Review status | `#review-status-msg` | Shows validation errors inline |
+| **Digit pad** | `#digit-1` … `#digit-0` | **Classic review only** — `#playing-actions` is shown but `#action-group` is hidden so only the digit pad is reachable |
+
+### Playing Screen (`#review-panel` visible, `#playing-actions` visible, `#action-group` visible)
+
+| Element | ID | Visible when |
+|---|---|---|
+| Undo | `#undo-btn` | Always (disabled until a user turn exists) |
+| Hints | `#hints-btn` | Always (disabled before confirm) |
+| Hints dropdown | `#hints-dropdown` | While `#hints-btn` is toggled on |
+| Show / Hide candidates | `#candidates-btn` | Always (disabled before confirm) |
+| Edit candidates | `#edit-candidates-btn` | Only while candidates are shown |
+| Candidates help (?) | `#help-candidates-btn` | Only while candidates are shown |
+| Inspect cage | `#inspect-cage-btn` | **Killer only** — visible from the start of playing mode |
+| Virtual cage | `#virtual-cage-btn` | **Killer only** — visible from the start of playing mode |
+| Reveal | `#reveal-btn` | Only while a cell is selected |
+| Digit pad | `#digit-1` … `#digit-0` | Always |
+
+### Modals
+
+| Modal | ID | Trigger |
+|---|---|---|
+| General help | `#general-help-modal` | `#help-btn` |
+| Config | `#config-modal` | `#config-btn` |
+| Hint detail | `#hint-modal` | Clicking a hint in `#hints-dropdown` |
+| Rule info | `#rule-info-modal` | ⓘ button in `#config-modal` |
+| Candidates help | `#help-candidates-modal` | `#help-candidates-btn` |
+| Training consent | `#training-consent-modal` | After first upload that produces training data |
+
+---
+
 ## Known UI Issues
 
 1. **Candidate cycling allows toggling essential state.** The cycle should be
@@ -330,3 +397,10 @@ A small modal triggered by the (i) button next to each rule. Shows:
 
 3. **Arrow navigation not implemented.** Keyboard arrow keys do not move cell
    selection.
+
+4. **Cage-total edit overlay mis-positioned on narrow viewports.** The canvas
+   is CSS-scaled to fit mobile screens (the click handler already accounts for
+   the scale ratio via `getBoundingClientRect()`), but the `#cage-total-edit`
+   overlay is positioned and sized in unscaled canvas pixels. On viewports
+   narrower than ~460 px the overlay drifts and may be oversized relative to
+   the visible cell. Only affects Killer OCR review mode on mobile.

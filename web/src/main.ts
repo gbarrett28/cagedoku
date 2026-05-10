@@ -13,10 +13,11 @@ import type { TrainingExport } from './image/trainingExport.js';
 import { defaultImagePipelineConfig } from './image/config.js';
 import { initiateUpload, grantConsent, uploadTrainingData, uploadPuzzleSpec } from './image/trainingUpload.js';
 import { dataToSpec } from './session/specUtils.js';
-import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec } from './engine/fixtures.js';
+import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec, makeClassicGivenDigits } from './engine/fixtures.js';
 import {
   uploadPuzzle,
   loadSpecDirect,
+  loadClassicDirect,
   confirmPuzzle,
   computeCandidates,
   enterCell,
@@ -413,6 +414,7 @@ function renderPlayingMode(state: PuzzleState): void {
   el<HTMLElement>('original-col').hidden = true;
   el<HTMLElement>('warped-col').hidden = true;
   el<HTMLElement>('playing-actions').hidden = false;
+  el<HTMLElement>('action-group').hidden = false;
   el<HTMLElement>('solution-panel').hidden = true;
   updateUndoButton(state);
   updateRevealButton();
@@ -657,7 +659,12 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
   el<HTMLElement>('original-col').hidden = false;
   warpedCol.hidden = false;
   el<HTMLElement>('review-actions').hidden = false;
-  el<HTMLElement>('playing-actions').hidden = true;
+  // For Classic puzzles, show the digit pad so the user can correct OCR digits
+  // by clicking buttons (not just keyboard). The action-group (undo, hints, etc.)
+  // stays hidden — those controls are only active in playing mode.
+  const isClassicReview = state.puzzleType === 'classic';
+  el<HTMLElement>('playing-actions').hidden = !isClassicReview;
+  el<HTMLElement>('action-group').hidden = true;  // always hidden during review
   el<HTMLElement>('upload-panel').hidden = true;
   el<HTMLButtonElement>('new-puzzle-btn').hidden = false;
   setStatus(warning ? `Warning: ${warning}` : '');
@@ -959,11 +966,12 @@ document.addEventListener('DOMContentLoaded', () => {
     virtualCageMode = false; virtualCageSelection = new Set();
     hintHighlightCells = new Set(); activeHintItem = null;
     el<HTMLElement>('upload-panel').hidden = false;
-        el<HTMLElement>('review-panel').hidden = true;
+    el<HTMLElement>('review-panel').hidden = true;
     el<HTMLElement>('solution-panel').hidden = true;
     el<HTMLElement>('playing-actions').hidden = true;
+    el<HTMLElement>('action-group').hidden = false;  // reset for next puzzle
     el<HTMLButtonElement>('new-puzzle-btn').hidden = true;
-        el<HTMLButtonElement>('candidates-btn').disabled = true;
+    el<HTMLButtonElement>('candidates-btn').disabled = true;
     el<HTMLButtonElement>('hints-btn').disabled = true;
     el<HTMLButtonElement>('inspect-cage-btn').hidden = true;
     el<HTMLButtonElement>('virtual-cage-btn').hidden = true;
@@ -1131,7 +1139,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const r0 = Math.floor(y / CELL);  // 0-based
     if (c0 < 0 || c0 > 8 || r0 < 0 || r0 > 8) return;
 
-    // ── Review-mode interaction (before confirm) ─────────────────────────────────────────────────────────────────────────────────────\n    if (currentState.userGrid === null && currentState.puzzleType !== 'classic') {
+    // ── Review-mode interaction (before confirm) ─────────────────────────────────────────────────────────────────────────────────────
+    if (currentState.userGrid === null && currentState.puzzleType !== 'classic') {
       // Review mode: borders always togglable; interior click handled by Chunk 2 (total overlay).
       const BORDER_ZONE = 7; // px
       for (let r = 1; r < 9; r++) {
@@ -1224,7 +1233,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // 'trivial'     — all 81 cells are single-cell cages; all auto-placed after confirm.
     // 'twoCellCage' — top-left two cells share a cage (sum 8); still over-constrained.
     // 'boxCage'     — 9 box cages (3×3 each, sum 45); no cell auto-placed → digit entry works.
+    // 'classic'     — Classic sudoku with one blank cell; always goes to review screen.
     (window as unknown as Record<string, unknown>)['__testLoad'] = (specName?: string) => {
+      if (specName === 'classic') {
+        const { state, warpedImageUrl, warning } = loadClassicDirect(makeClassicGivenDigits());
+        // Classic borders: all walls present; values don't affect Classic rendering/confirm.
+        draftBorderX = Array.from({ length: 9 }, () => Array.from({ length: 8 }, () => true));
+        draftBorderY = Array.from({ length: 8 }, () => Array.from({ length: 9 }, () => true));
+        draftEdited = false;
+        applyUploadResult(state, warpedImageUrl, warning);
+        return;
+      }
       let spec;
       if (specName === 'twoCellCage') spec = makeTwoCellCageSpec();
       else if (specName === 'boxCage') spec = makeBoxCageSpec();

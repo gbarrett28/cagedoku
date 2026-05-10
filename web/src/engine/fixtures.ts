@@ -102,6 +102,18 @@ export function makeBoxCageSpec(): PuzzleSpec {
   return validateCageLayout(cageTotals, borderX, borderY);
 }
 
+/**
+ * Return a partially-filled given-digits grid for Classic puzzle tests.
+ *
+ * Based on KNOWN_SOLUTION with cell (row=0, col=0) blanked so that tests can
+ * exercise digit correction in the Classic OCR review screen.
+ */
+export function makeClassicGivenDigits(): number[][] {
+  const grid = KNOWN_SOLUTION.map(row => [...row]);
+  grid[0]![0] = 0;
+  return grid;
+}
+
 // ---------------------------------------------------------------------------
 // Lower-level helpers (mirrors Python's make_trivial_cage_totals etc.)
 // ---------------------------------------------------------------------------

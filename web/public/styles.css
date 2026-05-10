@@ -399,7 +399,91 @@ button:hover:not(:disabled) {
   font-size: 0.9rem;
 }
 
-/* ── Version banner ── */
+/* ── Responsive / Mobile ── */
+
+@media (max-width: 620px) {
+  header {
+    padding: 0.625rem 1rem;
+  }
+
+  /* Wrap header buttons so they don't push off-screen */
+  .header-inner {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  /* Hide descriptive subtitle — save horizontal space */
+  .header-sub {
+    display: none;
+  }
+
+  main {
+    margin: 0.75rem auto;
+    padding: 0 0.75rem;
+    gap: 1rem;
+  }
+
+  .card {
+    padding: 1rem;
+  }
+
+  /* Stack reference images vertically instead of forcing horizontal scroll */
+  #images-row {
+    flex-direction: column;
+    overflow-x: unset;
+  }
+
+  /* Action bar wraps onto multiple rows so no button is clipped */
+  .form-actions {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  /* Increase tap targets to the Apple HIG 44 pt minimum */
+  button {
+    min-height: 44px;
+    padding: 0.5rem 0.9rem;
+    font-size: 0.8rem;
+    letter-spacing: 0.03em;
+  }
+
+  /* Digit buttons already close to 44px (3rem); nudge up slightly */
+  .digit-btn {
+    width: 3.25rem;
+    height: 3.25rem;
+    font-size: 1.25rem;
+  }
+
+  /* Digit pad can use full card width on narrow screens */
+  .digit-pad {
+    max-width: none;
+  }
+
+  /* Reference images should not overflow card width */
+  #original-img,
+  #warped-img {
+    max-width: 100%;
+  }
+
+  /* Allow image columns to shrink below their content size */
+  .image-col {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+
+  /* Canvas wrapper: block so the canvas fills its column width */
+  #canvas-wrapper {
+    display: block;
+    width: 100%;
+  }
+
+  /* Scale the canvas to fit the column — the click handler already applies
+     (canvas.width / rect.width) so coordinates remain correct. */
+  #grid-canvas {
+    width: 100%;
+    aspect-ratio: 1;
+  }
+}
 
 #version-banner {
   position: fixed;
