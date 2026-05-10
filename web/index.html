@@ -43,7 +43,15 @@
   <section id="review-panel" class="card" hidden>
 
     <div id="images-row">
-      <div class="image-col">
+      <div class="image-col" id="original-col">
+        <h2>Original Photo</h2>
+        <img id="original-img" alt="Uploaded puzzle photo">
+      </div>
+      <div class="image-col" id="warped-col">
+        <h2>Warped Grid</h2>
+        <img id="warped-img" alt="Perspective-corrected grid">
+      </div>
+      <div class="image-col" id="canvas-col">
         <h2 id="detected-layout-heading">Detected Layout</h2>
         <div id="canvas-wrapper">
           <canvas id="grid-canvas"></canvas>
@@ -75,14 +83,6 @@
             <button id="digit-0" class="digit-btn digit-clear">&#x2715;</button>
           </div>
         </div>
-      </div>
-      <div class="image-col" id="original-col">
-        <h2>Original Photo</h2>
-        <img id="original-img" alt="Uploaded puzzle photo">
-      </div>
-      <div class="image-col" id="warped-col">
-        <h2>Warped Grid</h2>
-        <img id="warped-img" alt="Perspective-corrected grid">
       </div>
       <div class="image-col" id="inspector-col" hidden>
         <h2 id="inspector-heading"></h2>
