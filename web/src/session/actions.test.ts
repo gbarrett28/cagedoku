@@ -345,4 +345,35 @@ describe('computeCandidates — CellSolutionElimination mandatory in Classic (#2
     // Row 0 givens include 3,4,6,7,8,9,1,2 — so only digit 5 should remain for (0,0).
     expect(data.cells[0]![0]!.candidates).toEqual([5]);
   });
+
+  it('sparse classic: given + user-placed digits absent from box peers with rule disabled', () => {
+    // Matches the screenshot scenario: sparse newspaper-style puzzle where only
+    // a handful of digits are given, and the user has placed additional digits.
+    // Box 1 (rows 0–2, cols 3–5): given r2c3=3 and r2c4=4; blank peers r0c3, r0c4.
+    const sparseGivens: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    sparseGivens[2]![3] = 3; // KNOWN_SOLUTION[2][3]
+    sparseGivens[2]![4] = 4; // KNOWN_SOLUTION[2][4]
+    makeClassicState(sparseGivens);
+    const { board } = solveCurrentSpec();
+    const state = confirmPuzzle(board);
+
+    // Simulate user disabling CellSolutionElimination, then placing a digit.
+    setState({ ...state, alwaysApplyRules: [] });
+    // User places 6 at r0c5 (box 1 — same as the two givens above).
+    enterCell(1, 6, 6);
+
+    const data = computeCandidates();
+    // r0c3 is in box 1: must not contain 3, 4, or 6.
+    expect(data.cells[0]![3]!.candidates).not.toContain(3);
+    expect(data.cells[0]![3]!.candidates).not.toContain(4);
+    expect(data.cells[0]![3]!.candidates).not.toContain(6);
+    // r1c4 is also in box 1.
+    expect(data.cells[1]![4]!.candidates).not.toContain(3);
+    expect(data.cells[1]![4]!.candidates).not.toContain(4);
+    expect(data.cells[1]![4]!.candidates).not.toContain(6);
+    // r4c3 is a column peer of r2c3=3 (different box) — must not contain 3.
+    expect(data.cells[4]![3]!.candidates).not.toContain(3);
+    // r0c0 is a row peer of r0c5=6 (user placed) — must not contain 6.
+    expect(data.cells[0]![0]!.candidates).not.toContain(6);
+  });
 });
