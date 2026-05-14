@@ -320,34 +320,45 @@ export function rebuildUserGrid(state: PuzzleState): PuzzleState {
 // ---------------------------------------------------------------------------
 
 /**
- * Finds the index of the last turn that is still consistent with a freshly
- * built board. Returns null if the current state is fully consistent.
+ * Returns the turn index to rewind to when the user has placed a wrong digit,
+ * or null if the current state contains no mistakes.
  *
- * Used when an image re-scan or cage edit invalidates part of the history.
+ * Compares every non-zero cell in userGrid against goldenSolution. If a
+ * conflict is found, walks forward through turns to find the earliest
+ * placeDigit turn that introduced a currently-wrong digit. rewind(idx) will
+ * then trim history to [0, idx) — before the first error.
  */
 export function findLastConsistentTurnIdx(state: PuzzleState): number | null {
-  const { board, engine } = buildEngine(state);
-  engine.solve();
+  const { goldenSolution, userGrid } = state;
+  if (goldenSolution === null || userGrid === null) return null;
 
-  // Walk backwards: find the first turn whose snapshot is consistent with
-  // the current board candidates
-  for (let i = state.turns.length - 1; i >= 0; i--) {
-    const snap = state.turns[i]!.snapshot;
-    if (snapshotConsistent(snap, board)) return i;
-  }
-  return null;
-}
-
-/** Returns true if every cell in the snapshot still has its candidates available. */
-function snapshotConsistent(snap: BoardSnapshot, board: BoardState): boolean {
+  // Build map of currently-wrong cells: key → wrong digit placed there
+  const wrongCells = new Map<string, number>();
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
-      for (const d of snap.candidates[r]![c]!) {
-        if (!board.cands(r, c).has(d)) return false;
+      const placed = userGrid[r]![c]!;
+      const golden = goldenSolution[r]![c]!;
+      if (placed !== 0 && golden !== 0 && placed !== golden) {
+        wrongCells.set(`${r},${c}`, placed);
       }
     }
   }
-  return true;
+  if (wrongCells.size === 0) return null;
+
+  // Walk forward to find the earliest turn that placed a currently-wrong digit
+  let firstBadIdx = state.turns.length - 1;
+  for (let i = 0; i < state.turns.length; i++) {
+    const a = state.turns[i]!.action;
+    if (a.type !== 'placeDigit') continue;
+    const key = `${a.row},${a.col}`;
+    const wrongDigit = wrongCells.get(key);
+    if (wrongDigit !== undefined && a.digit === wrongDigit) {
+      firstBadIdx = Math.min(firstBadIdx, i);
+      wrongCells.delete(key);
+      if (wrongCells.size === 0) break;
+    }
+  }
+  return firstBadIdx;
 }
 
 // ---------------------------------------------------------------------------
