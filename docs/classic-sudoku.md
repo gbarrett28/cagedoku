@@ -135,4 +135,8 @@ rewinding past given digits.
   pairs, etc.) are not yet implemented.  The coaching engine runs the same
   `defaultRules()` as killer mode; rules that are structurally valid for classic
   (e.g. `NakedSingle`, `CellSolutionElimination`) fire normally.
+  `CellSolutionElimination` is **always forced active** for classic puzzles in
+  `buildEngine` regardless of the user's Config settings — cage rules are no-ops
+  on the classic dummy spec, so this rule is the sole mechanism that propagates
+  placed digits to row/col/box peers.
 - **Orientation correction** (90°/180°/270° rotation) is deferred.
