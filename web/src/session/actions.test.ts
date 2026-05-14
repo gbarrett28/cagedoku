@@ -322,3 +322,27 @@ describe('cycleCandidate — candidate editing (#25)', () => {
     expect(after.cells[0]![0]!.userRemoved).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// #24 – CellSolutionElimination mandatory for Classic mode
+//
+// If the user removes CellSolutionElimination from alwaysApplyRules (via Config),
+// Classic candidates must still be correct because buildEngine forces the rule on.
+// ---------------------------------------------------------------------------
+
+describe('computeCandidates — CellSolutionElimination mandatory in Classic (#24)', () => {
+  it('given digits eliminate peers even when CellSolutionElimination is removed from alwaysApplyRules', () => {
+    const givenDigits = makeClassicGivenDigits(); // KNOWN_SOLUTION with (0,0) blanked
+    makeClassicState(givenDigits);
+
+    // Simulate user disabling CellSolutionElimination in Config.
+    const { board } = solveCurrentSpec();
+    const state = confirmPuzzle(board);
+    const withoutRule: PuzzleState = { ...state, alwaysApplyRules: [] };
+    setState(withoutRule);
+
+    const data = computeCandidates();
+    // Row 0 givens include 3,4,6,7,8,9,1,2 — so only digit 5 should remain for (0,0).
+    expect(data.cells[0]![0]!.candidates).toEqual([5]);
+  });
+});
