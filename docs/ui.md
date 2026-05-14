@@ -224,9 +224,9 @@ Renders the 9×9 sudoku grid with the following layers (back → front):
 ### Reveal
 
 Pressing **Reveal** with a cell selected opens a small confirmation popup:
-"Reveal solution for r{R}c{C}?" with OK and Cancel. On OK, the solver computes
-the full solution (if not already cached), then places the correct digit in the
-selected cell via the normal `enterCell` path so that undo works as expected.
+"Reveal solution for r{R}c{C}?" with OK and Cancel. On OK, the correct digit is
+read from `goldenSolution` (cached at confirm time) and placed via the normal
+`enterCell` path so that undo works as expected.
 
 ### Hints Dropdown
 
@@ -246,15 +246,15 @@ Shows the hint's title, full explanation, and summary. Two actions:
 
 ### Candidate Editing Mode
 
-Activated by "Edit candidates". Each digit in a cell cycles:
+Activated by "Edit candidates". Pressing a digit key toggles it between two states:
 
-```
-Inessential (grey) → Impossible (hidden) → Inessential (grey) → …
-```
+| State | Appearance | Meaning |
+|---|---|---|
+| Possible | grey (or salmon if essential) | Still a valid candidate |
+| Removed | hidden | Ruled out by the user |
 
-The essential state is **auto-computed only** — it cannot be set or cleared by
-the user. (Note: the current implementation incorrectly allows cycling through
-essential; this is a known bug — see Known Issues #1.)
+The essential highlight (salmon) is **auto-computed only** — it cannot be set or
+cleared by the user.
 
 Delete / Backspace in editing mode resets the cell's candidates to their
 auto-computed state.
@@ -388,17 +388,10 @@ The element IDs match the HTML (`index.html`).
 
 ## Known UI Issues
 
-1. **Candidate cycling allows toggling essential state.** The cycle should be
-   possible ↔ impossible only. Essential is auto-computed and must not be
-   user-overridable.
-
-2. **Undo has no visible effect.** The undo action correctly reverts state but
-   the frontend does not re-render after the response.
-
-3. **Arrow navigation not implemented.** Keyboard arrow keys do not move cell
+1. **Arrow navigation not implemented.** Keyboard arrow keys do not move cell
    selection.
 
-4. **Cage-total edit overlay mis-positioned on narrow viewports.** The canvas
+2. **Cage-total edit overlay mis-positioned on narrow viewports.** The canvas
    is CSS-scaled to fit mobile screens (the click handler already accounts for
    the scale ratio via `getBoundingClientRect()`), but the `#cage-total-edit`
    overlay is positioned and sized in unscaled canvas pixels. On viewports

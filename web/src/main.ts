@@ -24,7 +24,6 @@ import {
   undo,
   rewind,
   cycleCandidate,
-  solvePuzzle,
   getCageSolutions,
   eliminateCageSolution,
   eliminateVirtualCageSolution,
@@ -442,16 +441,14 @@ async function handleReveal(): Promise<void> {
   if (currentState === null || selectedCell === null) return;
   const { row, col } = selectedCell;
   if (!confirm(`Reveal solution for ${cellLabel([row - 1, col - 1] as Cell)}?`)) return;
-  setLoading(true);
   try {
-    const data = solvePuzzle();
-    if (!data.solved || data.grid === null) { setStatus('No solution found — check puzzle layout', true); return; }
-    const digit = data.grid[row - 1]![col - 1]!;
+    const sol = currentState.goldenSolution;
+    if (sol === null) { setStatus('No solution cached — please confirm the puzzle first', true); return; }
+    const digit = sol[row - 1]![col - 1]!;
     if (digit === 0) { setStatus('Solver could not determine this cell', true); return; }
     await handleCellEntry(digit);
     updateRevealButton();
   } catch (e) { setStatus(String(e), true); }
-  finally { setLoading(false); }
 }
 
 // ---------------------------------------------------------------------------
@@ -691,6 +688,8 @@ async function handleProcess(): Promise<void> {
     if (warning === null && state.puzzleType !== 'classic') {
       const layoutResult = applyDraftLayout(draftBorderX, draftBorderY, state.specData.cageTotals);
       if (layoutResult.errorCells.size === 0 && layoutResult.warnings.length === 0) {
+        // Yield to the browser so the loading indicator renders before the solve blocks.
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
         const { board, usedBacktracking } = solveCurrentSpec();
         let boardComplete = true;
         for (let r = 0; r < 9 && boardComplete; r++)
@@ -755,6 +754,8 @@ async function handleConfirm(): Promise<void> {
       reviewErrorCells = new Set();
       currentState = result.state;
     }
+    // Yield so the loading indicator renders before the solve blocks the main thread.
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
     const { board: confirmedBoard, usedBacktracking: confirmUsedBacktracking } = solveCurrentSpec();
     const playing = confirmPuzzle(confirmedBoard);
     renderPlayingMode(playing);

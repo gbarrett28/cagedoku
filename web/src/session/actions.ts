@@ -450,11 +450,15 @@ export function computeCandidates(): CandidatesResponse {
     Array.from({ length: 9 }, (__, c) => {
       const cageIdx = board.regions[r]![c]!;
       const remaining = board.cageSolns[cageIdx]!;
+      const removedHere = removedByCell.get(`${r},${c}`) ?? new Set<number>();
+      // Classic mode: cage solutions are always empty (dummy spec) — use board
+      // candidates directly so row/col/box eliminations are reflected.
       const cagePossible: Set<number> = remaining.length > 0
         ? new Set(remaining.flat())
         : new Set<number>();
-      const removedHere = removedByCell.get(`${r},${c}`) ?? new Set<number>();
-      const solverCands = new Set([...board.cands(r, c)].filter(d => cagePossible.has(d)));
+      const solverCands = state.puzzleType === 'classic'
+        ? new Set(board.cands(r, c))
+        : new Set([...board.cands(r, c)].filter(d => cagePossible.has(d)));
       // Union in user-removed so they show for strikethrough even after SolutionMapFilter prunes
       for (const d of removedHere) solverCands.add(d);
       return {
