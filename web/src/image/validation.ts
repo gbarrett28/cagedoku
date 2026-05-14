@@ -9,6 +9,7 @@
 import { ProcessingError } from '../solver/errors.js';
 import { buildBrdrs } from '../solver/puzzleSpec.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
+import { cageSumRange, keyToCell } from '../engine/types.js';
 
 
 
@@ -114,7 +115,7 @@ export function validateCageLayout(
 
         // Check no cell in this component has already been assigned.
         for (const k of component) {
-          const [r, c] = k.split(',').map(Number) as [number, number];
+          const [r, c] = keyToCell(k);
           if (regions[r]![c]! !== 0) {
             throw new ProcessingError('region reassigned', regions, brdrs);
           }
@@ -122,8 +123,7 @@ export function validateCageLayout(
 
         reg += 1;
         const n = component.size;
-        const lo = (n * (n + 1)) / 2;
-        const hi = (n * (19 - n)) / 2;
+        const [lo, hi] = cageSumRange(n);
         const total = cageTotals[row]![col]!;
         if (total < lo || total > hi) {
           throw new Error(
@@ -132,7 +132,7 @@ export function validateCageLayout(
         }
 
         for (const k of component) {
-          const [r, c] = k.split(',').map(Number) as [number, number];
+          const [r, c] = keyToCell(k);
           regions[r]![c] = reg;
         }
       }
@@ -200,8 +200,7 @@ export function repairCageTotals(
       const total = repaired[row]![col]!;
       if (total === 0) continue;
       const n = members.get(find(rowColKey(row, col)))!.size;
-      const lo = (n * (n + 1)) / 2;
-      const hi = (n * (19 - n)) / 2;
+      const [lo, hi] = cageSumRange(n);
       if (total < lo || total > hi) {
         const clamped = total < lo ? lo : hi;
         repaired[row]![col] = clamped;

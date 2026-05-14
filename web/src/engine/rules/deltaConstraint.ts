@@ -21,26 +21,34 @@ export class DeltaConstraint {
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX, UnitKind.CAGE]);
 
+  private _elimsForPair(
+    ctx: RuleContext,
+    p: Cell, q: Cell, delta: number,
+  ): Elimination[] {
+    const board = ctx.board;
+    const elims: Elimination[] = [];
+    const validP = new Set([...board.cands(q[0], q[1])].map(m => m + delta).filter(d => d >= 1 && d <= 9));
+    for (const d of board.cands(p[0], p[1])) {
+      if (!validP.has(d)) elims.push({ cell: p, digit: d });
+    }
+    const validQ = new Set([...board.cands(p[0], p[1])].map(m => m - delta).filter(d => d >= 1 && d <= 9));
+    for (const d of board.cands(q[0], q[1])) {
+      if (!validQ.has(d)) elims.push({ cell: q, digit: d });
+    }
+    return elims;
+  }
+
   apply(ctx: RuleContext): RuleResult {
     if (!ctx.unit) return emptyResult();
-    const board = ctx.board;
     const elims: Elimination[] = [];
     const seen = new Set<string>();
 
     for (const [r, c] of ctx.unit.cells as Cell[]) {
-      for (const [p, q, delta] of board.linearSystem.pairsForCell([r, c] as Cell)) {
+      for (const [p, q, delta] of ctx.board.linearSystem.pairsForCell([r, c] as Cell)) {
         const key = `${p[0]},${p[1]}-${q[0]},${q[1]}-${delta}`;
         if (seen.has(key)) continue;
         seen.add(key);
-
-        const validP = new Set([...board.cands(q[0], q[1])].map(m => m + delta).filter(d => d >= 1 && d <= 9));
-        for (const d of board.cands(p[0], p[1])) {
-          if (!validP.has(d)) elims.push({ cell: p, digit: d });
-        }
-        const validQ = new Set([...board.cands(p[0], p[1])].map(m => m - delta).filter(d => d >= 1 && d <= 9));
-        for (const d of board.cands(q[0], q[1])) {
-          if (!validQ.has(d)) elims.push({ cell: q, digit: d });
-        }
+        elims.push(...this._elimsForPair(ctx, p, q, delta));
       }
     }
     return { ...emptyResult(), eliminations: elims };
@@ -48,21 +56,16 @@ export class DeltaConstraint {
 
   asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
     if (!eliminations.length || !ctx.unit) return [];
-    const board = ctx.board;
     const hints: HintResult[] = [];
     const seen = new Set<string>();
 
     for (const [r, c] of ctx.unit.cells as Cell[]) {
-      for (const [p, q, delta] of board.linearSystem.pairsForCell([r, c] as Cell)) {
+      for (const [p, q, delta] of ctx.board.linearSystem.pairsForCell([r, c] as Cell)) {
         const key = `${p[0]},${p[1]}-${q[0]},${q[1]}-${delta}`;
         if (seen.has(key)) continue;
         seen.add(key);
 
-        const pairElims: Elimination[] = [];
-        const validP = new Set([...board.cands(q[0], q[1])].map(m => m + delta).filter(d => d >= 1 && d <= 9));
-        for (const d of board.cands(p[0], p[1])) { if (!validP.has(d)) pairElims.push({ cell: p, digit: d }); }
-        const validQ = new Set([...board.cands(p[0], p[1])].map(m => m - delta).filter(d => d >= 1 && d <= 9));
-        for (const d of board.cands(q[0], q[1])) { if (!validQ.has(d)) pairElims.push({ cell: q, digit: d }); }
+        const pairElims = this._elimsForPair(ctx, p, q, delta);
         if (!pairElims.length) continue;
 
         const nameP = cellLabel(p), nameQ = cellLabel(q);

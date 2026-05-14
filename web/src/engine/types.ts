@@ -13,6 +13,17 @@ export function cellKey(cell: Cell): string {
   return `${cell[0]},${cell[1]}`;
 }
 
+/** Parse a cellKey string back to a Cell. */
+export function keyToCell(k: string): Cell {
+  const i = k.indexOf(',');
+  return [parseInt(k.slice(0, i), 10), parseInt(k.slice(i + 1), 10)] as Cell;
+}
+
+/** Valid [min, max] total for a cage of n cells (each digit 1–9, distinct). */
+export function cageSumRange(n: number): [number, number] {
+  return [(n * (n + 1)) / 2, (n * (19 - n)) / 2];
+}
+
 /** The four kinds of units in a killer/classic sudoku grid. */
 export enum UnitKind {
   ROW = 0,
