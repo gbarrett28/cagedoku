@@ -1214,10 +1214,13 @@ document.addEventListener('DOMContentLoaded', () => {
     updateRevealButton();
   });
 
-  // Digit buttons — in pre-confirm Classic review, edit given digits; otherwise playing mode.
+  // Digit buttons — pre-confirm Classic edits given digits; edit-candidates mode toggles a
+  // candidate; otherwise places a digit in the playing grid.
   function handleDigitButton(d: number): void {
     if (currentState?.userGrid === null && currentState?.puzzleType === 'classic' && selectedCell !== null) {
       void handleGivenDigitEdit(selectedCell.row, selectedCell.col, d);
+    } else if (candidateEditMode && selectedCell !== null) {
+      void handleCandidateCycle(selectedCell.row, selectedCell.col, d);
     } else {
       void handleCellEntry(d);
     }

@@ -246,7 +246,8 @@ Shows the hint's title, full explanation, and summary. Two actions:
 
 ### Candidate Editing Mode
 
-Activated by "Edit candidates". Pressing a digit key toggles it between two states:
+Activated by "Edit candidates". Pressing a digit key **or tapping a digit on the
+digit pad** toggles it between two states:
 
 | State | Appearance | Meaning |
 |---|---|---|
