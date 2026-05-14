@@ -10,7 +10,7 @@
 import { solve, BoardState, SolveResult } from '../engine/index.js';
 import { solSums } from '../solver/equation.js';
 import { defaultRules } from '../engine/rules/index.js';
-import { cageSumRange } from '../engine/types.js';
+import { cageSumRange, cellKey, keyToCell } from '../engine/types.js';
 import type { Cell } from '../engine/types.js';
 import { parsePuzzleImage, ImageDecodeError } from '../image/inpImage.js';
 import type { ParseResult } from '../image/inpImage.js';
@@ -265,12 +265,12 @@ export function applyDraftLayout(
   const state = requireState();
   if (state.userGrid !== null) throw new Error('Cannot edit layout after confirming');
 
-  // Union-find: keys are "${col},${row}"
+  // Union-find: keys are "row,col" (cellKey format)
   const rmap = new Map<string, string>();
   const members = new Map<string, Set<string>>();
-  for (let c = 0; c < 9; c++) {
-    for (let r = 0; r < 9; r++) {
-      const k = `${c},${r}`;
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const k = cellKey([r, c] as Cell);
       rmap.set(k, k); members.set(k, new Set([k]));
     }
   }
@@ -286,20 +286,19 @@ export function applyDraftLayout(
   };
   for (let c = 0; c < 9; c++)
     for (let r = 0; r < 8; r++)
-      if (!borderX[c]![r]!) union(`${c},${r}`, `${c},${r + 1}`);
+      if (!borderX[c]![r]!) union(cellKey([r, c] as Cell), cellKey([r + 1, c] as Cell));
   for (let cg = 0; cg < 8; cg++)
     for (let r = 0; r < 9; r++)
-      if (!borderY[cg]![r]!) union(`${cg},${r}`, `${cg + 1},${r}`);
+      if (!borderY[cg]![r]!) union(cellKey([r, cg] as Cell), cellKey([r, cg + 1] as Cell));
 
   // Validate each cage: exactly one non-zero total, within the valid range for its size.
-  // errorCells uses "row,col" keys (matches drawGrid's highlight convention).
   const errorCells = new Set<string>();
   const headTotals: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
   const seen = new Set<string>();
 
-  for (let c = 0; c < 9; c++) {
-    for (let r = 0; r < 9; r++) {
-      const rep = find(`${c},${r}`);
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const rep = find(cellKey([r, c] as Cell));
       if (seen.has(rep)) continue;
       seen.add(rep);
 
@@ -308,13 +307,13 @@ export function applyDraftLayout(
       const [lo, hi] = cageSumRange(n);
 
       let nonZeroCount = 0;
-      let headC = -1; let headR = -1; let headTotal = 0;
+      let headR = -1; let headC = -1; let headTotal = 0;
       for (const k of cageCells) {
-        const [kc, kr] = k.split(',').map(Number) as [number, number];
-        const total = cellTotals[kr]![kc]!; // [row][col]
+        const [kr, kc] = keyToCell(k);
+        const total = cellTotals[kr]![kc]!;
         if (total !== 0) {
           nonZeroCount++;
-          headC = kc; headR = kr; headTotal = total;
+          headR = kr; headC = kc; headTotal = total;
         }
       }
 
@@ -322,12 +321,9 @@ export function applyDraftLayout(
       const rangeError = nonZeroCount === 1 && (headTotal < lo || headTotal > hi);
 
       if (structuralError || rangeError) {
-        for (const k of cageCells) {
-          const [kc, kr] = k.split(',').map(Number) as [number, number];
-          errorCells.add(`${kr},${kc}`); // "row,col" for drawGrid
-        }
+        for (const k of cageCells) errorCells.add(k);
       } else {
-        headTotals[headR]![headC] = headTotal; // [row][col]
+        headTotals[headR]![headC] = headTotal;
       }
     }
   }
