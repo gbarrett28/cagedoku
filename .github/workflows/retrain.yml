@@ -45,13 +45,8 @@ jobs:
           echo "count=$COUNT" >> "$GITHUB_OUTPUT"
           echo "Found $COUNT pending upload(s)."
 
-      - name: Exit early if no pending uploads
-        if: steps.list.outputs.count == '0'
-        run: |
-          echo "No pending uploads — skipping retrain."
-          exit 0
-
       - name: Download pending uploads
+        if: steps.list.outputs.count != '0'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -63,12 +58,14 @@ jobs:
           done < /tmp/r2_keys.txt
 
       - name: Retrain
+        if: steps.list.outputs.count != '0'
         run: |
           python web/train_recogniser.py \
             --browser-weight 1000 --svm-c 100 \
             web/browser_train.json /tmp/training/*.json
 
       - name: Evaluate accuracy
+        if: steps.list.outputs.count != '0'
         id: eval
         run: |
           if [ -f web/public/eval_report.json ]; then
@@ -90,6 +87,7 @@ jobs:
             --label "bug"
 
       - name: Commit updated model
+        if: steps.list.outputs.count != '0'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -98,6 +96,7 @@ jobs:
             git commit -m "chore: retrain digit recogniser with new browser samples"
 
       - name: Merge samples into browser_train.json
+        if: steps.list.outputs.count != '0'
         run: |
           python3 - <<'EOF'
           import json, glob, pathlib
@@ -114,9 +113,11 @@ jobs:
             git commit -m "chore: merge new browser samples into browser_train.json"
 
       - name: Push commits
+        if: steps.list.outputs.count != '0'
         run: git push
 
       - name: Delete processed R2 objects
+        if: steps.list.outputs.count != '0'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -127,6 +128,7 @@ jobs:
           done < /tmp/r2_keys.txt
 
       - name: React to processed GitHub Issue comments
+        if: steps.list.outputs.count != '0'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
