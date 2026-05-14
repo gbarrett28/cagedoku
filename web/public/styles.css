@@ -604,6 +604,14 @@ dialog::backdrop {
   cursor: pointer;
 }
 
+.config-delay-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.config-delay-row input[type="range"] { flex: 1; }
+#config-delay-label { min-width: 3.5rem; font-size: 0.85rem; color: var(--text-muted, var(--text)); }
+
 .btn-rule-info {
   background: none;
   border: none;

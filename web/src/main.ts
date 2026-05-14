@@ -21,6 +21,9 @@ import {
   confirmPuzzle,
   computeCandidates,
   enterCell,
+  enterCellStep,
+  stepAutoPlacement,
+  getAutoPlacementDelay,
   undo,
   rewind,
   cycleCandidate,
@@ -624,6 +627,14 @@ function openConfigModal(): void {
   const ess = el<HTMLInputElement>('essential-toggle');
   ess.checked = showEssential;
 
+  const delayInput = el<HTMLInputElement>('config-delay-input');
+  delayInput.value = String(data.autoPlacementDelay);
+  el<HTMLElement>('config-delay-label').textContent = data.autoPlacementDelay === 0 ? 'Off' : `${data.autoPlacementDelay} ms`;
+  delayInput.oninput = () => {
+    const v = Number(delayInput.value);
+    el<HTMLElement>('config-delay-label').textContent = v === 0 ? 'Off' : `${v} ms`;
+  };
+
   for (const rule of data.hintableRules) {
     const row = document.createElement('div'); row.className = 'config-rule-row';
     const nameSpan = document.createElement('span'); nameSpan.className = 'config-rule-name'; nameSpan.textContent = rule.displayName;
@@ -801,10 +812,28 @@ function showTrainingConsentModal(data: TrainingExport): void {
 async function handleCellEntry(digit: number): Promise<void> {
   if (currentState === null || selectedCell === null) return;
   try {
-    const state = enterCell(selectedCell.row, selectedCell.col, digit);
-    currentState = state;
-    refreshDisplay();
-    updateUndoButton(state);
+    const delay = getAutoPlacementDelay();
+    if (delay === 0) {
+      const state = enterCell(selectedCell.row, selectedCell.col, digit);
+      currentState = state;
+      refreshDisplay();
+      updateUndoButton(state);
+    } else {
+      // Animated path: show the user's placement first, then step through auto-placements.
+      let state = enterCellStep(selectedCell.row, selectedCell.col, digit);
+      currentState = state;
+      refreshDisplay();
+      updateUndoButton(state);
+      await new Promise<void>(resolve => { setTimeout(resolve, delay); });
+      while (true) {
+        const next = stepAutoPlacement();
+        if (next === null) break;
+        currentState = next;
+        refreshDisplay();
+        updateUndoButton(next);
+        await new Promise<void>(resolve => { setTimeout(resolve, delay); });
+      }
+    }
   } catch (e) { setStatus(String(e), true); }
 }
 
@@ -997,7 +1026,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const alwaysApply: string[] = [];
     selects.forEach(s => { if (s.value === 'auto' && s.dataset['ruleName']) alwaysApply.push(s.dataset['ruleName']); });
     showEssential = el<HTMLInputElement>('essential-toggle').checked;
-    saveSettingsData(alwaysApply);
+    const delay = Number(el<HTMLInputElement>('config-delay-input').value);
+    saveSettingsData(alwaysApply, delay);
     el<HTMLDialogElement>('config-modal').close();
     if (currentState !== null) refreshDisplay();
   });

@@ -290,17 +290,26 @@ clicking).
 
 Opened via "Config" in the header.
 
-**Rule list**: one row per hintable rule.
-- Checkbox: toggles the rule between always-apply and hint-only.
-- Rule display name.
-- **(i) button**: opens a **Rule Info Modal** (see below) explaining the rule.
-
 **Essential highlight toggle**: enables or disables the salmon highlight that
 marks essential digits. Disabled state leaves essential digits grey, identical
 to inessential.
 
-Save / Cancel. Changes to `always_apply_rules` take effect immediately on the
-next candidates refresh.
+**Auto-apply step delay** slider (0 – 2 000 ms, step 50 ms):
+- **0 (Off)**: default — all auto-placements are applied instantly after each
+  user placement, exactly as before.
+- **> 0**: after the user places a digit, each auto-deduced placement is
+  applied one-at-a-time with the configured delay between steps and the grid
+  redrawn after each one. This creates a step-through "teaching" effect.
+  The delay applies between the user's placement and the first
+  auto-placement, and between each subsequent auto-placement.
+
+**Rule list**: one row per hintable rule.
+- Dropdown: toggles the rule between `Auto-apply` and `Hint-only`.
+- Rule display name.
+- **(i) button**: opens a **Rule Info Modal** (see below) explaining the rule.
+
+Save / Cancel. Changes to `alwaysApplyRules` and `autoPlacementDelay` take
+effect from the next user placement.
 
 ### Rule Info Modal
 

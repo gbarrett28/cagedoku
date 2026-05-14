@@ -207,6 +207,25 @@ export function applyAutoPlacements(state: PuzzleState): PuzzleState {
   return changed ? { ...state, userGrid: newGrid } : state;
 }
 
+/**
+ * Applies exactly one pending auto-placement to userGrid and returns the
+ * updated state, or null if there are no more cells to auto-place.
+ * Used by the UI animation loop when autoPlacementDelay > 0.
+ */
+export function applyNextAutoPlacement(state: PuzzleState): PuzzleState | null {
+  if (state.userGrid === null) return null;
+  const { engine } = buildEngine(state);
+  for (const p of engine.appliedPlacements) {
+    const [r, c] = p.cell;
+    if (state.userGrid[r]![c]! === 0) {
+      const newGrid = state.userGrid.map(row => [...row]);
+      newGrid[r]![c] = p.digit;
+      return { ...state, userGrid: newGrid };
+    }
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Turn recording
 // ---------------------------------------------------------------------------

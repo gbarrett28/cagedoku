@@ -27,8 +27,12 @@ export function loadSettings(): CoachSettings {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw === null) return defaultSettings();
     const parsed: unknown = JSON.parse(raw);
-    if (!isCoachSettings(parsed)) return defaultSettings();
-    return parsed;
+    if (!hasValidRules(parsed)) return defaultSettings();
+    const obj = parsed as Record<string, unknown>;
+    return {
+      alwaysApplyRules: [...(obj['alwaysApplyRules'] as string[])],
+      autoPlacementDelay: typeof obj['autoPlacementDelay'] === 'number' ? obj['autoPlacementDelay'] : 0,
+    };
   } catch {
     return defaultSettings();
   }
@@ -40,10 +44,11 @@ export function saveSettings(settings: CoachSettings): void {
 }
 
 function defaultSettings(): CoachSettings {
-  return { alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES] };
+  return { alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES], autoPlacementDelay: 0 };
 }
 
-function isCoachSettings(v: unknown): v is CoachSettings {
+/** Validates the minimum shape required to extract settings (alwaysApplyRules is mandatory). */
+function hasValidRules(v: unknown): boolean {
   if (typeof v !== 'object' || v === null) return false;
   const obj = v as Record<string, unknown>;
   return (

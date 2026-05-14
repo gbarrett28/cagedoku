@@ -20,6 +20,7 @@ import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import {
   buildEngine,
   applyAutoPlacements,
+  applyNextAutoPlacement,
   recordTurn,
   rebuildUserGrid,
   userRemoved,
@@ -546,6 +547,36 @@ export function enterCell(row1b: number, col1b: number, digit: number): PuzzleSt
   return updated;
 }
 
+/**
+ * Records the user's digit placement without applying auto-placements.
+ * Used by the animated path in the UI (autoPlacementDelay > 0) so the
+ * animation loop can step through auto-placements one-by-one.
+ */
+export function enterCellStep(row1b: number, col1b: number, digit: number): PuzzleState {
+  const state = requireConfirmed();
+  const r = row1b - 1;
+  const c = col1b - 1;
+  const action: UserAction = digit !== 0
+    ? { type: 'placeDigit', row: r, col: c, digit, source: 'user' }
+    : { type: 'removeDigit', row: r, col: c };
+  const updated = recordTurn(state, action);
+  setState(updated);
+  return updated;
+}
+
+/**
+ * Applies exactly one pending auto-placement and persists it to the store.
+ * Returns the updated state, or null if there are no more auto-placements.
+ */
+export function stepAutoPlacement(): PuzzleState | null {
+  const state = getState();
+  if (state === null) return null;
+  const next = applyNextAutoPlacement(state);
+  if (next === null) return null;
+  setState(next);
+  return next;
+}
+
 // ---------------------------------------------------------------------------
 // Undo / rewind
 // ---------------------------------------------------------------------------
@@ -874,6 +905,11 @@ export function refresh(): PuzzleState {
  * Returns the current settings plus the full list of hintable rules.
  * Replaces GET /api/settings.
  */
+/** Returns the current auto-placement animation delay in ms (0 = instant). */
+export function getAutoPlacementDelay(): number {
+  return loadSettings().autoPlacementDelay;
+}
+
 export function getSettingsData(): SettingsResponse {
   const settings = loadSettings();
   const hintableRules: RuleInfo[] = defaultRules().map(r => ({
@@ -883,6 +919,7 @@ export function getSettingsData(): SettingsResponse {
   }));
   return {
     alwaysApplyRules: settings.alwaysApplyRules,
+    autoPlacementDelay: settings.autoPlacementDelay,
     showEssential: true, // localStorage-persisted by main.ts
     hintableRules,
   };
@@ -892,8 +929,11 @@ export function getSettingsData(): SettingsResponse {
  * Persists updated settings and refreshes the current state.
  * Replaces PATCH /api/settings.
  */
-export function saveSettingsData(alwaysApplyRules: string[]): PuzzleState | null {
-  saveSettings({ alwaysApplyRules });
+export function saveSettingsData(
+  alwaysApplyRules: string[],
+  autoPlacementDelay: number,
+): PuzzleState | null {
+  saveSettings({ alwaysApplyRules, autoPlacementDelay });
   const s = getState();
   if (s === null) return null;
   const updated: PuzzleState = { ...s, alwaysApplyRules };

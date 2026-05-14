@@ -119,6 +119,8 @@ export interface PuzzleState {
 
 export interface CoachSettings {
   readonly alwaysApplyRules: readonly string[];
+  /** Milliseconds between each auto-placement step when animating. 0 = instant. */
+  readonly autoPlacementDelay: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -216,6 +218,7 @@ export interface RuleInfo {
 
 export interface SettingsResponse {
   readonly alwaysApplyRules: readonly string[];
+  readonly autoPlacementDelay: number;
   readonly showEssential: boolean;
   readonly hintableRules: readonly RuleInfo[];
 }
