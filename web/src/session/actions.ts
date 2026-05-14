@@ -12,7 +12,7 @@ import { solSums } from '../solver/equation.js';
 import { defaultRules } from '../engine/rules/index.js';
 import { cageSumRange, cellKey, keyToCell } from '../engine/types.js';
 import type { Cell } from '../engine/types.js';
-import { parsePuzzleImage, ImageDecodeError } from '../image/inpImage.js';
+import { parsePuzzleImage, warpImageWithCorners, ImageDecodeError } from '../image/inpImage.js';
 import type { ParseResult } from '../image/inpImage.js';
 import { defaultImagePipelineConfig } from '../image/config.js';
 import { validateCageLayout } from '../image/validation.js';
@@ -75,6 +75,10 @@ export interface UploadResult {
   warpedImageUrl: string | null;
   warning: string | null;
   cellThumbs: ReadonlyMap<string, Uint8Array[]>;
+  /** Detected grid corners in original-image pixel space; null if detection failed. */
+  corners: Float32Array | null;
+  /** Original (un-warped) image data; used by the corner picker for live preview. */
+  originalImageData: ImageData | null;
 }
 
 /**
@@ -99,7 +103,7 @@ export function loadSpecDirect(spec: PuzzleSpec): UploadResult {
     warpedImageUrl: null,
   };
   setState(state);
-  return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map() };
+  return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map(), corners: null, originalImageData: null };
 }
 
 /**
@@ -140,6 +144,8 @@ export function loadClassicDirect(givenDigits: readonly (readonly number[])[]): 
     warpedImageUrl: null,
     warning: 'Review the detected digits and press Confirm & Solve',
     cellThumbs: new Map(),
+    corners: null,
+    originalImageData: null,
   };
 }
 
@@ -154,6 +160,7 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
 
   const config = defaultImagePipelineConfig();
   let result: ParseResult;
+  let originalImageData: ImageData | null = null;
   try {
     result = await parsePuzzleImage(cv, file, rec, config);
   } catch (e) {
@@ -166,8 +173,18 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
       givenDigits: null,
       warpedImageData: null,
       cellThumbs: new Map(),
+      corners: null,
     };
   }
+
+  // Decode the original image for the corner picker preview (best-effort).
+  try {
+    const bitmap = await createImageBitmap(file);
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    originalImageData = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height);
+  } catch { /* non-critical */ }
 
   // Convert warpedImageData to a data URL for <img> display
   let warpedImageUrl: string | null = null;
@@ -213,7 +230,97 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
   };
 
   setState(state);
-  return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs };
+  return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, corners: result.corners, originalImageData };
+}
+
+/**
+ * Re-runs the image pipeline on the original file using user-adjusted corners,
+ * skipping grid detection (Stage 1). Updates the store and returns a new UploadResult.
+ *
+ * @param file - The original uploaded image file.
+ * @param corners - Adjusted grid corners in original-image pixel space.
+ * @param originalImageData - The decoded original image (from the initial uploadPuzzle call).
+ */
+export async function reparseWithCorners(
+  file: File,
+  corners: Float32Array,
+  originalImageData: ImageData | null,
+): Promise<UploadResult> {
+  const cv = getCV();
+  const rec = getRec();
+  if (cv === null || rec === null) throw new Error('Image pipeline not loaded');
+
+  const config = defaultImagePipelineConfig();
+  let result: ParseResult;
+  try {
+    result = await parsePuzzleImage(cv, file, rec, config, corners);
+  } catch (e) {
+    if (e instanceof ImageDecodeError) throw e;
+    result = {
+      spec: null,
+      specError: `Image pipeline failed: ${String(e)}`,
+      puzzleType: 'killer',
+      givenDigits: null,
+      warpedImageData: null,
+      cellThumbs: new Map(),
+      corners,
+    };
+  }
+
+  let warpedImageUrl: string | null = null;
+  if (result.warpedImageData !== null) {
+    const offscreen = new OffscreenCanvas(result.warpedImageData.width, result.warpedImageData.height);
+    offscreen.getContext('2d')!.putImageData(result.warpedImageData, 0, 0);
+    const blob = await offscreen.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
+    warpedImageUrl = URL.createObjectURL(blob);
+  }
+
+  const originalImageUrl = await fileToDataUrl(file);
+  const settings = loadSettings();
+
+  let spec = result.spec;
+  let warning = result.specError;
+
+  if (spec === null) {
+    warning = (warning ? warning + ' ' : '') + 'Cage layout could not be detected — starting with a blank grid.';
+    const blankBorderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(false));
+    const blankBorderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
+    const blankTotals  = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    blankTotals[0]![0] = 1;
+    const blankRegions = Array.from({ length: 9 }, () => new Array<number>(9).fill(1));
+    spec = { regions: blankRegions, cageTotals: blankTotals, borderX: blankBorderX, borderY: blankBorderY };
+  }
+
+  const state: PuzzleState = {
+    specData: specToData(spec),
+    cageStates: specToCageStates(spec),
+    userGrid: null,
+    virtualCages: [],
+    turns: [],
+    alwaysApplyRules: [...settings.alwaysApplyRules],
+    goldenSolution: null,
+    puzzleType: result.puzzleType,
+    givenDigits: result.givenDigits,
+    originalImageUrl,
+    warpedImageUrl,
+  };
+
+  setState(state);
+  return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, corners: result.corners ?? corners, originalImageData };
+}
+
+/**
+ * Produce a perspective-warped preview image from user-adjusted corners.
+ * Returns null if the image pipeline isn't loaded or imageData is not available.
+ */
+export function getWarpedPreview(
+  imageData: ImageData,
+  corners: Float32Array,
+  dstSize: number,
+): ImageData | null {
+  const cv = getCV();
+  if (cv === null) return null;
+  return warpImageWithCorners(cv, imageData, corners, dstSize);
 }
 
 async function fileToDataUrl(file: File): Promise<string> {

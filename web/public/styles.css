@@ -492,6 +492,16 @@ button:hover:not(:disabled) {
   #original-col, #warped-col { order: 0; }
 }
 
+/* ── Corner picker overlay ── */
+
+#corner-picker-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  cursor: crosshair;
+  touch-action: none;
+}
+
 #version-banner {
   position: fixed;
   bottom: 0.4rem;

@@ -45,7 +45,14 @@
     <div id="images-row">
       <div class="image-col" id="original-col">
         <h2>Original Photo</h2>
-        <img id="original-img" alt="Uploaded puzzle photo">
+        <div id="corner-picker-wrapper" style="position:relative;display:inline-block;">
+          <img id="original-img" alt="Uploaded puzzle photo">
+          <canvas id="corner-picker-canvas" hidden></canvas>
+        </div>
+        <div id="corner-picker-actions" class="form-actions" hidden>
+          <button id="corner-apply-btn">Apply</button>
+          <button id="corner-cancel-btn" class="btn-secondary">Cancel</button>
+        </div>
       </div>
       <div class="image-col" id="warped-col">
         <h2>Warped Grid</h2>
@@ -112,6 +119,7 @@
 
     <div class="form-actions" id="review-actions">
       <button id="confirm-btn">Confirm &amp; Solve</button>
+      <button id="adjust-corners-btn" class="btn-secondary" hidden>Adjust corners</button>
       <label class="field-label" for="puzzle-type-select" style="margin-left:1rem">Type</label>
       <select id="puzzle-type-select" class="puzzle-type-select">
         <option value="killer">Killer</option>

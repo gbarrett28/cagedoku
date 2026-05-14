@@ -153,7 +153,25 @@ cell. Duplicate digits in the same row, column, or box are highlighted in red.
 | Control | Description |
 |---|---|
 | Confirm & Solve | Validates the layout and transitions to Playing mode |
+| Adjust corners | Opens the corner picker on the Original Photo (see below) |
 | Type dropdown | `Killer` / `Classic` — changeable if OCR misdetected |
+
+**Corner picker**
+
+The **Adjust corners** button appears in the review action bar whenever corner data is
+available (i.e. after a successful grid detection). Clicking it overlays an interactive
+canvas directly on top of the Original Photo with four coloured drag handles — one for
+each corner of the detected grid boundary.
+
+- Drag any handle to move that corner.
+- Press **Apply** to re-run the full OCR pipeline (Stages 2–6) using the adjusted
+  corners, skipping grid detection (Stage 1). The review screen refreshes with the
+  new result.
+- Press **Cancel** to dismiss the overlay without re-parsing.
+
+The re-parse uses the same `parsePuzzleImage` function with `providedCorners` (original-
+image pixel space) so all subsequent pipeline stages (perspective warp, border clustering,
+digit recognition, validation) run exactly as for a normal upload.
 
 **Killer** — Confirm runs the following checks in order:
 
@@ -364,6 +382,9 @@ The element IDs match the HTML (`index.html`).
 | Cage total editor | `#cage-total-edit` | Overlays a cell while a Killer total is being edited |
 | Classic edit hint | `#classic-edit-hint` | Classic review only (`puzzleType === 'classic'`, before confirm) |
 | Confirm & Solve | `#confirm-btn` | Always |
+| Adjust corners | `#adjust-corners-btn` | When corner data is available (grid detection succeeded) |
+| Corner picker canvas | `#corner-picker-canvas` | While corner picker is active |
+| Corner picker actions | `#corner-picker-actions` (`#corner-apply-btn`, `#corner-cancel-btn`) | While corner picker is active |
 | Type dropdown | `#puzzle-type-select` | Always; values `killer` / `classic` |
 | Review status | `#review-status-msg` | Shows validation errors inline |
 | **Digit pad** | `#digit-1` … `#digit-0` | **Classic review only** — `#playing-actions` is shown but `#action-group` is hidden so only the digit pad is reachable |

@@ -75,6 +75,12 @@ export interface ParseResult {
    * Used by extractTrainingData — avoids re-processing from JPEG.
    */
   cellThumbs: ReadonlyMap<string, Uint8Array[]>;
+  /**
+   * Detected grid corners in original-image pixel space.
+   * [x_TL, y_TL, x_TR, y_TR, x_BR, y_BR, x_BL, y_BL].
+   * Null if grid location failed.
+   */
+  corners: Float32Array | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,31 +97,42 @@ export interface ParseResult {
  * @param file - Image file from the browser file picker.
  * @param rec - Pre-loaded digit recogniser (from loadNumRecogniser).
  * @param config - Pipeline configuration (defaults used if omitted).
+ * @param providedCorners - If supplied (original-image pixel space), skip grid
+ *   detection and use these corners directly. Useful when the user has manually
+ *   adjusted the grid corners via the corner picker.
  */
 export async function parsePuzzleImage(
   cv: Cv,
   file: File,
   rec: NumRecogniser,
   config: ImagePipelineConfig = defaultImagePipelineConfig(),
+  providedCorners?: Float32Array,
 ): Promise<ParseResult> {
   const resolution = cfgResolution(config);
   const subres = cfgSubres(config);
 
   // Decode the file to ImageData via an OffscreenCanvas.
   const imageData = await decodeImageFile(file);
+  const upsampleFactor = computeUpsampleFactor(imageData.width, imageData.height, resolution);
 
   // --- Stage 1: Grid location ---
   const [blkMat, gryMat] = prepareGrayMat(cv, imageData, resolution);
 
   let rectArr: Float32Array;
-  try {
-    const [blk, rect] = locateGrid(cv, gryMat, config.gridLocation.isblackOffset);
-    rectArr = rect;
-    blk.delete();
-  } catch (err) {
-    gryMat.delete();
-    blkMat.delete();
-    throw err; // Re-throw: grid not found means no useful data.
+  if (providedCorners !== undefined) {
+    // User-supplied corners (original-image space) → scale to upsampled pipeline space.
+    rectArr = new Float32Array(8);
+    for (let i = 0; i < 8; i++) rectArr[i] = providedCorners[i]! * upsampleFactor;
+  } else {
+    try {
+      const [blk, rect] = locateGrid(cv, gryMat, config.gridLocation.isblackOffset);
+      rectArr = rect;
+      blk.delete();
+    } catch (err) {
+      gryMat.delete();
+      blkMat.delete();
+      throw err; // Re-throw: grid not found means no useful data.
+    }
   }
 
   // --- Stage 2: Perspective warp ---
@@ -202,6 +219,11 @@ export async function parsePuzzleImage(
   }
   gryMat.delete(); blkMat.delete(); mMat.delete();
 
+  // Final rectArr is now in the (possibly rotation-corrected) upsampled coordinate space.
+  // Convert to original-image pixel space for the corner picker.
+  const cornersOrig = new Float32Array(8);
+  for (let i = 0; i < 8; i++) cornersOrig[i] = rectArr[i]! / upsampleFactor;
+
   // Convert warped colour image to ImageData for the result.
   const warpedCanvas = new OffscreenCanvas(dstSize, dstSize);
   warpedCanvas.getContext('2d');
@@ -233,7 +255,7 @@ export async function parsePuzzleImage(
     } catch (err) {
       specError = String(err);
     }
-    return { spec, specError, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: new Map() };
+    return { spec, specError, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: new Map(), corners: cornersOrig };
   }
 
   // --- Killer path: Stage 4 border clustering ---
@@ -331,6 +353,7 @@ export async function parsePuzzleImage(
       givenDigits,
       warpedImageData: warpedImgData,
       cellThumbs: new Map(),
+      corners: cornersOrig,
     };
   }
 
@@ -365,7 +388,7 @@ export async function parsePuzzleImage(
     }
   }
 
-  return { spec, specError, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs };
+  return { spec, specError, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs, corners: cornersOrig };
 }
 
 // ---------------------------------------------------------------------------
@@ -519,6 +542,58 @@ async function decodeImageFile(file: File): Promise<ImageData> {
   ctx.drawImage(bitmap, 0, 0);
   bitmap.close();
   return ctx.getImageData(0, 0, canvas.width, canvas.height);
+}
+
+/**
+ * Warp the original image using the given corners to produce a perspective-corrected
+ * ImageData. Used for the live corner-picker preview in the review screen.
+ *
+ * @param cv - OpenCV.js module.
+ * @param imageData - Original (un-warped) image data.
+ * @param corners - Grid corners in original-image pixel space [x_TL,y_TL,x_TR,y_TR,x_BR,y_BR,x_BL,y_BL].
+ * @param dstSize - Output image size (square, in pixels).
+ */
+export function warpImageWithCorners(
+  cv: Cv,
+  imageData: ImageData,
+  corners: Float32Array,
+  dstSize: number,
+): ImageData {
+  const factor = computeUpsampleFactor(imageData.width, imageData.height, dstSize);
+  const scaled = new Float32Array(8);
+  for (let i = 0; i < 8; i++) scaled[i] = corners[i]! * factor;
+
+  let srcMat = cv.matFromImageData(imageData);
+  while (srcMat.rows < dstSize || srcMat.cols < dstSize) {
+    const up = new cv.Mat();
+    cv.pyrUp(srcMat, up);
+    srcMat.delete();
+    srcMat = up;
+  }
+
+  const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, Array.from(scaled));
+  const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, dstSize - 1, 0, dstSize - 1, dstSize - 1, 0, dstSize - 1]);
+  const mMat = cv.getPerspectiveTransform(srcPts, dstPts);
+  srcPts.delete(); dstPts.delete();
+
+  const warped = new cv.Mat();
+  cv.warpPerspective(srcMat, warped, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
+  srcMat.delete(); mMat.delete();
+
+  const result = matToImageData(cv, warped, dstSize);
+  warped.delete();
+  return result;
+}
+
+/**
+ * Compute the power-of-2 scale factor applied by prepareGrayMat/pyrUp loops.
+ * Returns `2^n` where `n` is the number of pyrUp passes needed so that both
+ * `width` and `height` reach at least `resolution`.
+ */
+function computeUpsampleFactor(width: number, height: number, resolution: number): number {
+  let f = 1, w = width, h = height;
+  while (w < resolution || h < resolution) { w *= 2; h *= 2; f *= 2; }
+  return f;
 }
 
 /**
