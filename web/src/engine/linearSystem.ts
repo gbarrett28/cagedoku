@@ -13,6 +13,7 @@
 
 import { solSums } from '../solver/equation.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
+import { cellKey, keyToCell } from './types.js';
 import type { Cell, Elimination } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -54,12 +55,6 @@ class Frac {
 // ---------------------------------------------------------------------------
 
 type SparseRow = Map<string, Frac>;
-
-function cellKey(cell: Cell): string { return `${cell[0]},${cell[1]}`; }
-function keyToCell(k: string): Cell {
-  const i = k.indexOf(',');
-  return [parseInt(k.slice(0, i), 10), parseInt(k.slice(i + 1), 10)] as Cell;
-}
 
 // ---------------------------------------------------------------------------
 // Virtual cage type

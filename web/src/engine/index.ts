@@ -20,6 +20,22 @@ export { SolverEngine } from './solverEngine.js';
 export { defaultRules } from './rules/index.js';
 export type { HintResult } from './hint.js';
 
+function seedGivenDigits(engine: SolverEngine, board: BoardState, givenDigits: number[][]): void {
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const d = givenDigits[r]![c]!;
+      if (d > 0) {
+        const elims: Elimination[] = [];
+        for (let other = 1; other <= 9; other++) {
+          if (other !== d && board.cands(r, c).has(other))
+            elims.push({ cell: [r, c] as Cell, digit: other });
+        }
+        if (elims.length) engine.applyEliminations(elims);
+      }
+    }
+  }
+}
+
 export interface SolveResult {
   board: BoardState;
   /** True when constraint propagation alone could not fully solve the puzzle
@@ -42,21 +58,7 @@ export function solve(spec: PuzzleSpec, givenDigits?: number[][]): SolveResult {
   const board = new BoardState(spec, { includeVirtualCages: false });
   const engine = new SolverEngine(board, defaultRules());
 
-  if (givenDigits) {
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 9; c++) {
-        const d = givenDigits[r]![c]!;
-        if (d > 0) {
-          const elims: Elimination[] = [];
-          for (let other = 1; other <= 9; other++) {
-            if (other !== d && board.cands(r, c).has(other))
-              elims.push({ cell: [r, c] as Cell, digit: other });
-          }
-          if (elims.length) engine.applyEliminations(elims);
-        }
-      }
-    }
-  }
+  if (givenDigits) seedGivenDigits(engine, board, givenDigits);
 
   engine.solve();
 
@@ -91,21 +93,7 @@ export function getHints(
   const board = new BoardState(spec, { includeVirtualCages: false });
   const engine = new SolverEngine(board, defaultRules(), { hintRules: hintRuleNames });
 
-  if (givenDigits) {
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 9; c++) {
-        const d = givenDigits[r]![c]!;
-        if (d > 0) {
-          const elims: Elimination[] = [];
-          for (let other = 1; other <= 9; other++) {
-            if (other !== d && board.cands(r, c).has(other))
-              elims.push({ cell: [r, c] as Cell, digit: other });
-          }
-          if (elims.length) engine.applyEliminations(elims);
-        }
-      }
-    }
-  }
+  if (givenDigits) seedGivenDigits(engine, board, givenDigits);
 
   engine.solve();
   return engine.pendingHints;

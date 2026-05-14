@@ -10,6 +10,7 @@
 import { solve, BoardState, SolveResult } from '../engine/index.js';
 import { solSums } from '../solver/equation.js';
 import { defaultRules } from '../engine/rules/index.js';
+import { cageSumRange } from '../engine/types.js';
 import type { Cell } from '../engine/types.js';
 import { parsePuzzleImage, ImageDecodeError } from '../image/inpImage.js';
 import type { ParseResult } from '../image/inpImage.js';
@@ -304,8 +305,7 @@ export function applyDraftLayout(
 
       const cageCells = members.get(rep)!;
       const n = cageCells.size;
-      const lo = (n * (n + 1)) / 2;
-      const hi = (n * (19 - n)) / 2;
+      const [lo, hi] = cageSumRange(n);
 
       let nonZeroCount = 0;
       let headC = -1; let headR = -1; let headTotal = 0;
@@ -741,8 +741,7 @@ export function addVirtualCage(cells: [number, number][], total: number): Puzzle
     if (r < 0 || r > 8 || c < 0 || c > 8) throw new Error(`Cell (${r},${c}) out of range`);
   }
   const n = cells.length;
-  const minTotal = n * (n + 1) / 2;
-  const maxTotal = n * (19 - n) / 2;
+  const [minTotal, maxTotal] = cageSumRange(n);
   if (total < minTotal || total > maxTotal) {
     throw new Error(`Total ${total} impossible for ${n} distinct digits (${minTotal}–${maxTotal})`);
   }
