@@ -6,6 +6,8 @@
  *   #14 – findLastConsistentTurnIdx always returns non-null
  *   #16 – Undo button never enables after placing a digit in classic mode
  *   #17 – Reveal uses stale solvePuzzle() instead of cached goldenSolution
+ *   #24 – Incorrect candidates (placed digit should be eliminated from peers)
+ *   #25 – Edit candidates digit pad (cycleCandidate correctly toggles state)
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -16,6 +18,7 @@ import {
   enterCell,
   undo,
   computeCandidates,
+  cycleCandidate,
 } from './actions.js';
 import { findLastConsistentTurnIdx } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
@@ -230,5 +233,92 @@ describe('goldenSolution cached after confirmPuzzle (#17)', () => {
   it('killer: goldenSolution is non-null after confirm', () => {
     const state = makeKillerConfirmed();
     expect(state.goldenSolution).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #24 – computeCandidates: placed digit eliminated from row/col/box peers
+// ---------------------------------------------------------------------------
+
+describe('computeCandidates — placement propagation (#24)', () => {
+  beforeEach(() => { makeKillerConfirmed(); });
+
+  it('placed digit absent from row peers', () => {
+    // Box-cage spec: (row=0,col=0) starts empty. Place digit 5 there.
+    enterCell(1, 1, 5);
+    const cands = computeCandidates();
+    // (row=0,col=3) is a row peer but in a different box — must not contain 5.
+    expect(cands.cells[0]![3]!.candidates).not.toContain(5);
+    // (row=0,col=8) is also a row peer at the far end of the grid.
+    expect(cands.cells[0]![8]!.candidates).not.toContain(5);
+  });
+
+  it('placed digit absent from column peers', () => {
+    enterCell(1, 1, 5);
+    const cands = computeCandidates();
+    // (row=4,col=0) is a col peer in a different box.
+    expect(cands.cells[4]![0]!.candidates).not.toContain(5);
+  });
+
+  it('placed digit absent from box peers', () => {
+    enterCell(1, 1, 5);
+    const cands = computeCandidates();
+    // (row=1,col=1) is a box peer (box 0: rows 0–2, cols 0–2).
+    expect(cands.cells[1]![1]!.candidates).not.toContain(5);
+    // (row=2,col=2) is another box peer.
+    expect(cands.cells[2]![2]!.candidates).not.toContain(5);
+  });
+
+  it('two placed digits both absent from shared peer', () => {
+    // Place 5 at (0,0) and 3 at (0,1) — both in row 0.
+    enterCell(1, 1, 5);
+    enterCell(1, 2, 3);
+    const cands = computeCandidates();
+    // (row=0,col=5) is a row peer of both placements.
+    expect(cands.cells[0]![5]!.candidates).not.toContain(5);
+    expect(cands.cells[0]![5]!.candidates).not.toContain(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #25 – cycleCandidate: digit pad in edit-candidates mode
+// ---------------------------------------------------------------------------
+
+describe('cycleCandidate — candidate editing (#25)', () => {
+  beforeEach(() => { makeKillerConfirmed(); });
+
+  it('marks an auto-possible candidate as user-removed', () => {
+    // Box-cage spec: (row=0,col=0) is empty; all digits are candidates.
+    const before = computeCandidates();
+    expect(before.cells[0]![0]!.candidates).toContain(1);
+    expect(before.cells[0]![0]!.userRemoved).not.toContain(1);
+
+    cycleCandidate(1, 1, 1); // 1-based row/col
+
+    const after = computeCandidates();
+    expect(after.cells[0]![0]!.userRemoved).toContain(1);
+    // Candidates list still includes 1 so the UI can render it struck-through.
+    expect(after.cells[0]![0]!.candidates).toContain(1);
+  });
+
+  it('restores a user-removed candidate when cycled again', () => {
+    cycleCandidate(1, 1, 1); // remove
+    cycleCandidate(1, 1, 1); // restore
+
+    const after = computeCandidates();
+    expect(after.cells[0]![0]!.userRemoved).not.toContain(1);
+  });
+
+  it('reset (digit 0) clears all user removals for the cell', () => {
+    cycleCandidate(1, 1, 1);
+    cycleCandidate(1, 1, 2);
+    const mid = computeCandidates();
+    expect(mid.cells[0]![0]!.userRemoved).toContain(1);
+    expect(mid.cells[0]![0]!.userRemoved).toContain(2);
+
+    cycleCandidate(1, 1, 0); // reset
+
+    const after = computeCandidates();
+    expect(after.cells[0]![0]!.userRemoved).toHaveLength(0);
   });
 });
