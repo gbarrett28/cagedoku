@@ -495,31 +495,31 @@ export function connectivityScore(
   const visited: boolean[][] = Array.from({ length: 9 }, () => new Array<boolean>(9).fill(false));
   let score = 0;
 
-  for (let sc = 0; sc < 9; sc++) {
-    for (let sr = 0; sr < 9; sr++) {
-      if (visited[sc]![sr]!) continue;
-      const region: Array<[number, number]> = [[sc, sr]];
-      visited[sc]![sr] = true;
+  for (let sr = 0; sr < 9; sr++) {
+    for (let sc = 0; sc < 9; sc++) {
+      if (visited[sr]![sc]!) continue;
+      const region: Array<[number, number]> = [[sr, sc]];
+      visited[sr]![sc] = true;
       let heads = 0;
       let i = 0;
       while (i < region.length) {
-        const [c, r] = region[i++]!;
+        const [r, c] = region[i++]!;
         if (cageTotals[r]![c]! > 0) heads++;
         // down
-        if (r + 1 < 9 && !visited[c]![r + 1]! && !borderX[c]![r]!) {
-          visited[c]![r + 1] = true; region.push([c, r + 1]);
+        if (r + 1 < 9 && !visited[r + 1]![c]! && !borderX[c]![r]!) {
+          visited[r + 1]![c] = true; region.push([r + 1, c]);
         }
         // up
-        if (r > 0 && !visited[c]![r - 1]! && !borderX[c]![r - 1]!) {
-          visited[c]![r - 1] = true; region.push([c, r - 1]);
+        if (r > 0 && !visited[r - 1]![c]! && !borderX[c]![r - 1]!) {
+          visited[r - 1]![c] = true; region.push([r - 1, c]);
         }
         // right
-        if (c + 1 < 9 && !visited[c + 1]![r]! && !borderY[c]![r]!) {
-          visited[c + 1]![r] = true; region.push([c + 1, r]);
+        if (c + 1 < 9 && !visited[r]![c + 1]! && !borderY[c]![r]!) {
+          visited[r]![c + 1] = true; region.push([r, c + 1]);
         }
         // left
-        if (c > 0 && !visited[c - 1]![r]! && !borderY[c - 1]![r]!) {
-          visited[c - 1]![r] = true; region.push([c - 1, r]);
+        if (c > 0 && !visited[r]![c - 1]! && !borderY[c - 1]![r]!) {
+          visited[r]![c - 1] = true; region.push([r, c - 1]);
         }
       }
       if (heads === 1) score++;

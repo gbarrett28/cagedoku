@@ -34,7 +34,7 @@ function rowColKey(row: number, col: number): string {
  *   - unassigned_region: at least one cell belongs to a component with no cage
  *     head, meaning the cage-total array is incomplete.
  *
- * @param cageTotals - (9, 9) array [col][row]; non-zero at the top-left of each cage.
+ * @param cageTotals - (9, 9) array [row][col]; non-zero at the top-left of each cage.
  * @param borderX - (9, 8) horizontal cage-wall flags [col][rowGap].
  *   borderX[col][rowGap] = true means a wall between rows rowGap and rowGap+1.
  * @param borderY - (8, 9) vertical cage-wall flags [colGap][row].
