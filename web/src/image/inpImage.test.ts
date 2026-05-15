@@ -33,6 +33,56 @@ describe('buildCageTotals — row-major orientation (T1)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Three-region asymmetric baseline (T2)
+//
+// Three vertical strips created by walls at colGap=0 and colGap=4:
+//   Region A = col 0       (9 cells)
+//   Region B = cols 1–4   (36 cells)
+//   Region C = cols 5–8   (36 cells)
+//
+// One cage head per region at a fully off-diagonal position:
+//   cageTotals[row=2][col=0] = 15  → Region A
+//   cageTotals[row=0][col=3] = 20  → Region B
+//   cageTotals[row=1][col=7] = 30  → Region C
+//
+// Correct row-major read  cageTotals[r][c]:
+//   A: BFS cell [c=0,r=2] → cageTotals[2][0]=15 → 1 head  ✓
+//   B: BFS cell [c=3,r=0] → cageTotals[0][3]=20 → 1 head  ✓
+//   C: BFS cell [c=7,r=1] → cageTotals[1][7]=30 → 1 head  ✓
+//   Score = 3
+//
+// Buggy column-major read  cageTotals[c][r]:
+//   A: BFS cell [c=0,r=3] → cageTotals[0][3]=20 → 1 head (B's value misrouted to A)
+//   B: BFS cell [c=2,r=0] → cageTotals[2][0]=15 → 1st head
+//      BFS cell [c=1,r=7] → cageTotals[1][7]=30 → 2nd head (C's value misrouted to B)
+//   C: no cells hit a non-zero entry → 0 heads
+//   Score = 1  (only A has exactly 1 head)
+// ---------------------------------------------------------------------------
+
+describe('connectivityScore — three-region asymmetric baseline (T2)', () => {
+  function threeVerticalRegions(): { borderX: boolean[][]; borderY: boolean[][] } {
+    const borderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(false));
+    const borderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
+    for (let r = 0; r < 9; r++) {
+      borderY[0]![r] = true; // wall: col 0 | col 1
+      borderY[4]![r] = true; // wall: col 4 | col 5
+    }
+    return { borderX, borderY };
+  }
+
+  it('scores 3 when each region has exactly one off-diagonal head (axis swap: score would be 1)', () => {
+    // All heads are at positions where row ≠ col and the transposed coordinate
+    // falls in a different region, so this test unambiguously detects the axis swap.
+    const { borderX, borderY } = threeVerticalRegions();
+    const cageTotals = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    cageTotals[2]![0] = 15; // row=2, col=0 — Region A head
+    cageTotals[0]![3] = 20; // row=0, col=3 — Region B head
+    cageTotals[1]![7] = 30; // row=1, col=7 — Region C head
+    expect(connectivityScore(borderX, borderY, cageTotals)).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Bug #29 – connectivityScore reads cageTotals with row/col axes swapped
 //
 // buildCageTotals produces row-major cageTotals[row][col], but the BFS

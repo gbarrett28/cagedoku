@@ -368,14 +368,14 @@ export function findLastConsistentTurnIdx(state: PuzzleState): number | null {
   if (wrongCells.size === 0) return null;
 
   // Walk forward to find the earliest turn that placed a currently-wrong digit
-  let firstBadIdx = state.turns.length - 1;
+  let firstBadIdx: number | null = null;
   for (let i = 0; i < state.turns.length; i++) {
     const a = state.turns[i]!.action;
     if (a.type !== 'placeDigit') continue;
     const key = `${a.row},${a.col}`;
     const wrongDigit = wrongCells.get(key);
     if (wrongDigit !== undefined && a.digit === wrongDigit) {
-      firstBadIdx = Math.min(firstBadIdx, i);
+      firstBadIdx = firstBadIdx === null ? i : Math.min(firstBadIdx, i);
       wrongCells.delete(key);
       if (wrongCells.size === 0) break;
     }

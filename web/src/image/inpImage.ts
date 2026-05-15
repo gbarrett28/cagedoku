@@ -283,7 +283,7 @@ export async function parsePuzzleImage(
   let bestBorderY = initialBorderY;
 
   if (cageTotals !== null) {
-    const nHeads = cageTotals.reduce((s, col) => s + col.filter(v => v > 0).length, 0);
+    const nHeads = cageTotals.reduce((s, row) => s + row.filter(v => v > 0).length, 0);
     let bestScore = connectivityScore(bestBorderX, bestBorderY, cageTotals);
 
     if (bestScore < nHeads) {
@@ -317,7 +317,7 @@ export async function parsePuzzleImage(
       const brdrs2 = buildBrdrs(bestBorderX, bestBorderY);
       ({ cageTotals, cellThumbs } = buildCageTotals(cv, warpedBlkMat, rec, subres, brdrs2));
 
-      const totalSum = cageTotals.reduce((s, col) => s + col.reduce((a, b) => a + b, 0), 0);
+      const totalSum = cageTotals.reduce((s, row) => s + row.reduce((a, b) => a + b, 0), 0);
       if (totalSum < 360 || totalSum > 450) {
         // Adaptive threshold fallback.
         const adaptiveBlk = new cv.Mat();
@@ -484,7 +484,7 @@ export function buildCageTotals(
  *
  * @param borderX - (9×8) [col][rowGap] cage-wall flags.
  * @param borderY - (8×9) [colGap][row] cage-wall flags.
- * @param cageTotals - (9×9) [col][row] non-zero at cage heads.
+ * @param cageTotals - (9×9) [row][col] non-zero at cage heads.
  */
 /** @internal Exported for unit tests only. */
 export function connectivityScore(
@@ -504,7 +504,7 @@ export function connectivityScore(
       let i = 0;
       while (i < region.length) {
         const [c, r] = region[i++]!;
-        if (cageTotals[c]![r]! > 0) heads++;
+        if (cageTotals[r]![c]! > 0) heads++;
         // down
         if (r + 1 < 9 && !visited[c]![r + 1]! && !borderX[c]![r]!) {
           visited[c]![r + 1] = true; region.push([c, r + 1]);
