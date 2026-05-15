@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isTrainingExport, isPuzzleSpecExport } from './validate.js';
+import { isTrainingExport, isPuzzleSpecExport, isFeedbackReport } from './validate.js';
 
 const validSample = { digit: 3, pixels: new Array<number>(4096).fill(128) };
 
@@ -147,5 +147,90 @@ describe('isPuzzleSpecExport', () => {
   it('rejects missing fields', () => {
     const { borderY: _b, ...noBy } = validPuzzleSpec;
     expect(isPuzzleSpecExport(noBy)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isFeedbackReport
+// ---------------------------------------------------------------------------
+
+const validFeedback = {
+  version: 3,
+  reportedAt: '2026-05-15T18:05:00.000Z',
+  appVersion: '2026-05-15 15:53',
+  feedbackType: 'enhancement',
+  description: 'When the grid is filled it should show a completion message',
+  actionLog: '',
+  puzzleSpec: null,
+  userAgent: 'Mozilla/5.0',
+  viewport: '412×892',
+  config: { alwaysApplyRules: [], autoPlacementDelay: 0 },
+};
+
+describe('isFeedbackReport', () => {
+  it('accepts a valid enhancement report with no puzzle', () => {
+    expect(isFeedbackReport(validFeedback)).toBe(true);
+  });
+
+  it('accepts a bug report with all optional fields', () => {
+    expect(isFeedbackReport({
+      ...validFeedback,
+      feedbackType: 'bug',
+      bugCategory: 'wrong-behaviour',
+      expected: 'No message shown',
+      puzzleSpec: { puzzleType: 'killer', regions: [], cageTotals: [], userGrid: null },
+    })).toBe(true);
+  });
+
+  it('accepts a bug report with inaccurate-description category', () => {
+    expect(isFeedbackReport({ ...validFeedback, feedbackType: 'bug', bugCategory: 'inaccurate-description' })).toBe(true);
+  });
+
+  it('accepts missing optional bug fields on an enhancement', () => {
+    // bugCategory and expected are absent — fine for enhancement
+    const { ...copy } = validFeedback;
+    expect(isFeedbackReport(copy)).toBe(true);
+  });
+
+  it('rejects null', () => {
+    expect(isFeedbackReport(null)).toBe(false);
+  });
+
+  it('rejects wrong version', () => {
+    expect(isFeedbackReport({ ...validFeedback, version: 1 })).toBe(false);
+  });
+
+  it('rejects invalid feedbackType', () => {
+    expect(isFeedbackReport({ ...validFeedback, feedbackType: 'idea' })).toBe(false);
+  });
+
+  it('rejects invalid bugCategory on a bug report', () => {
+    expect(isFeedbackReport({ ...validFeedback, feedbackType: 'bug', bugCategory: 'other' })).toBe(false);
+  });
+
+  it('rejects non-string description', () => {
+    expect(isFeedbackReport({ ...validFeedback, description: 42 })).toBe(false);
+  });
+
+  it('rejects non-string expected when present', () => {
+    expect(isFeedbackReport({ ...validFeedback, feedbackType: 'bug', expected: 123 })).toBe(false);
+  });
+
+  it('rejects non-string actionLog', () => {
+    expect(isFeedbackReport({ ...validFeedback, actionLog: null })).toBe(false);
+  });
+
+  it('rejects missing config', () => {
+    const { config: _c, ...noConfig } = validFeedback;
+    expect(isFeedbackReport(noConfig)).toBe(false);
+  });
+
+  it('rejects null config', () => {
+    expect(isFeedbackReport({ ...validFeedback, config: null })).toBe(false);
+  });
+
+  it('rejects missing reportedAt', () => {
+    const { reportedAt: _r, ...noDate } = validFeedback;
+    expect(isFeedbackReport(noDate)).toBe(false);
   });
 });
