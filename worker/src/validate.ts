@@ -103,3 +103,36 @@ function isSample(value: unknown): value is TrainingSample {
   }
   return true;
 }
+
+export interface FeedbackReport {
+  version: 3;
+  reportedAt: string;
+  appVersion: string;
+  feedbackType: 'bug' | 'enhancement';
+  bugCategory?: 'wrong-behaviour' | 'inaccurate-description';
+  description: string;
+  expected?: string;
+  actionLog: string;
+  puzzleSpec: unknown;
+  userAgent: string;
+  viewport: string;
+  config: { alwaysApplyRules: string[]; autoPlacementDelay: number };
+}
+
+export function isFeedbackReport(value: unknown): value is FeedbackReport {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (v['version'] !== 3) return false;
+  if (typeof v['reportedAt'] !== 'string') return false;
+  if (typeof v['appVersion'] !== 'string') return false;
+  if (v['feedbackType'] !== 'bug' && v['feedbackType'] !== 'enhancement') return false;
+  if (v['feedbackType'] === 'bug' && v['bugCategory'] !== undefined &&
+      v['bugCategory'] !== 'wrong-behaviour' && v['bugCategory'] !== 'inaccurate-description') return false;
+  if (typeof v['description'] !== 'string') return false;
+  if (v['expected'] !== undefined && typeof v['expected'] !== 'string') return false;
+  if (typeof v['actionLog'] !== 'string') return false;
+  if (typeof v['userAgent'] !== 'string') return false;
+  if (typeof v['viewport'] !== 'string') return false;
+  if (typeof v['config'] !== 'object' || v['config'] === null) return false;
+  return true;
+}

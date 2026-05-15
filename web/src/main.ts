@@ -7,6 +7,8 @@
  */
 
 import { loadCV, loadRec, setCandidatesCache, setState } from './session/store.js';
+import { logAction, clearActionLog, formatActionLog, getActionLog } from './session/actionLog.js';
+import { loadSettings } from './session/settings.js';
 import { cellLabel } from './engine/rules/_labels.js';
 import { extractTrainingData, buildPuzzleSpecExport } from './image/trainingExport.js';
 import type { TrainingExport } from './image/trainingExport.js';
@@ -453,6 +455,7 @@ async function handleReveal(): Promise<void> {
   if (currentState === null || selectedCell === null) return;
   const { row, col } = selectedCell;
   if (!confirm(`Reveal solution for ${cellLabel([row - 1, col - 1] as Cell)}?`)) return;
+  logAction('reveal_used', cellLabel([row - 1, col - 1] as Cell));
   try {
     const sol = currentState.goldenSolution;
     if (sol === null) { setStatus('No solution cached — please confirm the puzzle first', true); return; }
@@ -674,6 +677,7 @@ function openConfigModal(): void {
 
 function enterCornerPickerMode(): void {
   if (latestCorners === null || latestImageData === null) return;
+  logAction('corner_picker_opened');
   cornerPickerActive = true;
   draggingHandle = -1;
   const img = el<HTMLImageElement>('original-img');
@@ -762,6 +766,7 @@ async function handleApplyCorners(): Promise<void> {
     draftBorderX = ocrSpec.borderX.map(col => [...col]);
     draftBorderY = ocrSpec.borderY.map(row => [...row]);
     draftEdited = false;
+    logAction('corners_applied', warning ?? 'ok');
     applyUploadResult(state, warpedImageUrl, warning ?? 'Review the re-parsed layout');
   } catch (e) {
     setStatus(`Re-parse failed: ${String(e)}`, true);
@@ -796,10 +801,13 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
 async function handleProcess(): Promise<void> {
   const fileInput = el<HTMLInputElement>('file-input');
   if (!fileInput.files || fileInput.files.length === 0) { setStatus('Please select an image file.', true); return; }
+  clearActionLog();
+  const f = fileInput.files[0]!;
+  logAction('file_selected', `${f.name} (${(f.size / 1024).toFixed(0)} KB)`);
   setLoading(true);
   try {
-    const { state, warpedImageUrl, warning, cellThumbs, corners, originalImageData } = await uploadPuzzle(fileInput.files[0]!);
-    latestFile = fileInput.files[0]!;
+    const { state, warpedImageUrl, warning, cellThumbs, corners, originalImageData } = await uploadPuzzle(f);
+    latestFile = f;
     latestCorners = corners;
     latestImageData = originalImageData;
     pendingCellThumbs = new Map(cellThumbs);
@@ -809,6 +817,9 @@ async function handleProcess(): Promise<void> {
     draftBorderX = ocrSpec.borderX.map(col => [...col]);
     draftBorderY = ocrSpec.borderY.map(row => [...row]);
     draftEdited = false;
+
+    const nCages = Math.max(...state.specData.regions.flat()) + 1;
+    logAction('ocr_complete', `${state.puzzleType}, ${nCages} cage(s)${warning ? ', warning: ' + warning : ''}`);
 
     // Attempt auto-confirm (Killer only): skip the review screen when OCR is clean,
     // the cage layout is valid, and the solver finds a complete solution.
@@ -824,6 +835,7 @@ async function handleProcess(): Promise<void> {
           for (let c = 0; c < 9 && boardComplete; c++)
             if (board.cands(r, c).size !== 1) boardComplete = false;
         if (boardComplete) {
+          logAction('auto_confirmed');
           const playing = confirmPuzzle(board);
           renderPlayingMode(playing);
           pendingCellThumbs = new Map();
@@ -839,12 +851,15 @@ async function handleProcess(): Promise<void> {
       const stateToShow = layoutResult.errorCells.size > 0 ? state : layoutResult.state;
       applyUploadResult(stateToShow, warpedImageUrl, null);
       if (layoutResult.errorCells.size > 0) {
+        logAction('review_shown', 'layout errors');
         reviewErrorCells = layoutResult.errorCells;
         redrawGrid();
         setStatus('Each cage needs exactly one total in its valid range — highlighted in red. If this is a Classic sudoku, change the Type dropdown to Classic.', true);
       } else if (layoutResult.warnings.length > 0) {
+        logAction('review_shown', 'sum warning');
         setStatus(layoutResult.warnings.join('; ') + ' — please correct the totals before confirming', true);
       } else {
+        logAction('review_shown', 'solver incomplete');
         setStatus('Solver could not determine all cells — please check the cage layout and totals', true);
       }
       return;
@@ -852,6 +867,7 @@ async function handleProcess(): Promise<void> {
 
     // Reach here when: OCR produced a warning, or this is a Classic puzzle (never auto-confirmed).
     // Classic with no OCR warning gets an informational prompt instead of an error.
+    logAction('review_shown', state.puzzleType === 'classic' ? 'classic' : 'ocr warning');
     applyUploadResult(state, warpedImageUrl, warning ?? 'Review the detected digits and press Confirm & Solve');
   } catch (e) {
     setStatus(`Processing failed: ${String(e)}`, true);
@@ -886,6 +902,7 @@ async function handleConfirm(): Promise<void> {
     await new Promise<void>(resolve => setTimeout(resolve, 0));
     const { board: confirmedBoard, usedBacktracking: confirmUsedBacktracking } = solveCurrentSpec();
     const playing = confirmPuzzle(confirmedBoard);
+    logAction('confirmed', currentState.puzzleType);
     renderPlayingMode(playing);
     setStatus('');
 
@@ -929,6 +946,8 @@ function showTrainingConsentModal(data: TrainingExport): void {
 async function handleCellEntry(digit: number): Promise<void> {
   if (currentState === null || selectedCell === null) return;
   try {
+    if (digit === 0) logAction('cell_cleared', cellLabel([selectedCell.row - 1, selectedCell.col - 1] as Cell));
+    else logAction('cell_entered', `${cellLabel([selectedCell.row - 1, selectedCell.col - 1] as Cell)}=${digit}`);
     const delay = getAutoPlacementDelay();
     if (delay === 0) {
       const state = enterCell(selectedCell.row, selectedCell.col, digit);
@@ -956,6 +975,7 @@ async function handleCellEntry(digit: number): Promise<void> {
 
 async function handleUndo(): Promise<void> {
   try {
+    logAction('undo');
     const state = undo();
     currentState = state;
     refreshDisplay();
@@ -996,6 +1016,7 @@ async function submitVirtualCage(): Promise<void> {
   if (!total || total < 3) { totalInput.focus(); return; }
   const cells = [...virtualCageSelection].map(key => key.split(',').map(Number) as [number, number]);
   try {
+    logAction('virtual_cage_added', `${cells.length} cells, total=${total}`);
     currentState = addVirtualCage(cells, total);
     virtualCageMode = false; virtualCageSelection = new Set();
     el<HTMLElement>('vc-form').hidden = true;
@@ -1003,6 +1024,86 @@ async function submitVirtualCage(): Promise<void> {
     el<HTMLButtonElement>('virtual-cage-btn').textContent = 'Virtual cage';
     void fetchCandidates();
   } catch (e) { setStatus(`Virtual cage error: ${String(e)}`, true); }
+}
+
+// ---------------------------------------------------------------------------
+// Feedback submission
+// ---------------------------------------------------------------------------
+
+async function handleFeedbackSubmit(): Promise<void> {
+  const workerUrl = import.meta.env['VITE_TRAINING_WORKER_URL'] as string | undefined;
+  const description = el<HTMLTextAreaElement>('feedback-description').value.trim();
+  if (!description) {
+    el<HTMLElement>('feedback-status').textContent = 'Please enter a description.';
+    el<HTMLTextAreaElement>('feedback-description').focus();
+    return;
+  }
+
+  const isBug = el<HTMLInputElement>('feedback-type-bug').checked;
+  const feedbackType = isBug ? 'bug' : 'enhancement';
+  const bugCategory = isBug
+    ? (el<HTMLInputElement>('bug-cat-wrong').checked ? 'wrong-behaviour' : 'inaccurate-description')
+    : undefined;
+  const expected = isBug ? el<HTMLTextAreaElement>('feedback-expected').value.trim() || undefined : undefined;
+
+  const puzzleSpec = currentState !== null ? {
+    puzzleType: currentState.puzzleType,
+    regions: currentState.specData.regions,
+    cageTotals: currentState.specData.cageTotals,
+    userGrid: currentState.userGrid,
+  } : null;
+
+  const settings = loadSettings();
+
+  const payload = {
+    version: 3 as const,
+    reportedAt: new Date().toISOString(),
+    appVersion: __BUILD_TIME__,
+    feedbackType,
+    bugCategory,
+    description,
+    expected,
+    actionLog: formatActionLog(),
+    puzzleSpec,
+    userAgent: navigator.userAgent,
+    viewport: `${window.innerWidth}×${window.innerHeight}`,
+    config: { alwaysApplyRules: settings.alwaysApplyRules, autoPlacementDelay: settings.autoPlacementDelay },
+  };
+
+  const statusEl = el<HTMLElement>('feedback-status');
+  const submitBtn = el<HTMLButtonElement>('feedback-submit-btn');
+  submitBtn.disabled = true;
+  statusEl.textContent = 'Sending…';
+  statusEl.className = 'status';
+
+  if (!workerUrl) {
+    // Dev fallback: log to console
+    console.log('[Feedback]', payload);
+    statusEl.textContent = 'Feedback logged to console (no worker URL configured).';
+    submitBtn.disabled = false;
+    return;
+  }
+
+  try {
+    const res = await fetch(workerUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      statusEl.textContent = 'Thank you — feedback submitted.';
+      setTimeout(() => { el<HTMLDialogElement>('feedback-modal').close(); }, 1500);
+    } else {
+      const text = await res.text();
+      statusEl.textContent = `Submission failed (${res.status}): ${text}`;
+      statusEl.className = 'status error';
+    }
+  } catch (e) {
+    statusEl.textContent = `Submission failed: ${String(e)}`;
+    statusEl.className = 'status error';
+  } finally {
+    submitBtn.disabled = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1135,6 +1236,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const v = Number(cageTotalInput.value);
     const newTotal = Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
     currentState.specData.cageTotals[row]![col] = newTotal;
+    logAction('total_edited', `r${row}c${col}=${newTotal}`);
     draftEdited = true;
     totalEditCell = null;
     cageTotalInput.style.display = 'none';
@@ -1157,6 +1259,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // ───────────────────────────────────────────────────────────────────────────────────────
 
   el<HTMLButtonElement>('new-puzzle-btn').addEventListener('click', () => {
+    logAction('new_puzzle');
+    clearActionLog();
     currentState = null; currentCandidates = null; selectedCell = null;
     showCandidates = false; candidateEditMode = false;
     virtualCageMode = false; virtualCageSelection = new Set();
@@ -1184,6 +1288,42 @@ document.addEventListener('DOMContentLoaded', () => {
   el<HTMLButtonElement>('general-help-close-btn').addEventListener('click', () => {
     el<HTMLDialogElement>('general-help-modal').close();
   });
+
+  // ── Feedback modal ───────────────────────────────────────────────────────────
+  el<HTMLButtonElement>('feedback-btn').addEventListener('click', () => {
+    // Default to bug report
+    el<HTMLInputElement>('feedback-type-bug').checked = true;
+    el<HTMLElement>('feedback-bug-fields').style.display = '';
+    el<HTMLElement>('feedback-description-label').textContent = 'What happened?';
+    el<HTMLTextAreaElement>('feedback-description').value = '';
+    el<HTMLTextAreaElement>('feedback-expected').value = '';
+    el<HTMLInputElement>('bug-cat-wrong').checked = true;
+    el<HTMLElement>('feedback-status').textContent = '';
+
+    const entries = getActionLog();
+    el<HTMLElement>('feedback-trace-count').textContent = String(entries.length);
+    el<HTMLElement>('feedback-trace').textContent = formatActionLog();
+
+    (el<HTMLDialogElement>('feedback-modal') as HTMLDialogElement).showModal();
+  });
+
+  el<HTMLInputElement>('feedback-type-bug').addEventListener('change', () => {
+    el<HTMLElement>('feedback-bug-fields').style.display = '';
+    el<HTMLElement>('feedback-description-label').textContent = 'What happened?';
+  });
+  el<HTMLInputElement>('feedback-type-enhancement').addEventListener('change', () => {
+    el<HTMLElement>('feedback-bug-fields').style.display = 'none';
+    el<HTMLElement>('feedback-description-label').textContent = 'What would you like to see?';
+  });
+
+  el<HTMLButtonElement>('feedback-cancel-btn').addEventListener('click', () => {
+    el<HTMLDialogElement>('feedback-modal').close();
+  });
+
+  el<HTMLButtonElement>('feedback-submit-btn').addEventListener('click', () => {
+    void handleFeedbackSubmit();
+  });
+  // ─────────────────────────────────────────────────────────────────────────────
 
   el<HTMLButtonElement>('config-btn').addEventListener('click', () => { openConfigModal(); });
   el<HTMLButtonElement>('config-cancel-btn').addEventListener('click', () => { el<HTMLDialogElement>('config-modal').close(); });
@@ -1278,6 +1418,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const hint = activeHintItem;
     clearHintHighlight();
 
+    logAction('hint_applied', hint.displayName);
     if (hint.rewindToTurnIdx !== null) {
       try { currentState = rewind(hint.rewindToTurnIdx); refreshDisplay(); updateUndoButton(currentState); } catch (e) { setStatus(String(e), true); }
     } else if (hint.placement !== null) {
@@ -1345,12 +1486,14 @@ document.addEventListener('DOMContentLoaded', () => {
       for (let r = 1; r < 9; r++) {
         if (Math.abs(y - r * CELL) < BORDER_ZONE) {
           draftBorderX[c0]![r - 1] = !draftBorderX[c0]![r - 1];
+          logAction('border_toggled', `row-gap ${r} col ${c0}`);
           draftEdited = true; redrawGrid(); return;
         }
       }
       for (let c = 1; c < 9; c++) {
         if (Math.abs(x - c * CELL) < BORDER_ZONE) {
           draftBorderY[c - 1]![r0] = !draftBorderY[c - 1]![r0];
+          logAction('border_toggled', `col-gap ${c} row ${r0}`);
           draftEdited = true; redrawGrid(); return;
         }
       }

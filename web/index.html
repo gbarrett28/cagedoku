@@ -17,6 +17,7 @@
     <button id="new-puzzle-btn" class="btn-secondary" hidden>New puzzle</button>
     <button id="help-btn" class="btn-secondary">Help</button>
     <button id="config-btn" class="btn-secondary">Config</button>
+    <button id="feedback-btn" class="btn-secondary">Feedback</button>
   </div>
 </header>
 
@@ -268,6 +269,48 @@
     <button id="training-consent-once-btn">Send this time</button>
     <button id="training-consent-always-btn">Always send</button>
     <button id="training-consent-skip-btn" class="btn-secondary">Skip</button>
+  </div>
+</dialog>
+
+<dialog id="feedback-modal">
+  <h2>Send Feedback</h2>
+  <div class="form-row">
+    <span class="field-label">Type</span>
+    <div class="feedback-type-row">
+      <label><input type="radio" name="feedback-type" id="feedback-type-bug" value="bug"> Bug report</label>
+      <label><input type="radio" name="feedback-type" id="feedback-type-enhancement" value="enhancement"> Enhancement request</label>
+    </div>
+  </div>
+
+  <div id="feedback-bug-fields">
+    <div class="form-row">
+      <label class="field-label" for="feedback-expected">What did you expect to happen?</label>
+      <textarea id="feedback-expected" class="feedback-textarea" rows="3" placeholder="Describe the expected behaviour…"></textarea>
+    </div>
+    <div class="form-row">
+      <span class="field-label">Category</span>
+      <div class="feedback-type-row">
+        <label><input type="radio" name="bug-category" id="bug-cat-wrong" value="wrong-behaviour" checked> The app is doing the wrong thing</label>
+        <label><input type="radio" name="bug-category" id="bug-cat-docs" value="inaccurate-description"> A description or label in the app is inaccurate</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-row">
+    <label class="field-label" for="feedback-description" id="feedback-description-label">What happened?</label>
+    <textarea id="feedback-description" class="feedback-textarea" rows="4" placeholder="Describe what you observed…"></textarea>
+  </div>
+
+  <details class="feedback-trace-details">
+    <summary>Session trace (<span id="feedback-trace-count">0</span> events)</summary>
+    <pre id="feedback-trace" class="feedback-trace-pre"></pre>
+  </details>
+
+  <p id="feedback-status" class="status" style="margin-top:0.5rem;min-height:1.2em"></p>
+
+  <div class="form-actions">
+    <button id="feedback-submit-btn">Submit</button>
+    <button id="feedback-cancel-btn" class="btn-secondary">Cancel</button>
   </div>
 </dialog>
 

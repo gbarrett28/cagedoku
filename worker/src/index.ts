@@ -1,5 +1,5 @@
-import { isTrainingExport, isPuzzleSpecExport } from './validate.js';
-import type { TrainingExport, PuzzleSpecExport } from './validate.js';
+import { isTrainingExport, isPuzzleSpecExport, isFeedbackReport } from './validate.js';
+import type { TrainingExport, PuzzleSpecExport, FeedbackReport } from './validate.js';
 
 export interface Env {
   TRAINING_BUCKET: R2Bucket;
@@ -83,6 +83,12 @@ export default {
       return new Response('OK', { status: 200, headers: corsHeaders(allowed) });
     }
 
+    if (isFeedbackReport(body)) {
+      const data: FeedbackReport = body;
+      try { await createFeedbackIssue(env, data); } catch (err) { console.error('[training-worker] GitHub issue creation failed:', err); }
+      return new Response('OK', { status: 200, headers: corsHeaders(allowed) });
+    }
+
     return new Response('Bad request: unrecognised schema', { status: 400, headers: corsHeaders(allowed) });
   },
 };
@@ -130,4 +136,72 @@ async function postPuzzleSpecComment(env: Env, data: PuzzleSpecExport, key: stri
     `app ${data.appVersion}, ${data.exportedAt}\n` +
     `R2 key: \`${key}\``,
   );
+}
+
+async function createFeedbackIssue(env: Env, data: FeedbackReport): Promise<void> {
+  const typeLabel = data.feedbackType === 'bug' ? 'Bug report' : 'Enhancement request';
+  const titleSnippet = data.description.slice(0, 72).replace(/[\r\n]+/g, ' ');
+  const title = `[${typeLabel}] ${titleSnippet}${data.description.length > 72 ? '…' : ''}`;
+
+  const labels = ['feedback', data.feedbackType === 'bug' ? 'bug' : 'enhancement'];
+  if (data.bugCategory === 'inaccurate-description') labels.push('documentation');
+
+  const config = data.config as { alwaysApplyRules?: unknown; autoPlacementDelay?: unknown };
+  const rules = Array.isArray(config.alwaysApplyRules) ? (config.alwaysApplyRules as string[]).join(', ') || '(none)' : '?';
+  const delay = typeof config.autoPlacementDelay === 'number' ? `${config.autoPlacementDelay}ms` : '?';
+
+  const bugCatLine = data.feedbackType === 'bug' && data.bugCategory
+    ? `**Category:** ${data.bugCategory === 'wrong-behaviour' ? 'Wrong behaviour' : 'Inaccurate description/documentation'}\n`
+    : '';
+
+  const expectedSection = data.expected
+    ? `\n### Expected behaviour\n${data.expected}\n`
+    : '';
+
+  const specJson = data.puzzleSpec !== null
+    ? `\n<details>\n<summary>Puzzle spec</summary>\n\n\`\`\`json\n${JSON.stringify(data.puzzleSpec, null, 2)}\n\`\`\`\n\n</details>\n`
+    : '';
+
+  const body = `## ${typeLabel}
+
+**Reported:** ${data.reportedAt}
+**App version:** ${data.appVersion}
+**Browser:** ${data.userAgent}
+**Viewport:** ${data.viewport}
+${bugCatLine}
+### Description
+${data.description}
+${expectedSection}
+### Config
+- Auto-apply rules: ${rules}
+- Step delay: ${delay}
+${specJson}
+### Session trace
+
+<details>
+<summary>${data.actionLog.split('\n').length} events</summary>
+
+\`\`\`
+${data.actionLog}
+\`\`\`
+
+</details>
+`;
+
+  const response = await fetch(
+    `https://api.github.com/repos/${env.GITHUB_REPO}/issues`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'cagedoku-training-worker',
+      },
+      body: JSON.stringify({ title, body, labels }),
+    },
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`GitHub API ${response.status}: ${text}`);
+  }
 }

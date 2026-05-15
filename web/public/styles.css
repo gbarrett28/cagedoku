@@ -644,3 +644,49 @@ dialog::backdrop {
   font-size: 0.85rem;
   color: var(--text-muted);
 }
+
+/* ── Feedback modal ── */
+
+.feedback-type-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.feedback-textarea {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 0.875rem;
+  padding: 0.45rem 0.7rem;
+  resize: vertical;
+  font-family: inherit;
+  max-width: 100%;
+}
+
+.feedback-textarea:focus {
+  outline: 2px solid var(--accent-dim);
+}
+
+.feedback-trace-details {
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.feedback-trace-pre {
+  margin-top: 0.5rem;
+  font-size: 0.72rem;
+  overflow: auto;
+  max-height: 180px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.5rem;
+  color: var(--text-muted);
+  white-space: pre;
+}
