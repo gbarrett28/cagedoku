@@ -54,6 +54,21 @@ import type {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** 1–9 each appear 9 times → the only valid sum for a full 9×9 killer grid. */
+const GRID_TOTAL_SUM = 405;
+
+/** Intersection of all sets, returned as a sorted array. */
+function intersectAll(sets: ReadonlySet<number>[]): number[] {
+  if (sets.length === 0) return [];
+  return [...sets[0]!].filter(d => sets.every(s => s.has(d))).sort((a, b) => a - b);
+}
+
+/** Lexicographic comparator for sorted digit arrays. */
+function lexCompare(a: readonly number[], b: readonly number[]): number {
+  for (let i = 0; i < a.length; i++) { const d = a[i]! - b[i]!; if (d !== 0) return d; }
+  return 0;
+}
+
 function requireState(): PuzzleState {
   const s = getState();
   if (s === null) throw new Error('No active session');
@@ -185,50 +200,8 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
     originalImageData = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height);
   } catch { /* non-critical */ }
 
-  // Convert warpedImageData to a data URL for <img> display
-  let warpedImageUrl: string | null = null;
-  if (result.warpedImageData !== null) {
-    const offscreen = new OffscreenCanvas(result.warpedImageData.width, result.warpedImageData.height);
-    const octx = offscreen.getContext('2d')!;
-    octx.putImageData(result.warpedImageData, 0, 0);
-    const blob = await offscreen.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
-    warpedImageUrl = URL.createObjectURL(blob);
-  }
-
   const originalImageUrl = await fileToDataUrl(file);
-  const settings = loadSettings();
-
-  let spec = result.spec;
-  let warning = result.specError;
-
-  // On OCR failure show a blank canvas so the user can build from scratch.
-  // Build the PuzzleSpec directly without calling validateCageLayout — an 81-cell
-  // cage with any total fails the achievable-range check and would throw.
-  if (spec === null) {
-    warning = (warning ? warning + ' ' : '') + 'Cage layout could not be detected — starting with a blank grid.';
-    const blankBorderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(false));
-    const blankBorderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
-    const blankTotals  = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-    blankTotals[0]![0] = 1; // placeholder cage head at row=0, col=0
-    const blankRegions = Array.from({ length: 9 }, () => new Array<number>(9).fill(1));
-    spec = { regions: blankRegions, cageTotals: blankTotals, borderX: blankBorderX, borderY: blankBorderY };
-  }
-
-  const state: PuzzleState = {
-    specData: specToData(spec),
-    cageStates: specToCageStates(spec),
-    userGrid: null,
-    virtualCages: [],
-    turns: [],
-    alwaysApplyRules: [...settings.alwaysApplyRules],
-    goldenSolution: null,
-    puzzleType: result.puzzleType,
-    givenDigits: result.givenDigits,
-    originalImageUrl,
-    warpedImageUrl,
-  };
-
-  setState(state);
+  const { state, warpedImageUrl, warning } = await buildStateFromParseResult(result, originalImageUrl);
   return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, corners: result.corners, originalImageData };
 }
 
@@ -266,45 +239,8 @@ export async function reparseWithCorners(
     };
   }
 
-  let warpedImageUrl: string | null = null;
-  if (result.warpedImageData !== null) {
-    const offscreen = new OffscreenCanvas(result.warpedImageData.width, result.warpedImageData.height);
-    offscreen.getContext('2d')!.putImageData(result.warpedImageData, 0, 0);
-    const blob = await offscreen.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
-    warpedImageUrl = URL.createObjectURL(blob);
-  }
-
   const originalImageUrl = await fileToDataUrl(file);
-  const settings = loadSettings();
-
-  let spec = result.spec;
-  let warning = result.specError;
-
-  if (spec === null) {
-    warning = (warning ? warning + ' ' : '') + 'Cage layout could not be detected — starting with a blank grid.';
-    const blankBorderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(false));
-    const blankBorderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
-    const blankTotals  = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-    blankTotals[0]![0] = 1;
-    const blankRegions = Array.from({ length: 9 }, () => new Array<number>(9).fill(1));
-    spec = { regions: blankRegions, cageTotals: blankTotals, borderX: blankBorderX, borderY: blankBorderY };
-  }
-
-  const state: PuzzleState = {
-    specData: specToData(spec),
-    cageStates: specToCageStates(spec),
-    userGrid: null,
-    virtualCages: [],
-    turns: [],
-    alwaysApplyRules: [...settings.alwaysApplyRules],
-    goldenSolution: null,
-    puzzleType: result.puzzleType,
-    givenDigits: result.givenDigits,
-    originalImageUrl,
-    warpedImageUrl,
-  };
-
-  setState(state);
+  const { state, warpedImageUrl, warning } = await buildStateFromParseResult(result, originalImageUrl);
   return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, corners: result.corners ?? corners, originalImageData };
 }
 
@@ -329,6 +265,50 @@ async function fileToDataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(new Error('Failed to read file'));
     reader.readAsDataURL(file);
   });
+}
+
+async function buildStateFromParseResult(
+  result: ParseResult,
+  originalImageUrl: string,
+): Promise<{ state: PuzzleState; warpedImageUrl: string | null; warning: string | null }> {
+  let warpedImageUrl: string | null = null;
+  if (result.warpedImageData !== null) {
+    const offscreen = new OffscreenCanvas(result.warpedImageData.width, result.warpedImageData.height);
+    offscreen.getContext('2d')!.putImageData(result.warpedImageData, 0, 0);
+    const blob = await offscreen.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
+    warpedImageUrl = URL.createObjectURL(blob);
+  }
+
+  const settings = loadSettings();
+  let spec = result.spec;
+  let warning = result.specError;
+
+  if (spec === null) {
+    warning = (warning ? warning + ' ' : '') + 'Cage layout could not be detected — starting with a blank grid.';
+    const blankBorderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(false));
+    const blankBorderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
+    const blankTotals  = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    blankTotals[0]![0] = 1; // placeholder cage head at row=0, col=0
+    const blankRegions = Array.from({ length: 9 }, () => new Array<number>(9).fill(1));
+    spec = { regions: blankRegions, cageTotals: blankTotals, borderX: blankBorderX, borderY: blankBorderY };
+  }
+
+  const state: PuzzleState = {
+    specData: specToData(spec),
+    cageStates: specToCageStates(spec),
+    userGrid: null,
+    virtualCages: [],
+    turns: [],
+    alwaysApplyRules: [...settings.alwaysApplyRules],
+    goldenSolution: null,
+    puzzleType: result.puzzleType,
+    givenDigits: result.givenDigits,
+    originalImageUrl,
+    warpedImageUrl,
+  };
+
+  setState(state);
+  return { state, warpedImageUrl, warning };
 }
 
 // ---------------------------------------------------------------------------
@@ -444,9 +424,8 @@ export function applyDraftLayout(
   const spec = validateCageLayout(headTotals, bxMut, byMut);
 
   const totalSum = headTotals.flat().reduce((a, b) => a + b, 0);
-  // A valid 9×9 killer sudoku always sums to exactly 405 (digits 1–9 each appear 9 times).
-  const warnings = totalSum !== 405
-    ? [`Cage totals sum to ${totalSum} (expected 405) — please correct before confirming`]
+  const warnings = totalSum !== GRID_TOTAL_SUM
+    ? [`Cage totals sum to ${totalSum} (expected ${GRID_TOTAL_SUM}) — please correct before confirming`]
     : [];
 
   const updated: PuzzleState = {
@@ -580,10 +559,7 @@ export function computeCandidates(): CandidatesResponse {
   const cages = Array.from({ length: nRealCages }, (_, idx) => {
     const unit = board.units[27 + idx]!;
     const solns = board.cageSolns[idx]!;
-    const mustContain = solns.length > 0
-      ? [...solns.reduce((acc, s) => { const ss = new Set(s); return new Set([...acc].filter(d => ss.has(d))); }, new Set(solns[0]!))]
-          .sort((a, b) => a - b)
-      : [];
+    const mustContain = solns.length > 0 ? intersectAll(solns.map(s => new Set(s))) : [];
     let total = 0;
     for (const [r, c] of unit.cells) {
       const v = board.spec.cageTotals[r]![c]!;
@@ -604,7 +580,7 @@ export function computeCandidates(): CandidatesResponse {
     const vcSolns = board.cageSolns[nRealCages + i] ?? [];
     const allSolutions = [...solSums(vc.cells.length, 0, vc.total)]
       .map(s => [...s].sort((a, b) => a - b))
-      .sort((a, b) => { for (let j = 0; j < a.length; j++) { const d = a[j]! - b[j]!; if (d !== 0) return d; } return 0; });
+      .sort(lexCompare);
     const possibleKeys = new Set(vcSolns.map(s => [...s].sort((a, b) => a - b).join(',')));
     const userEliminatedKeys = new Set(
       vc.eliminatedSolns.map(s => [...s].sort((a, b) => a - b).join(',')),
@@ -613,10 +589,7 @@ export function computeCandidates(): CandidatesResponse {
       s => !possibleKeys.has(s.join(',')) && !userEliminatedKeys.has(s.join(',')),
     );
     const userEliminated = allSolutions.filter(s => userEliminatedKeys.has(s.join(',')));
-    const mustContain = vcSolns.length > 0
-      ? [...vcSolns.reduce((acc, s) => { const ss = new Set(s); return new Set([...acc].filter(d => ss.has(d))); }, new Set(vcSolns[0]))]
-          .sort((a, b) => a - b)
-      : [];
+    const mustContain = vcSolns.length > 0 ? intersectAll(vcSolns.map(s => new Set(s))) : [];
     return {
       key: virtualCageKey(vc.cells, vc.total),
       cells: vc.cells.map(([r, c]) => [r, c] as [number, number]),
@@ -797,7 +770,7 @@ export function getCageSolutions(label: string): CageSolutionsResponse {
   const { board } = buildEngine(state); // engine.solve() called inside buildEngine
   const allSolutions = [...solSums(cage.cells.length, 0, cage.total)]
     .map(s => [...s].sort((a, b) => a - b))
-    .sort((a, b) => { for (let i = 0; i < a.length; i++) { const d = a[i]! - b[i]!; if (d !== 0) return d; } return 0; });
+    .sort(lexCompare);
 
   const possible = new Set(board.cageSolns[cageIdx]!.map(s => [...s].sort((a, b) => a - b).join(',')));
   const autoImpossible = allSolutions.filter(s => !possible.has(s.join(',')));

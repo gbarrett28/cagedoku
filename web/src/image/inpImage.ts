@@ -225,8 +225,6 @@ export async function parsePuzzleImage(
   for (let i = 0; i < 8; i++) cornersOrig[i] = rectArr[i]! / upsampleFactor;
 
   // Convert warped colour image to ImageData for the result.
-  const warpedCanvas = new OffscreenCanvas(dstSize, dstSize);
-  warpedCanvas.getContext('2d');
   const warpedImgData = matToImageData(cv, warpedImgMat, dstSize);
   warpedImgMat.delete();
 
@@ -365,8 +363,10 @@ export async function parsePuzzleImage(
   try {
     spec = validateCageLayout(usedTotals, bestBorderX, bestBorderY);
   } catch (strictErr) {
-    // If the error is a range error (not a structural one), repair and retry.
-    if (!(strictErr instanceof Error && (strictErr.constructor.name === 'ProcessingError' || (strictErr as Error).message.includes('reassigned') || (strictErr as Error).message.includes('unassigned')))) {
+    if (isStructuralCageError(strictErr)) {
+      specError = String(strictErr);
+    } else {
+      // Range error — clamp totals to valid ranges and retry.
       const { repaired, warnings } = repairCageTotals(usedTotals, bestBorderX, bestBorderY);
       usedTotals = repaired;
       try {
@@ -375,8 +375,6 @@ export async function parsePuzzleImage(
       } catch (repairErr) {
         specError = String(repairErr);
       }
-    } else {
-      specError = String(strictErr);
     }
   }
 
@@ -392,6 +390,11 @@ export async function parsePuzzleImage(
 }
 
 // ---------------------------------------------------------------------------
+/** Returns true for structural cage errors (region clash or unassigned cell) that cannot be repaired by clamping totals. */
+function isStructuralCageError(e: unknown): boolean {
+  return e instanceof ProcessingError;
+}
+
 // Internal helpers
 // ---------------------------------------------------------------------------
 

@@ -489,10 +489,9 @@ function renderSolutionList(
   for (const soln of allSolutions) {
     const span = document.createElement('span');
     const key = soln.join(',');
-    const normKey = [...soln].sort((a, b) => a - b).join(',');
     if (autoKeys.has(key)) {
       span.className = 'soln-item auto-impossible';
-    } else if (elimKeys.has(normKey)) {
+    } else if (elimKeys.has(key)) {
       span.className = 'soln-item user-eliminated';
       span.addEventListener('click', () => onToggle([...soln]));
     } else {
@@ -1266,6 +1265,13 @@ document.addEventListener('DOMContentLoaded', () => {
     virtualCageMode = false; virtualCageSelection = new Set();
     hintHighlightCells = new Set(); activeHintItem = null;
     latestFile = null; latestCorners = null; latestImageData = null;
+    inspectCageMode = false;
+    el<HTMLButtonElement>('inspect-cage-btn').textContent = 'Inspect cage';
+    el<HTMLElement>('inspector-col').hidden = true;
+    totalEditCell = null;
+    reviewErrorCells = new Set();
+    draftEdited = false;
+    pendingCellThumbs = new Map();
     if (cornerPickerActive) exitCornerPickerMode();
     el<HTMLElement>('upload-panel').hidden = false;
     el<HTMLElement>('review-panel').hidden = true;
@@ -1422,6 +1428,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (hint.rewindToTurnIdx !== null) {
       try { currentState = rewind(hint.rewindToTurnIdx); refreshDisplay(); updateUndoButton(currentState); } catch (e) { setStatus(String(e), true); }
     } else if (hint.placement !== null) {
+      selectedCell = { row: hint.placement[0] + 1, col: hint.placement[1] + 1 };
       void handleCellEntry(hint.placement[2]);
     } else if (hint.virtualCageSuggestion !== null) {
       const { cells, total } = hint.virtualCageSuggestion;

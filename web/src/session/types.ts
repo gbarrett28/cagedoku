@@ -64,8 +64,7 @@ export type UserAction =
   | { readonly type: 'resetCellCandidates'; readonly row: number; readonly col: number }
   | { readonly type: 'addVirtualCage'; readonly cage: VirtualCage }
   | { readonly type: 'removeVirtualCage'; readonly key: string }
-  | { readonly type: 'applyHint'; readonly eliminations: readonly [number, number, number][] }
-  | { readonly type: 'undo' };
+  | { readonly type: 'applyHint'; readonly eliminations: readonly [number, number, number][] };
 
 export interface AutoMutation {
   readonly ruleName: string;

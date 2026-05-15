@@ -62,11 +62,7 @@ export function userVirtualCages(state: PuzzleState): VirtualCage[] {
   for (const turn of state.turns) {
     if (turn.action.type === 'addVirtualCage') {
       const cage = turn.action.cage;
-      const key = [...cage.cells]
-        .sort(([r1, c1], [r2, c2]) => r1 - r2 || c1 - c2)
-        .map(([r, c]) => `${r},${c}`)
-        .join(':') + `:${cage.total}`;
-      cages.set(key, cage);
+      cages.set(virtualCageKeyFromCage(cage), cage);
     } else if (turn.action.type === 'removeVirtualCage') {
       cages.delete(turn.action.key);
     }
@@ -272,17 +268,9 @@ function applyAction(state: PuzzleState, action: UserAction): PuzzleState {
       return { ...state, virtualCages: [...state.virtualCages, action.cage] };
     case 'removeVirtualCage': {
       const key = action.key;
-      const newCages = state.virtualCages.filter(vc => {
-        const k = [...vc.cells]
-          .sort(([r1, c1], [r2, c2]) => r1 - r2 || c1 - c2)
-          .map(([r, c]) => `${r},${c}`)
-          .join(':') + `:${vc.total}`;
-        return k !== key;
-      });
+      const newCages = state.virtualCages.filter(vc => virtualCageKeyFromCage(vc) !== key);
       return { ...state, virtualCages: newCages };
     }
-    case 'undo':
-      return undoLastTurn(state);
     default:
       return state;
   }
@@ -291,15 +279,6 @@ function applyAction(state: PuzzleState, action: UserAction): PuzzleState {
 // ---------------------------------------------------------------------------
 // Undo
 // ---------------------------------------------------------------------------
-
-/**
- * Pops the last turn from history and rebuilds userGrid from the remaining history.
- */
-function undoLastTurn(state: PuzzleState): PuzzleState {
-  if (state.turns.length === 0) return state;
-  const turns = state.turns.slice(0, -1);
-  return rebuildUserGrid({ ...state, turns });
-}
 
 // ---------------------------------------------------------------------------
 // User grid rebuild
