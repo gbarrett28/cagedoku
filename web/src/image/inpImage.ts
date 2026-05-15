@@ -486,7 +486,8 @@ export function buildCageTotals(
  * @param borderY - (8×9) [colGap][row] cage-wall flags.
  * @param cageTotals - (9×9) [col][row] non-zero at cage heads.
  */
-function connectivityScore(
+/** @internal Exported for unit tests only. */
+export function connectivityScore(
   borderX: boolean[][],
   borderY: boolean[][],
   cageTotals: number[][],

@@ -28,7 +28,7 @@ import {
   KNOWN_SOLUTION,
 } from '../engine/fixtures.js';
 import { specToData, specToCageStates } from './specUtils.js';
-import type { PuzzleState } from './types.js';
+import type { PuzzleState, Turn, UserAction } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -375,5 +375,100 @@ describe('computeCandidates — CellSolutionElimination mandatory in Classic (#2
     expect(data.cells[4]![3]!.candidates).not.toContain(3);
     // r0c0 is a row peer of r0c5=6 (user placed) — must not contain 6.
     expect(data.cells[0]![0]!.candidates).not.toContain(6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bug #30 – findLastConsistentTurnIdx wrong fallback
+//
+// When wrongCells is non-empty but no placeDigit turn in history matches any
+// wrong cell (e.g. the digit was placed by an auto-placement which records no
+// user turn, or the only matching turn is at a different cell), firstBadIdx
+// stays at its initial value of turns.length - 1.  This rewinds only the last
+// move rather than recovering to a clean state.
+//
+// Expected: return 0 (or null) when no matching placeDigit turn is found.
+// Actual:   returns turns.length - 1, which is wrong.
+// ---------------------------------------------------------------------------
+
+function makeTurnFor(action: UserAction): Turn {
+  return {
+    action,
+    autoMutations: [],
+    snapshot: { candidates: Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => [])) },
+  };
+}
+
+describe('findLastConsistentTurnIdx — bug #30: wrong fallback when no matching turn', () => {
+  it('returns null when there are no placeDigit turns but a wrong cell exists', () => {
+    // Construct a state where userGrid[0][0] has a wrong digit, but the turn
+    // history contains only eliminateCandidate turns — no placeDigit for that cell.
+    // Bug: firstBadIdx initialises to turns.length - 1 = 1, so the function
+    // returns 1 instead of null (or 0).
+    const spec = makeBoxCageSpec();
+    const goldenSolution = Array.from({ length: 9 }, (_, r) =>
+      Array.from({ length: 9 }, (__, c) => ((r * 9 + c) % 9) + 1),
+    );
+    const userGrid = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    const correctDigit = goldenSolution[0]![0]!;
+    userGrid[0]![0] = (correctDigit % 9) + 1; // deliberately wrong
+
+    const state: PuzzleState = {
+      specData: specToData(spec),
+      cageStates: specToCageStates(spec),
+      userGrid,
+      virtualCages: [],
+      turns: [
+        makeTurnFor({ type: 'eliminateCandidate', row: 0, col: 1, digit: 3 }),
+        makeTurnFor({ type: 'eliminateCandidate', row: 0, col: 2, digit: 5 }),
+      ],
+      alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],
+      goldenSolution,
+      puzzleType: 'killer',
+      givenDigits: null,
+      originalImageUrl: null,
+      warpedImageUrl: null,
+    };
+
+    // With the bug: returns turns.length - 1 = 1 (the last unrelated turn).
+    // Correct: no placeDigit turn placed the wrong digit, so should return null
+    // to indicate "cannot find the introducing turn".
+    expect(findLastConsistentTurnIdx(state)).toBeNull();
+  });
+
+  it('returns the correct first-bad index when the wrong digit was placed after several other turns', () => {
+    // Place digit correctly at (0,1) first, then place a wrong digit at (0,0).
+    // findLastConsistentTurnIdx should return 1 (the wrong placeDigit turn),
+    // not 2 (the last turn index).
+    const spec = makeBoxCageSpec();
+    const goldenSolution = Array.from({ length: 9 }, (_, r) =>
+      Array.from({ length: 9 }, (__, c) => ((r * 9 + c) % 9) + 1),
+    );
+    const userGrid = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    const wrongDigit = (goldenSolution[0]![0]! % 9) + 1;
+    userGrid[0]![0] = wrongDigit;
+
+    const state: PuzzleState = {
+      specData: specToData(spec),
+      cageStates: specToCageStates(spec),
+      userGrid,
+      virtualCages: [],
+      turns: [
+        // turn 0: unrelated correct placement
+        makeTurnFor({ type: 'placeDigit', row: 0, col: 1, digit: goldenSolution[0]![1]!, source: 'user' }),
+        // turn 1: wrong placement (this is the bad turn)
+        makeTurnFor({ type: 'placeDigit', row: 0, col: 0, digit: wrongDigit, source: 'user' }),
+        // turn 2: another unrelated elimination
+        makeTurnFor({ type: 'eliminateCandidate', row: 0, col: 2, digit: 5 }),
+      ],
+      alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],
+      goldenSolution,
+      puzzleType: 'killer',
+      givenDigits: null,
+      originalImageUrl: null,
+      warpedImageUrl: null,
+    };
+
+    expect(findLastConsistentTurnIdx(state)).toBe(1);
   });
 });
