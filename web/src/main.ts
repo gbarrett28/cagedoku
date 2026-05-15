@@ -1363,8 +1363,13 @@ document.addEventListener('DOMContentLoaded', () => {
       totalEditCell = { row: r0, col: c0 };
       totalEditPrev = existing;
       const inp = el<HTMLInputElement>('cage-total-edit');
-      inp.style.left = `${MARGIN + c0 * CELL}px`;
-      inp.style.top  = `${MARGIN + r0 * CELL}px`;
+      const cssScale = rect.width / canvas.width;
+      const cellCss = CELL * cssScale;
+      inp.style.left     = `${(MARGIN + c0 * CELL) * cssScale}px`;
+      inp.style.top      = `${(MARGIN + r0 * CELL) * cssScale}px`;
+      inp.style.width    = `${cellCss}px`;
+      inp.style.height   = `${cellCss}px`;
+      inp.style.fontSize = `${26 * cssScale}px`;
       inp.value = existing > 0 ? String(existing) : '';
       inp.style.display = 'block';
       inp.focus();
