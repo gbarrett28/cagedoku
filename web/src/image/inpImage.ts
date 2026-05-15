@@ -246,7 +246,7 @@ export async function parsePuzzleImage(
     const borderY: boolean[][] = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
 
     const cageTotals: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-    for (let r = 0; r < 9; r++) cageTotals[0]![r] = 45;
+    for (let r = 0; r < 9; r++) cageTotals[r]![0] = 45;
 
     let spec: PuzzleSpec | null = null;
     let specError: string | null = null;

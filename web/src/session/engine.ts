@@ -142,9 +142,8 @@ export function buildEngine(
 
   const rules = defaultRules();
   const alwaysApplySet = new Set(state.alwaysApplyRules);
-  // CellSolutionElimination is the only rule that produces correct row/col/box
-  // candidates for Classic mode (cage rules are no-ops on the dummy spec).
-  // Always include it regardless of user settings so Classic candidates are correct.
+  // Always include CellSolutionElimination for Classic mode so row/col/box peer
+  // eliminations fire regardless of user settings.
   if (state.puzzleType === 'classic') alwaysApplySet.add('CellSolutionElimination');
 
   // Non-hint mode: only always-apply rules run.

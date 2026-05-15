@@ -115,14 +115,13 @@ export function loadSpecDirect(spec: PuzzleSpec): UploadResult {
  * suppressed because `puzzleType` is `'classic'`.
  */
 export function loadClassicDirect(givenDigits: readonly (readonly number[])[]): UploadResult {
-  // Build the spec directly without validateCageLayout — the cage layout is irrelevant
-  // for Classic puzzles (solver uses givenDigits, not cage constraints). Use the same
-  // blank-canvas pattern as the OCR-failure path: one dummy cage covering all 81 cells.
-  const borderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(false));
+  // Build the spec directly without validateCageLayout. Use 9 row-cages (one per row,
+  // total=45) so cage-based rules operate on correct row units for Classic puzzles.
+  const borderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(true));
   const borderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
   const cageTotals = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-  cageTotals[0]![0] = 1; // placeholder cage head so specToCageStates doesn't produce zero cages
-  const regions = Array.from({ length: 9 }, () => new Array<number>(9).fill(1));
+  for (let r = 0; r < 9; r++) cageTotals[r]![0] = 45;
+  const regions = Array.from({ length: 9 }, (_, r) => new Array<number>(9).fill(r + 1));
   const spec: PuzzleSpec = { regions, cageTotals, borderX, borderY };
   const settings = loadSettings();
   const state: PuzzleState = {
