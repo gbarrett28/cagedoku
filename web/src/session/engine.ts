@@ -21,7 +21,7 @@ import { SolverEngine } from '../engine/solverEngine.js';
 import { defaultRules } from '../engine/rules/index.js';
 import type { Cell, Elimination } from '../engine/types.js';
 import { NoSolnError } from '../solver/errors.js';
-import { dataToSpec, virtualCageKeyFromCage } from './specUtils.js';
+import { dataToSpec, virtualCageKeyFromCage, solutionKey } from './specUtils.js';
 import type { AutoMutation, BoardSnapshot, PuzzleState, Turn, UserAction, VirtualCage } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -125,9 +125,9 @@ export function buildEngine(
   for (let i = 0; i < state.cageStates.length; i++) {
     const eliminated = state.cageStates[i]!.userEliminatedSolns;
     if (eliminated.length === 0) continue;
-    const elimKeys = new Set(eliminated.map(s => [...s].sort((a, b) => a - b).join(',')));
+    const elimKeys = new Set(eliminated.map(solutionKey));
     const solns = board.cageSolns[i]!;
-    solns.splice(0, Infinity, ...solns.filter(s => !elimKeys.has([...s].sort((a, b) => a - b).join(','))));
+    solns.splice(0, Infinity, ...solns.filter(s => !elimKeys.has(solutionKey(s))));
   }
 
   // Re-add virtual cages — use state.virtualCages directly so that

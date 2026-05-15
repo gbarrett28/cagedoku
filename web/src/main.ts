@@ -30,7 +30,6 @@ import {
   undo,
   rewind,
   cycleCandidate,
-  getCageSolutions,
   eliminateCageSolution,
   eliminateVirtualCageSolution,
   addVirtualCage,
@@ -543,16 +542,21 @@ function renderVirtualCagePanel(): void {
 
 function renderCageInspector(label: string): void {
   try {
-    const data = getCageSolutions(label);
+    const upper = label.toUpperCase();
+    // Use currentCandidates when fresh (avoids a duplicate buildEngine call);
+    // fall back to computeCandidates() when candidates panel is hidden.
+    const data = currentCandidates ?? computeCandidates();
+    const cage = data.cages.find(c => c.label === upper);
+    if (cage === undefined) return;
     const inspector = el<HTMLElement>('cage-inspector');
     clearChildren(inspector);
     el<HTMLElement>('inspector-heading').textContent = `Cage ${label}`;
     el<HTMLElement>('inspector-col').hidden = false;
     renderSolutionList(
       inspector,
-      data.allSolutions,
-      data.autoImpossible,
-      data.userEliminated,
+      cage.allSolutions,
+      cage.autoImpossible,
+      cage.userEliminated,
       (soln) => { void handleEliminateSolution(label, soln); },
     );
   } catch (e) {
@@ -563,6 +567,10 @@ function renderCageInspector(label: string): void {
 async function handleEliminateSolution(label: string, solution: number[]): Promise<void> {
   try {
     const state = eliminateCageSolution(label, solution);
+    // Null currentCandidates before renderPlayingMode so renderCageInspector
+    // below always recomputes fresh data (fetchCandidates may update it again
+    // synchronously inside refreshDisplay when showCandidates=true).
+    currentCandidates = null;
     renderPlayingMode(state);
     renderCageInspector(label);
   } catch (e) { setStatus(String(e), true); }

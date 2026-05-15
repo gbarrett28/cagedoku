@@ -133,8 +133,19 @@ export interface CellInfo {
   readonly userRemoved: number[];
 }
 
-export interface CageInfo {
+/** Three-way categorisation of cage solutions shared by CageInfo and VirtualCageInfo. */
+export interface SolutionCategorization {
+  /** All mathematically valid digit combinations for this cage. */
+  readonly allSolutions: readonly (readonly number[])[];
+  /** Combinations ruled out by the engine (not by the user). */
+  readonly autoImpossible: readonly (readonly number[])[];
+  /** Combinations the user has explicitly marked as impossible. */
+  readonly userEliminated: readonly (readonly number[])[];
+}
+
+export interface CageInfo extends SolutionCategorization {
   readonly cageIdx: number;
+  readonly label: string;
   readonly cells: readonly [number, number][];  // 0-based [row, col]
   readonly total: number;
   readonly solutions: readonly (readonly number[])[];
@@ -142,14 +153,11 @@ export interface CageInfo {
   readonly mustContain: number[];
 }
 
-export interface VirtualCageInfo {
+export interface VirtualCageInfo extends SolutionCategorization {
   readonly key: string;
   readonly cells: readonly [number, number][];
   readonly total: number;
   readonly solutions: readonly (readonly number[])[];   // remaining (not eliminated, not auto-impossible)
-  readonly allSolutions: readonly (readonly number[])[]; // all mathematically valid combinations
-  readonly autoImpossible: readonly (readonly number[])[]; // ruled out by engine
-  readonly userEliminated: readonly (readonly number[])[]; // eliminated by user
   readonly mustContain: number[];
 }
 
@@ -198,11 +206,8 @@ export interface SolveResponse {
 // Cage solutions response — mirrors Python GET /cage/:label/solutions
 // ---------------------------------------------------------------------------
 
-export interface CageSolutionsResponse {
+export interface CageSolutionsResponse extends SolutionCategorization {
   readonly label: string;
-  readonly allSolutions: readonly (readonly number[])[];
-  readonly autoImpossible: readonly (readonly number[])[];
-  readonly userEliminated: readonly (readonly number[])[];
 }
 
 // ---------------------------------------------------------------------------

@@ -33,10 +33,10 @@ import {
   cageStatesToSpec,
   specToData,
   virtualCageKey,
+  solutionKey,
 } from './specUtils.js';
 import { getState, setState, getCV, getRec } from './store.js';
 import type {
-  CageSolutionsResponse,
   CandidatesResponse,
   HintItem,
   HintsResponse,
@@ -70,6 +70,16 @@ function lexCompare(a: readonly number[], b: readonly number[]): number {
 }
 
 /**
+ * All valid digit combinations for an n-cell cage summing to total,
+ * each sorted ascending, the list sorted lexicographically.
+ */
+function allCageSolutions(cellCount: number, total: number): readonly (readonly number[])[] {
+  return [...solSums(cellCount, 0, total)]
+    .map(s => [...s].sort((a, b) => a - b))
+    .sort(lexCompare);
+}
+
+/**
  * Toggles a sorted digit combination in a list of eliminated solutions.
  * The solution is normalised (sorted) before comparison and storage.
  */
@@ -79,7 +89,7 @@ function toggleSolution(
 ): readonly (readonly number[])[] {
   const sorted = [...soln].sort((a, b) => a - b);
   const key = sorted.join(',');
-  const idx = list.findIndex(s => [...s].sort((a, b) => a - b).join(',') === key);
+  const idx = list.findIndex(s => solutionKey(s) === key);
   return idx >= 0 ? list.filter((_, i) => i !== idx) : [...list, sorted];
 }
 
@@ -568,51 +578,52 @@ export function computeCandidates(): CandidatesResponse {
     }),
   );
 
-  // Real cage info
+  // Real cage info — allSolutions/autoImpossible/userEliminated match VirtualCageInfo shape.
   const nRealCages = Math.max(...board.regions.flat()) + 1;
   const cages = Array.from({ length: nRealCages }, (_, idx) => {
     const unit = board.units[27 + idx]!;
+    // board.cageSolns[idx] has user-eliminated and engine-impossible both removed by buildEngine.
     const solns = board.cageSolns[idx]!;
-    const mustContain = solns.length > 0 ? intersectAll(solns.map(s => new Set(s))) : [];
+    const cageState = state.cageStates[idx]!;
     let total = 0;
     for (const [r, c] of unit.cells) {
       const v = board.spec.cageTotals[r]![c]!;
       if (v) { total = v; break; }
     }
+    const all = allCageSolutions(unit.cells.length, total);
+    // solns elements are already order-normalised by the engine; s.join(',') is sufficient.
+    const possibleKeys = new Set(solns.map(s => s.join(',')));
+    // userEliminatedSolns are stored sorted by toggleSolution; join is sufficient.
+    const userEliminatedKeys = new Set(cageState.userEliminatedSolns.map(s => s.join(',')));
     return {
       cageIdx: idx,
+      label: cageState.label,
       cells: unit.cells.map(([r, c]) => [r, c] as [number, number]),
       total,
       solutions: solns.map(s => [...s].sort((a, b) => a - b)),
-      mustContain,
+      allSolutions: all,
+      autoImpossible: all.filter(s => !possibleKeys.has(s.join(',')) && !userEliminatedKeys.has(s.join(','))),
+      userEliminated: all.filter(s => userEliminatedKeys.has(s.join(','))),
+      mustContain: solns.length > 0 ? intersectAll(solns.map(s => new Set(s))) : [],
     };
   });
 
-  // Virtual cage info — include allSolutions/userEliminated so the UI can
-  // render them identically to the real cage inspector.
+  // Virtual cage info — same SolutionCategorization shape as CageInfo.
   const virtualCages = state.virtualCages.map((vc, i) => {
     const vcSolns = board.cageSolns[nRealCages + i] ?? [];
-    const allSolutions = [...solSums(vc.cells.length, 0, vc.total)]
-      .map(s => [...s].sort((a, b) => a - b))
-      .sort(lexCompare);
-    const possibleKeys = new Set(vcSolns.map(s => [...s].sort((a, b) => a - b).join(',')));
-    const userEliminatedKeys = new Set(
-      vc.eliminatedSolns.map(s => [...s].sort((a, b) => a - b).join(',')),
-    );
-    const autoImpossible = allSolutions.filter(
-      s => !possibleKeys.has(s.join(',')) && !userEliminatedKeys.has(s.join(',')),
-    );
-    const userEliminated = allSolutions.filter(s => userEliminatedKeys.has(s.join(',')));
-    const mustContain = vcSolns.length > 0 ? intersectAll(vcSolns.map(s => new Set(s))) : [];
+    const all = allCageSolutions(vc.cells.length, vc.total);
+    const possibleKeys = new Set(vcSolns.map(solutionKey));
+    // eliminatedSolns are stored sorted by toggleSolution; join is sufficient.
+    const userEliminatedKeys = new Set(vc.eliminatedSolns.map(s => s.join(',')));
     return {
       key: virtualCageKey(vc.cells, vc.total),
       cells: vc.cells.map(([r, c]) => [r, c] as [number, number]),
       total: vc.total,
       solutions: vcSolns.map(s => [...s].sort((a, b) => a - b)),
-      allSolutions,
-      autoImpossible,
-      userEliminated,
-      mustContain,
+      allSolutions: all,
+      autoImpossible: all.filter(s => !possibleKeys.has(s.join(',')) && !userEliminatedKeys.has(s.join(','))),
+      userEliminated: all.filter(s => userEliminatedKeys.has(s.join(','))),
+      mustContain: vcSolns.length > 0 ? intersectAll(vcSolns.map(s => new Set(s))) : [],
     };
   });
 
@@ -769,33 +780,6 @@ export function solvePuzzle(): SolveResponse {
 // ---------------------------------------------------------------------------
 // Cage solutions
 // ---------------------------------------------------------------------------
-
-/**
- * Returns all digit combinations for a cage, split by status.
- * Replaces GET /cage/:label/solutions.
- */
-export function getCageSolutions(label: string): CageSolutionsResponse {
-  const state = requireConfirmed();
-  const upper = label.toUpperCase();
-  const cageIdx = state.cageStates.findIndex(c => c.label === upper);
-  if (cageIdx === -1) throw new Error(`Cage ${label} not found`);
-  const cage = state.cageStates[cageIdx]!;
-
-  const { board } = buildEngine(state); // engine.solve() called inside buildEngine
-  const allSolutions = [...solSums(cage.cells.length, 0, cage.total)]
-    .map(s => [...s].sort((a, b) => a - b))
-    .sort(lexCompare);
-
-  const possible = new Set(board.cageSolns[cageIdx]!.map(s => [...s].sort((a, b) => a - b).join(',')));
-  const autoImpossible = allSolutions.filter(s => !possible.has(s.join(',')));
-
-  return {
-    label: upper,
-    allSolutions,
-    autoImpossible,
-    userEliminated: cage.userEliminatedSolns.map(s => [...s]),
-  };
-}
 
 /**
  * Toggles a cage solution as user-eliminated. Replaces POST /cage/:label/solutions/eliminate.

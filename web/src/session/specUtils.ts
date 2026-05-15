@@ -138,3 +138,12 @@ export function cageStatesToSpec(cages: readonly CageState[], base: PuzzleSpecDa
 export function virtualCageKeyFromCage(cage: VirtualCage): string {
   return virtualCageKey(cage.cells, cage.total);
 }
+
+// ---------------------------------------------------------------------------
+// Solution key
+// ---------------------------------------------------------------------------
+
+/** Canonical string key for a digit combination — order-independent. */
+export function solutionKey(soln: readonly number[]): string {
+  return [...soln].sort((a, b) => a - b).join(',');
+}
