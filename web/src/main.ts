@@ -485,7 +485,7 @@ function renderSolutionList(
     return;
   }
   const autoKeys = new Set(autoImpossible.map(s => s.join(',')));
-  const elimKeys = new Set(userEliminated.map(s => [...s].sort((a, b) => a - b).join(',')));
+  const elimKeys = new Set(userEliminated.map(s => [...s].join(',')));
   for (const soln of allSolutions) {
     const span = document.createElement('span');
     const key = soln.join(',');
@@ -1234,7 +1234,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const { row, col } = totalEditCell;
     const v = Number(cageTotalInput.value);
     const newTotal = Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
-    currentState.specData.cageTotals[row]![col] = newTotal;
+    const newTotals = currentState.specData.cageTotals.map((r, ri) =>
+      ri === row ? r.map((val, ci) => (ci === col ? newTotal : val)) : [...r],
+    );
+    currentState = { ...currentState, specData: { ...currentState.specData, cageTotals: newTotals } };
     logAction('total_edited', `r${row}c${col}=${newTotal}`);
     draftEdited = true;
     totalEditCell = null;
@@ -1248,7 +1251,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Escape') {
       if (totalEditCell !== null && currentState !== null) {
         const { row, col } = totalEditCell;
-        currentState.specData.cageTotals[row]![col] = totalEditPrev;
+        const prev = totalEditPrev;
+        const newTotals = currentState.specData.cageTotals.map((r, ri) =>
+          ri === row ? r.map((val, ci) => (ci === col ? prev : val)) : [...r],
+        );
+        currentState = { ...currentState, specData: { ...currentState.specData, cageTotals: newTotals } };
       }
       totalEditCell = null;
       cageTotalInput.style.display = 'none';

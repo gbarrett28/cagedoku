@@ -435,13 +435,11 @@ export function buildCageTotals(
 
     for (const [, br,] of rawNums) {
       let numThumbArr: Uint8Array[];
-      let by: number;
       try {
-        [numThumbArr, , by] = splitNum(cv, br, warpedBlk, subres);
+        [numThumbArr] = splitNum(cv, br, warpedBlk, subres);
       } catch {
         continue; // Unexpected geometry — skip.
       }
-      void by;
 
       const [brx, bry, brw, brh] = br;
       const col = ((brx + (brw >> 1)) / subres) | 0;  // x-pixel → column

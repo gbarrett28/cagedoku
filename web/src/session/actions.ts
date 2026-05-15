@@ -69,6 +69,20 @@ function lexCompare(a: readonly number[], b: readonly number[]): number {
   return 0;
 }
 
+/**
+ * Toggles a sorted digit combination in a list of eliminated solutions.
+ * The solution is normalised (sorted) before comparison and storage.
+ */
+function toggleSolution(
+  list: readonly (readonly number[])[],
+  soln: readonly number[],
+): readonly (readonly number[])[] {
+  const sorted = [...soln].sort((a, b) => a - b);
+  const key = sorted.join(',');
+  const idx = list.findIndex(s => [...s].sort((a, b) => a - b).join(',') === key);
+  return idx >= 0 ? list.filter((_, i) => i !== idx) : [...list, sorted];
+}
+
 function requireState(): PuzzleState {
   const s = getState();
   if (s === null) throw new Error('No active session');
@@ -789,19 +803,9 @@ export function getCageSolutions(label: string): CageSolutionsResponse {
 export function eliminateCageSolution(label: string, solution: number[]): PuzzleState {
   const state = requireConfirmed();
   const upper = label.toUpperCase();
-  const sorted = [...solution].sort((a, b) => a - b);
-  const key = sorted.join(',');
-
-  const newCages = state.cageStates.map(c => {
-    if (c.label !== upper) return c;
-    const current = c.userEliminatedSolns.map(s => [...s].sort((a, b) => a - b));
-    const existsIdx = current.findIndex(s => s.join(',') === key);
-    const updated = existsIdx >= 0
-      ? current.filter((_, i) => i !== existsIdx)
-      : [...current, sorted];
-    return { ...c, userEliminatedSolns: updated };
-  });
-
+  const newCages = state.cageStates.map(c =>
+    c.label !== upper ? c : { ...c, userEliminatedSolns: toggleSolution(c.userEliminatedSolns, solution) },
+  );
   const updated: PuzzleState = { ...state, cageStates: newCages };
   setState(updated);
   return applyAutoPlacements(updated);
@@ -815,19 +819,9 @@ export function eliminateCageSolution(label: string, solution: number[]): Puzzle
  */
 export function eliminateVirtualCageSolution(vcKey: string, solution: number[]): PuzzleState {
   const state = requireConfirmed();
-  const sorted = [...solution].sort((a, b) => a - b);
-  const solKey = sorted.join(',');
-
-  const newVCs = state.virtualCages.map(vc => {
-    if (virtualCageKey(vc.cells, vc.total) !== vcKey) return vc;
-    const current = vc.eliminatedSolns.map(s => [...s].sort((a, b) => a - b));
-    const existsIdx = current.findIndex(s => s.join(',') === solKey);
-    const updated = existsIdx >= 0
-      ? current.filter((_, i) => i !== existsIdx)
-      : [...current, sorted];
-    return { ...vc, eliminatedSolns: updated };
-  });
-
+  const newVCs = state.virtualCages.map(vc =>
+    virtualCageKey(vc.cells, vc.total) !== vcKey ? vc : { ...vc, eliminatedSolns: toggleSolution(vc.eliminatedSolns, solution) },
+  );
   const updated: PuzzleState = { ...state, virtualCages: newVCs };
   setState(updated);
   return applyAutoPlacements(updated);

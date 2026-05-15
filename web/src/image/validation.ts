@@ -9,16 +9,71 @@
 import { ProcessingError } from '../solver/errors.js';
 import { buildBrdrs } from '../solver/puzzleSpec.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
-import { cageSumRange, keyToCell } from '../engine/types.js';
+import { cageSumRange, cellKey, keyToCell } from '../engine/types.js';
 
 
 
 /**
- * Build a string key for a cell to use as a Map key.
- * Using a string key avoids reference-equality pitfalls with arrays.
+ * Builds union-find components from cage border arrays.
+ *
+ * Initialises one component per cell, then merges adjacent cells that share
+ * no wall. Returns `find` (representative key lookup) and `members` (component
+ * membership map), ready for cage-region queries.
+ *
+ * @param borderX - (9, 8) [col][rowGap] — true = wall between rows rowGap and rowGap+1
+ * @param borderY - (8, 9) [colGap][row] — true = wall between cols colGap and colGap+1
  */
-function rowColKey(row: number, col: number): string {
-  return `${row},${col}`;
+function buildUnionFind(
+  borderX: boolean[][],
+  borderY: boolean[][],
+): { find: (k: string) => string; members: Map<string, Set<string>> } {
+  const rmap = new Map<string, string>();
+  const members = new Map<string, Set<string>>();
+
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const k = cellKey([r, c]);
+      rmap.set(k, k);
+      members.set(k, new Set([k]));
+    }
+  }
+
+  function find(k: string): string {
+    return rmap.get(k)!;
+  }
+
+  function union(ak: string, bk: string): void {
+    const ra = find(ak);
+    const rb = find(bk);
+    if (ra === rb) return;
+    const [keep, drop] = ra < rb ? [ra, rb] : [rb, ra];
+    for (const p of members.get(drop)!) rmap.set(p, keep);
+    const keepSet = members.get(keep)!;
+    for (const p of members.get(drop)!) keepSet.add(p);
+    members.delete(drop);
+  }
+
+  // Merge cells across open horizontal borders (no wall between rows).
+  // borderX[col][rowGap] = true means wall between rows rowGap and rowGap+1 in col.
+  for (let col = 0; col < 9; col++) {
+    for (let rowGap = 0; rowGap < 8; rowGap++) {
+      if (!borderX[col]![rowGap]!) {
+        union(cellKey([rowGap, col]), cellKey([rowGap + 1, col]));
+      }
+    }
+  }
+
+  // Merge cells across open vertical borders (no wall between columns).
+  // borderY[colGap][row] = true means wall between colGap and colGap+1 in row.
+  for (let colGap = 0; colGap < 8; colGap++) {
+    for (let row = 0; row < 9; row++) {
+      if (!borderY[colGap]![row]!) {
+        union(cellKey([row, colGap]), cellKey([row, colGap + 1]));
+      }
+    }
+  }
+
+  return { find, members };
 }
 
 /**
@@ -48,58 +103,7 @@ export function validateCageLayout(
   borderX: boolean[][],
   borderY: boolean[][],
 ): PuzzleSpec {
-  // Union-find: rmap[rowColKey] -> representative cell key.
-  // members[repKey] -> set of cell keys in that component.
-  const rmap = new Map<string, string>();
-  const members = new Map<string, Set<string>>();
-
-  for (let r = 0; r < 9; r++) {
-    for (let c = 0; c < 9; c++) {
-      const k = rowColKey(r, c);
-      rmap.set(k, k);
-      members.set(k, new Set([k]));
-    }
-  }
-
-  function find(k: string): string {
-    return rmap.get(k)!;
-  }
-
-  function union(ak: string, bk: string): void {
-    const ra = find(ak);
-    const rb = find(bk);
-    if (ra === rb) return;
-    // Always keep the lexicographically smaller key as representative.
-    const [keep, drop] = ra < rb ? [ra, rb] : [rb, ra];
-    for (const p of members.get(drop)!) {
-      rmap.set(p, keep);
-    }
-    const keepSet = members.get(keep)!;
-    for (const p of members.get(drop)!) {
-      keepSet.add(p);
-    }
-    members.delete(drop);
-  }
-
-  // Merge cells across open horizontal borders (no wall between rows).
-  // borderX[col][rowGap] = true means wall between rows rowGap and rowGap+1 in col.
-  for (let col = 0; col < 9; col++) {
-    for (let rowGap = 0; rowGap < 8; rowGap++) {
-      if (!borderX[col]![rowGap]!) {
-        union(rowColKey(rowGap, col), rowColKey(rowGap + 1, col));
-      }
-    }
-  }
-
-  // Merge cells across open vertical borders (no wall between columns).
-  // borderY[colGap][row] = true means wall between colGap and colGap+1 in row.
-  for (let colGap = 0; colGap < 8; colGap++) {
-    for (let row = 0; row < 9; row++) {
-      if (!borderY[colGap]![row]!) {
-        union(rowColKey(row, colGap), rowColKey(row, colGap + 1));
-      }
-    }
-  }
+  const { find, members } = buildUnionFind(borderX, borderY);
 
   const brdrs = buildBrdrs(borderX, borderY);
 
@@ -110,7 +114,7 @@ export function validateCageLayout(
   for (let row = 0; row < 9; row++) {
     for (let col = 0; col < 9; col++) {
       if (cageTotals[row]![col]! !== 0) {
-        const repKey = find(rowColKey(row, col));
+        const repKey = find(cellKey([row, col]));
         const component = members.get(repKey)!;
 
         // Check no cell in this component has already been assigned.
@@ -167,31 +171,7 @@ export function repairCageTotals(
   borderX: boolean[][],
   borderY: boolean[][],
 ): { repaired: number[][]; warnings: string[] } {
-  const rmap = new Map<string, string>();
-  const members = new Map<string, Set<string>>();
-  for (let r = 0; r < 9; r++) {
-    for (let c = 0; c < 9; c++) {
-      const k = rowColKey(r, c);
-      rmap.set(k, k);
-      members.set(k, new Set([k]));
-    }
-  }
-  const find = (k: string) => rmap.get(k)!;
-  const union = (ak: string, bk: string) => {
-    const ra = find(ak); const rb = find(bk);
-    if (ra === rb) return;
-    const [keep, drop] = ra < rb ? [ra, rb] : [rb, ra];
-    for (const p of members.get(drop)!) rmap.set(p, keep);
-    const ks = members.get(keep)!;
-    for (const p of members.get(drop)!) ks.add(p);
-    members.delete(drop);
-  };
-  for (let col = 0; col < 9; col++)
-    for (let rowGap = 0; rowGap < 8; rowGap++)
-      if (!borderX[col]![rowGap]!) union(rowColKey(rowGap, col), rowColKey(rowGap + 1, col));
-  for (let colGap = 0; colGap < 8; colGap++)
-    for (let row = 0; row < 9; row++)
-      if (!borderY[colGap]![row]!) union(rowColKey(row, colGap), rowColKey(row, colGap + 1));
+  const { find, members } = buildUnionFind(borderX, borderY);
 
   const repaired = cageTotals.map(row => [...row]);
   const warnings: string[] = [];
@@ -199,7 +179,7 @@ export function repairCageTotals(
     for (let col = 0; col < 9; col++) {
       const total = repaired[row]![col]!;
       if (total === 0) continue;
-      const n = members.get(find(rowColKey(row, col)))!.size;
+      const n = members.get(find(cellKey([row, col])))!.size;
       const [lo, hi] = cageSumRange(n);
       if (total < lo || total > hi) {
         const clamped = total < lo ? lo : hi;
