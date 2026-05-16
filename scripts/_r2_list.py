@@ -8,38 +8,53 @@ Usage: python3 scripts/_r2_list.py <bucket> <prefix>
 
 Auth (in priority order):
   1. CLOUDFLARE_API_TOKEN env var  (CI / GitHub Actions)
-  2. wrangler OAuth token from ~/.config/wrangler/... (local login)
+  2. wrangler OAuth token read from its config TOML  (local login)
 """
 
 import json
 import os
-import subprocess
+import re
 import sys
+import urllib.error
+import urllib.parse
 import urllib.request
+from pathlib import Path
 
 ACCOUNT_ID = "b6c5bf0f26c81c4901c4434c6a3ca23f"
 
+# Candidate wrangler config paths (checked in order).
+_WRANGLER_CONFIG_CANDIDATES = [
+    Path(os.environ.get("APPDATA", ""), "xdg.config", ".wrangler", "config", "default.toml"),
+    Path.home() / ".config" / ".wrangler" / "config" / "default.toml",
+    Path.home() / ".wrangler" / "config" / "default.toml",
+]
+
+
+def _read_wrangler_oauth_token() -> str:
+    for path in _WRANGLER_CONFIG_CANDIDATES:
+        if path.exists():
+            text = path.read_text(encoding="utf-8")
+            m = re.search(r'^oauth_token\s*=\s*"([^"]+)"', text, re.MULTILINE)
+            if m:
+                return m.group(1)
+    return ""
+
 
 def get_token() -> str:
-    token = os.environ.get("CLOUDFLARE_API_TOKEN", "")
+    token = os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()
     if token:
         return token
-    # Fall back to extracting the OAuth token from the wrangler config.
-    try:
-        result = subprocess.run(
-            ["npx", "wrangler", "whoami", "--json"],
-            capture_output=True, text=True, timeout=15,
-        )
-        data = json.loads(result.stdout)
-        return data.get("oauth_token", "")
-    except Exception:
-        return ""
+    return _read_wrangler_oauth_token()
 
 
 def list_objects(bucket: str, prefix: str) -> list[str]:
     token = get_token()
     if not token:
-        print("ERROR: no Cloudflare API token found. Run 'wrangler login' or set CLOUDFLARE_API_TOKEN.", file=sys.stderr)
+        print(
+            "ERROR: no Cloudflare token found. "
+            "Run 'npx wrangler login' or set CLOUDFLARE_API_TOKEN.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     url = (
@@ -55,12 +70,13 @@ def list_objects(bucket: str, prefix: str) -> list[str]:
         print(f"ERROR: Cloudflare API {e.code}: {body}", file=sys.stderr)
         sys.exit(1)
 
-    objects = data.get("result", {}).get("objects", [])
-    return [obj["key"] for obj in objects]
+    result = data.get("result", [])
+    if isinstance(result, list):
+        return [obj["key"] for obj in result]
+    return [obj["key"] for obj in result.get("objects", [])]
 
 
 if __name__ == "__main__":
-    import urllib.parse
     if len(sys.argv) != 3:
         print(f"Usage: {sys.argv[0]} <bucket> <prefix>", file=sys.stderr)
         sys.exit(1)

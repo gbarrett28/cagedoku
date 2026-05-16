@@ -25,14 +25,6 @@ jobs:
       - name: Install Python dependencies
         run: pip install scikit-learn numpy scipy pillow matplotlib
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Install wrangler
-        run: npm install -g wrangler
-
       - name: List pending R2 uploads
         id: list
         env:
@@ -49,20 +41,16 @@ jobs:
         if: steps.list.outputs.count != '0'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           mkdir -p /tmp/training
-          while IFS= read -r key; do
-            filename=$(basename "$key")
-            npx wrangler r2 object get "cagedoku-training/$key" > "/tmp/training/$filename"
-          done < /tmp/r2_keys.txt
+          python3 scripts/_r2_download.py cagedoku-training /tmp/training < /tmp/r2_keys.txt
 
       - name: Retrain
         if: steps.list.outputs.count != '0'
         run: |
           python web/train_recogniser.py \
             --browser-weight 1000 --svm-c 100 \
-            web/browser_train.json /tmp/training/*.json
+            web/browser_train.json /tmp/training/sample_*.json
 
       - name: Evaluate accuracy
         if: steps.list.outputs.count != '0'
@@ -102,7 +90,7 @@ jobs:
           import json, glob, pathlib
           base_path = pathlib.Path('web/browser_train.json')
           base = json.loads(base_path.read_text()) if base_path.exists() else {'version': 1, 'samples': []}
-          for f in sorted(glob.glob('/tmp/training/*.json')):
+          for f in sorted(glob.glob('/tmp/training/sample_*.json')):
               incoming = json.loads(pathlib.Path(f).read_text())
               base['samples'].extend(incoming.get('samples', []))
           base['sampleCount'] = len(base['samples'])
@@ -120,12 +108,8 @@ jobs:
         if: steps.list.outputs.count != '0'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          while IFS= read -r key; do
-            echo "Deleting $key"
-            npx wrangler r2 object delete "cagedoku-training/$key"
-          done < /tmp/r2_keys.txt
+          python3 scripts/_r2_delete.py cagedoku-training < /tmp/r2_keys.txt
 
       - name: React to processed GitHub Issue comments
         if: steps.list.outputs.count != '0'
