@@ -1,6 +1,7 @@
 name = "cagedoku-training"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
+account_id = "b6c5bf0f26c81c4901c4434c6a3ca23f"
 
 [[r2_buckets]]
 binding = "TRAINING_BUCKET"
