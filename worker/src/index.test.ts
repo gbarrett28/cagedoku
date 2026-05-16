@@ -48,6 +48,21 @@ const validExport = {
   samples: [{ digit: 3, pixels: new Array<number>(4096).fill(128) }],
 };
 
+const validFeedback = {
+  version: 3 as const,
+  reportedAt: '2026-05-16T12:00:00.000Z',
+  appVersion: '2026-05-16 10:00',
+  feedbackType: 'bug' as const,
+  bugCategory: 'wrong-behaviour' as const,
+  description: 'The hint was incorrect',
+  expected: 'The hint should say X',
+  actionLog: 'load\nhint',
+  puzzleSpec: null,
+  userAgent: 'Mozilla/5.0',
+  viewport: '1280×720',
+  config: { alwaysApplyRules: [] as string[], autoPlacementDelay: 500 },
+};
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -192,4 +207,35 @@ describe('Worker fetch handler', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://gbarrett28.github.io');
   });
+
+  // --- Feedback path ----------------------------------------------------------
+
+  it('creates GitHub issue on valid feedback report', async () => {
+    const res = await worker.fetch(
+      makeRequest({ contentType: 'application/json', body: validFeedback }),
+      makeEnv(),
+    );
+    expect(res.status).toBe(200);
+
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+    const githubCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(githubCall[0]).toMatch(/\/repos\/test\/repo\/issues$/);
+    expect(githubCall[1].headers).toMatchObject({ Authorization: 'Bearer fake-token' });
+  });
+
+  it('returns 200 even when GitHub issue creation fails, and logs the error', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('GitHub down'));
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const res = await worker.fetch(
+      makeRequest({ contentType: 'application/json', body: validFeedback }),
+      makeEnv(),
+    );
+    expect(res.status).toBe(200);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[training-worker]'),
+      expect.any(Error),
+    );
+  });
 });
+
