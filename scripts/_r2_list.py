@@ -20,7 +20,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-ACCOUNT_ID = "b6c5bf0f26c81c4901c4434c6a3ca23f"
+ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "b6c5bf0f26c81c4901c4434c6a3ca23f")
 
 # Candidate wrangler config paths (checked in order).
 _WRANGLER_CONFIG_CANDIDATES = [
