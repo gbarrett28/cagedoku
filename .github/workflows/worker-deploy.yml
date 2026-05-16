@@ -20,6 +20,8 @@ jobs:
     # Expose the secret as a job-level env var so the Deploy step can
     # reference it in its `if` condition (step-level env is not accessible
     # in if expressions).
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,7 +42,7 @@ jobs:
         run: npm test
 
       - name: Deploy
-        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+        if: env.CLOUDFLARE_API_TOKEN != ''
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
