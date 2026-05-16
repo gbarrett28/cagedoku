@@ -41,6 +41,11 @@ jobs:
         working-directory: worker
         run: npm test
 
+      - name: Verify token
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        working-directory: worker
+        run: npx wrangler whoami
+
       - name: Deploy
         if: env.CLOUDFLARE_API_TOKEN != ''
         working-directory: worker
