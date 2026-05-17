@@ -984,7 +984,7 @@ async function handleConfirm(): Promise<void> {
     setStatus('');
 
     // Upload puzzle spec when backtracking was needed (rules alone couldn't solve it).
-    if (confirmUsedBacktracking && currentState.puzzleType !== 'classic') {
+    if (confirmUsedBacktracking) {
       uploadPuzzleSpec(buildPuzzleSpecExport(dataToSpec(currentState.specData)));
     }
 
@@ -1128,6 +1128,7 @@ async function handleFeedbackSubmit(): Promise<void> {
     regions: currentState.specData.regions,
     cageTotals: currentState.specData.cageTotals,
     userGrid: currentState.userGrid,
+    givenDigits: currentState.givenDigits,
   } : null;
 
   const settings = loadSettings();
