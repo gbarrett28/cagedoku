@@ -23,15 +23,14 @@ jobs:
           python-version: '3.12'
 
       - name: Install Python dependencies
-        run: pip install scikit-learn numpy scipy pillow matplotlib
+        run: pip install scikit-learn numpy scipy pillow matplotlib boto3
 
       - name: List pending R2 uploads
         id: list
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
-          # wrangler v4 removed 'r2 object list'; use Cloudflare REST API instead.
           python3 scripts/_r2_list.py cagedoku-training training/ > /tmp/r2_keys.txt
           COUNT=$(wc -l < /tmp/r2_keys.txt | tr -d ' ')
           echo "count=$COUNT" >> "$GITHUB_OUTPUT"
@@ -40,7 +39,8 @@ jobs:
       - name: Download pending uploads
         if: steps.list.outputs.count != '0'
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           mkdir -p /tmp/training
           python3 scripts/_r2_download.py cagedoku-training /tmp/training < /tmp/r2_keys.txt
@@ -107,7 +107,8 @@ jobs:
       - name: Delete processed R2 objects
         if: steps.list.outputs.count != '0'
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           python3 scripts/_r2_delete.py cagedoku-training < /tmp/r2_keys.txt
 

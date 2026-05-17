@@ -3,37 +3,15 @@
 
 Usage: python3 scripts/_r2_delete.py <bucket> < keys.txt
 
-Auth: CLOUDFLARE_API_TOKEN env var (CI) or wrangler OAuth config (local).
+Auth: R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY env vars.
 """
 
 import os
-import re
 import sys
-import urllib.error
-import urllib.parse
-import urllib.request
-from pathlib import Path
+import boto3
+from botocore.exceptions import ClientError
 
-ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip() or "b6c5bf0f26c81c4901c4434c6a3ca23f"
-
-_WRANGLER_CONFIG_CANDIDATES = [
-    Path(os.environ.get("APPDATA", ""), "xdg.config", ".wrangler", "config", "default.toml"),
-    Path.home() / ".config" / ".wrangler" / "config" / "default.toml",
-    Path.home() / ".wrangler" / "config" / "default.toml",
-]
-
-
-def _get_token() -> str:
-    token = os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()
-    if token:
-        return token
-    for path in _WRANGLER_CONFIG_CANDIDATES:
-        if path.exists():
-            m = re.search(r'^oauth_token\s*=\s*"([^"]+)"',
-                          path.read_text(encoding="utf-8"), re.MULTILINE)
-            if m:
-                return m.group(1)
-    return ""
+ENDPOINT_URL = "https://b6c5bf0f26c81c4901c4434c6a3ca23f.r2.cloudflarestorage.com"
 
 
 def main() -> None:
@@ -42,26 +20,21 @@ def main() -> None:
         sys.exit(1)
 
     bucket = sys.argv[1]
-    token = _get_token()
-    if not token:
-        print("ERROR: no Cloudflare token. Run 'npx wrangler login' or set CLOUDFLARE_API_TOKEN.",
-              file=sys.stderr)
-        sys.exit(1)
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=ENDPOINT_URL,
+        aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+        region_name="auto",
+    )
 
     keys = [line.strip() for line in sys.stdin if line.strip()]
     for key in keys:
-        url = (
-            f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}"
-            f"/r2/buckets/{bucket}/objects/{urllib.parse.quote(key, safe='')}"
-        )
-        req = urllib.request.Request(url, method="DELETE",
-                                     headers={"Authorization": f"Bearer {token}"})
         try:
-            with urllib.request.urlopen(req, timeout=30):
-                pass
+            s3.delete_object(Bucket=bucket, Key=key)
             print(f"Deleted {key}")
-        except urllib.error.HTTPError as e:
-            print(f"ERROR deleting {key}: {e.code} {e.read().decode()}", file=sys.stderr)
+        except ClientError as e:
+            print(f"ERROR deleting {key}: {e}", file=sys.stderr)
             sys.exit(1)
 
 

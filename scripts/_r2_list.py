@@ -1,85 +1,44 @@
 #!/usr/bin/env python3
-"""List R2 object keys with a given prefix.
-
-Uses the Cloudflare REST API (wrangler v4 removed 'r2 object list').
-Prints one key per line to stdout.
+"""List R2 object keys with a given prefix, one key per line, to stdout.
 
 Usage: python3 scripts/_r2_list.py <bucket> <prefix>
 
-Auth (in priority order):
-  1. CLOUDFLARE_API_TOKEN env var  (CI / GitHub Actions)
-  2. wrangler OAuth token read from its config TOML  (local login)
+Auth: R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY env vars.
 """
 
-import json
 import os
-import re
 import sys
-import urllib.error
-import urllib.parse
-import urllib.request
-from pathlib import Path
+import boto3
+from botocore.exceptions import ClientError
 
-ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip() or "b6c5bf0f26c81c4901c4434c6a3ca23f"
-
-# Candidate wrangler config paths (checked in order).
-_WRANGLER_CONFIG_CANDIDATES = [
-    Path(os.environ.get("APPDATA", ""), "xdg.config", ".wrangler", "config", "default.toml"),
-    Path.home() / ".config" / ".wrangler" / "config" / "default.toml",
-    Path.home() / ".wrangler" / "config" / "default.toml",
-]
+ENDPOINT_URL = "https://b6c5bf0f26c81c4901c4434c6a3ca23f.r2.cloudflarestorage.com"
 
 
-def _read_wrangler_oauth_token() -> str:
-    for path in _WRANGLER_CONFIG_CANDIDATES:
-        if path.exists():
-            text = path.read_text(encoding="utf-8")
-            m = re.search(r'^oauth_token\s*=\s*"([^"]+)"', text, re.MULTILINE)
-            if m:
-                return m.group(1)
-    return ""
-
-
-def get_token() -> str:
-    token = os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()
-    if token:
-        return token
-    return _read_wrangler_oauth_token()
-
-
-def list_objects(bucket: str, prefix: str) -> list[str]:
-    token = get_token()
-    if not token:
-        print(
-            "ERROR: no Cloudflare token found. "
-            "Run 'npx wrangler login' or set CLOUDFLARE_API_TOKEN.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    print(f"Using account ID: {ACCOUNT_ID[:8]}... (token length: {len(token)})", file=sys.stderr)
-    url = (
-        f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}"
-        f"/r2/buckets/{bucket}/objects?prefix={urllib.parse.quote(prefix)}"
+def make_client() -> boto3.client:
+    return boto3.client(
+        "s3",
+        endpoint_url=ENDPOINT_URL,
+        aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+        region_name="auto",
     )
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.load(resp)
-    except urllib.error.HTTPError as e:
-        body = e.read().decode()
-        print(f"ERROR: Cloudflare API {e.code}: {body}", file=sys.stderr)
-        sys.exit(1)
-
-    result = data.get("result", [])
-    if isinstance(result, list):
-        return [obj["key"] for obj in result]
-    return [obj["key"] for obj in result.get("objects", [])]
 
 
-if __name__ == "__main__":
+def main() -> None:
     if len(sys.argv) != 3:
         print(f"Usage: {sys.argv[0]} <bucket> <prefix>", file=sys.stderr)
         sys.exit(1)
-    for key in list_objects(sys.argv[1], sys.argv[2]):
-        print(key)
+
+    bucket, prefix = sys.argv[1], sys.argv[2]
+    s3 = make_client()
+    try:
+        paginator = s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                print(obj["Key"])
+    except ClientError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+main()
