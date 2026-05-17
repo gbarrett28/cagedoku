@@ -209,6 +209,10 @@ button:hover:not(:disabled) {
   display: block;
   width: 100%;
   aspect-ratio: 1;
+  /* Shrink canvas so it + action bar + digit pad all fit within the viewport.
+     380px accounts for header, margins, card padding, and playing controls.
+     clamp() enforces a 180px minimum and a 458px (GRID_PX) maximum. */
+  max-height: clamp(180px, calc(100vh - 380px), 458px);
   border-radius: 3px;
   border: 1px solid var(--border);
   cursor: pointer;
@@ -416,26 +420,6 @@ button:hover:not(:disabled) {
   font-size: 0.9rem;
 }
 
-/* ── Wide screens: restore horizontal review layout ── */
-
-@media (min-width: 900px) {
-  #images-row {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: start;
-    gap: 2rem;
-  }
-
-  /* Restore natural HTML order: Original → Warped → Detected */
-  #canvas-col { order: 0; width: 458px; }
-
-  .image-col { flex-shrink: 0; }
-
-  #original-img,
-  #warped-img {
-    max-width: 458px;
-  }
-}
 
 /* ── Responsive / Mobile ── */
 
