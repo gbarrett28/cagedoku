@@ -20,5 +20,8 @@
     "typescript-eslint": "^8.58.2",
     "vite": "^5.2.11",
     "vitest": "^1.6.0"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^5.7.284"
   }
 }

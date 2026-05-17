@@ -533,6 +533,9 @@ export function connectivityScore(
  * Decode an image File to an ImageData using an OffscreenCanvas.
  */
 async function decodeImageFile(file: File): Promise<ImageData> {
+  if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+    return decodePdfFile(file);
+  }
   let bitmap: ImageBitmap;
   try {
     bitmap = await createImageBitmap(file);
@@ -544,6 +547,30 @@ async function decodeImageFile(file: File): Promise<ImageData> {
   ctx.drawImage(bitmap, 0, 0);
   bitmap.close();
   return ctx.getImageData(0, 0, canvas.width, canvas.height);
+}
+
+async function decodePdfFile(file: File): Promise<ImageData> {
+  const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist');
+  GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.mjs',
+    import.meta.url,
+  ).toString();
+  const data = new Uint8Array(await file.arrayBuffer());
+  const pdf = await getDocument({ data, verbosity: 0 }).promise;
+  try {
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = new OffscreenCanvas(viewport.width, viewport.height);
+    const ctx = canvas.getContext('2d')!;
+    await page.render({
+      canvas: null,
+      canvasContext: ctx as unknown as CanvasRenderingContext2D,
+      viewport,
+    }).promise;
+    return ctx.getImageData(0, 0, canvas.width, canvas.height);
+  } finally {
+    await pdf.destroy();
+  }
 }
 
 /**
