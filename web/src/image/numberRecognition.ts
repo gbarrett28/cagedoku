@@ -360,11 +360,10 @@ export function loadNumRecogniser(
  * @param subres - Pixels per cell side.
  */
 export function contourIsNumber(br: BRect, subres: number): boolean {
-  const [x, y, w, h] = br;
-  const xx = (2 * (x + (w >> 1))) / subres | 0;
+  const [, y, w, h] = br;
   const yy = (2 * (y + (h >> 1))) / subres | 0;
+  // x-parity omitted: yy + height checks exclude solution digits; x-parity falsely rejects second digits of "1X" totals near right-side cage borders.
   return (
-    xx % 2 === 0 &&
     yy % 2 === 0 &&
     w >= (subres >> 4) && w < (subres >> 1) &&
     h >= (subres >> 3) && h < (subres >> 1)
