@@ -181,8 +181,10 @@ button:hover:not(:disabled) {
   margin-bottom: 1.25rem;
 }
 
-/* Canvas column first in the vertical stack — reference images below */
-#canvas-col { order: -1; }
+/* Detected layout first (most interactive), warped grid second (priority for review),
+   original photo last (deprioritised — can scroll off if viewport is short). */
+#canvas-col { order: -2; }
+#warped-col  { order: -1; }
 
 .image-col {
   display: flex;
@@ -198,13 +200,21 @@ button:hover:not(:disabled) {
 
 /* ── Grid canvas ── */
 
-#original-col,
+/* Both grids and the original photo column share the same cap so they appear
+   the same width. The formula fits two grids on screen simultaneously:
+   50vh − 125px = (viewport − fixed_overhead) / 2, where fixed_overhead ≈ 250px
+   (header + margins + card padding + review actions + inter-column gap). */
+#canvas-col,
 #warped-col,
-#canvas-col {
-  /* All three review columns share the same viewport-derived cap so they
-     appear the same width. The clamp also ensures canvas + playing controls
-     fit on screen without scrolling (380px = header + margins + controls). */
-  max-width: clamp(180px, calc(100vh - 380px), 458px);
+#original-col {
+  max-width: clamp(120px, calc(50vh - 125px), 458px);
+}
+
+/* In playing mode only one grid is shown with action controls below it, so the
+   full viewport height is available for a single grid. :has() re-evaluates
+   whenever JS toggles the hidden attribute — no JS sizing logic needed. */
+body:has(#playing-actions:not([hidden])) #canvas-col {
+  max-width: clamp(120px, calc(100vh - 380px), 458px);
 }
 
 #canvas-wrapper {
@@ -241,11 +251,22 @@ button:hover:not(:disabled) {
 
 /* ── Original photo and warped grid images ── */
 
-#original-img,
+/* Warped grid: always 1:1 (it is a perspective-corrected square grid). */
 #warped-img {
   display: block;
-  max-width: 100%;
   width: 100%;
+  aspect-ratio: 1;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+/* Original photo: retain natural aspect ratio; cap height so it does not
+   dominate — fitting the two grids on screen is the priority. */
+#original-img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: clamp(100px, 25vh, 300px);
   border-radius: 3px;
   border: 1px solid var(--border);
 }
