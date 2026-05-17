@@ -1,4 +1,4 @@
-name: Test Cloudflare Worker
+name: Deploy Cloudflare Worker
 
 on:
   push:
@@ -12,8 +12,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  test-and-deploy:
     runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,3 +34,11 @@ jobs:
       - name: Run tests
         working-directory: worker
         run: npm test
+
+      - name: Deploy
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: b6c5bf0f26c81c4901c4434c6a3ca23f
+          workingDirectory: worker
