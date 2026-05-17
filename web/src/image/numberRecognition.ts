@@ -477,15 +477,6 @@ export function getWarpFromRect(
  * Returns indices where arr[i] > arr[i-1] and arr[i] > arr[i+1] and
  * arr[i] >= minHeight.
  */
-function findPeaks(arr: number[], minHeight: number): number[] {
-  const peaks: number[] = [];
-  for (let i = 1; i < arr.length - 1; i++) {
-    if (arr[i]! >= minHeight && arr[i]! > arr[i - 1]! && arr[i]! > arr[i + 1]!) {
-      peaks.push(i);
-    }
-  }
-  return peaks;
-}
 
 /**
  * Split a bounding rect that may contain one or two digits.
@@ -504,63 +495,45 @@ export function splitNum(
   cv: Cv,
   br: BRect,
   warpedBlk: OpenCVMat,
-  subres: number,
 ): [Uint8Array[], number, number] {
   const [x, y, w, h] = br;
   const data: Uint8Array = warpedBlk.data as Uint8Array;
   const width: number = warpedBlk.cols as number;
 
-  // Column-argmax profile: for each column in the crop, find the row with max value.
-  const ys: number[] = [];
+  // Vertical ink projection: count white pixels per column.
+  const inkCounts = new Array<number>(w).fill(0);
   for (let dx = 0; dx < w; dx++) {
-    let maxVal = 0;
-    let maxRow = 0;
     for (let dy = 0; dy < h; dy++) {
-      const v = data[(y + dy) * width + (x + dx)]!;
-      if (v > maxVal) { maxVal = v; maxRow = dy; }
+      if (data[(y + dy) * width + (x + dx)]! > 0) inkCounts[dx]!++;
     }
-    ys.push(maxRow);
   }
 
-  const rawPeaks = findPeaks(ys, 4);
-  const validPeaks = rawPeaks.filter(p =>
-    contourIsNumber([x, y, p, h], subres) &&
-    contourIsNumber([x + p, y, w - p, h], subres),
-  );
-
+  const maxInk = Math.max(...inkCounts);
   const rects: Array<[number, number, number, number]> = [];
 
-  if (validPeaks.length === 0) {
-    // Ink-count fallback: argmax peaks are fragile to single-pixel JPEG decode differences.
-    // A true gap between two digits has significantly fewer white pixels than digit columns.
-    const inkCounts: number[] = [];
-    for (let dx = 0; dx < w; dx++) {
-      let ink = 0;
-      for (let dy = 0; dy < h; dy++) {
-        if (data[(y + dy) * width + (x + dx)]! > 0) ink++;
+  if (maxInk === 0) {
+    rects.push([y, y + h, x, x + w]);
+  } else {
+    // Segment into digit blobs: contiguous runs of columns with ink above the gap
+    // threshold.  A true inter-digit gap has near-zero ink; digit bodies — even at
+    // the narrow waist of "3" or "8" — stay well above 15 % of the column maximum.
+    const gapThreshold = maxInk * 0.15;
+    const blobs: Array<[number, number]> = [];  // [left, right) in crop coords
+    let blobStart = -1;
+    for (let dx = 0; dx <= w; dx++) {
+      if (dx < w && inkCounts[dx]! > gapThreshold) {
+        if (blobStart < 0) blobStart = dx;
+      } else if (blobStart >= 0) {
+        blobs.push([blobStart, dx]);
+        blobStart = -1;
       }
-      inkCounts.push(ink);
     }
-    const margin = Math.max(2, w >> 3);
-    let minInk = Infinity;
-    let splitCol = -1;
-    for (let dx = margin; dx < w - margin; dx++) {
-      if (inkCounts[dx]! < minInk) { minInk = inkCounts[dx]!; splitCol = dx; }
-    }
-    const maxInk = Math.max(...inkCounts);
-    const isGap = maxInk > 0 && splitCol >= 0 && minInk < maxInk * 0.15 &&
-      contourIsNumber([x, y, splitCol, h], subres) &&
-      contourIsNumber([x + splitCol, y, w - splitCol, h], subres);
-    if (isGap) {
-      rects.push([y, y + h, x, x + splitCol]);
-      rects.push([y, y + h, x + splitCol, x + w]);
+
+    if (blobs.length === 2 && blobs[0]![1] - blobs[0]![0] >= 2 && blobs[1]![1] - blobs[1]![0] >= 2) {
+      for (const [l, r] of blobs) rects.push([y, y + h, x + l, x + r]);
     } else {
       rects.push([y, y + h, x, x + w]);
     }
-  } else {
-    const sp = validPeaks[validPeaks.length - 1]!;
-    rects.push([y, y + h, x, x + sp]);
-    rects.push([y, y + h, x + sp, x + w]);
   }
 
   // Use the full 64×64 resolution (default) so thumbnails match the model's

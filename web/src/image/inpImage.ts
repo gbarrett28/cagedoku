@@ -436,9 +436,10 @@ export function buildCageTotals(
     for (const [, br,] of rawNums) {
       let numThumbArr: Uint8Array[];
       try {
-        [numThumbArr] = splitNum(cv, br, warpedBlk, subres);
-      } catch {
-        continue; // Unexpected geometry — skip.
+        [numThumbArr] = splitNum(cv, br, warpedBlk);
+      } catch (err) {
+        console.warn('splitNum failed for contour', br, err);
+        continue;
       }
 
       const [brx, bry, brw, brh] = br;
