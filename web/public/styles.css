@@ -172,7 +172,7 @@ button:hover:not(:disabled) {
   color: var(--error);
 }
 
-/* ── Review panel: image columns (vertical by default, horizontal ≥ 900px) ── */
+/* ── Review panel: image columns ── */
 
 #images-row {
   display: flex;
@@ -200,21 +200,20 @@ button:hover:not(:disabled) {
 
 /* ── Grid canvas ── */
 
-/* Both grids and the original photo column share the same cap so they appear
-   the same width. The formula fits two grids on screen simultaneously:
-   50vh − 125px = (viewport − fixed_overhead) / 2, where fixed_overhead ≈ 250px
-   (header + margins + card padding + review actions + inter-column gap). */
+/* Portrait / default: two grids stacked vertically, sized to both fit on screen.
+   50vh − 125px = half the viewport height minus fixed overhead (header, margins,
+   card padding, review actions, inter-column gap ≈ 250px total).
+   200px floor keeps the grids usable on very short viewports. */
 #canvas-col,
 #warped-col,
 #original-col {
-  max-width: clamp(120px, calc(50vh - 125px), 458px);
+  max-width: clamp(200px, calc(50vh - 125px), 458px);
 }
 
-/* In playing mode only one grid is shown with action controls below it, so the
-   full viewport height is available for a single grid. :has() re-evaluates
-   whenever JS toggles the hidden attribute — no JS sizing logic needed. */
+/* Playing mode: only one grid + action controls, so the full viewport height is
+   available for a single grid. :has() re-evaluates when JS toggles [hidden]. */
 body:has(#playing-actions:not([hidden])) #canvas-col {
-  max-width: clamp(120px, calc(100vh - 380px), 458px);
+  max-width: clamp(200px, calc(100vh - 380px), 458px);
 }
 
 #canvas-wrapper {
@@ -260,13 +259,13 @@ body:has(#playing-actions:not([hidden])) #canvas-col {
   border: 1px solid var(--border);
 }
 
-/* Original photo: retain natural aspect ratio; cap height so it does not
-   dominate — fitting the two grids on screen is the priority. */
+/* Original photo: no explicit width/height so the browser uses natural dimensions
+   scaled proportionally by max-width and max-height — aspect ratio is preserved
+   without object-fit letterboxing. Height is capped so it does not crowd the grids. */
 #original-img {
   display: block;
-  width: auto;
   max-width: 100%;
-  max-height: clamp(100px, 25vh, 300px);
+  max-height: clamp(200px, 30vh, 400px);
   border-radius: 3px;
   border: 1px solid var(--border);
 }
@@ -445,6 +444,37 @@ body:has(#playing-actions:not([hidden])) #canvas-col {
   font-size: 0.9rem;
 }
 
+
+/* ── Landscape: two priority grids side by side ── */
+
+@media (orientation: landscape) {
+  /* Switch the images row to horizontal so the two grids sit side by side. */
+  #images-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: start;
+  }
+
+  /* Each grid gets half the available width, also bounded by the viewport
+     height so the square grids never overflow vertically.
+     50vw − 56px  = half viewport minus horizontal padding/gap overhead.
+     100vh − 220px = viewport minus header, margins, card padding, review actions. */
+  #canvas-col,
+  #warped-col {
+    flex: 1 1 auto;
+    max-width: clamp(200px, min(calc(50vw - 56px), calc(100vh - 220px)), 458px);
+  }
+
+  /* Force the deprioritised original photo onto its own row below the grids. */
+  #original-col {
+    flex-basis: 100%;
+  }
+
+  /* Playing mode in landscape: only one grid visible, use full viewport height. */
+  body:has(#playing-actions:not([hidden])) #canvas-col {
+    max-width: clamp(200px, calc(100vh - 380px), 458px);
+  }
+}
 
 /* ── Responsive / Mobile ── */
 
