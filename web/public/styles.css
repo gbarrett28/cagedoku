@@ -202,17 +202,16 @@ button:hover:not(:disabled) {
   position: relative;
   display: block;
   width: 100%;
-  max-width: 458px;
+  /* Scale canvas so it + playing controls fit in the viewport.
+     Constraining max-width (not max-height) lets aspect-ratio:1 on the
+     canvas derive its height, keeping the grid square at all sizes. */
+  max-width: clamp(180px, calc(100vh - 380px), 458px);
 }
 
 #grid-canvas {
   display: block;
   width: 100%;
   aspect-ratio: 1;
-  /* Shrink canvas so it + action bar + digit pad all fit within the viewport.
-     380px accounts for header, margins, card padding, and playing controls.
-     clamp() enforces a 180px minimum and a 458px (GRID_PX) maximum. */
-  max-height: clamp(180px, calc(100vh - 380px), 458px);
   border-radius: 3px;
   border: 1px solid var(--border);
   cursor: pointer;
