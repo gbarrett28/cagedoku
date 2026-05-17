@@ -224,7 +224,7 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
     originalImageData = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height);
   } catch { /* non-critical */ }
 
-  const originalImageUrl = await fileToDataUrl(file);
+  const originalImageUrl = await fileToDisplayUrl(file);
   const { state, warpedImageUrl, warning } = await buildStateFromParseResult(result, originalImageUrl);
   return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, corners: result.corners, originalImageData };
 }
@@ -263,7 +263,7 @@ export async function reparseWithCorners(
     };
   }
 
-  const originalImageUrl = await fileToDataUrl(file);
+  const originalImageUrl = await fileToDisplayUrl(file);
   const { state, warpedImageUrl, warning } = await buildStateFromParseResult(result, originalImageUrl);
   return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, corners: result.corners ?? corners, originalImageData };
 }
@@ -291,9 +291,39 @@ async function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+/** For PDFs, <img> cannot render a PDF data URL, so we render page 1 to a JPEG
+ *  using an HTMLCanvasElement (which has toDataURL). Returns null on failure. */
+async function fileToDisplayUrl(file: File): Promise<string | null> {
+  if (!(file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'))) {
+    return fileToDataUrl(file);
+  }
+  try {
+    const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist');
+    GlobalWorkerOptions.workerSrc = new URL(
+      'pdfjs-dist/build/pdf.worker.mjs',
+      import.meta.url,
+    ).toString();
+    const data = new Uint8Array(await file.arrayBuffer());
+    const pdf = await getDocument({ data, verbosity: 0 }).promise;
+    try {
+      const page = await pdf.getPage(1);
+      const viewport = page.getViewport({ scale: 1 });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
+      await page.render({ canvas, canvasContext: canvas.getContext('2d')!, viewport }).promise;
+      return canvas.toDataURL('image/jpeg', 0.85);
+    } finally {
+      await pdf.destroy();
+    }
+  } catch {
+    return null;
+  }
+}
+
 async function buildStateFromParseResult(
   result: ParseResult,
-  originalImageUrl: string,
+  originalImageUrl: string | null,
 ): Promise<{ state: PuzzleState; warpedImageUrl: string | null; warning: string | null }> {
   let warpedImageUrl: string | null = null;
   if (result.warpedImageData !== null) {
