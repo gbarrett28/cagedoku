@@ -107,6 +107,7 @@ export async function parsePuzzleImage(
   rec: NumRecogniser,
   config: ImagePipelineConfig = defaultImagePipelineConfig(),
   providedCorners?: Float32Array,
+  splitRec?: NumRecogniser,
 ): Promise<ParseResult> {
   const resolution = cfgResolution(config);
   const subres = cfgSubres(config);
@@ -272,7 +273,7 @@ export async function parsePuzzleImage(
   let cellThumbs = new Map<string, Uint8Array[]>();
   try {
     const brdrs = buildBrdrs(initialBorderX, initialBorderY);
-    ({ cageTotals, cellThumbs } = buildCageTotals(cv, warpedBlkMat, rec, subres, brdrs));
+    ({ cageTotals, cellThumbs } = buildCageTotals(cv, warpedBlkMat, rec, subres, brdrs, splitRec));
   } catch {
     // Can't score polarities without cage totals; proceed with initial estimate.
   }
@@ -313,7 +314,7 @@ export async function parsePuzzleImage(
     // Retry cage total extraction with best borders.
     try {
       const brdrs2 = buildBrdrs(bestBorderX, bestBorderY);
-      ({ cageTotals, cellThumbs } = buildCageTotals(cv, warpedBlkMat, rec, subres, brdrs2));
+      ({ cageTotals, cellThumbs } = buildCageTotals(cv, warpedBlkMat, rec, subres, brdrs2, splitRec));
 
       const totalSum = cageTotals.reduce((s, row) => s + row.reduce((a, b) => a + b, 0), 0);
       if (totalSum < 360 || totalSum > 450) {
@@ -325,7 +326,7 @@ export async function parsePuzzleImage(
           (subres >> 2) | 1, config.numberRecognition.contourFallbackAdaptiveC,
         );
         try {
-          ({ cageTotals, cellThumbs } = buildCageTotals(cv, adaptiveBlk, rec, subres, brdrs2));
+          ({ cageTotals, cellThumbs } = buildCageTotals(cv, adaptiveBlk, rec, subres, brdrs2, splitRec));
         } finally {
           adaptiveBlk.delete();
         }
@@ -415,6 +416,7 @@ export function buildCageTotals(
   rec: NumRecogniser,
   subres: number,
   brdrs: Brdrs,
+  splitRec?: NumRecogniser,
 ): CageTotalsResult {
   // numPixels[row][col]: contour thumbnails found in each grid cell.
   // col = bx/subres (x-pixel → column), row = by/subres (y-pixel → row).
@@ -436,7 +438,7 @@ export function buildCageTotals(
     for (const [, br,] of rawNums) {
       let numThumbArr: Uint8Array[];
       try {
-        [numThumbArr] = splitNum(cv, br, warpedBlk);
+        [numThumbArr] = splitNum(cv, br, warpedBlk, splitRec);
       } catch (err) {
         console.warn('splitNum failed for contour', br, err);
         continue;

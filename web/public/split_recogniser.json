@@ -1,0 +1,66 @@
+{
+  "classifier_type": "linear",
+  "arrays": {
+    "hog_win_size": {
+      "dtype": "int32",
+      "shape": [],
+      "offset": 0,
+      "byteLength": 4
+    },
+    "hog_cell_size": {
+      "dtype": "int32",
+      "shape": [],
+      "offset": 4,
+      "byteLength": 4
+    },
+    "hog_block_size": {
+      "dtype": "int32",
+      "shape": [],
+      "offset": 8,
+      "byteLength": 4
+    },
+    "hog_block_stride": {
+      "dtype": "int32",
+      "shape": [],
+      "offset": 12,
+      "byteLength": 4
+    },
+    "hog_nbins": {
+      "dtype": "int32",
+      "shape": [],
+      "offset": 16,
+      "byteLength": 4
+    },
+    "confidence_threshold": {
+      "dtype": "float64",
+      "shape": [],
+      "offset": 20,
+      "byteLength": 8
+    },
+    "classes": {
+      "dtype": "int32",
+      "shape": [
+        2
+      ],
+      "offset": 28,
+      "byteLength": 8
+    },
+    "linear_coef": {
+      "dtype": "float64",
+      "shape": [
+        1,
+        1764
+      ],
+      "offset": 36,
+      "byteLength": 14112
+    },
+    "linear_intercept": {
+      "dtype": "float64",
+      "shape": [
+        1
+      ],
+      "offset": 14148,
+      "byteLength": 8
+    }
+  }
+}

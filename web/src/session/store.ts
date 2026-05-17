@@ -44,12 +44,15 @@ export function clearSession(): void {
 // ---------------------------------------------------------------------------
 
 let _cv: Cv | null = null;
-let _rec: NumRecogniser | null = null;
+let _rec: NumRecogniser | null = null
+let _splitRec: NumRecogniser | null = null;
+let _splitRecLoading: Promise<NumRecogniser> | null = null;;
 let _cvLoading: Promise<Cv> | null = null;
 let _recLoading: Promise<NumRecogniser> | null = null;
 
 export function getCV(): Cv | null { return _cv; }
 export function getRec(): NumRecogniser | null { return _rec; }
+export function getSplitRec(): NumRecogniser | null { return _splitRec; }
 
 /**
  * Loads OpenCV.js from the given URL (or the default public path) and
@@ -136,4 +139,23 @@ export function loadRec(
   })();
 
   return _recLoading;
+}
+
+export function loadSplitRec(
+  binUrl = './split_recogniser.bin',
+  jsonUrl = './split_recogniser.json',
+): Promise<NumRecogniser> {
+  if (_splitRec !== null) return Promise.resolve(_splitRec);
+  if (_splitRecLoading !== null) return _splitRecLoading;
+
+  _splitRecLoading = (async () => {
+    const [binRes, jsonRes] = await Promise.all([fetch(binUrl), fetch(jsonUrl)]);
+    if (!binRes.ok) throw new Error(`Failed to load split recogniser binary: ${binRes.status}`);
+    if (!jsonRes.ok) throw new Error(`Failed to load split recogniser manifest: ${jsonRes.status}`);
+    const [binBuffer, manifest] = await Promise.all([binRes.arrayBuffer(), jsonRes.json()]);
+    _splitRec = loadNumRecogniser(binBuffer, manifest as Parameters<typeof loadNumRecogniser>[1]);
+    return _splitRec;
+  })();
+
+  return _splitRecLoading;
 }
