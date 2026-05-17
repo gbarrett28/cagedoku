@@ -94,6 +94,7 @@ let draftBorderX: boolean[][] = [];   // [col][rowGap] — cage horizontal walls
 let draftBorderY: boolean[][] = [];   // [colGap][row] — cage vertical walls
 let draftEdited = false;              // true once the user changes any total or border
 let pendingCellThumbs = new Map<string, Uint8Array[]>(); // OCR thumbnails, held until Confirm
+let pendingMergedThumbs = new Map<string, Uint8Array>(); // pre-split merged thumbnails, held until Confirm
 let totalEditCell: { row: number; col: number } | null = null;  // 0-based, active overlay
 let totalEditPrev = 0;
 let reviewErrorCells = new Set<string>(); // "row,col" keys — cages failing Confirm validation
@@ -839,6 +840,7 @@ async function handleApplyCorners(): Promise<void> {
     if (corners !== null) latestCorners = corners;
     if (originalImageData !== null) latestImageData = originalImageData;
     pendingCellThumbs = new Map();
+    pendingMergedThumbs = new Map();
     const ocrSpec = dataToSpec(state.specData);
     draftBorderX = ocrSpec.borderX.map(col => [...col]);
     draftBorderY = ocrSpec.borderY.map(row => [...row]);
@@ -883,11 +885,12 @@ async function handleProcess(): Promise<void> {
   logAction('file_selected', `${f.name} (${(f.size / 1024).toFixed(0)} KB)`);
   setLoading(true);
   try {
-    const { state, warpedImageUrl, warning, cellThumbs, corners, originalImageData } = await uploadPuzzle(f);
+    const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs, corners, originalImageData } = await uploadPuzzle(f);
     latestFile = f;
     latestCorners = corners;
     latestImageData = originalImageData;
     pendingCellThumbs = new Map(cellThumbs);
+    pendingMergedThumbs = new Map(mergedThumbs);
 
     // Initialise draft borders from the OCR result (used in both paths below).
     const ocrSpec = dataToSpec(state.specData);
@@ -916,6 +919,7 @@ async function handleProcess(): Promise<void> {
           const playing = confirmPuzzle(board);
           renderPlayingMode(playing);
           pendingCellThumbs = new Map();
+          pendingMergedThumbs = new Map();
           setStatus('');
           if (usedBacktracking) {
             uploadPuzzleSpec(buildPuzzleSpecExport(dataToSpec(layoutResult.state.specData)));
@@ -996,13 +1000,16 @@ async function handleConfirm(): Promise<void> {
         currentState.specData.cageTotals,
         currentState.puzzleType,
         defaultImagePipelineConfig().numberRecognition.subres,
+        pendingMergedThumbs,
       );
       pendingCellThumbs = new Map();
+      pendingMergedThumbs = new Map();
       if (data.sampleCount > 0) {
         initiateUpload(data, showTrainingConsentModal);
       }
     } else {
       pendingCellThumbs = new Map();
+      pendingMergedThumbs = new Map();
     }
   } catch (e) { setStatus(`Confirm failed: ${String(e)}`, true); }
   finally { setLoading(false); }
@@ -1358,6 +1365,7 @@ document.addEventListener('DOMContentLoaded', () => {
     reviewErrorCells = new Set();
     draftEdited = false;
     pendingCellThumbs = new Map();
+    pendingMergedThumbs = new Map();
     if (cornerPickerActive) exitCornerPickerMode();
     el<HTMLElement>('upload-panel').hidden = false;
     el<HTMLElement>('review-panel').hidden = true;

@@ -496,37 +496,80 @@ export function splitNum(
   br: BRect,
   warpedBlk: OpenCVMat,
   splitRec?: NumRecogniser,
-): [Uint8Array[], number, number] {
+  rec?: NumRecogniser,
+): [Uint8Array[], Uint8Array, number, number] {
   const [x, y, w, h] = br;
 
-  // Warp the full merged bounding rect to 64×64 for ML classification.
-  const mergedSrc = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
-  const mergedThumb = getWarpFromRect(cv, mergedSrc, warpedBlk);
+  // Always warp the full bounding rect to 64×64 — needed for ML classification
+  // and for returning as the merged thumbnail for training export.
+  const fullSrc = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+  const mergedThumb = getWarpFromRect(cv, fullSrc, warpedBlk);
 
-  // If no split recogniser is loaded yet, treat conservatively as one digit.
-  if (splitRec === undefined) return [[mergedThumb], x, y];
+  if (splitRec === undefined) return [[mergedThumb], mergedThumb, x, y];
 
   const [result] = recognise(splitRec, [mergedThumb]);
-  if (result!.label !== 2) return [[mergedThumb], x, y];
+  if (result!.label !== 2) return [[mergedThumb], mergedThumb, x, y];
 
-  // Two digits detected — find the split column via vertical ink projection.
+  // Two digits confirmed.  Find the split column using confidence-based
+  // validation: try every 4 px across the bounding rect, classify both halves
+  // with the digit recogniser in one batch, and keep the split where both
+  // sides are classified confidently.  This avoids the ink-minimum picking the
+  // void inside "0" (whose interior is 0 in the BINARY_INV mat) instead of
+  // the inter-digit gap.
+  const margin = Math.max(2, w >> 3);
+  const candidates: number[] = [];
+  for (let dx = margin; dx < w - margin; dx += 4) candidates.push(dx);
+
+  if (rec !== undefined && candidates.length > 0) {
+    const allThumbs: Uint8Array[] = [];
+    for (const sp of candidates) {
+      const lSrc = [[x, y], [x + sp, y], [x + sp, y + h], [x, y + h]];
+      const rSrc = [[x + sp, y], [x + w, y], [x + w, y + h], [x + sp, y + h]];
+      allThumbs.push(getWarpFromRect(cv, lSrc, warpedBlk));
+      allThumbs.push(getWarpFromRect(cv, rSrc, warpedBlk));
+    }
+    const recs = recognise(rec, allThumbs);
+
+    let bestSplit = -1;
+    let bestScore = -1;
+    for (let i = 0; i < candidates.length; i++) {
+      // Score: 2 = both confident, 1 = one confident, 0 = neither.
+      // Tie-break towards the centre of the bounding rect.
+      const score = (recs[i * 2]!.confident ? 1 : 0) + (recs[i * 2 + 1]!.confident ? 1 : 0);
+      const distFromCentre = Math.abs(candidates[i]! - (w >> 1));
+      if (score > bestScore || (score === bestScore && distFromCentre < Math.abs(bestSplit - (w >> 1)))) {
+        bestScore = score;
+        bestSplit = candidates[i]!;
+      }
+    }
+
+    if (bestScore > 0 && bestSplit > 0) {
+      const lSrc = [[x, y], [x + bestSplit, y], [x + bestSplit, y + h], [x, y + h]];
+      const rSrc = [[x + bestSplit, y], [x + w, y], [x + w, y + h], [x + bestSplit, y + h]];
+      return [
+        [getWarpFromRect(cv, lSrc, warpedBlk), getWarpFromRect(cv, rSrc, warpedBlk)],
+        mergedThumb, x, y,
+      ];
+    }
+  }
+
+  // Fallback: ink-projection minimum (works for well-separated digits).
   const data = warpedBlk.data as Uint8Array;
   const width = warpedBlk.cols as number;
-  const inkCounts = new Array<number>(w).fill(0);
-  for (let dx = 0; dx < w; dx++)
-    for (let dy = 0; dy < h; dy++)
-      if (data[(y + dy) * width + (x + dx)]! > 0) inkCounts[dx]!++;
-
-  const margin = Math.max(2, w >> 3);
   let splitCol = w >> 1;
   let minInk = Infinity;
   for (let dx = margin; dx < w - margin; dx++) {
-    if (inkCounts[dx]! < minInk) { minInk = inkCounts[dx]!; splitCol = dx; }
+    let ink = 0;
+    for (let dy = 0; dy < h; dy++)
+      if (data[(y + dy) * width + (x + dx)]! > 0) ink++;
+    if (ink < minInk) { minInk = ink; splitCol = dx; }
   }
-
   const lSrc = [[x, y], [x + splitCol, y], [x + splitCol, y + h], [x, y + h]];
   const rSrc = [[x + splitCol, y], [x + w, y], [x + w, y + h], [x + splitCol, y + h]];
-  return [[getWarpFromRect(cv, lSrc, warpedBlk), getWarpFromRect(cv, rSrc, warpedBlk)], x, y];
+  return [
+    [getWarpFromRect(cv, lSrc, warpedBlk), getWarpFromRect(cv, rSrc, warpedBlk)],
+    mergedThumb, x, y,
+  ];
 }
 
 /**
