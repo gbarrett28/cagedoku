@@ -495,56 +495,38 @@ export function splitNum(
   cv: Cv,
   br: BRect,
   warpedBlk: OpenCVMat,
+  splitRec?: NumRecogniser,
 ): [Uint8Array[], number, number] {
   const [x, y, w, h] = br;
-  const data: Uint8Array = warpedBlk.data as Uint8Array;
-  const width: number = warpedBlk.cols as number;
 
-  // Vertical ink projection: count white pixels per column.
+  // Warp the full merged bounding rect to 64×64 for ML classification.
+  const mergedSrc = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+  const mergedThumb = getWarpFromRect(cv, mergedSrc, warpedBlk);
+
+  // If no split recogniser is loaded yet, treat conservatively as one digit.
+  if (splitRec === undefined) return [[mergedThumb], x, y];
+
+  const [result] = recognise(splitRec, [mergedThumb]);
+  if (result!.label !== 2) return [[mergedThumb], x, y];
+
+  // Two digits detected — find the split column via vertical ink projection.
+  const data = warpedBlk.data as Uint8Array;
+  const width = warpedBlk.cols as number;
   const inkCounts = new Array<number>(w).fill(0);
-  for (let dx = 0; dx < w; dx++) {
-    for (let dy = 0; dy < h; dy++) {
+  for (let dx = 0; dx < w; dx++)
+    for (let dy = 0; dy < h; dy++)
       if (data[(y + dy) * width + (x + dx)]! > 0) inkCounts[dx]!++;
-    }
+
+  const margin = Math.max(2, w >> 3);
+  let splitCol = w >> 1;
+  let minInk = Infinity;
+  for (let dx = margin; dx < w - margin; dx++) {
+    if (inkCounts[dx]! < minInk) { minInk = inkCounts[dx]!; splitCol = dx; }
   }
 
-  const maxInk = Math.max(...inkCounts);
-  const rects: Array<[number, number, number, number]> = [];
-
-  if (maxInk === 0) {
-    rects.push([y, y + h, x, x + w]);
-  } else {
-    // Segment into digit blobs: contiguous runs of columns with ink above the gap
-    // threshold.  A true inter-digit gap has near-zero ink; digit bodies — even at
-    // the narrow waist of "3" or "8" — stay well above 15 % of the column maximum.
-    const gapThreshold = maxInk * 0.15;
-    const blobs: Array<[number, number]> = [];  // [left, right) in crop coords
-    let blobStart = -1;
-    for (let dx = 0; dx <= w; dx++) {
-      if (dx < w && inkCounts[dx]! > gapThreshold) {
-        if (blobStart < 0) blobStart = dx;
-      } else if (blobStart >= 0) {
-        blobs.push([blobStart, dx]);
-        blobStart = -1;
-      }
-    }
-
-    if (blobs.length === 2 && blobs[0]![1] - blobs[0]![0] >= 2 && blobs[1]![1] - blobs[1]![0] >= 2) {
-      for (const [l, r] of blobs) rects.push([y, y + h, x + l, x + r]);
-    } else {
-      rects.push([y, y + h, x, x + w]);
-    }
-  }
-
-  // Use the full 64×64 resolution (default) so thumbnails match the model's
-  // nFeatures=4096 and template size expectations.
-  const thumbnails: Uint8Array[] = [];
-  for (const [yt, yb, xl, xr] of rects) {
-    const src = [[xl, yt], [xr, yt], [xr, yb], [xl, yb]];
-    thumbnails.push(getWarpFromRect(cv, src, warpedBlk));
-  }
-
-  return [thumbnails, x, y];
+  const lSrc = [[x, y], [x + splitCol, y], [x + splitCol, y + h], [x, y + h]];
+  const rSrc = [[x + splitCol, y], [x + w, y], [x + w, y + h], [x + splitCol, y + h]];
+  return [[getWarpFromRect(cv, lSrc, warpedBlk), getWarpFromRect(cv, rSrc, warpedBlk)], x, y];
 }
 
 /**

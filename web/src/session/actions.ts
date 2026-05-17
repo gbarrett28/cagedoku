@@ -13,6 +13,7 @@ import { defaultRules } from '../engine/rules/index.js';
 import { cageSumRange, cellKey, keyToCell } from '../engine/types.js';
 import type { Cell } from '../engine/types.js';
 import { parsePuzzleImage, warpImageWithCorners, ImageDecodeError } from '../image/inpImage.js';
+
 import type { ParseResult } from '../image/inpImage.js';
 import { defaultImagePipelineConfig } from '../image/config.js';
 import { validateCageLayout } from '../image/validation.js';
@@ -35,7 +36,7 @@ import {
   virtualCageKey,
   solutionKey,
 } from './specUtils.js';
-import { getState, setState, getCV, getRec } from './store.js';
+import { getState, setState, getCV, getRec, getSplitRec } from './store.js';
 import type {
   CandidatesResponse,
   HintItem,
@@ -200,7 +201,7 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
   let result: ParseResult;
   let originalImageData: ImageData | null = null;
   try {
-    result = await parsePuzzleImage(cv, file, rec, config);
+    result = await parsePuzzleImage(cv, file, rec, config, undefined, getSplitRec() ?? undefined);
   } catch (e) {
     if (e instanceof ImageDecodeError) throw e;
     // Any other pipeline error (grid not found, etc.) → proceed to review with blank grid.
@@ -249,7 +250,7 @@ export async function reparseWithCorners(
   const config = defaultImagePipelineConfig();
   let result: ParseResult;
   try {
-    result = await parsePuzzleImage(cv, file, rec, config, corners);
+    result = await parsePuzzleImage(cv, file, rec, config, corners, getSplitRec() ?? undefined);
   } catch (e) {
     if (e instanceof ImageDecodeError) throw e;
     result = {

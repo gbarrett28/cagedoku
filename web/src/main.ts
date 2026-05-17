@@ -6,7 +6,7 @@
  * State lives in session/store.ts; no server required.
  */
 
-import { loadCV, loadRec, setCandidatesCache, setState } from './session/store.js';
+import { loadCV, loadRec, loadSplitRec, setCandidatesCache, setState } from './session/store.js';
 import { logAction, clearActionLog, formatActionLog, getActionLog } from './session/actionLog.js';
 import { loadSettings } from './session/settings.js';
 import { cellLabel } from './engine/rules/_labels.js';
@@ -1232,7 +1232,7 @@ document.addEventListener('DOMContentLoaded', () => {
       '  3. Stale service worker — Application > Storage > Clear site data, then reload');
   }, 30_000);
 
-  void Promise.all([cvWithProgress, loadRec()])
+  void Promise.all([cvWithProgress, loadRec(), loadSplitRec()])
     .then(() => {
       clearTimeout(loadTimeout);
       (window as unknown as Record<string, unknown>)['__pipelineReady'] = true;
