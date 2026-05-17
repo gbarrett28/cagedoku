@@ -877,7 +877,7 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
 
 async function handleProcess(): Promise<void> {
   const fileInput = el<HTMLInputElement>('file-input');
-  if (!fileInput.files || fileInput.files.length === 0) { setStatus('Please select an image file.', true); return; }
+  if (!fileInput.files || fileInput.files.length === 0) { setStatus('Please select an image or PDF file.', true); return; }
   clearActionLog();
   const f = fileInput.files[0]!;
   logAction('file_selected', `${f.name} (${(f.size / 1024).toFixed(0)} KB)`);
