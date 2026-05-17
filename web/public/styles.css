@@ -198,14 +198,19 @@ button:hover:not(:disabled) {
 
 /* ── Grid canvas ── */
 
+#original-col,
+#warped-col,
+#canvas-col {
+  /* All three review columns share the same viewport-derived cap so they
+     appear the same width. The clamp also ensures canvas + playing controls
+     fit on screen without scrolling (380px = header + margins + controls). */
+  max-width: clamp(180px, calc(100vh - 380px), 458px);
+}
+
 #canvas-wrapper {
   position: relative;
   display: block;
   width: 100%;
-  /* Scale canvas so it + playing controls fit in the viewport.
-     Constraining max-width (not max-height) lets aspect-ratio:1 on the
-     canvas derive its height, keeping the grid square at all sizes. */
-  max-width: clamp(180px, calc(100vh - 380px), 458px);
 }
 
 #grid-canvas {
