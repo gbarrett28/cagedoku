@@ -421,14 +421,13 @@ button:hover:not(:disabled) {
 @media (min-width: 900px) {
   #images-row {
     flex-direction: row;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     align-items: start;
     gap: 2rem;
-    overflow-x: auto;
   }
 
   /* Restore natural HTML order: Original → Warped → Detected */
-  #canvas-col { order: 0; }
+  #canvas-col { order: 0; width: 458px; }
 
   .image-col { flex-shrink: 0; }
 
