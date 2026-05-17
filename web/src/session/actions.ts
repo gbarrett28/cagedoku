@@ -115,9 +115,8 @@ export interface UploadResult {
   warpedImageUrl: string | null;
   warning: string | null;
   cellThumbs: ReadonlyMap<string, Uint8Array[]>;
-  /** Detected grid corners in original-image pixel space; null if detection failed. */
+  mergedThumbs: ReadonlyMap<string, Uint8Array>;
   corners: Float32Array | null;
-  /** Original (un-warped) image data; used by the corner picker for live preview. */
   originalImageData: ImageData | null;
 }
 
@@ -143,7 +142,7 @@ export function loadSpecDirect(spec: PuzzleSpec): UploadResult {
     warpedImageUrl: null,
   };
   setState(state);
-  return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map(), corners: null, originalImageData: null };
+  return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map(), mergedThumbs: new Map(), corners: null, originalImageData: null };
 }
 
 /**
@@ -183,6 +182,7 @@ export function loadClassicDirect(givenDigits: readonly (readonly number[])[]): 
     warpedImageUrl: null,
     warning: 'Review the detected digits and press Confirm & Solve',
     cellThumbs: new Map(),
+    mergedThumbs: new Map(),
     corners: null,
     originalImageData: null,
   };
@@ -212,6 +212,7 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
       givenDigits: null,
       warpedImageData: null,
       cellThumbs: new Map(),
+      mergedThumbs: new Map(),
       corners: null,
     };
   }
@@ -227,7 +228,7 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
 
   const originalImageUrl = await fileToDisplayUrl(file);
   const { state, warpedImageUrl, warning } = await buildStateFromParseResult(result, originalImageUrl);
-  return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, corners: result.corners, originalImageData };
+  return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, mergedThumbs: result.mergedThumbs, corners: result.corners, originalImageData };
 }
 
 /**
@@ -260,13 +261,14 @@ export async function reparseWithCorners(
       givenDigits: null,
       warpedImageData: null,
       cellThumbs: new Map(),
+      mergedThumbs: new Map(),
       corners,
     };
   }
 
   const originalImageUrl = await fileToDisplayUrl(file);
   const { state, warpedImageUrl, warning } = await buildStateFromParseResult(result, originalImageUrl);
-  return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, corners: result.corners ?? corners, originalImageData };
+  return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, mergedThumbs: result.mergedThumbs, corners: result.corners ?? corners, originalImageData };
 }
 
 /**

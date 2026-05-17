@@ -17,6 +17,13 @@ export interface TrainingSample {
   pixels: number[];
 }
 
+export interface SplitTrainingSample {
+  /** 1 = single digit, 2 = two digits in this thumbnail. */
+  splitCount: 1 | 2;
+  /** Flattened 64×64 uint8 pixel values of the pre-split merged thumbnail. */
+  pixels: number[];
+}
+
 /**
  * Uploaded when a killer puzzle required MRV backtracking to solve — i.e.
  * the constraint-propagation rules alone stalled before finding a complete
@@ -63,6 +70,8 @@ export interface TrainingExport {
   thumbnailSize: number;
   sampleCount: number;
   samples: TrainingSample[];
+  /** Pre-split merged thumbnails for retraining the 1-vs-2-digit split recogniser. */
+  splitSamples?: SplitTrainingSample[];
 }
 
 /**
@@ -79,8 +88,10 @@ export function extractTrainingData(
   cageTotals: readonly (readonly number[])[],
   puzzleType: 'killer' | 'classic',
   subres: number,
+  mergedThumbs?: ReadonlyMap<string, Uint8Array>,
 ): TrainingExport {
   const samples: TrainingSample[] = [];
+  const splitSamples: SplitTrainingSample[] = [];
 
   for (const [key, thumbArr] of cellThumbs) {
     const [row, col] = key.split(',').map(Number) as [number, number];
@@ -100,6 +111,15 @@ export function extractTrainingData(
     for (let i = 0; i < digits.length; i++) {
       samples.push({ digit: digits[i]!, pixels: Array.from(thumbArr[i]!) });
     }
+
+    // Emit a split-recogniser sample from the merged pre-split thumbnail.
+    const mergedThumb = mergedThumbs?.get(key);
+    if (mergedThumb !== undefined) {
+      splitSamples.push({
+        splitCount: digits.length === 2 ? 2 : 1,
+        pixels: Array.from(mergedThumb),
+      });
+    }
   }
 
   return {
@@ -111,5 +131,6 @@ export function extractTrainingData(
     thumbnailSize: 64,
     sampleCount: samples.length,
     samples,
+    splitSamples,
   };
 }
