@@ -55,6 +55,39 @@ describe('NakedPair', () => {
     expect(hints[0]!.eliminations).toStrictEqual(elims);
   });
 
+  it('GLOBAL: finds pair when neither digit has unit-count 2 (issue #57 regression)', () => {
+    // Row 6 from issue #57: r6c0={1,5}, r6c3={1,5,6,8,9}, r6c5={1,6,9}, r6c6={1,5}.
+    // Digit 1 appears in 4 cells; digit 5 in 3 — COUNT_HIT_TWO never fires.
+    // GLOBAL must detect the naked pair {r6c0,r6c6}={1,5} and eliminate 1 and 5
+    // from r6c3 and 1 from r6c5.
+    const bs = new BoardState(makeTrivialSpec());
+    const rowUid = bs.rowUnitId(6);
+    bs.candidates[6]![0]! = new Set([1, 5]);
+    bs.candidates[6]![1]! = new Set([2]);
+    bs.candidates[6]![2]! = new Set([6, 8, 9]);
+    bs.candidates[6]![3]! = new Set([1, 5, 6, 8, 9]);
+    bs.candidates[6]![4]! = new Set([2]);
+    bs.candidates[6]![5]! = new Set([1, 6, 9]);
+    bs.candidates[6]![6]! = new Set([1, 5]);
+    bs.candidates[6]![7]! = new Set([3]);
+    bs.candidates[6]![8]! = new Set([7]);
+    for (let d = 1; d <= 9; d++) {
+      bs.counts[rowUid]![d] = [...Array(9).keys()].filter(c => bs.cands(6, c).has(d)).length;
+    }
+    const ctx: RuleContext = {
+      unit: bs.units[rowUid] ?? null,
+      cell: null,
+      board: bs,
+      hint: Trigger.GLOBAL,
+      hintDigit: null,
+    };
+    const elims = new NakedPair().apply(ctx).eliminations;
+    expect(elims.some(e => e.cell[0] === 6 && e.cell[1] === 3 && e.digit === 1)).toBe(true);
+    expect(elims.some(e => e.cell[0] === 6 && e.cell[1] === 3 && e.digit === 5)).toBe(true);
+    expect(elims.some(e => e.cell[0] === 6 && e.cell[1] === 5 && e.digit === 1)).toBe(true);
+    expect(elims.every(e => e.cell[1] !== 0 && e.cell[1] !== 6)).toBe(true);
+  });
+
   it('returns empty when two cells do not share the same pair', () => {
     const bs = new BoardState(makeTrivialSpec());
     const rowUid = bs.rowUnitId(0);
