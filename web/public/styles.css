@@ -130,7 +130,8 @@ select:focus {
 .form-actions {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
   margin-top: 0.5rem;
 }
 
@@ -171,22 +172,24 @@ button:hover:not(:disabled) {
   color: var(--error);
 }
 
-/* ── Review panel: images side by side ── */
+/* ── Review panel: image columns (vertical by default, horizontal ≥ 900px) ── */
 
 #images-row {
   display: flex;
-  flex-wrap: nowrap;
-  gap: 2rem;
-  align-items: start;
-  overflow-x: auto;
+  flex-direction: column;
+  gap: 1.5rem;
   margin-bottom: 1.25rem;
 }
+
+/* Canvas column first in the vertical stack — reference images below */
+#canvas-col { order: -1; }
 
 .image-col {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 #review-actions {
@@ -197,11 +200,15 @@ button:hover:not(:disabled) {
 
 #canvas-wrapper {
   position: relative;
-  display: inline-block;
+  display: block;
+  width: 100%;
+  max-width: 458px;
 }
 
 #grid-canvas {
   display: block;
+  width: 100%;
+  aspect-ratio: 1;
   border-radius: 3px;
   border: 1px solid var(--border);
   cursor: pointer;
@@ -229,7 +236,7 @@ button:hover:not(:disabled) {
 #original-img,
 #warped-img {
   display: block;
-  max-width: 458px;
+  max-width: 100%;
   width: 100%;
   border-radius: 3px;
   border: 1px solid var(--border);
@@ -409,6 +416,28 @@ button:hover:not(:disabled) {
   font-size: 0.9rem;
 }
 
+/* ── Wide screens: restore horizontal review layout ── */
+
+@media (min-width: 900px) {
+  #images-row {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: start;
+    gap: 2rem;
+    overflow-x: auto;
+  }
+
+  /* Restore natural HTML order: Original → Warped → Detected */
+  #canvas-col { order: 0; }
+
+  .image-col { flex-shrink: 0; }
+
+  #original-img,
+  #warped-img {
+    max-width: 458px;
+  }
+}
+
 /* ── Responsive / Mobile ── */
 
 @media (max-width: 620px) {
@@ -437,18 +466,6 @@ button:hover:not(:disabled) {
     padding: 1rem;
   }
 
-  /* Stack reference images vertically instead of forcing horizontal scroll */
-  #images-row {
-    flex-direction: column;
-    overflow-x: unset;
-  }
-
-  /* Action bar wraps onto multiple rows so no button is clipped */
-  .form-actions {
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
   /* Increase tap targets to the Apple HIG 44 pt minimum */
   button {
     min-height: 44px;
@@ -468,37 +485,6 @@ button:hover:not(:disabled) {
   .digit-pad {
     max-width: none;
   }
-
-  /* Reference images should not overflow card width */
-  #original-img,
-  #warped-img {
-    max-width: 100%;
-  }
-
-  /* Allow image columns to shrink below their content size */
-  .image-col {
-    flex-shrink: 1;
-    min-width: 0;
-  }
-
-  /* Canvas wrapper: block so the canvas fills its column width */
-  #canvas-wrapper {
-    display: block;
-    width: 100%;
-  }
-
-  /* Scale the canvas to fit the column — the click handler already applies
-     (canvas.width / rect.width) so coordinates remain correct. */
-  #grid-canvas {
-    width: 100%;
-    aspect-ratio: 1;
-  }
-
-  /* Canvas column appears last in the HTML (after the reference photos) so that
-     on desktop the reading order is: original → warped → detected. On mobile the
-     flex column would put it last, so use order to hoist it to the top. */
-  #canvas-col { order: -1; }
-  #original-col, #warped-col { order: 0; }
 }
 
 /* ── Corner picker overlay ── */
