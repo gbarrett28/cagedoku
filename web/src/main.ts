@@ -18,7 +18,6 @@ import { dataToSpec } from './session/specUtils.js';
 import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec, makeClassicGivenDigits } from './engine/fixtures.js';
 import {
   uploadPuzzle,
-  reparseWithCorners,
   loadSpecDirect,
   loadClassicDirect,
   confirmPuzzle,
@@ -47,6 +46,8 @@ import type {
   SolutionCategorization,
 } from './session/types.js';
 import type { Cell } from './engine/types.js';
+import { GridNotFoundError } from './image/inpImage.js';
+import { UserFacingError } from './session/errors.js';
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -99,13 +100,9 @@ let totalEditCell: { row: number; col: number } | null = null;  // 0-based, acti
 let totalEditPrev = 0;
 let reviewErrorCells = new Set<string>(); // "row,col" keys — cages failing Confirm validation
 
-// Corner picker state
-let latestFile: File | null = null;
-let latestCorners: Float32Array | null = null;   // grid corners in original-image pixel space
-let latestImageData: ImageData | null = null;    // decoded original image for the picker
-let cornerPickerActive = false;
-let draggingHandle = -1;
-let rafPending = false;
+// Bug reporting state
+let pendingBug: { info: string } | null = null;
+let exceptionForSubmission: string | null = null;
 
 // ---------------------------------------------------------------------------
 // Grid rendering
@@ -444,7 +441,8 @@ async function fetchCandidates(): Promise<void> {
     redrawGrid();
     renderVirtualCagePanel();
   } catch (e) {
-    console.warn('[fetchCandidates]', e);
+    setStatus(String(e), true);
+    reportBug(e, 'fetchCandidates');
   }
 }
 
@@ -489,12 +487,15 @@ function renderPlayingMode(state: PuzzleState): void {
   currentState = state;
   reviewErrorCells = new Set();
   refreshDisplay();
+  el<HTMLElement>('upload-panel').hidden = true;
+  el<HTMLElement>('review-panel').hidden = false;
   el<HTMLElement>('review-actions').hidden = true;
   el<HTMLElement>('original-col').hidden = true;
   el<HTMLElement>('warped-col').hidden = true;
   el<HTMLElement>('playing-actions').hidden = false;
   el<HTMLElement>('action-group').hidden = false;
   el<HTMLElement>('solution-panel').hidden = true;
+  el<HTMLButtonElement>('new-puzzle-btn').hidden = false;
   updateUndoButton(state);
   updateRevealButton();
   el<HTMLButtonElement>('candidates-btn').disabled = false;
@@ -753,111 +754,13 @@ function openConfigModal(): void {
 // Corner picker
 // ---------------------------------------------------------------------------
 
-function enterCornerPickerMode(): void {
-  if (latestCorners === null || latestImageData === null) return;
-  logAction('corner_picker_opened');
-  cornerPickerActive = true;
-  draggingHandle = -1;
-  const img = el<HTMLImageElement>('original-img');
-  const rect = img.getBoundingClientRect();
-  const canvas = el<HTMLCanvasElement>('corner-picker-canvas');
-  canvas.width = Math.round(rect.width);
-  canvas.height = Math.round(rect.height);
-  canvas.style.width = `${rect.width}px`;
-  canvas.style.height = `${rect.height}px`;
-  canvas.hidden = false;
-  el<HTMLElement>('corner-picker-actions').hidden = false;
-  el<HTMLButtonElement>('adjust-corners-btn').hidden = true;
-  drawCornerOverlay();
-}
-
-function exitCornerPickerMode(): void {
-  cornerPickerActive = false;
-  draggingHandle = -1;
-  el<HTMLCanvasElement>('corner-picker-canvas').hidden = true;
-  el<HTMLElement>('corner-picker-actions').hidden = true;
-  el<HTMLButtonElement>('adjust-corners-btn').hidden = latestCorners === null;
-}
-
-function drawCornerOverlay(): void {
-  if (!cornerPickerActive || latestCorners === null || latestImageData === null) return;
-  const canvas = el<HTMLCanvasElement>('corner-picker-canvas');
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-
-  const scaleX = canvas.width / latestImageData.width;
-  const scaleY = canvas.height / latestImageData.height;
-  const pts: Array<[number, number]> = [];
-  for (let i = 0; i < 4; i++) {
-    pts.push([latestCorners[i * 2]! * scaleX, latestCorners[i * 2 + 1]! * scaleY]);
-  }
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  ctx.beginPath();
-  ctx.moveTo(pts[0]![0], pts[0]![1]);
-  for (let i = 1; i < 4; i++) ctx.lineTo(pts[i]![0], pts[i]![1]);
-  ctx.closePath();
-  ctx.strokeStyle = 'rgba(233, 69, 96, 0.9)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  const handleColors = ['#e94560', '#3b82f6', '#10b981', '#f59e0b'];
-  for (let i = 0; i < 4; i++) {
-    ctx.beginPath();
-    ctx.arc(pts[i]![0], pts[i]![1], 8, 0, Math.PI * 2);
-    ctx.fillStyle = handleColors[i]!;
-    ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  }
-}
-
-function getHandleAtPoint(canvasX: number, canvasY: number): number {
-  if (latestCorners === null || latestImageData === null) return -1;
-  const canvas = el<HTMLCanvasElement>('corner-picker-canvas');
-  const scaleX = canvas.width / latestImageData.width;
-  const scaleY = canvas.height / latestImageData.height;
-  const threshold2 = 24 * 24;
-  let nearest = -1, nearestDist = threshold2;
-  for (let i = 0; i < 4; i++) {
-    const hx = latestCorners[i * 2]! * scaleX;
-    const hy = latestCorners[i * 2 + 1]! * scaleY;
-    const d2 = (canvasX - hx) ** 2 + (canvasY - hy) ** 2;
-    if (d2 < nearestDist) { nearestDist = d2; nearest = i; }
-  }
-  return nearest;
-}
-
-async function handleApplyCorners(): Promise<void> {
-  if (latestFile === null || latestCorners === null) return;
-  exitCornerPickerMode();
-  setLoading(true);
-  try {
-    const { state, warpedImageUrl, warning, corners, originalImageData } =
-      await reparseWithCorners(latestFile, latestCorners, latestImageData);
-    if (corners !== null) latestCorners = corners;
-    if (originalImageData !== null) latestImageData = originalImageData;
-    pendingCellThumbs = new Map();
-    pendingMergedThumbs = new Map();
-    const ocrSpec = dataToSpec(state.specData);
-    draftBorderX = ocrSpec.borderX.map(col => [...col]);
-    draftBorderY = ocrSpec.borderY.map(row => [...row]);
-    draftEdited = false;
-    logAction('corners_applied', warning ?? 'ok');
-    applyUploadResult(state, warpedImageUrl, warning ?? 'Review the re-parsed layout');
-  } catch (e) {
-    setStatus(`Re-parse failed: ${String(e)}`, true);
-  } finally {
-    setLoading(false);
-  }
+function reportBug(e: unknown, context: string): void {
+  const stack = e instanceof Error && e.stack ? `\n\nStack:\n${e.stack}` : '';
+  pendingBug = { info: `Exception in ${context}:\n${String(e)}${stack}` };
 }
 
 function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, warning: string | null): void {
   reviewErrorCells = new Set();
-  // Ensure corner picker is closed when the review state is refreshed.
-  if (cornerPickerActive) exitCornerPickerMode();
   renderState(state);
   const warpedCol = el<HTMLElement>('warped-col');
   const warpedImg = el<HTMLImageElement>('warped-img');
@@ -865,7 +768,6 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
   el<HTMLElement>('original-col').hidden = state.originalImageUrl === null;
   warpedCol.hidden = warpedImageUrl === null;
   el<HTMLElement>('review-actions').hidden = false;
-  el<HTMLButtonElement>('adjust-corners-btn').hidden = latestCorners === null;
   // For Classic puzzles, show the digit pad so the user can correct OCR digits
   // by clicking buttons (not just keyboard). The action-group (undo, hints, etc.)
   // stays hidden — those controls are only active in playing mode.
@@ -885,10 +787,7 @@ async function handleProcess(): Promise<void> {
   logAction('file_selected', `${f.name} (${(f.size / 1024).toFixed(0)} KB)`);
   setLoading(true);
   try {
-    const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs, corners, originalImageData } = await uploadPuzzle(f);
-    latestFile = f;
-    latestCorners = corners;
-    latestImageData = originalImageData;
+    const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs } = await uploadPuzzle(f);
     pendingCellThumbs = new Map(cellThumbs);
     pendingMergedThumbs = new Map(mergedThumbs);
 
@@ -951,7 +850,12 @@ async function handleProcess(): Promise<void> {
     logAction('review_shown', state.puzzleType === 'classic' ? 'classic' : 'ocr warning');
     applyUploadResult(state, warpedImageUrl, warning ?? 'Review the detected digits and press Confirm & Solve');
   } catch (e) {
-    setStatus(`Processing failed: ${String(e)}`, true);
+    if (e instanceof GridNotFoundError) {
+      setStatus(e.message, true);
+    } else {
+      setStatus(`Processing failed: ${String(e)}`, true);
+      reportBug(e, 'handleProcess');
+    }
   }
   finally { setLoading(false); }
 }
@@ -1064,7 +968,10 @@ async function handleUndo(): Promise<void> {
     currentState = state;
     refreshDisplay();
     updateUndoButton(state);
-  } catch (e) { console.warn('[handleUndo]', e); }
+  } catch (e) {
+    setStatus(String(e), true);
+    if (!(e instanceof UserFacingError)) reportBug(e, 'handleUndo');
+  }
 }
 
 async function handleCandidateCycle(row1b: number, col1b: number, digit: number): Promise<void> {
@@ -1153,6 +1060,7 @@ async function handleFeedbackSubmit(): Promise<void> {
     userAgent: navigator.userAgent,
     viewport: `${window.innerWidth}×${window.innerHeight}`,
     config: { alwaysApplyRules: settings.alwaysApplyRules, autoPlacementDelay: settings.autoPlacementDelay },
+    exception: exceptionForSubmission ?? undefined,
   };
 
   const statusEl = el<HTMLElement>('feedback-status');
@@ -1176,6 +1084,7 @@ async function handleFeedbackSubmit(): Promise<void> {
       body: JSON.stringify(payload),
     });
     if (res.ok) {
+      exceptionForSubmission = null;
       statusEl.textContent = 'Thank you — feedback submitted.';
       setTimeout(() => { el<HTMLDialogElement>('feedback-modal').close(); }, 1500);
     } else {
@@ -1254,52 +1163,6 @@ document.addEventListener('DOMContentLoaded', () => {
   el<HTMLButtonElement>('process-btn').addEventListener('click', () => { void handleProcess(); });
   el<HTMLButtonElement>('confirm-btn').addEventListener('click', () => { void handleConfirm(); });
 
-  // ── Corner picker ──────────────────────────────────────────────────────────
-  el<HTMLButtonElement>('adjust-corners-btn').addEventListener('click', () => enterCornerPickerMode());
-  el<HTMLButtonElement>('corner-apply-btn').addEventListener('click', () => { void handleApplyCorners(); });
-  el<HTMLButtonElement>('corner-cancel-btn').addEventListener('click', () => exitCornerPickerMode());
-
-  const cpCanvas = el<HTMLCanvasElement>('corner-picker-canvas');
-
-  function cpXY(e: MouseEvent | Touch): [number, number] {
-    const rect = cpCanvas.getBoundingClientRect();
-    const sx = cpCanvas.width / rect.width;
-    const sy = cpCanvas.height / rect.height;
-    return [(e.clientX - rect.left) * sx, (e.clientY - rect.top) * sy];
-  }
-
-  function cpDragUpdate(x: number, y: number): void {
-    if (draggingHandle === -1 || latestCorners === null || latestImageData === null) return;
-    const scaleX = cpCanvas.width / latestImageData.width;
-    const scaleY = cpCanvas.height / latestImageData.height;
-    latestCorners[draggingHandle * 2] = x / scaleX;
-    latestCorners[draggingHandle * 2 + 1] = y / scaleY;
-    if (!rafPending) {
-      rafPending = true;
-      requestAnimationFrame(() => { rafPending = false; drawCornerOverlay(); });
-    }
-  }
-
-  cpCanvas.addEventListener('mousedown', (e) => {
-    const [x, y] = cpXY(e);
-    draggingHandle = getHandleAtPoint(x, y);
-    e.preventDefault();
-  });
-  cpCanvas.addEventListener('mousemove', (e) => { const [x, y] = cpXY(e); cpDragUpdate(x, y); });
-  cpCanvas.addEventListener('mouseup', () => { draggingHandle = -1; });
-  cpCanvas.addEventListener('mouseleave', () => { draggingHandle = -1; });
-  cpCanvas.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    const t = e.touches[0];
-    if (t) { const [x, y] = cpXY(t); draggingHandle = getHandleAtPoint(x, y); }
-  }, { passive: false });
-  cpCanvas.addEventListener('touchmove', (e) => {
-    e.preventDefault();
-    const t = e.touches[0];
-    if (t) { const [x, y] = cpXY(t); cpDragUpdate(x, y); }
-  }, { passive: false });
-  cpCanvas.addEventListener('touchend', () => { draggingHandle = -1; });
-  // ──────────────────────────────────────────────────────────────────────────
   el<HTMLButtonElement>('undo-btn').addEventListener('click', () => { void handleUndo(); });
   el<HTMLButtonElement>('reveal-btn').addEventListener('click', () => { void handleReveal(); });
 
@@ -1357,7 +1220,6 @@ document.addEventListener('DOMContentLoaded', () => {
     showCandidates = false; candidateEditMode = false;
     virtualCageMode = false; virtualCageSelection = new Set();
     hintHighlightCells = new Set(); activeHintItem = null;
-    latestFile = null; latestCorners = null; latestImageData = null;
     inspectCageMode = false;
     el<HTMLButtonElement>('inspect-cage-btn').textContent = 'Inspect cage';
     el<HTMLElement>('inspector-col').hidden = true;
@@ -1366,7 +1228,6 @@ document.addEventListener('DOMContentLoaded', () => {
     draftEdited = false;
     pendingCellThumbs = new Map();
     pendingMergedThumbs = new Map();
-    if (cornerPickerActive) exitCornerPickerMode();
     el<HTMLElement>('upload-panel').hidden = false;
     el<HTMLElement>('review-panel').hidden = true;
     el<HTMLElement>('solution-panel').hidden = true;
@@ -1403,6 +1264,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const entries = getActionLog();
     el<HTMLElement>('feedback-trace-count').textContent = String(entries.length);
     el<HTMLElement>('feedback-trace').textContent = formatActionLog();
+
+    if (pendingBug !== null) {
+      el<HTMLInputElement>('feedback-type-bug').click();
+      el<HTMLTextAreaElement>('feedback-description').value = pendingBug.info;
+      exceptionForSubmission = pendingBug.info;
+      pendingBug = null;
+    }
 
     (el<HTMLDialogElement>('feedback-modal') as HTMLDialogElement).showModal();
   });

@@ -110,7 +110,7 @@ export function loadCV(
 
         return pump();
       })
-      .catch(() => { /* progress failed — script tag still loading, no action needed */ });
+      .catch((e) => { console.warn('[loadCV] progress fetch failed (non-critical)', e); });
   });
 
   return _cvLoading;

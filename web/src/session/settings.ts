@@ -33,7 +33,8 @@ export function loadSettings(): CoachSettings {
       alwaysApplyRules: [...(obj['alwaysApplyRules'] as string[])],
       autoPlacementDelay: typeof obj['autoPlacementDelay'] === 'number' ? obj['autoPlacementDelay'] : 0,
     };
-  } catch {
+  } catch (e) {
+    console.warn('[loadSettings] corrupted settings, resetting to defaults', e);
     return defaultSettings();
   }
 }

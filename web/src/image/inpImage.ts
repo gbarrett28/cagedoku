@@ -48,6 +48,13 @@ export class ImageDecodeError extends Error {
   }
 }
 
+export class GridNotFoundError extends Error {
+  constructor() {
+    super('Grid not detected — try cropping your image to just the puzzle grid before uploading again.');
+    this.name = 'GridNotFoundError';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Result type
 // ---------------------------------------------------------------------------
@@ -63,7 +70,6 @@ export interface ParseResult {
   cellThumbs: ReadonlyMap<string, Uint8Array[]>;
   /** Pre-split merged thumbnails for split-recogniser training, keyed "row,col". */
   mergedThumbs: ReadonlyMap<string, Uint8Array>;
-  corners: Float32Array | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,7 +95,6 @@ export async function parsePuzzleImage(
   file: File,
   rec: NumRecogniser,
   config: ImagePipelineConfig = defaultImagePipelineConfig(),
-  providedCorners?: Float32Array,
   splitRec?: NumRecogniser,
 ): Promise<ParseResult> {
   const resolution = cfgResolution(config);
@@ -97,26 +102,18 @@ export async function parsePuzzleImage(
 
   // Decode the file to ImageData via an OffscreenCanvas.
   const imageData = await decodeImageFile(file);
-  const upsampleFactor = computeUpsampleFactor(imageData.width, imageData.height, resolution);
-
   // --- Stage 1: Grid location ---
   const [blkMat, gryMat] = prepareGrayMat(cv, imageData, resolution);
 
   let rectArr: Float32Array;
-  if (providedCorners !== undefined) {
-    // User-supplied corners (original-image space) → scale to upsampled pipeline space.
-    rectArr = new Float32Array(8);
-    for (let i = 0; i < 8; i++) rectArr[i] = providedCorners[i]! * upsampleFactor;
-  } else {
-    try {
-      const [blk, rect] = locateGrid(cv, gryMat, config.gridLocation.isblackOffset);
-      rectArr = rect;
-      blk.delete();
-    } catch (err) {
-      gryMat.delete();
-      blkMat.delete();
-      throw err; // Re-throw: grid not found means no useful data.
-    }
+  try {
+    const [blk, rect] = locateGrid(cv, gryMat, config.gridLocation.isblackOffset);
+    rectArr = rect;
+    blk.delete();
+  } catch {
+    gryMat.delete();
+    blkMat.delete();
+    throw new GridNotFoundError();
   }
 
   // --- Stage 2: Perspective warp ---
@@ -203,11 +200,6 @@ export async function parsePuzzleImage(
   }
   gryMat.delete(); blkMat.delete(); mMat.delete();
 
-  // Final rectArr is now in the (possibly rotation-corrected) upsampled coordinate space.
-  // Convert to original-image pixel space for the corner picker.
-  const cornersOrig = new Float32Array(8);
-  for (let i = 0; i < 8; i++) cornersOrig[i] = rectArr[i]! / upsampleFactor;
-
   // Convert warped colour image to ImageData for the result.
   const warpedImgData = matToImageData(cv, warpedImgMat, dstSize);
   warpedImgMat.delete();
@@ -237,7 +229,7 @@ export async function parsePuzzleImage(
     } catch (err) {
       specError = String(err);
     }
-    return { spec, specError, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: new Map(), mergedThumbs: new Map(), corners: cornersOrig };
+    return { spec, specError, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: new Map(), mergedThumbs: new Map() };
   }
 
   // --- Killer path: Stage 4 border clustering ---
@@ -258,8 +250,8 @@ export async function parsePuzzleImage(
   try {
     const brdrs = buildBrdrs(initialBorderX, initialBorderY);
     ({ cageTotals, cellThumbs, mergedThumbs } = buildCageTotals(cv, warpedBlkMat, rec, subres, brdrs, splitRec));
-  } catch {
-    // Can't score polarities without cage totals; proceed with initial estimate.
+  } catch (e) {
+    console.warn('[parsePuzzleImage] buildCageTotals failed, proceeding with initial border estimate', e);
   }
 
   let bestBorderX = initialBorderX;
@@ -315,8 +307,8 @@ export async function parsePuzzleImage(
           adaptiveBlk.delete();
         }
       }
-    } catch {
-      // Leave cageTotals as-is.
+    } catch (e) {
+      console.warn('[parsePuzzleImage] buildCageTotals retry failed, leaving cageTotals as-is', e);
     }
   }
 
@@ -337,7 +329,6 @@ export async function parsePuzzleImage(
       warpedImageData: warpedImgData,
       cellThumbs: new Map(),
       mergedThumbs: new Map(),
-      corners: cornersOrig,
     };
   }
 
@@ -372,7 +363,7 @@ export async function parsePuzzleImage(
     }
   }
 
-  return { spec, specError, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs, mergedThumbs, corners: cornersOrig };
+  return { spec, specError, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs, mergedThumbs };
 }
 
 // ---------------------------------------------------------------------------
@@ -569,48 +560,12 @@ async function decodePdfFile(file: File): Promise<ImageData> {
  * @param corners - Grid corners in original-image pixel space [x_TL,y_TL,x_TR,y_TR,x_BR,y_BR,x_BL,y_BL].
  * @param dstSize - Output image size (square, in pixels).
  */
-export function warpImageWithCorners(
-  cv: Cv,
-  imageData: ImageData,
-  corners: Float32Array,
-  dstSize: number,
-): ImageData {
-  const factor = computeUpsampleFactor(imageData.width, imageData.height, dstSize);
-  const scaled = new Float32Array(8);
-  for (let i = 0; i < 8; i++) scaled[i] = corners[i]! * factor;
-
-  let srcMat = cv.matFromImageData(imageData);
-  while (srcMat.rows < dstSize || srcMat.cols < dstSize) {
-    const up = new cv.Mat();
-    cv.pyrUp(srcMat, up);
-    srcMat.delete();
-    srcMat = up;
-  }
-
-  const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, Array.from(scaled));
-  const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, dstSize - 1, 0, dstSize - 1, dstSize - 1, 0, dstSize - 1]);
-  const mMat = cv.getPerspectiveTransform(srcPts, dstPts);
-  srcPts.delete(); dstPts.delete();
-
-  const warped = new cv.Mat();
-  cv.warpPerspective(srcMat, warped, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
-  srcMat.delete(); mMat.delete();
-
-  const result = matToImageData(cv, warped, dstSize);
-  warped.delete();
-  return result;
-}
 
 /**
  * Compute the power-of-2 scale factor applied by prepareGrayMat/pyrUp loops.
  * Returns `2^n` where `n` is the number of pyrUp passes needed so that both
  * `width` and `height` reach at least `resolution`.
  */
-function computeUpsampleFactor(width: number, height: number, resolution: number): number {
-  let f = 1, w = width, h = height;
-  while (w < resolution || h < resolution) { w *= 2; h *= 2; f *= 2; }
-  return f;
-}
 
 /**
  * Build two independent grayscale Mats from an ImageData, scaled up as needed.

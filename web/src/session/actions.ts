@@ -12,7 +12,8 @@ import { solSums } from '../solver/equation.js';
 import { defaultRules } from '../engine/rules/index.js';
 import { cageSumRange, cellKey, keyToCell } from '../engine/types.js';
 import type { Cell } from '../engine/types.js';
-import { parsePuzzleImage, warpImageWithCorners, ImageDecodeError } from '../image/inpImage.js';
+import { parsePuzzleImage, ImageDecodeError, GridNotFoundError } from '../image/inpImage.js';
+import { UserFacingError } from './errors.js';
 
 import type { ParseResult } from '../image/inpImage.js';
 import { defaultImagePipelineConfig } from '../image/config.js';
@@ -116,8 +117,6 @@ export interface UploadResult {
   warning: string | null;
   cellThumbs: ReadonlyMap<string, Uint8Array[]>;
   mergedThumbs: ReadonlyMap<string, Uint8Array>;
-  corners: Float32Array | null;
-  originalImageData: ImageData | null;
 }
 
 /**
@@ -142,7 +141,7 @@ export function loadSpecDirect(spec: PuzzleSpec): UploadResult {
     warpedImageUrl: null,
   };
   setState(state);
-  return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map(), mergedThumbs: new Map(), corners: null, originalImageData: null };
+  return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map(), mergedThumbs: new Map() };
 }
 
 /**
@@ -183,8 +182,6 @@ export function loadClassicDirect(givenDigits: readonly (readonly number[])[]): 
     warning: 'Review the detected digits and press Confirm & Solve',
     cellThumbs: new Map(),
     mergedThumbs: new Map(),
-    corners: null,
-    originalImageData: null,
   };
 }
 
@@ -199,12 +196,11 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
 
   const config = defaultImagePipelineConfig();
   let result: ParseResult;
-  let originalImageData: ImageData | null = null;
   try {
-    result = await parsePuzzleImage(cv, file, rec, config, undefined, getSplitRec() ?? undefined);
+    result = await parsePuzzleImage(cv, file, rec, config, getSplitRec() ?? undefined);
   } catch (e) {
-    if (e instanceof ImageDecodeError) throw e;
-    // Any other pipeline error (grid not found, etc.) → proceed to review with blank grid.
+    if (e instanceof ImageDecodeError || e instanceof GridNotFoundError) throw e;
+    // Any other pipeline error → proceed to review with blank grid.
     result = {
       spec: null,
       specError: `Image pipeline failed: ${String(e)}`,
@@ -213,22 +209,12 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
       warpedImageData: null,
       cellThumbs: new Map(),
       mergedThumbs: new Map(),
-      corners: null,
     };
   }
 
-  // Decode the original image for the corner picker preview (best-effort).
-  try {
-    const bitmap = await createImageBitmap(file);
-    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-    canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
-    bitmap.close();
-    originalImageData = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height);
-  } catch { /* non-critical */ }
-
   const originalImageUrl = await fileToDisplayUrl(file);
   const { state, warpedImageUrl, warning } = await buildStateFromParseResult(result, originalImageUrl);
-  return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, mergedThumbs: result.mergedThumbs, corners: result.corners, originalImageData };
+  return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, mergedThumbs: result.mergedThumbs };
 }
 
 /**
@@ -239,51 +225,11 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
  * @param corners - Adjusted grid corners in original-image pixel space.
  * @param originalImageData - The decoded original image (from the initial uploadPuzzle call).
  */
-export async function reparseWithCorners(
-  file: File,
-  corners: Float32Array,
-  originalImageData: ImageData | null,
-): Promise<UploadResult> {
-  const cv = getCV();
-  const rec = getRec();
-  if (cv === null || rec === null) throw new Error('Image pipeline not loaded');
-
-  const config = defaultImagePipelineConfig();
-  let result: ParseResult;
-  try {
-    result = await parsePuzzleImage(cv, file, rec, config, corners, getSplitRec() ?? undefined);
-  } catch (e) {
-    if (e instanceof ImageDecodeError) throw e;
-    result = {
-      spec: null,
-      specError: `Image pipeline failed: ${String(e)}`,
-      puzzleType: 'killer',
-      givenDigits: null,
-      warpedImageData: null,
-      cellThumbs: new Map(),
-      mergedThumbs: new Map(),
-      corners,
-    };
-  }
-
-  const originalImageUrl = await fileToDisplayUrl(file);
-  const { state, warpedImageUrl, warning } = await buildStateFromParseResult(result, originalImageUrl);
-  return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, mergedThumbs: result.mergedThumbs, corners: result.corners ?? corners, originalImageData };
-}
 
 /**
  * Produce a perspective-warped preview image from user-adjusted corners.
  * Returns null if the image pipeline isn't loaded or imageData is not available.
  */
-export function getWarpedPreview(
-  imageData: ImageData,
-  corners: Float32Array,
-  dstSize: number,
-): ImageData | null {
-  const cv = getCV();
-  if (cv === null) return null;
-  return warpImageWithCorners(cv, imageData, corners, dstSize);
-}
 
 async function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -319,7 +265,8 @@ async function fileToDisplayUrl(file: File): Promise<string | null> {
     } finally {
       await pdf.destroy();
     }
-  } catch {
+  } catch (e) {
+    console.warn('[fileToDisplayUrl] PDF preview render failed', e);
     return null;
   }
 }
@@ -724,9 +671,9 @@ export function stepAutoPlacement(): PuzzleState | null {
  */
 export function undo(): PuzzleState {
   const state = requireConfirmed();
-  if (state.turns.length === 0) throw new Error('Nothing to undo');
+  if (state.turns.length === 0) throw new UserFacingError('Nothing to undo');
   const last = state.turns[state.turns.length - 1]!.action;
-  if (last.type === 'placeDigit' && last.source === 'given') throw new Error('Cannot undo given digits');
+  if (last.type === 'placeDigit' && last.source === 'given') throw new UserFacingError('Cannot undo given digits');
 
   const trimmed: PuzzleState = { ...state, turns: state.turns.slice(0, -1) };
   let updated = rebuildUserGrid(trimmed);

@@ -117,6 +117,7 @@ export interface FeedbackReport {
   userAgent: string;
   viewport: string;
   config: { alwaysApplyRules: string[]; autoPlacementDelay: number };
+  exception?: string;
 }
 
 export function isFeedbackReport(value: unknown): value is FeedbackReport {
@@ -134,5 +135,6 @@ export function isFeedbackReport(value: unknown): value is FeedbackReport {
   if (typeof v['userAgent'] !== 'string') return false;
   if (typeof v['viewport'] !== 'string') return false;
   if (typeof v['config'] !== 'object' || v['config'] === null) return false;
+  if ('exception' in v && typeof v['exception'] !== 'string') return false;
   return true;
 }

@@ -1,5 +1,17 @@
 # Agent Behaviour
 
+## Required Superpowers
+
+These three skills **must always** be invoked at the moments described — no exceptions:
+
+| Skill | Invoke when |
+|---|---|
+| `superpowers:brainstorming` | Before any new feature, significant code change, or design decision. No code is written until a design is presented and approved. |
+| `superpowers:verification-before-completion` | Before claiming any task is complete, before stating tests pass, and before creating a commit or PR. |
+| `superpowers:systematic-debugging` | Before attempting to fix any bug, test failure, or unexpected behaviour. Root cause first, fix second. |
+
+---
+
 ## Git Worktrees
 
 Do **not** use git worktrees — not all tools work correctly inside them.

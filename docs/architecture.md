@@ -200,6 +200,26 @@ flowchart LR
 
 ---
 
+## Exception Handling Policy
+
+Four tiers applied consistently across all production code:
+
+| Tier | Context | Rule |
+|---|---|---|
+| 1 | User-triggered actions | `setStatus(String(e), true)`; also call `reportBug(e, context)` for unexpected exceptions |
+| 2 | Logic/solver internals | Only catch the expected error type; rethrow everything else |
+| 3 | Image pipeline (post-grid) | `console.warn` + return degraded result; review screen always shown |
+| 4 | Background/cosmetic | `console.warn` only |
+| 5 | Settings storage | `console.warn` + return defaults |
+
+**Pipeline invariant:** Once the grid is located in an uploaded image, the pipeline always proceeds to the OCR review screen. Any failure during cage detection or total extraction is logged (`console.warn`) and surfaced as a warning on that screen. Grid-detection failure (`GridNotFoundError`) is a hard error — the user is asked to crop the image and re-upload.
+
+**Prohibited:** Bare `catch {}` or `catch (e) { /* comment */ }` with no log and no rethrow. Every catch must contain at least one of: a log call, a rethrow, or a `setStatus` call.
+
+**Bug reporting:** `reportBug(e, context)` (in `main.ts`) stores the exception for the next feedback modal open. When the user submits feedback via the Feedback button, the exception string is included in the worker payload and appears in the generated GitHub issue.
+
+---
+
 ## Solving
 
 The image pipeline output (`PuzzleSpec` — cage layout + totals) is consumed by two

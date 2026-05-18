@@ -76,13 +76,15 @@ function crossValidCombos(partition: Partition, maxNodes: number): Set<string>[]
         const sub = dfs(idx + 1, newFiltered);
         if (sub) { validPerCage[idx]!.add(solnKey(soln)); foundValid = true; }
       } catch (e) {
-        if (e instanceof CapHitError) { validPerCage[idx]!.add(solnKey(soln)); throw e; }
+        if (!(e instanceof CapHitError)) throw e;
+        validPerCage[idx]!.add(solnKey(soln));
+        throw e;
       }
     }
     return foundValid;
   }
 
-  try { dfs(0, partition.map(([, solns]) => solns)); } catch { /* cap hit — conservative */ }
+  try { dfs(0, partition.map(([, solns]) => solns)); } catch (e) { if (!(e instanceof CapHitError)) throw e; }
   return validPerCage;
 }
 

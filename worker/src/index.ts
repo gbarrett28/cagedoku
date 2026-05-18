@@ -158,6 +158,10 @@ async function createFeedbackIssue(env: Env, data: FeedbackReport): Promise<void
     ? `\n### Expected behaviour\n${data.expected}\n`
     : '';
 
+  const exceptionSection = data.exception
+    ? `\n## Exception\n\`\`\`\n${data.exception}\n\`\`\`\n`
+    : '';
+
   const specJson = data.puzzleSpec !== null
     ? `\n<details>\n<summary>Puzzle spec</summary>\n\n\`\`\`json\n${JSON.stringify(data.puzzleSpec, null, 2)}\n\`\`\`\n\n</details>\n`
     : '';
@@ -171,7 +175,7 @@ async function createFeedbackIssue(env: Env, data: FeedbackReport): Promise<void
 ${bugCatLine}
 ### Description
 ${data.description}
-${expectedSection}
+${expectedSection}${exceptionSection}
 ### Config
 - Auto-apply rules: ${rules}
 - Step delay: ${delay}
