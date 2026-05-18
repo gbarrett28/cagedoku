@@ -9,6 +9,7 @@
 </head>
 <body>
 
+<div class="sticky-bars">
 <header>
   <div class="header-inner">
     <h1>COACH</h1>
@@ -20,6 +21,20 @@
     <button id="feedback-btn" class="btn-secondary">Feedback</button>
   </div>
 </header>
+<div id="action-bar" hidden>
+  <div id="action-group" class="form-actions hints-anchor">
+    <button id="undo-btn" class="btn-secondary" disabled>Undo</button>
+    <button id="hints-btn" class="btn-secondary" disabled>Hints</button>
+    <div id="hints-dropdown" class="hints-dropdown" hidden></div>
+    <button id="candidates-btn" class="btn-secondary" disabled>Show candidates</button>
+    <button id="edit-candidates-btn" class="btn-secondary" hidden>Edit candidates</button>
+    <button id="help-candidates-btn" class="btn-secondary" hidden>?</button>
+    <button id="inspect-cage-btn" class="btn-secondary" hidden>Inspect cage</button>
+    <button id="virtual-cage-btn" class="btn-secondary" hidden>Virtual cage</button>
+    <button id="reveal-btn" class="btn-secondary" hidden>Reveal</button>
+  </div>
+</div>
+</div>
 
 <main>
 
@@ -60,18 +75,6 @@
         </div>
         <!-- Playing mode actions: digit pad in Classic review; full action bar in playing mode -->
         <div id="playing-actions" hidden>
-          <div id="action-group" class="form-actions hints-anchor">
-            <button id="undo-btn" class="btn-secondary" disabled>Undo</button>
-            <button id="hints-btn" class="btn-secondary" disabled>Hints</button>
-            <div id="hints-dropdown" class="hints-dropdown" hidden></div>
-            <button id="candidates-btn" class="btn-secondary" disabled>Show candidates</button>
-            <button id="edit-candidates-btn" class="btn-secondary" hidden>Edit candidates</button>
-            <button id="help-candidates-btn" class="btn-secondary" hidden>?</button>
-            <button id="inspect-cage-btn" class="btn-secondary" hidden>Inspect cage</button>
-            <button id="virtual-cage-btn" class="btn-secondary" hidden>Virtual cage</button>
-            <button id="reveal-btn" class="btn-secondary" hidden>Reveal</button>
-          </div>
-          <p id="completion-msg" class="completion-msg" hidden>Puzzle solved — well done!</p>
           <div class="digit-pad">
             <button id="digit-1" class="digit-btn">1</button>
             <button id="digit-2" class="digit-btn">2</button>
@@ -84,6 +87,7 @@
             <button id="digit-9" class="digit-btn">9</button>
             <button id="digit-0" class="digit-btn digit-clear">&#x2715;</button>
           </div>
+          <p id="completion-msg" class="completion-msg" hidden>Puzzle solved — well done!</p>
         </div>
       </div>
       <div class="image-col" id="inspector-col" hidden>
