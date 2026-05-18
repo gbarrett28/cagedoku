@@ -228,20 +228,48 @@ Renders the 9×9 sudoku grid with the following layers (back → front):
 
 ### Action Bar
 
-The action bar is a **sticky bar** that sits directly below the page header
-(`<div class="sticky-bars">` wraps both). It is visible only in playing mode
-and scrolls with the page as a single unit with the header.
+The action bar is **part of the page header** (`<div class="sticky-bars">` →
+`<header>` → `.header-inner`). It is visible only in playing mode; on desktop
+all buttons fit on one row; on mobile (`≤ 620 px`) the action group wraps to a
+second row within the same `<header>` element.
 
-| Button | Condition | Description |
-|---|---|---|
-| Undo | Always (disabled until a move exists) | Revert the last digit entry |
-| Hints | Always (disabled until confirmed) | Open hints dropdown |
-| Show candidates | Always (disabled until confirmed) | Toggle candidate sub-grid |
-| Edit candidates | Visible when candidates shown | Enter candidate editing mode |
-| ? | Visible when candidates shown | Open candidates help modal |
-| Inspect cage | Visible in **Killer** playing mode (always) | Enter cage inspection mode |
-| Virtual cage | Visible in **Killer** playing mode (always) | Enter virtual cage drawing mode |
-| Reveal | Visible when a cell is selected | Reveal the solution digit for the selected cell after a confirmation popup |
+All buttons are **icon-only** (`btn-icon` class, `2.25 rem × 2.25 rem`) with a
+`data-tooltip` attribute that shows a hover label via a CSS `::after`
+pseudo-element. Tooltips are suppressed on touch-sized viewports.
+
+| Button | Symbol | Condition | Description |
+|---|---|---|---|
+| `#undo-btn` | ↩ | Always (disabled until a move exists) | Revert the last digit entry |
+| `#hints-btn` | 💡 | Always (disabled until confirmed) | Open hints dropdown |
+| `#mode-toggle` | N\|C pill | Visible when `showCandidates = true` | Toggle between Normal entry and Candidates editing mode. Active side is highlighted. |
+| `#inspect-cage-btn` | 🔍 | **Killer** playing mode only | Enter cage inspection mode. Gets `.active` class while active; tooltip changes to "Done inspecting". |
+| `#virtual-cage-btn` | ➕ | **Killer** playing mode only | Enter virtual cage drawing mode. Gets `.active` class while active; tooltip changes to "Cancel virtual cage". |
+| `#reveal-btn` | 👁 | Only while a cell is selected | Reveal the solution digit for the selected cell after a confirmation popup |
+| `#new-puzzle-btn` | 🏠 | Review or Playing screen | Return to the upload screen |
+| `#help-btn` | ? | Always | Open general help modal |
+| `#config-btn` | ⚙ | Always | Open config modal |
+| `#feedback-btn` | ✉ | Always | Open feedback modal |
+
+**`#detected-layout-heading`** is hidden in playing mode via a `:has()` CSS
+selector; it remains visible in review mode.
+
+**COACH subtitle** (`.header-sub`) and `#load-time` are hidden in playing mode
+via a `:has()` selector; they remain visible on upload and review screens.
+
+### Candidate Visibility
+
+Candidates are shown by default when playing mode starts. `showCandidates` is
+initialised from the `showCandidatesByDefault` field of `CoachSettings`
+(default: `true`). The Config modal contains a "Show candidates by default"
+checkbox to change this preference. There is no mid-session toggle.
+
+### `(N|C)` Mode Toggle Pill
+
+`#mode-toggle` is a single `<button>` containing three `<span>` elements:
+`N`, `|`, `C`. Clicking anywhere on the pill toggles `candidateEditMode`. When
+`candidateEditMode = false` the `N` span is highlighted (no `.active` class on
+button); when `candidateEditMode = true` the `C` span is highlighted (`.active`
+on button).
 
 ### Digit Pad
 
@@ -255,6 +283,16 @@ grid producing a fixed 2-row layout:
 
 The "Puzzle solved — well done!" completion message appears below the digit pad
 when `isGridSolved()` returns true.
+
+### Playing-Mode Space Recovery
+
+The following CSS `:has(#action-group:not([hidden]))` overrides apply in playing
+mode to maximise grid size:
+
+- `.header-sub`, `#load-time`, `#detected-layout-heading` — hidden
+- `main` top/bottom margin reduced to `0.5rem`
+- `#review-panel` padding reduced to `0.5rem`; background and border set to transparent
+- Canvas `max-width` uses `100vh − 204px` offset (was `360px` before this optimisation)
 
 ### Reveal
 
@@ -406,16 +444,14 @@ The element IDs match the HTML (`index.html`).
 | Review status | `#review-status-msg` | Shows validation errors inline |
 | **Digit pad** | `#digit-1` … `#digit-0` | **Classic review only** — `#playing-actions` is shown but `#action-bar` is hidden so only the digit pad is reachable |
 
-### Playing Screen (`#review-panel` visible, `#playing-actions` visible, `#action-bar` visible)
+### Playing Screen (`#review-panel` visible, `#playing-actions` visible, `#action-group` visible)
 
 | Element | ID | Visible when |
 |---|---|---|
 | Undo | `#undo-btn` | Always (disabled until a user turn exists) |
 | Hints | `#hints-btn` | Always (disabled before confirm) |
 | Hints dropdown | `#hints-dropdown` | While `#hints-btn` is toggled on |
-| Show / Hide candidates | `#candidates-btn` | Always (disabled before confirm) |
-| Edit candidates | `#edit-candidates-btn` | Only while candidates are shown |
-| Candidates help (?) | `#help-candidates-btn` | Only while candidates are shown |
+| Mode toggle pill | `#mode-toggle` | When `showCandidates = true` |
 | Inspect cage | `#inspect-cage-btn` | **Killer only** — visible from the start of playing mode |
 | Virtual cage | `#virtual-cage-btn` | **Killer only** — visible from the start of playing mode |
 | Reveal | `#reveal-btn` | Only while a cell is selected |

@@ -32,6 +32,7 @@ export function loadSettings(): CoachSettings {
     return {
       alwaysApplyRules: [...(obj['alwaysApplyRules'] as string[])],
       autoPlacementDelay: typeof obj['autoPlacementDelay'] === 'number' ? obj['autoPlacementDelay'] : 0,
+      showCandidatesByDefault: typeof obj['showCandidatesByDefault'] === 'boolean' ? obj['showCandidatesByDefault'] : true,
     };
   } catch (e) {
     console.warn('[loadSettings] corrupted settings, resetting to defaults', e);
@@ -45,7 +46,7 @@ export function saveSettings(settings: CoachSettings): void {
 }
 
 function defaultSettings(): CoachSettings {
-  return { alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES], autoPlacementDelay: 0 };
+  return { alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES], autoPlacementDelay: 0, showCandidatesByDefault: true };
 }
 
 /** Validates the minimum shape required to extract settings (alwaysApplyRules is mandatory). */

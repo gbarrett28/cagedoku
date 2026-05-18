@@ -402,7 +402,7 @@ function checkCompletion(state: PuzzleState): void {
   const solved = isGridSolved(state);
   el<HTMLElement>('completion-msg').hidden = !solved;
   const actionIds = [
-    'hints-btn', 'candidates-btn', 'edit-candidates-btn',
+    'hints-btn', 'mode-toggle',
     'inspect-cage-btn', 'virtual-cage-btn', 'reveal-btn',
   ];
   for (const id of actionIds) {
@@ -486,6 +486,9 @@ function renderState(state: PuzzleState): void {
 function renderPlayingMode(state: PuzzleState): void {
   currentState = state;
   reviewErrorCells = new Set();
+  const data = getSettingsData();
+  showCandidates = data.showCandidatesByDefault;
+  candidateEditMode = false;
   refreshDisplay();
   el<HTMLElement>('upload-panel').hidden = true;
   el<HTMLElement>('review-panel').hidden = false;
@@ -493,16 +496,17 @@ function renderPlayingMode(state: PuzzleState): void {
   el<HTMLElement>('original-col').hidden = true;
   el<HTMLElement>('warped-col').hidden = true;
   el<HTMLElement>('playing-actions').hidden = false;
-  el<HTMLElement>('action-bar').hidden = false;
+  el<HTMLElement>('action-group').hidden = false;
   el<HTMLElement>('solution-panel').hidden = true;
   el<HTMLButtonElement>('new-puzzle-btn').hidden = false;
   updateUndoButton(state);
   updateRevealButton();
-  el<HTMLButtonElement>('candidates-btn').disabled = false;
   el<HTMLButtonElement>('hints-btn').disabled = false;
   const isKiller = state.puzzleType !== 'classic';
   el<HTMLButtonElement>('inspect-cage-btn').hidden = !isKiller;
   el<HTMLButtonElement>('virtual-cage-btn').hidden = !isKiller;
+  el<HTMLButtonElement>('mode-toggle').hidden = !showCandidates;
+  el<HTMLButtonElement>('mode-toggle').classList.remove('active');
 }
 
 function updateUndoButton(state: PuzzleState): void {
@@ -714,6 +718,8 @@ function openConfigModal(): void {
   const alwaysApplySet = new Set(data.alwaysApplyRules);
   const list = el<HTMLElement>('config-rules-list');
   clearChildren(list);
+
+  el<HTMLInputElement>('candidates-default-toggle').checked = data.showCandidatesByDefault;
 
   const ess = el<HTMLInputElement>('essential-toggle');
   ess.checked = showEssential;
@@ -1011,7 +1017,9 @@ async function submitVirtualCage(): Promise<void> {
     virtualCageMode = false; virtualCageSelection = new Set();
     el<HTMLElement>('vc-form').hidden = true;
     totalInput.value = '';
-    el<HTMLButtonElement>('virtual-cage-btn').textContent = 'Virtual cage';
+    const vcBtn1 = el<HTMLButtonElement>('virtual-cage-btn');
+    vcBtn1.classList.remove('active');
+    vcBtn1.dataset['tooltip'] = 'Virtual cage';
     void fetchCandidates();
   } catch (e) { setStatus(`Virtual cage error: ${String(e)}`, true); }
 }
@@ -1220,7 +1228,7 @@ document.addEventListener('DOMContentLoaded', () => {
     virtualCageMode = false; virtualCageSelection = new Set();
     hintHighlightCells = new Set(); activeHintItem = null;
     inspectCageMode = false;
-    el<HTMLButtonElement>('inspect-cage-btn').textContent = 'Inspect cage';
+    el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');
     el<HTMLElement>('inspector-col').hidden = true;
     totalEditCell = null;
     reviewErrorCells = new Set();
@@ -1231,9 +1239,8 @@ document.addEventListener('DOMContentLoaded', () => {
     el<HTMLElement>('review-panel').hidden = true;
     el<HTMLElement>('solution-panel').hidden = true;
     el<HTMLElement>('playing-actions').hidden = true;
-    el<HTMLElement>('action-bar').hidden = true;
+    el<HTMLElement>('action-group').hidden = true;
     el<HTMLButtonElement>('new-puzzle-btn').hidden = true;
-    el<HTMLButtonElement>('candidates-btn').disabled = true;
     el<HTMLButtonElement>('hints-btn').disabled = true;
     el<HTMLButtonElement>('inspect-cage-btn').hidden = true;
     el<HTMLButtonElement>('virtual-cage-btn').hidden = true;
@@ -1300,36 +1307,28 @@ document.addEventListener('DOMContentLoaded', () => {
     selects.forEach(s => { if (s.value === 'auto' && s.dataset['ruleName']) alwaysApply.push(s.dataset['ruleName']); });
     showEssential = el<HTMLInputElement>('essential-toggle').checked;
     const delay = Number(el<HTMLInputElement>('config-delay-input').value);
-    saveSettingsData(alwaysApply, delay);
+    const showCandDefault = el<HTMLInputElement>('candidates-default-toggle').checked;
+    saveSettingsData(alwaysApply, delay, showCandDefault);
     el<HTMLDialogElement>('config-modal').close();
     if (currentState !== null) refreshDisplay();
   });
   el<HTMLButtonElement>('rule-info-close-btn').addEventListener('click', () => { el<HTMLDialogElement>('rule-info-modal').close(); });
 
-  // Candidates
-  el<HTMLButtonElement>('candidates-btn').addEventListener('click', () => {
-    showCandidates = !showCandidates;
-    el<HTMLButtonElement>('candidates-btn').textContent = showCandidates ? 'Hide candidates' : 'Show candidates';
-    el<HTMLButtonElement>('edit-candidates-btn').hidden = !showCandidates;
-    el<HTMLButtonElement>('help-candidates-btn').hidden = !showCandidates;
-    if (showCandidates) { void fetchCandidates(); } else { currentCandidates = null; redrawGrid(); }
-  });
-
-  el<HTMLButtonElement>('edit-candidates-btn').addEventListener('click', () => {
+  // Mode toggle (Normal | Candidates)
+  el<HTMLButtonElement>('mode-toggle').addEventListener('click', () => {
     candidateEditMode = !candidateEditMode;
-    el<HTMLButtonElement>('edit-candidates-btn').textContent = candidateEditMode ? 'Done editing' : 'Edit candidates';
+    el<HTMLButtonElement>('mode-toggle').classList.toggle('active', candidateEditMode);
   });
 
-  el<HTMLButtonElement>('help-candidates-btn').addEventListener('click', () => {
-    (el<HTMLDialogElement>('help-candidates-modal') as HTMLDialogElement).showModal();
-  });
   el<HTMLButtonElement>('close-help-btn').addEventListener('click', () => { el<HTMLDialogElement>('help-candidates-modal').close(); });
 
   // Virtual cage
   el<HTMLButtonElement>('virtual-cage-btn').addEventListener('click', () => {
     virtualCageMode = !virtualCageMode;
     virtualCageSelection = new Set();
-    el<HTMLButtonElement>('virtual-cage-btn').textContent = virtualCageMode ? 'Cancel virtual cage' : 'Virtual cage';
+    const vcBtn = el<HTMLButtonElement>('virtual-cage-btn');
+    vcBtn.classList.toggle('active', virtualCageMode);
+    vcBtn.dataset['tooltip'] = virtualCageMode ? 'Cancel virtual cage' : 'Virtual cage';
     el<HTMLElement>('vc-form').hidden = !virtualCageMode;
     if (virtualCageMode) el<HTMLElement>('virtual-cage-col').hidden = false;
     redrawGrid();
@@ -1338,14 +1337,18 @@ document.addEventListener('DOMContentLoaded', () => {
   el<HTMLButtonElement>('vc-cancel-btn').addEventListener('click', () => {
     virtualCageMode = false; virtualCageSelection = new Set();
     el<HTMLElement>('vc-form').hidden = true;
-    el<HTMLButtonElement>('virtual-cage-btn').textContent = 'Virtual cage';
+    const vcBtn2 = el<HTMLButtonElement>('virtual-cage-btn');
+    vcBtn2.classList.remove('active');
+    vcBtn2.dataset['tooltip'] = 'Virtual cage';
     redrawGrid();
   });
 
   // Cage inspector
   el<HTMLButtonElement>('inspect-cage-btn').addEventListener('click', () => {
     inspectCageMode = !inspectCageMode;
-    el<HTMLButtonElement>('inspect-cage-btn').textContent = inspectCageMode ? 'Done inspecting' : 'Inspect cage';
+    const inspBtn = el<HTMLButtonElement>('inspect-cage-btn');
+    inspBtn.classList.toggle('active', inspectCageMode);
+    inspBtn.dataset['tooltip'] = inspectCageMode ? 'Done inspecting' : 'Inspect cage';
     if (!inspectCageMode) el<HTMLElement>('inspector-col').hidden = true;
   });
 

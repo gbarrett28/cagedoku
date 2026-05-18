@@ -70,7 +70,7 @@ test('confirm button transitions to playing mode', async ({ page }) => {
   await expect(page.locator('#playing-actions')).toBeVisible();
   await expect(page.locator('#undo-btn')).toBeVisible();
   await expect(page.locator('#hints-btn')).toBeVisible();
-  await expect(page.locator('#candidates-btn')).toBeVisible();
+  await expect(page.locator('#mode-toggle')).toBeVisible();
 });
 
 test('undo button is initially disabled in playing mode', async ({ page }) => {
@@ -106,12 +106,19 @@ test('undo after digit entry re-disables undo button', async ({ page }) => {
   await expect(page.locator('#undo-btn')).toBeDisabled();
 });
 
-test('candidates button toggles label to "Hide candidates"', async ({ page }) => {
+test('mode-toggle pill visible and toggles active state', async ({ page }) => {
   await loadAndConfirm(page);
-  const btn = page.locator('#candidates-btn');
-  await expect(btn).not.toBeDisabled();
-  await btn.click();
-  await expect(btn).toContainText(/hide/i);
+  const pill = page.locator('#mode-toggle');
+  await expect(pill).toBeVisible();
+  await expect(pill).not.toBeDisabled();
+  // Initially Normal is active (no .active class on pill)
+  await expect(pill).not.toHaveClass(/active/);
+  await pill.click();
+  // After click, Candidates is active
+  await expect(pill).toHaveClass(/active/);
+  await pill.click();
+  // Toggle back
+  await expect(pill).not.toHaveClass(/active/);
 });
 
 test('new puzzle button returns to upload panel', async ({ page }) => {
@@ -214,23 +221,9 @@ test('killer playing: inspect-cage and virtual-cage buttons visible from start',
   await expect(page.locator('#virtual-cage-btn')).toBeVisible();
 });
 
-test('candidates button shows edit-candidates and help-candidates buttons', async ({ page }) => {
+test('mode-toggle pill visible in killer playing mode', async ({ page }) => {
   await loadBoxCageAndConfirm(page);
-  // Before toggling candidates these extra buttons are hidden
-  await expect(page.locator('#edit-candidates-btn')).toBeHidden();
-  await expect(page.locator('#help-candidates-btn')).toBeHidden();
-  await page.locator('#candidates-btn').click();
-  await expect(page.locator('#edit-candidates-btn')).toBeVisible();
-  await expect(page.locator('#help-candidates-btn')).toBeVisible();
-});
-
-test('hiding candidates re-hides edit-candidates and help-candidates buttons', async ({ page }) => {
-  await loadBoxCageAndConfirm(page);
-  await page.locator('#candidates-btn').click(); // show
-  await expect(page.locator('#edit-candidates-btn')).toBeVisible();
-  await page.locator('#candidates-btn').click(); // hide
-  await expect(page.locator('#edit-candidates-btn')).toBeHidden();
-  await expect(page.locator('#help-candidates-btn')).toBeHidden();
+  await expect(page.locator('#mode-toggle')).toBeVisible();
 });
 
 test('reveal button hidden initially; visible after cell selected', async ({ page }) => {
@@ -305,11 +298,11 @@ test('hints button opens dropdown after confirm', async ({ page }) => {
 // Classic playing mode — button audit
 // ---------------------------------------------------------------------------
 
-test('classic playing: hints and candidates buttons enabled after confirm', async ({ page }) => {
+test('classic playing: hints and mode-toggle enabled after confirm', async ({ page }) => {
   await loadClassicAndConfirm(page);
   // These are valid for Classic — candidates use row/col/box rules, hints work without cages.
   await expect(page.locator('#hints-btn')).not.toBeDisabled();
-  await expect(page.locator('#candidates-btn')).not.toBeDisabled();
+  await expect(page.locator('#mode-toggle')).not.toBeDisabled();
 });
 
 test('classic playing: undo is disabled (all cells are given digits)', async ({ page }) => {
@@ -351,7 +344,7 @@ test('mobile: killer playing — action buttons visible at 375 px', async ({ pag
   await loadBoxCageAndConfirm(page);
   await expect(page.locator('#undo-btn')).toBeVisible();
   await expect(page.locator('#hints-btn')).toBeVisible();
-  await expect(page.locator('#candidates-btn')).toBeVisible();
+  await expect(page.locator('#mode-toggle')).toBeVisible();
 });
 
 test('mobile: killer playing — digit pad visible at 375 px', async ({ page }) => {
@@ -380,7 +373,7 @@ test('mobile: classic playing — key buttons visible; killer-only buttons absen
   await atMobileViewport(page);
   await loadClassicAndConfirm(page);
   await expect(page.locator('#hints-btn')).toBeVisible();
-  await expect(page.locator('#candidates-btn')).toBeVisible();
+  await expect(page.locator('#mode-toggle')).toBeVisible();
   await expect(page.locator('#inspect-cage-btn')).toBeHidden();
   await expect(page.locator('#virtual-cage-btn')).toBeHidden();
 });
