@@ -66,6 +66,14 @@ The `typescript-lsp` plugin is installed and `typescript-language-server` is ava
 via npx. The built-in `LSP` tool provides go-to-definition, find-references, and
 compiler diagnostics. Use it to complement serena for precise cross-file type navigation.
 
+## Frontend Design Scope
+
+**Ergonomics only — do not propose aesthetic changes.**
+Layout, spacing, sizing, responsiveness, and interaction flow are in scope.
+Colours, typography, visual polish, and animations are out of scope unless
+the user explicitly requests them. Do not activate or follow the `frontend-design`
+plugin's aesthetic direction on this project.
+
 ---
 
 # Project Overview
