@@ -399,6 +399,7 @@ body:has(#playing-actions:not([hidden])) #canvas-col {
   display: flex;
   flex-direction: column;
   align-items: center;
+  container-type: size;
 }
 
 body:has(#playing-actions:not([hidden])) #canvas-wrapper {
@@ -746,15 +747,15 @@ body:has(#playing-actions:not([hidden])) #side-panel {
     overflow: hidden;
   }
 
-  /* canvas-wrapper: fill remaining width, bounded by viewport height to stay square.
-     flex:1 fills available width after side-panel; max-height:100% clamps height to
-     100dvh; aspect-ratio:1 transfers that constraint back to width. */
+  /* canvas-wrapper: fill remaining width, bounded by container height.
+     max-width: min(100%, 100cqh) caps width at the canvas-col height (100cqh = 100dvh).
+     max-width constrains aspect-ratio reliably; max-height does not in flex rows. */
   body:has(#playing-actions:not([hidden])) #canvas-wrapper {
     flex: 1 1 0px;
     min-width: 0;
     aspect-ratio: 1;
-    max-height: 100%;
-    width: auto;
+    max-width: min(100%, 100cqh);
+    max-height: none;
   }
 
   /* side-panel: right strip, vertically centred */
