@@ -210,6 +210,11 @@ Then verify manually — these checks are part of the gate, not optional:
 
 **Do not merge if either doc check fails.**
 
+After merging, **delete the feature branch**:
+```bash
+git branch -d feature/<name>
+```
+
 `playwright.config.ts` runs `app.spec.ts` and `offline.spec.ts` against `vite preview`
 (production build). `playwright.dev.config.ts` runs `flow.spec.ts` against `vite dev`
 because `flow.spec.ts` uses `window.__testLoad`, a hook only available in dev builds.
