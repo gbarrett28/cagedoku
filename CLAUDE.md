@@ -9,6 +9,8 @@ These three skills **must always** be invoked at the moments described — no ex
 | `superpowers:brainstorming` | Before any new feature, significant code change, or design decision. No code is written until a design is presented and approved. |
 | `superpowers:verification-before-completion` | Before claiming any task is complete, before stating tests pass, and before creating a commit or PR. |
 | `superpowers:systematic-debugging` | Before attempting to fix any bug, test failure, or unexpected behaviour. Root cause first, fix second. |
+| `superpowers:test-driven-development` | Before writing any implementation code for a feature or bugfix — write the failing test first. |
+| `superpowers:finishing-a-development-branch` | After all implementation tasks are complete and verified, before merging/pushing — structures the merge/PR/cleanup decision. |
 
 ---
 
@@ -35,6 +37,18 @@ Start the dev server first (`cd web && npm run dev -- --port 5175`), then use
 `mcp__plugin_playwright_playwright__browser_*` tools to navigate, resize the viewport,
 evaluate JS (measure element dimensions, check overflow), and take screenshots.
 Use it when working on responsive layout, canvas sizing, or any visual rendering change.
+
+## Library Documentation
+
+The context7 MCP plugin (`mcp__plugin_context7_context7__*`) fetches up-to-date library
+docs. Use it when working with Vite config, Playwright APIs, TypeScript compiler options,
+or OpenCV.js — prefer it over relying on training-data knowledge for external APIs.
+
+## TypeScript Language Server
+
+The `typescript-lsp` plugin is installed and `typescript-language-server` is available
+via npx. The built-in `LSP` tool provides go-to-definition, find-references, and
+compiler diagnostics. Use it to complement serena for precise cross-file type navigation.
 
 ---
 
