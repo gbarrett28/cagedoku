@@ -228,6 +228,10 @@ Renders the 9×9 sudoku grid with the following layers (back → front):
 
 ### Action Bar
 
+The action bar is a **sticky bar** that sits directly below the page header
+(`<div class="sticky-bars">` wraps both). It is visible only in playing mode
+and scrolls with the page as a single unit with the header.
+
 | Button | Condition | Description |
 |---|---|---|
 | Undo | Always (disabled until a move exists) | Revert the last digit entry |
@@ -238,6 +242,19 @@ Renders the 9×9 sudoku grid with the following layers (back → front):
 | Inspect cage | Visible in **Killer** playing mode (always) | Enter cage inspection mode |
 | Virtual cage | Visible in **Killer** playing mode (always) | Enter virtual cage drawing mode |
 | Reveal | Visible when a cell is selected | Reveal the solution digit for the selected cell after a confirmation popup |
+
+### Digit Pad
+
+Rendered below the grid canvas inside `#playing-actions`. Uses a 5-column CSS
+grid producing a fixed 2-row layout:
+
+```
+[ 1 ][ 2 ][ 3 ][ 4 ][ 5 ]
+[ 6 ][ 7 ][ 8 ][ 9 ][ X ]
+```
+
+The "Puzzle solved — well done!" completion message appears below the digit pad
+when `isGridSolved()` returns true.
 
 ### Reveal
 
@@ -387,9 +404,9 @@ The element IDs match the HTML (`index.html`).
 | Corner picker actions | `#corner-picker-actions` (`#corner-apply-btn`, `#corner-cancel-btn`) | While corner picker is active |
 | Type dropdown | `#puzzle-type-select` | Always; values `killer` / `classic` |
 | Review status | `#review-status-msg` | Shows validation errors inline |
-| **Digit pad** | `#digit-1` … `#digit-0` | **Classic review only** — `#playing-actions` is shown but `#action-group` is hidden so only the digit pad is reachable |
+| **Digit pad** | `#digit-1` … `#digit-0` | **Classic review only** — `#playing-actions` is shown but `#action-bar` is hidden so only the digit pad is reachable |
 
-### Playing Screen (`#review-panel` visible, `#playing-actions` visible, `#action-group` visible)
+### Playing Screen (`#review-panel` visible, `#playing-actions` visible, `#action-bar` visible)
 
 | Element | ID | Visible when |
 |---|---|---|

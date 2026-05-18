@@ -493,7 +493,7 @@ function renderPlayingMode(state: PuzzleState): void {
   el<HTMLElement>('original-col').hidden = true;
   el<HTMLElement>('warped-col').hidden = true;
   el<HTMLElement>('playing-actions').hidden = false;
-  el<HTMLElement>('action-group').hidden = false;
+  el<HTMLElement>('action-bar').hidden = false;
   el<HTMLElement>('solution-panel').hidden = true;
   el<HTMLButtonElement>('new-puzzle-btn').hidden = false;
   updateUndoButton(state);
@@ -773,7 +773,6 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
   // stays hidden — those controls are only active in playing mode.
   const isClassicReview = state.puzzleType === 'classic';
   el<HTMLElement>('playing-actions').hidden = !isClassicReview;
-  el<HTMLElement>('action-group').hidden = true;  // always hidden during review
   el<HTMLElement>('upload-panel').hidden = true;
   el<HTMLButtonElement>('new-puzzle-btn').hidden = false;
   setStatus(warning ? `Warning: ${warning}` : '');
@@ -1232,7 +1231,7 @@ document.addEventListener('DOMContentLoaded', () => {
     el<HTMLElement>('review-panel').hidden = true;
     el<HTMLElement>('solution-panel').hidden = true;
     el<HTMLElement>('playing-actions').hidden = true;
-    el<HTMLElement>('action-group').hidden = false;  // reset for next puzzle
+    el<HTMLElement>('action-bar').hidden = true;
     el<HTMLButtonElement>('new-puzzle-btn').hidden = true;
     el<HTMLButtonElement>('candidates-btn').disabled = true;
     el<HTMLButtonElement>('hints-btn').disabled = true;
