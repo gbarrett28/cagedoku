@@ -26,6 +26,14 @@ that are not necessary for the task, and verbose output where concise output suf
 When choosing a plan execution mode, always choose **inline execution** (executing-plans)
 over subagent-driven execution — it uses fewer total tokens.
 
+## UI Visual Verification
+
+The Playwright MCP plugin is available for visual testing of layout and CSS changes.
+Start the dev server first (`cd web && npm run dev -- --port 5175`), then use
+`mcp__plugin_playwright_playwright__browser_*` tools to navigate, resize the viewport,
+evaluate JS (measure element dimensions, check overflow), and take screenshots.
+Use it when working on responsive layout, canvas sizing, or any visual rendering change.
+
 ---
 
 # Project Overview
