@@ -26,6 +26,8 @@ that are not necessary for the task, and verbose output where concise output suf
 When choosing a plan execution mode, always choose **inline execution** (executing-plans)
 over subagent-driven execution — it uses fewer total tokens.
 
+Never offer the visual companion feature during brainstorming — use Playwright MCP directly.
+
 ## UI Visual Verification
 
 The Playwright MCP plugin is available for visual testing of layout and CSS changes.
@@ -88,6 +90,9 @@ function foo(col: number, row: number)   ✗  never
 **Human-readable label** — always use `cellLabel([row, col])` from
 `web/src/engine/rules/_labels.ts`. Never inline `r${r+1}c${c+1}`.
 
+**User-facing messages** always use 1-based indexing. Internal code is 0-based; never
+expose 0-based indices in UI text, error messages, or hint explanations.
+
 **Exception — border arrays:** `borderX[col][rowGap]` and `borderY[colGap][row]` are
 intentionally col-first because their two dimensions represent orthogonal geometric
 quantities (a column index paired with a row-gap index, or vice versa). Do not change
@@ -111,6 +116,9 @@ ToolSearch query: "select:mcp__serena__get_symbols_overview"
 If serena tools do not appear in ToolSearch, the plugin is not enabled — ask the user to enable
 `serena@claude-plugins-official` in Claude Code settings and restart the session before proceeding.
 Do NOT fall back to filesystem tools while serena is merely disabled.
+
+**Debug screenshots:** When the user refers to a `.png` by name only (e.g. "look in
+Untitled.png"), it is at the project root. Read it with the Read tool. Never commit it.
 
 ## Core Workflow
 
@@ -225,6 +233,9 @@ After merging, **delete the feature branch**:
 ```bash
 git branch -d feature/<name>
 ```
+
+Pushing to `master` triggers GitHub Actions which auto-deploys to GitHub Pages — no
+manual deploy step needed. Verify with `gh run list --limit 3`.
 
 `playwright.config.ts` runs `app.spec.ts` and `offline.spec.ts` against `vite preview`
 (production build). `playwright.dev.config.ts` runs `flow.spec.ts` against `vite dev`
