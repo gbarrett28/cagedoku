@@ -12,7 +12,7 @@
 <div class="sticky-bars">
 <header>
   <div class="header-inner">
-    <h1>COACH</h1>
+    <div id="logo-k" class="logo-k">K</div>
     <span class="header-sub">Killer Sudoku Coaching App</span>
     <span id="load-time" class="header-sub" style="font-size:0.75em;opacity:0.6;margin-left:auto;margin-right:0.5rem"></span>
     <!-- Action group: visible in playing mode only -->
@@ -70,6 +70,7 @@
           <canvas id="grid-canvas"></canvas>
           <input id="cage-total-edit" type="number" min="1" max="45">
         </div>
+        <div id="side-panel">
         <!-- Playing mode actions: digit pad in Classic review; full action bar in playing mode -->
         <div id="playing-actions" hidden>
           <div class="digit-pad">
@@ -86,26 +87,27 @@
           </div>
           <p id="completion-msg" class="completion-msg" hidden>Puzzle solved — well done!</p>
         </div>
-      </div>
-      <div class="image-col" id="inspector-col" hidden>
-        <h2 id="inspector-heading"></h2>
-        <div id="cage-inspector"></div>
-      </div>
-      <div class="image-col" id="virtual-cage-col" hidden>
-        <h2>Virtual Cages</h2>
-        <div id="vc-form" hidden>
-          <p id="vc-selection-status" class="hint-text">Click cells on the grid</p>
-          <div class="form-row">
-            <label class="field-label" for="vc-total-input">Total</label>
-            <input type="number" id="vc-total-input" class="total-input" min="3" max="45" placeholder="e.g. 17">
-          </div>
-          <div class="form-actions">
-            <button id="vc-add-btn">Add</button>
-            <button id="vc-cancel-btn" class="btn-secondary">Cancel</button>
-          </div>
+        <div id="inspector-col" hidden>
+          <h2 id="inspector-heading"></h2>
+          <div id="cage-inspector"></div>
         </div>
-        <div id="virtual-cage-list"></div>
-      </div>
+        <div id="virtual-cage-col" hidden>
+          <h2>Virtual Cages</h2>
+          <div id="vc-form" hidden>
+            <p id="vc-selection-status" class="hint-text">Click cells on the grid</p>
+            <div class="form-row">
+              <label class="field-label" for="vc-total-input">Total</label>
+              <input type="number" id="vc-total-input" class="total-input" min="3" max="45" placeholder="e.g. 17">
+            </div>
+            <div class="form-actions">
+              <button id="vc-add-btn">Add</button>
+              <button id="vc-cancel-btn" class="btn-secondary">Cancel</button>
+            </div>
+          </div>
+          <div id="virtual-cage-list"></div>
+        </div>
+        </div><!-- #side-panel -->
+      </div><!-- #canvas-col -->
     </div>
 
     <p id="classic-edit-hint" class="hint-text" hidden>

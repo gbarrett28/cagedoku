@@ -292,7 +292,43 @@ mode to maximise grid size:
 - `.header-sub`, `#load-time`, `#detected-layout-heading` — hidden
 - `main` top/bottom margin reduced to `0.5rem`
 - `#review-panel` padding reduced to `0.5rem`; background and border set to transparent
-- Canvas `max-width` uses `100vh − 204px` offset (was `360px` before this optimisation)
+
+### Responsive Layout (Portrait / Landscape)
+
+The playing-mode layout adapts to viewport orientation via
+`@media (orientation: landscape)` + `body:has(#playing-actions:not([hidden]))`.
+
+**Portrait:** sticky header at top, grid fills card width (bounded by available
+height via `max-width: min(100%, calc(100dvh - var(--header-h) - var(--digit-pad-h) - var(--chrome-v)))`),
+`#side-panel` below the canvas.
+
+**Landscape:** `<body>` becomes a CSS grid (`auto 1fr`). `.sticky-bars` is the
+full-height left sidebar; `.header-inner` uses `flex-direction: column` with
+`justify-content: space-between` (K at top, action group centre, permanent buttons
+at bottom). `#canvas-col` is `flex-direction: row`: the canvas fills remaining
+width via `flex: 1 1 0px; max-height: 100%; aspect-ratio: 1` (largest square
+fitting the available height). `#side-panel` is the right strip.
+
+**CSS custom properties** (`:root`):
+- `--header-h: 124px` — portrait header height (2-row wrapped layout at narrow viewports, measured 121px)
+- `--digit-pad-h: 116px` — `#side-panel` height in portrait playing mode (measured 113.59px)
+- `--chrome-v: 2rem` — main margins + card padding in playing mode
+
+**K badge** (`.logo-k`): replaces `<h1>COACH</h1>`. Blue rounded-rect badge matching
+the favicon. `.header-sub` ("Killer Sudoku Coaching App") is still present but
+hidden in playing mode via `:has(#action-group:not([hidden]))`.
+
+**`#side-panel`:** unified switchable zone inside `#canvas-col`, after `#canvas-wrapper`.
+Contains three mutually exclusive panels — exactly one visible at a time:
+- `#playing-actions` — digit pad (default in playing mode)
+- `#inspector-col` — cage solutions inspector (shown when 🔍 active)
+- `#virtual-cage-col` — virtual cage form (shown when ➕ active)
+
+In review mode, inspector and virtual-cage panels appear below the detected-layout
+canvas (same `#side-panel` wrapper) rather than as separate columns in `#images-row`.
+
+**N|C pill in landscape:** `transform: rotate(90deg)` applied so the pill reads
+vertically within the sidebar.
 
 ### Reveal
 

@@ -23,6 +23,9 @@ When there is a choice of approaches, always prefer the one that achieves the fi
 result with the fewest total tokens. Avoid redundant reads, intermediate explorations
 that are not necessary for the task, and verbose output where concise output suffices.
 
+When choosing a plan execution mode, always choose **inline execution** (executing-plans)
+over subagent-driven execution — it uses fewer total tokens.
+
 ---
 
 # Project Overview

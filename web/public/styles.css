@@ -15,6 +15,9 @@
   --success:      #34d399;
   --error:        #f87171;
   --input-bg:     #111827;
+  --header-h:    124px;  /* portrait playing header height: action group wraps to 2 rows at narrow viewports (measured 121px at 390px wide) */
+  --digit-pad-h: 116px;  /* #side-panel height in portrait playing mode (measured 113.59px, rounded up) */
+  --chrome-v:    2rem;   /* main margins (0.5rem×2) + card padding (0.5rem×2) in playing mode */
 }
 
 *,
@@ -39,6 +42,23 @@ body {
   position: sticky;
   top: 0;
   z-index: 100;
+}
+
+/* ── K logo badge ── */
+
+.logo-k {
+  background: var(--accent);
+  color: #fff;
+  font-weight: bold;
+  border-radius: 4px;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+  user-select: none;
 }
 
 /* ── Tooltip system ── */
@@ -342,7 +362,11 @@ button:hover:not(:disabled) {
 /* Playing mode: only one grid + digit pad below; action bar is in sticky header.
    :has() re-evaluates when JS toggles [hidden]. */
 body:has(#playing-actions:not([hidden])) #canvas-col {
-  max-width: clamp(200px, calc(100vh - 204px), 458px);
+  max-width: min(100%, calc(100dvh - var(--header-h) - var(--digit-pad-h) - var(--chrome-v)));
+}
+
+#side-panel {
+  width: 100%;
 }
 
 #canvas-wrapper {
@@ -596,9 +620,123 @@ body:has(#playing-actions:not([hidden])) #canvas-col {
     flex-basis: 100%;
   }
 
-  /* Playing mode in landscape: only one grid visible, use full viewport height. */
+}
+
+/* ── Landscape playing mode: full-height sidebar layout ── */
+
+@media (orientation: landscape) {
+
+  /* Body becomes a two-column grid: [left sidebar] [right content] */
+  body:has(#playing-actions:not([hidden])) {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  /* .sticky-bars becomes the full-height left sidebar */
+  body:has(#playing-actions:not([hidden])) .sticky-bars {
+    height: 100dvh;
+    overflow-y: auto;
+  }
+
+  body:has(#playing-actions:not([hidden])) header {
+    height: 100%;
+  }
+
+  /* Header inner becomes a vertical flex column:
+     K logo at top, action buttons in middle, permanent buttons at bottom */
+  body:has(#playing-actions:not([hidden])) .header-inner {
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    height: 100%;
+    gap: 0;
+  }
+
+  /* Action group stacks vertically */
+  body:has(#playing-actions:not([hidden])) #action-group {
+    flex-direction: column;
+    margin-left: 0;
+  }
+
+  /* N|C pill rotates to read vertically in the sidebar */
+  body:has(#playing-actions:not([hidden])) #mode-toggle {
+    transform: rotate(90deg);
+  }
+
+  /* Reset new-puzzle-btn margin — space-between handles positioning */
+  body:has(#playing-actions:not([hidden])) #new-puzzle-btn {
+    margin-left: 0;
+  }
+
+  /* main fills the right grid column */
+  body:has(#playing-actions:not([hidden])) main {
+    height: 100dvh;
+    overflow: hidden;
+    margin: 0;
+  }
+
+  /* review-panel fills main */
+  body:has(#playing-actions:not([hidden])) #review-panel {
+    height: 100%;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  /* images-row fills review-panel */
+  body:has(#playing-actions:not([hidden])) #images-row {
+    height: 100%;
+    margin-bottom: 0;
+  }
+
+  /* canvas-col: full-height flex row — canvas left, side-panel right */
   body:has(#playing-actions:not([hidden])) #canvas-col {
-    max-width: clamp(200px, calc(100vh - 204px), 458px);
+    max-width: none;
+    height: 100dvh;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  /* canvas-wrapper: fill remaining width, bounded by viewport height to stay square.
+     flex:1 fills available width after side-panel; max-height:100% clamps height to
+     100dvh; aspect-ratio:1 transfers that constraint back to width. */
+  body:has(#playing-actions:not([hidden])) #canvas-wrapper {
+    flex: 1 1 0px;
+    min-width: 0;
+    aspect-ratio: 1;
+    max-height: 100%;
+    width: auto;
+  }
+
+  /* side-panel: right strip, vertically centred */
+  body:has(#playing-actions:not([hidden])) #side-panel {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    align-self: stretch;
+    overflow-y: auto;
+    width: auto;
+  }
+
+  /* Digit pad reflows to two vertical columns:
+     grid-auto-flow:column fills column-first → [1][6]/[2][7]/[3][8]/[4][9]/[5][X] */
+  body:has(#playing-actions:not([hidden])) .digit-pad {
+    grid-template-columns: repeat(2, 3rem);
+    grid-template-rows: repeat(5, auto);
+    grid-auto-flow: column;
+    margin-top: 0;
+  }
+
+  body:has(#playing-actions:not([hidden])) #completion-msg {
+    text-align: center;
   }
 }
 
