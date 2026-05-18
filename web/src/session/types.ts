@@ -120,6 +120,8 @@ export interface CoachSettings {
   readonly alwaysApplyRules: readonly string[];
   /** Milliseconds between each auto-placement step when animating. 0 = instant. */
   readonly autoPlacementDelay: number;
+  /** Show candidate grid automatically when playing mode starts. Default: true. */
+  readonly showCandidatesByDefault: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -224,5 +226,6 @@ export interface SettingsResponse {
   readonly alwaysApplyRules: readonly string[];
   readonly autoPlacementDelay: number;
   readonly showEssential: boolean;
+  readonly showCandidatesByDefault: boolean;
   readonly hintableRules: readonly RuleInfo[];
 }

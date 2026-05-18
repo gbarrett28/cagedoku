@@ -15,25 +15,22 @@
     <h1>COACH</h1>
     <span class="header-sub">Killer Sudoku Coaching App</span>
     <span id="load-time" class="header-sub" style="font-size:0.75em;opacity:0.6;margin-left:auto;margin-right:0.5rem"></span>
-    <button id="new-puzzle-btn" class="btn-secondary" hidden>New puzzle</button>
-    <button id="help-btn" class="btn-secondary">Help</button>
-    <button id="config-btn" class="btn-secondary">Config</button>
-    <button id="feedback-btn" class="btn-secondary">Feedback</button>
+    <!-- Action group: visible in playing mode only -->
+    <div id="action-group" class="hints-anchor" hidden>
+      <button id="undo-btn" class="btn-secondary btn-icon" disabled data-tooltip="Undo">↩</button>
+      <button id="hints-btn" class="btn-secondary btn-icon" disabled data-tooltip="Hints">💡</button>
+      <div id="hints-dropdown" class="hints-dropdown" hidden></div>
+      <button id="mode-toggle" class="mode-toggle" hidden data-tooltip="Toggle candidate edit mode"><span class="mode-opt">N</span><span class="mode-sep">|</span><span class="mode-opt">C</span></button>
+      <button id="inspect-cage-btn" class="btn-secondary btn-icon" hidden data-tooltip="Inspect cage">🔍</button>
+      <button id="virtual-cage-btn" class="btn-secondary btn-icon" hidden data-tooltip="Virtual cage">➕</button>
+      <button id="reveal-btn" class="btn-secondary btn-icon" hidden data-tooltip="Reveal">👁</button>
+    </div>
+    <button id="new-puzzle-btn" class="btn-secondary btn-icon" hidden data-tooltip="New puzzle">🏠</button>
+    <button id="help-btn" class="btn-secondary btn-icon" data-tooltip="Help">?</button>
+    <button id="config-btn" class="btn-secondary btn-icon" data-tooltip="Config">⚙</button>
+    <button id="feedback-btn" class="btn-secondary btn-icon" data-tooltip="Feedback">✉</button>
   </div>
 </header>
-<div id="action-bar" hidden>
-  <div id="action-group" class="form-actions hints-anchor">
-    <button id="undo-btn" class="btn-secondary" disabled>Undo</button>
-    <button id="hints-btn" class="btn-secondary" disabled>Hints</button>
-    <div id="hints-dropdown" class="hints-dropdown" hidden></div>
-    <button id="candidates-btn" class="btn-secondary" disabled>Show candidates</button>
-    <button id="edit-candidates-btn" class="btn-secondary" hidden>Edit candidates</button>
-    <button id="help-candidates-btn" class="btn-secondary" hidden>?</button>
-    <button id="inspect-cage-btn" class="btn-secondary" hidden>Inspect cage</button>
-    <button id="virtual-cage-btn" class="btn-secondary" hidden>Virtual cage</button>
-    <button id="reveal-btn" class="btn-secondary" hidden>Reveal</button>
-  </div>
-</div>
 </div>
 
 <main>
@@ -167,6 +164,10 @@
 
 <dialog id="config-modal">
   <h2>Solver Rules</h2>
+  <div class="form-row">
+    <label class="field-label" for="candidates-default-toggle">Show candidates by default</label>
+    <input type="checkbox" id="candidates-default-toggle" checked>
+  </div>
   <div class="form-row">
     <label class="field-label" for="essential-toggle">Essential digit highlight</label>
     <input type="checkbox" id="essential-toggle" checked>

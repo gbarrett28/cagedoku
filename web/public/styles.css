@@ -33,7 +33,7 @@ body {
   min-height: 100vh;
 }
 
-/* ── Sticky bars (header + playing action bar) ── */
+/* ── Sticky bars ── */
 
 .sticky-bars {
   position: sticky;
@@ -41,10 +41,125 @@ body {
   z-index: 100;
 }
 
-#action-bar {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding: 0.625rem 2rem;
+/* ── Tooltip system ── */
+
+[data-tooltip] { position: relative; }
+
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 200;
+}
+
+[data-tooltip]:hover::after { opacity: 1; }
+
+/* ── Mode toggle pill (N | C) ── */
+
+.mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  height: 2.25rem;
+  color: var(--text-muted);
+  text-transform: none;
+  opacity: 1;
+}
+
+.mode-toggle:hover:not(:disabled) { opacity: 1; background: var(--surface-2); }
+
+.mode-toggle .mode-opt {
+  padding: 0 0.55rem;
+  line-height: 2.25rem;
+  transition: background 0.15s, color 0.15s;
+}
+
+.mode-toggle .mode-sep {
+  color: var(--border);
+  line-height: 2.25rem;
+}
+
+/* N active when not .active; C active when .active */
+.mode-toggle:not(.active) .mode-opt:first-child,
+.mode-toggle.active .mode-opt:last-child {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ── Icon buttons in header ── */
+
+.btn-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  font-size: 1.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-icon.active {
+  background: var(--accent-dim);
+  color: #fff;
+  opacity: 1;
+}
+
+/* ── Action group inline in header ── */
+
+#action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: 0.75rem;
+}
+
+/* Push permanent buttons (new-puzzle onward) to far right in playing mode */
+body:has(#action-group:not([hidden])) #new-puzzle-btn {
+  margin-left: auto;
+}
+
+/* Hide subtitle and load-time in playing mode to save header space */
+body:has(#action-group:not([hidden])) .header-sub,
+body:has(#action-group:not([hidden])) #load-time {
+  display: none;
+}
+
+/* Hide "Detected Layout" heading in playing mode */
+body:has(#action-group:not([hidden])) #detected-layout-heading {
+  display: none;
+}
+
+/* ── Playing-mode space recovery ── */
+
+body:has(#action-group:not([hidden])) main {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+body:has(#action-group:not([hidden])) #review-panel {
+  padding: 0.5rem;
+  background: transparent;
+  border-color: transparent;
 }
 
 /* ── Header ── */
@@ -227,7 +342,7 @@ button:hover:not(:disabled) {
 /* Playing mode: only one grid + digit pad below; action bar is in sticky header.
    :has() re-evaluates when JS toggles [hidden]. */
 body:has(#playing-actions:not([hidden])) #canvas-col {
-  max-width: clamp(200px, calc(100vh - 360px), 458px);
+  max-width: clamp(200px, calc(100vh - 204px), 458px);
 }
 
 #canvas-wrapper {
@@ -483,7 +598,7 @@ body:has(#playing-actions:not([hidden])) #canvas-col {
 
   /* Playing mode in landscape: only one grid visible, use full viewport height. */
   body:has(#playing-actions:not([hidden])) #canvas-col {
-    max-width: clamp(200px, calc(100vh - 360px), 458px);
+    max-width: clamp(200px, calc(100vh - 204px), 458px);
   }
 }
 
@@ -530,8 +645,24 @@ body:has(#playing-actions:not([hidden])) #canvas-col {
     font-size: 1.25rem;
   }
 
-  #action-bar {
-    padding: 0.625rem 1rem;
+  header {
+    padding: 0.625rem 0.75rem;
+  }
+
+  /* Tooltips are hover-only — suppress them on touch-sized viewports to
+     prevent their white-space:nowrap ::after elements causing scroll overflow */
+  [data-tooltip]::after { display: none; }
+
+  /* In playing mode, wrap action group to its own row below COACH + nav buttons */
+  body:has(#action-group:not([hidden])) .header-inner {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  body:has(#action-group:not([hidden])) #action-group {
+    order: 3;
+    flex-basis: 100%;
+    margin-left: 0;
+    padding-bottom: 0.25rem;
   }
 }
 

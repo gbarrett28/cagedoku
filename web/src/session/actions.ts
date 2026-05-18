@@ -958,6 +958,7 @@ export function getSettingsData(): SettingsResponse {
     alwaysApplyRules: settings.alwaysApplyRules,
     autoPlacementDelay: settings.autoPlacementDelay,
     showEssential: true, // localStorage-persisted by main.ts
+    showCandidatesByDefault: settings.showCandidatesByDefault,
     hintableRules,
   };
 }
@@ -969,8 +970,9 @@ export function getSettingsData(): SettingsResponse {
 export function saveSettingsData(
   alwaysApplyRules: string[],
   autoPlacementDelay: number,
+  showCandidatesByDefault: boolean,
 ): PuzzleState | null {
-  saveSettings({ alwaysApplyRules, autoPlacementDelay });
+  saveSettings({ alwaysApplyRules, autoPlacementDelay, showCandidatesByDefault });
   const s = getState();
   if (s === null) return null;
   const updated: PuzzleState = { ...s, alwaysApplyRules };
