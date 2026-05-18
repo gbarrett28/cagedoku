@@ -11,6 +11,8 @@ These three skills **must always** be invoked at the moments described — no ex
 | `superpowers:systematic-debugging` | Before attempting to fix any bug, test failure, or unexpected behaviour. Root cause first, fix second. |
 | `superpowers:test-driven-development` | Before writing any implementation code for a feature or bugfix — write the failing test first. |
 | `superpowers:finishing-a-development-branch` | After all implementation tasks are complete and verified, before merging/pushing — structures the merge/PR/cleanup decision. |
+| `superpowers:requesting-code-review` | Before merging any feature branch — dispatches a fresh subagent reviewer with no session history for unbiased review. |
+| `superpowers:receiving-code-review` | When receiving code review feedback — verify technically before implementing; never agree blindly. |
 
 ---
 
@@ -37,6 +39,20 @@ Start the dev server first (`cd web && npm run dev -- --port 5175`), then use
 `mcp__plugin_playwright_playwright__browser_*` tools to navigate, resize the viewport,
 evaluate JS (measure element dimensions, check overflow), and take screenshots.
 Use it when working on responsive layout, canvas sizing, or any visual rendering change.
+
+## PR Review Tools
+
+The `pr-review-toolkit` plugin provides 6 specialist review agents for targeted
+pre-merge analysis — invoke individually or together:
+- `pr-review-toolkit:code-reviewer` — bugs, security, quality
+- `pr-review-toolkit:pr-test-analyzer` — test coverage gaps
+- `pr-review-toolkit:silent-failure-hunter` — swallowed errors / bad fallbacks
+- `pr-review-toolkit:type-design-analyzer` — type invariants and encapsulation
+- `pr-review-toolkit:comment-analyzer` — stale / inaccurate comments
+- `pr-review-toolkit:code-simplifier` — clarity and maintainability
+
+The `coderabbit` plugin provides automated PR-level review via the CodeRabbit CLI
+(`coderabbit:code-reviewer`). Useful once PRs are opened against the repo.
 
 ## Library Documentation
 
