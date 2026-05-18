@@ -15,6 +15,7 @@ build/
 .serena/
 .mcp.json
 no_gutter.py
+.playwright-mcp/
 
 # Generated training data conversion artifacts (keep the canonical accumulated set)
 *_train.json
