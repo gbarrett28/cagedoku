@@ -15,9 +15,6 @@
   --success:      #34d399;
   --error:        #f87171;
   --input-bg:     #111827;
-  --header-h:    124px;  /* portrait playing header height: action group wraps to 2 rows at narrow viewports (measured 121px at 390px wide) */
-  --digit-pad-h: 116px;  /* #side-panel height in portrait playing mode (measured 113.59px, rounded up) */
-  --chrome-v:    2rem;   /* main margins (0.5rem×2) + card padding (0.5rem×2) in playing mode */
 }
 
 *,
@@ -359,14 +356,61 @@ button:hover:not(:disabled) {
   max-width: clamp(200px, calc(50vh - 125px), 458px);
 }
 
-/* Playing mode: only one grid + digit pad below; action bar is in sticky header.
+/* Playing mode: flex chain fills the viewport exactly — no hardcoded measurements.
+   Body becomes a flex column; each ancestor propagates remaining height down to
+   canvas-col, which then splits it between the square canvas-wrapper and side-panel.
+   The landscape @media block overrides body to display:grid, keeping the same chain
+   but reorienting canvas-col to flex-direction:row.
    :has() re-evaluates when JS toggles [hidden]. */
-body:has(#playing-actions:not([hidden])) #canvas-col {
-  max-width: min(100%, calc(100dvh - var(--header-h) - var(--digit-pad-h) - var(--chrome-v)));
+body:has(#playing-actions:not([hidden])) {
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-#side-panel {
-  width: 100%;
+body:has(#playing-actions:not([hidden])) main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin: 0;
+}
+
+body:has(#playing-actions:not([hidden])) #review-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+body:has(#playing-actions:not([hidden])) #images-row {
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 0;
+}
+
+body:has(#playing-actions:not([hidden])) #canvas-col {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+body:has(#playing-actions:not([hidden])) #canvas-wrapper {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  aspect-ratio: 1;
+  max-width: 100%;
+}
+
+body:has(#playing-actions:not([hidden])) #side-panel {
+  flex-shrink: 0;
 }
 
 #canvas-wrapper {

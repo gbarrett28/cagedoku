@@ -298,21 +298,19 @@ mode to maximise grid size:
 The playing-mode layout adapts to viewport orientation via
 `@media (orientation: landscape)` + `body:has(#playing-actions:not([hidden]))`.
 
-**Portrait:** sticky header at top, grid fills card width (bounded by available
-height via `max-width: min(100%, calc(100dvh - var(--header-h) - var(--digit-pad-h) - var(--chrome-v)))`),
-`#side-panel` below the canvas.
+**Portrait and landscape share a flex chain** — no hardcoded measurements.
+`body:has(#playing-actions:not([hidden]))` sets `height: 100dvh; overflow: hidden;
+display: flex; flex-direction: column`. Each ancestor (`main → #review-panel →
+#images-row → #canvas-col`) gets `flex: 1; min-height: 0` to propagate the
+remaining height. `#canvas-wrapper` uses `flex: 1; aspect-ratio: 1; max-width: 100%`
+to take the largest square that fits the column (width-constrained on tall phones,
+height-constrained on short ones). `#side-panel` has `flex-shrink: 0` so it never
+compresses the canvas.
 
-**Landscape:** `<body>` becomes a CSS grid (`auto 1fr`). `.sticky-bars` is the
-full-height left sidebar; `.header-inner` uses `flex-direction: column` with
-`justify-content: space-between` (K at top, action group centre, permanent buttons
-at bottom). `#canvas-col` is `flex-direction: row`: the canvas fills remaining
-width via `flex: 1 1 0px; max-height: 100%; aspect-ratio: 1` (largest square
-fitting the available height). `#side-panel` is the right strip.
-
-**CSS custom properties** (`:root`):
-- `--header-h: 124px` — portrait header height (2-row wrapped layout at narrow viewports, measured 121px)
-- `--digit-pad-h: 116px` — `#side-panel` height in portrait playing mode (measured 113.59px)
-- `--chrome-v: 2rem` — main margins + card padding in playing mode
+**Landscape:** the `@media (orientation: landscape)` block overrides `body` to
+`display: grid` (sidebar | content), keeping the same flex chain inside `main`.
+`#canvas-col` switches to `flex-direction: row` and `#canvas-wrapper` uses
+`max-height: 100%` instead of `max-width: 100%` as its square constraint.
 
 **K badge** (`.logo-k`): replaces `<h1>COACH</h1>`. Blue rounded-rect badge matching
 the favicon. `.header-sub` ("Killer Sudoku Coaching App") is still present but
