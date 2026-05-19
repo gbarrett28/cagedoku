@@ -75,7 +75,7 @@ export class LinearElimination {
     );
 
     const hints: HintResult[] = [];
-    for (const [vcells, vtotal, distinct] of ctx.board.linearSystem.virtualCages) {
+    for (const { cells: vcells, total: vtotal, distinct } of ctx.board.linearSystem.virtualCages) {
       if (!distinct) continue;
       if ((vcells as Cell[]).length < 2 || (vcells as Cell[]).length > 3) continue;
       const key = (vcells as Cell[]).map(([r,c]) => `${r},${c}`).sort().join('|');

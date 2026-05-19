@@ -110,7 +110,7 @@ export class BoardState {
     this.linearSystem = new LinearSystem(spec, { deriveVirtualCages: includeVirtualCages });
 
     // Add virtual cage units from the linear system
-    for (const [vcells, vtotal, distinct, precompSolns] of includeVirtualCages ? this.linearSystem.virtualCages : []) {
+    for (const { cells: vcells, total: vtotal, distinct, precomputedSolns: precompSolns } of includeVirtualCages ? this.linearSystem.virtualCages : []) {
       const vunitId = this.units.length;
       const cells = vcells as Cell[];
       this.units.push({ unitId: vunitId, kind: UnitKind.CAGE, cells, distinctDigits: distinct });

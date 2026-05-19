@@ -26,6 +26,7 @@ function gcd(a: number, b: number): number {
   return a || 1;
 }
 
+/** Exact rational number, always stored in lowest terms (GCD-normalised, denominator always positive). */
 class Frac {
   readonly n: number;
   readonly d: number; // always positive
@@ -58,11 +59,20 @@ type SparseRow = Map<string, Frac>;
 
 // ---------------------------------------------------------------------------
 // Virtual cage type
-// (cells, total, distinctDigits, precomputedSolns | null)
-// precomputedSolns=null → BoardState calls solSums; list → use directly (non-burb)
 // ---------------------------------------------------------------------------
 
-export type VirtualCage = readonly [readonly Cell[], number, boolean, number[][] | null];
+/**
+ * A cage derived from the linear system.
+ *
+ * `precomputedSolns === null` → `BoardState` calls `solSums` at construction time.
+ * `precomputedSolns !== null` → use the provided list directly (non-burb derivation).
+ */
+export interface VirtualCage {
+  readonly cells: readonly Cell[];
+  readonly total: number;
+  readonly distinct: boolean;
+  readonly precomputedSolns: number[][] | null;
+}
 
 // ---------------------------------------------------------------------------
 // Internal equation used during reduce_derive / non-burb derivation
@@ -375,13 +385,13 @@ export class LinearSystem {
     const cells = nonzero.map(([j]) => idxToCell.get(j)!);
     const key = this._cellSetKey(cells);
     if (realCageCellSets.has(key) || !isBurb(cells)) return;
-    this.virtualCages.push([cells, rhs.toInt(), true, null]);
+    this.virtualCages.push({ cells, total: rhs.toInt(), distinct: true, precomputedSolns: null });
   }
 
   private _deriveSumPairs(): void {
     const covered = new Set<string>();
     for (const [p, q] of this.deltaPairs) covered.add(this._cellSetKey([p, q]));
-    for (const [cells] of this.virtualCages)
+    for (const { cells } of this.virtualCages)
       if (cells.length === 2) covered.add(this._cellSetKey(cells as Cell[]));
 
     const rids = [...this._liveRows.keys()];
@@ -451,7 +461,7 @@ export class LinearSystem {
     }
 
     const seenSw = new Set<string>(eqs.map(e => [...e.cells].sort().join('|')));
-    for (const [cells] of this.virtualCages)
+    for (const { cells } of this.virtualCages)
       seenSw.add(this._cellSetKey(cells as Cell[]));
 
     const pushDerived = (fcvr: Set<string>, sm: number) => {
@@ -460,7 +470,7 @@ export class LinearSystem {
       seenSw.add(key);
       const cells = [...fcvr].map(keyToCell) as Cell[];
       eqs.push({cells: fcvr, total: sm, solns: solSums(cells.length, 0, sm).map(s => [...s])});
-      this.virtualCages.push([cells, sm, true, null]);
+      this.virtualCages.push({ cells, total: sm, distinct: true, precomputedSolns: null });
     };
 
     const allLines = [...rowSets, ...[...rowSets].reverse(), ...colSets, ...[...colSets].reverse()];
@@ -468,7 +478,7 @@ export class LinearSystem {
     for (const [f, sm] of this._addEqunsLine(allLines.slice(18), cageOf, totalOf)) pushDerived(f, sm);
     for (const [f, sm] of this._addEqunsBox(boxCellSets, cageOf, totalOf)) pushDerived(f, sm);
 
-    for (const [cells, vtotal, distinct] of this.virtualCages) {
+    for (const { cells, total: vtotal, distinct } of this.virtualCages) {
       if (distinct) {
         const key = this._cellSetKey(cells as Cell[]);
         if (!seenSw.has(key)) {
@@ -497,7 +507,7 @@ export class LinearSystem {
         if (!must || must.size === 0) continue;
       }
       seen.add(key);
-      this.virtualCages.push([cells, eq.total, distinct, eq.solns.map(s => [...s])]);
+      this.virtualCages.push({ cells, total: eq.total, distinct, precomputedSolns: eq.solns.map(s => [...s]) });
     }
   }
 
@@ -605,7 +615,7 @@ export class LinearSystem {
       const total = cageTotalsMap.get(cid) ?? 0;
       if (total > 0) allEqs.push([cells, total]);
     }
-    for (const vc of this.virtualCages) allEqs.push([vc[0] as Cell[], vc[1]]);
+    for (const vc of this.virtualCages) allEqs.push([vc.cells as Cell[], vc.total]);
 
     const existing = new Set<string>();
     for (const [p, q] of this.deltaPairs) existing.add(this._cellSetKey([p, q]));

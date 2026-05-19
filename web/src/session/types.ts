@@ -148,7 +148,8 @@ export interface SolutionCategorization {
 export interface CageInfo extends SolutionCategorization {
   readonly cageIdx: number;
   readonly label: string;
-  readonly cells: readonly [number, number][];  // 0-based [row, col]
+  /** 0-based `[row, col]` pairs. */
+  readonly cells: readonly [number, number][];
   readonly total: number;
   readonly solutions: readonly (readonly number[])[];
   /** Digits present in every remaining solution. */
@@ -159,12 +160,14 @@ export interface VirtualCageInfo extends SolutionCategorization {
   readonly key: string;
   readonly cells: readonly [number, number][];
   readonly total: number;
-  readonly solutions: readonly (readonly number[])[];   // remaining (not eliminated, not auto-impossible)
+  /** Remaining solutions (not user-eliminated, not auto-impossible). */
+  readonly solutions: readonly (readonly number[])[];
   readonly mustContain: number[];
 }
 
 export interface CandidatesResponse {
-  readonly cells: CellInfo[][];       // 9 rows × 9 cols, 0-based
+  /** 9×9 grid of cell info, `[row][col]`, 0-based. */
+  readonly cells: CellInfo[][];
   readonly cages: CageInfo[];
   readonly virtualCages: VirtualCageInfo[];
 }
@@ -182,10 +185,12 @@ export interface HintItem {
   readonly ruleName: string;
   readonly displayName: string;
   readonly explanation: string;
-  readonly highlightCells: readonly [number, number][];  // 0-based [row, col]
+  /** 0-based `[row, col]` pairs to highlight in the UI. */
+  readonly highlightCells: readonly [number, number][];
   readonly eliminations: readonly { cell: [number, number]; digit: number }[];
   readonly eliminationCount: number;
-  readonly placement: [number, number, number] | null;  // [row, col, digit]
+  /** `[row, col, digit]` triple, 0-based, or null if hint is not a direct placement. */
+  readonly placement: [number, number, number] | null;
   readonly rewindToTurnIdx: number | null;
   readonly virtualCageSuggestion: VirtualCageSuggestion | null;
 }
