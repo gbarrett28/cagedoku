@@ -31,6 +31,7 @@ export interface RuleStats {
   elapsedNs: number;
 }
 
+/** Convenience constructor: zeroed RuleStats for a newly registered rule. */
 export function makeRuleStats(): RuleStats {
   return { calls: 0, progress: 0, eliminations: 0, elapsedNs: 0 };
 }
