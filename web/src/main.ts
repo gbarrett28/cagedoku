@@ -398,9 +398,18 @@ function isGridSolved(state: PuzzleState): boolean {
   return true;
 }
 
+function closeSidePanels(): void {
+  inspectCageMode = false;
+  el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');
+  el<HTMLElement>('inspector-col').hidden = true;
+  el<HTMLElement>('side-panel').classList.remove('inspector-open');
+  el<HTMLElement>('side-panel').classList.remove('virtual-cage-open');
+}
+
 function checkCompletion(state: PuzzleState): void {
   const solved = isGridSolved(state);
   el<HTMLElement>('completion-msg').hidden = !solved;
+  if (solved) closeSidePanels();
   const actionIds = [
     'hints-btn', 'mode-toggle',
     'inspect-cage-btn', 'virtual-cage-btn', 'reveal-btn',
@@ -1017,6 +1026,7 @@ async function submitVirtualCage(): Promise<void> {
     currentState = addVirtualCage(cells, total);
     virtualCageMode = false; virtualCageSelection = new Set();
     el<HTMLElement>('vc-form').hidden = true;
+    el<HTMLElement>('side-panel').classList.remove('virtual-cage-open');
     totalInput.value = '';
     const vcBtn1 = el<HTMLButtonElement>('virtual-cage-btn');
     vcBtn1.classList.remove('active');
@@ -1232,6 +1242,7 @@ document.addEventListener('DOMContentLoaded', () => {
     el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');
     el<HTMLElement>('inspector-col').hidden = true;
     el<HTMLElement>('side-panel').classList.remove('inspector-open');
+    el<HTMLElement>('side-panel').classList.remove('virtual-cage-open');
     totalEditCell = null;
     reviewErrorCells = new Set();
     draftEdited = false;
@@ -1316,10 +1327,11 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   el<HTMLButtonElement>('rule-info-close-btn').addEventListener('click', () => { el<HTMLDialogElement>('rule-info-modal').close(); });
 
-  // Mode toggle (Normal | Candidates)
+  // Mode toggle (Normal | Candidates) — also acts as a safety to restore the digit pad
   el<HTMLButtonElement>('mode-toggle').addEventListener('click', () => {
     candidateEditMode = !candidateEditMode;
     el<HTMLButtonElement>('mode-toggle').classList.toggle('active', candidateEditMode);
+    closeSidePanels();
   });
 
   el<HTMLButtonElement>('close-help-btn').addEventListener('click', () => { el<HTMLDialogElement>('help-candidates-modal').close(); });
@@ -1332,13 +1344,19 @@ document.addEventListener('DOMContentLoaded', () => {
     vcBtn.classList.toggle('active', virtualCageMode);
     vcBtn.dataset['tooltip'] = virtualCageMode ? 'Cancel virtual cage' : 'Virtual cage';
     el<HTMLElement>('vc-form').hidden = !virtualCageMode;
-    if (virtualCageMode) el<HTMLElement>('virtual-cage-col').hidden = false;
+    if (virtualCageMode) {
+      el<HTMLElement>('virtual-cage-col').hidden = false;
+      el<HTMLElement>('side-panel').classList.add('virtual-cage-open');
+    } else {
+      el<HTMLElement>('side-panel').classList.remove('virtual-cage-open');
+    }
     redrawGrid();
   });
   el<HTMLButtonElement>('vc-add-btn').addEventListener('click', () => { void submitVirtualCage(); });
   el<HTMLButtonElement>('vc-cancel-btn').addEventListener('click', () => {
     virtualCageMode = false; virtualCageSelection = new Set();
     el<HTMLElement>('vc-form').hidden = true;
+    el<HTMLElement>('side-panel').classList.remove('virtual-cage-open');
     const vcBtn2 = el<HTMLButtonElement>('virtual-cage-btn');
     vcBtn2.classList.remove('active');
     vcBtn2.dataset['tooltip'] = 'Virtual cage';
