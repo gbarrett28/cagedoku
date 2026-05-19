@@ -17,7 +17,7 @@
  * @param m    Lower bound: digits must be strictly greater than m.
  * @param v    Target sum.
  * @param maxDigit  Upper bound for valid digits (default 9).
- * @returns    Array of digit sets, each represented as a sorted number[].
+ * @returns    Array of solutions; each solution is a sorted ascending `number[]` of distinct digits.
  */
 export function solSums(
   n: number,

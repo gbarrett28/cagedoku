@@ -42,6 +42,14 @@ function unitKindFromId(unitId: number): UnitKind {
   return UnitKind.CAGE;
 }
 
+/**
+ * Eliminate candidates that cannot participate in any valid sum assignment using a min/max range check.
+ *
+ * For each cell, computes the minimum and maximum possible contributions of all
+ * other cells. A candidate `d` in cell `i` is eliminated if `total` falls outside
+ * `[minOthers + d, maxOthers + d]`. This is a fast O(n²) pass; for an exact check
+ * use `filterSumConstraint`.
+ */
 function filterSumRange(
   cells: readonly Cell[],
   total: number,
@@ -62,6 +70,15 @@ function filterSumRange(
   return elims;
 }
 
+/**
+ * Eliminate candidates that cannot participate in any valid distinct-digit sum assignment.
+ *
+ * Enumerates every solution of `solSums(n, 0, total)` and uses backtracking to find
+ * which candidates in each cell appear in at least one feasible assignment. Candidates
+ * absent from all feasible assignments are eliminated. More precise than `filterSumRange`
+ * but O(solutions × cells) in the worst case. Cells are ordered by fewest candidates
+ * first (MRV) to prune the search early.
+ */
 function filterSumConstraint(
   cells: readonly Cell[],
   total: number,
@@ -183,6 +200,14 @@ export class SolverEngine {
     }
   }
 
+  /**
+   * Dispatch board events from a candidate removal to the work queue and linear system.
+   *
+   * CELL_DETERMINED events also propagate into the linear system (substitution + constraint
+   * narrowing) and re-enqueue CELL_SOLVED listeners. SOLUTION_PRUNED and unit-scoped events
+   * are routed to rules by trigger type and unit kind. Every event re-schedules all GLOBAL
+   * rules so they see the latest board state.
+   */
   private _routeEvents(events: BoardEvent[], _srcR: number, _srcC: number): void {
     for (const event of events) {
       if (event.trigger === Trigger.CELL_DETERMINED) {
@@ -259,6 +284,16 @@ export class SolverEngine {
       this.queue.enqueueGlobal(rule.priority, rule, this._ruleIndex.get(rule)!);
   }
 
+  /**
+   * Run the rule engine to a fixed point and return the (mutated) board.
+   *
+   * Drains the work queue, applying each rule in priority order. Rules in `_hintRules`
+   * accumulate their results in `pendingHints` instead of mutating the board. All other
+   * rules write eliminations, placements, solution eliminations, and virtual cage
+   * additions directly to the board and to `appliedMutations`/`appliedPlacements`/
+   * `appliedVirtualCages`. Resets all accumulators on each call. Deduplicates
+   * `pendingHints` before returning.
+   */
   solve(): BoardState {
     this.appliedMutations = [];
     this.appliedPlacements = [];

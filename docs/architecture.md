@@ -92,10 +92,6 @@ descriptions, training pipeline (T1/T2), threshold derivation guide, and migrati
 The [Training Pipeline](image-pipeline.md#training-pipeline) section covers the T1
 (collect numerals) and T2 (fit PCA + classifier) steps in detail.
 
-See **`docs/superpowers/specs/2026-04-08-bundled-number-recogniser-design.md`** for
-the number recogniser sub-spec: RBFClassifier design, `.npz` bundle layout, inference
-protocol, save/load contract, and re-training workflow.
-
 ### Web Recogniser Training
 
 The web app bundles a HOG + LinearSVC model in `web/public/num_recogniser.{json,bin}`.

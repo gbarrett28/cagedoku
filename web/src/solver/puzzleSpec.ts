@@ -45,9 +45,10 @@ export interface PuzzleSpec {
  * vertical cage wall between columns colGap and colGap+1 in row (shape 8×9).
  * Outer grid edges are always true (walled).
  *
- * Note: the loop variable `col` plays the role of row-index in the result
- * array for the isbv lines, and vice-versa. This mirrors the same naming
- * artefact in the Python source.
+ * Note: by design, `borderY` is indexed `[colGap][row]` (transposed relative
+ * to the result loop structure) to match the geometric meaning of each axis —
+ * the first index is the column gap, not the row. The loop therefore uses
+ * `col` as the result row-index for the isbv lines.
  *
  * @param borderX - (9, 8) horizontal cage-wall flags.
  * @param borderY - (8, 9) vertical cage-wall flags.

@@ -40,6 +40,13 @@ function dedupKey(item: WorkItem): string {
   return `${item.ruleIdx}:${item.unitId}`;
 }
 
+/**
+ * Return true if the work item has already been superseded by a newer unit snapshot.
+ *
+ * Unit-scoped items carry a `unitVersion` stamped at enqueue time; if the unit has
+ * been mutated since then the item is stale. CELL_DETERMINED, CELL_SOLVED, and GLOBAL
+ * items carry `unitVersion: null` (no unit scope) and are never considered stale.
+ */
 export function isStale(item: WorkItem, unitVersions: number[]): boolean {
   if (
     item.trigger === Trigger.CELL_DETERMINED ||

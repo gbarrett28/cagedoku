@@ -20,7 +20,7 @@ Two operating modes share the same image-to-PuzzleSpec stages.
 
 **Training mode**: human-verified solved puzzles -> updated ML models -> improved
 inference.  Only the number-recogniser model (T2) remains in the training loop;
-border-detector training (T3) is being retired (see [Training Pipeline](#training-pipeline)).
+border-detector training (T3) has been retired (see [Training Pipeline](#training-pipeline)).
 
 ```mermaid
 flowchart TD
@@ -383,7 +383,7 @@ pipeline is proven.
 ## Training Pipeline
 
 The training pipeline converts solved puzzles into updated ML models.  Only T1 and T2
-remain; T3 (Observer border detector) is being retired — see [Migration Plan](#migration-plan).
+remain; T3 (Observer border detector) has been retired — see [Migration Plan](#migration-plan).
 
 ### T1: Collect Numerals
 
@@ -421,11 +421,11 @@ flowchart LR
     G --> H[num_recogniser.bin + .json\nweb/public/]
 ```
 
-### T3: Observer Border Detector (RETIRING)
+### T3: Observer Border Detector (RETIRED)
 
-The `BorderPCA1D` model trained on solved Observer puzzles is being retired once Stage
-4 anchored clustering is validated.  During the proof-of-concept phase, T3 runs in
-parallel with Stage 4 for comparison logging; see [Migration Plan](#migration-plan).
+The `BorderPCA1D` model and all newspaper-specific code (`detect_borders_peak_count`,
+`is_guardian`/`is_observer`, the `newspaper` select UI) have been removed.  Stage 4
+anchored clustering is the sole border classification path.
 
 ---
 
@@ -488,32 +488,32 @@ This is a conventional value; tune by cross-validation at 90%, 95%, 99%, 99.5%.
 
 ## Migration Plan
 
-### Phase 1: Proof of Concept
+### Phase 1: Proof of Concept ✅ (complete)
 
 - Implement Stages 3–6 alongside the existing Guardian / Observer pipeline.
 - Both pipelines run on every image; results are compared and discrepancies logged.
 - No change to the `PuzzleSpec` output or anything downstream.
 - The `newspaper` field and UI switch remain in place during this phase only.
 
-### Phase 2: Validation
+### Phase 2: Validation ✅ (complete)
 
 - Count consecutive puzzles where the new pipeline matches the existing one on all
   border assignments.  Target: 20 consecutive solved puzzles with no discrepancy
   (configurable).
 - Run on the full Guardian training set as well as Observer to confirm compatibility.
 
-### Phase 3: Retirement
+### Phase 3: Retirement ✅ (complete)
 
-Remove in a single commit once Phase 2 criteria are met:
+Removed in a single commit:
 
 - `BorderPCA1D` class and `load_observer_border_detector`
 - `detect_borders_peak_count` (Guardian-specific)
 - T3 training pipeline
 - `newspaper: Literal["guardian", "observer"]` field from `ImagePipelineConfig`
 - `is_guardian` / `is_observer` properties
-- `newspaper` parameter from API schema (`schemas.py`) and router (`routers/puzzle.py`)
-- `<select id="newspaper-select">` from `static/index.html` and `main.ts`
-- `puzzle_dir(newspaper)` method from `api/config.py`
+- `newspaper` parameter from API schema and router
+- `<select id="newspaper-select">` from the UI
+- `puzzle_dir(newspaper)` config method
 
 ### Phase 4: Extensions (future)
 

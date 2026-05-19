@@ -72,6 +72,7 @@ export function userVirtualCages(state: PuzzleState): VirtualCage[] {
 
 /**
  * Derives explicit user candidate eliminations from the userGrid.
+ *
  * A digit is considered "user eliminated" if it is absent from the board's
  * candidate set but was not removed by any automatic rule — i.e. it was
  * placed by the user in the same row/col/box.
