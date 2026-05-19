@@ -19,6 +19,7 @@ import {
   undo,
   computeCandidates,
   cycleCandidate,
+  addVirtualCage,
 } from './actions.js';
 import { findLastConsistentTurnIdx } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
@@ -470,5 +471,53 @@ describe('findLastConsistentTurnIdx — bug #30: wrong fallback when no matching
     };
 
     expect(findLastConsistentTurnIdx(state)).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bug #60 — addVirtualCage skips applyAutoPlacements
+// ---------------------------------------------------------------------------
+
+describe('Bug #60 regression — addVirtualCage triggers auto-placements', () => {
+  // Setup: makeBoxCageSpec (9 box-cages total=45 each) confirmed with NakedSingle
+  // in alwaysApplyRules. At confirm all 81 cells stay empty because no cage forces
+  // any individual cell (every permutation of {1..9} satisfies each box cage).
+  //
+  // We then directly set 8 of 9 cells in box-0 via setState (bypassing enterCell
+  // so applyAutoPlacements doesn't run yet). This leaves (0,0) as the sole empty
+  // cell in its box — a naked single (only digit 5 can go there).
+  //
+  // addVirtualCage must call applyAutoPlacements so NakedSingle fires and (0,0)
+  // is placed. Before the fix it was missing that call so (0,0) stayed 0.
+  function makeBox0WithPendingNakedSingle(): void {
+    const spec = makeBoxCageSpec();
+    const pre: PuzzleState = {
+      specData: specToData(spec), cageStates: specToCageStates(spec),
+      userGrid: null, virtualCages: [], turns: [],
+      alwaysApplyRules: ['NakedSingle', ...DEFAULT_ALWAYS_APPLY_RULES],
+      goldenSolution: null, puzzleType: 'killer',
+      givenDigits: null, originalImageUrl: null, warpedImageUrl: null,
+    };
+    setState(pre);
+    const base = confirmPuzzle(solveCurrentSpec().board);
+    // Manually place 8 cells in box-0, leave (0,0) empty
+    const grid = base.userGrid!.map(row => [...row]);
+    for (const [r, c] of [[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]] as [number,number][])
+      grid[r]![c] = KNOWN_SOLUTION[r]![c]!;
+    setState({ ...base, userGrid: grid });
+  }
+
+  beforeEach(() => makeBox0WithPendingNakedSingle());
+
+  it('cell (0,0) is 0 before addVirtualCage — naked single pending', () => {
+    expect(getState()!.userGrid![0]![0]).toBe(0);
+  });
+
+  it('addVirtualCage triggers applyAutoPlacements — NakedSingle places (0,0)', () => {
+    // Any valid VC triggers the auto-placement pass; use two unsolved cells
+    // in box-3 so the VC itself plays no role in placing (0,0).
+    const vcTotal = KNOWN_SOLUTION[3]![0]! + KNOWN_SOLUTION[3]![1]!;
+    const state = addVirtualCage([[3, 0], [3, 1]], vcTotal);
+    expect(state.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]!); // 5
   });
 });

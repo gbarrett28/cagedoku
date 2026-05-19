@@ -821,7 +821,8 @@ export function addVirtualCage(cells: [number, number][], total: number): Puzzle
 
   const cage: VirtualCage = { cells: typedCells as Cell[], total, eliminatedSolns: [] };
   const action: UserAction = { type: 'addVirtualCage', cage };
-  const updated = recordTurn(state, action);
+  let updated = recordTurn(state, action);
+  updated = applyAutoPlacements(updated);
   setState(updated);
   return updated;
 }
