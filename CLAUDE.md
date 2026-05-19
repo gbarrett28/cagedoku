@@ -147,24 +147,24 @@ serena to read and modify TypeScript files. If the serena tools fail on `.ts`, s
 immediately and ask for the MCP server to be restarted.
 
 **Serena is a Claude Code plugin** (`serena@claude-plugins-official`). Before using any serena tool,
-load it via ToolSearch:
+load it via ToolSearch using the keyword `serena`:
 ```
-ToolSearch query: "select:mcp__serena__get_symbols_overview"
+ToolSearch query: "serena get_symbols"
 ```
-If serena tools do not appear in ToolSearch, the plugin is not enabled — ask the user to enable
-`serena@claude-plugins-official` in Claude Code settings and restart the session before proceeding.
-Do NOT fall back to filesystem tools while serena is merely disabled.
+If serena tools do not appear in ToolSearch, the plugin is not running — ask the user to check
+that `serena@claude-plugins-official` is enabled and restart the session before proceeding.
+Do NOT fall back to filesystem tools while serena is merely unavailable.
 
 **Debug screenshots:** When the user refers to a `.png` by name only (e.g. "look in
 Untitled.png"), it is at the project root. Read it with the Read tool. Never commit it.
 
 ## Core Workflow
 
-1. **Start with overview:** Use `mcp__serena__get_symbols_overview` to understand file structure
-2. **Find symbols:** Use `mcp__serena__find_symbol` to locate specific classes, functions, methods
-3. **Understand relationships:** Use `mcp__serena__find_referencing_symbols` to see where code is used
-4. **Search patterns:** Use `mcp__serena__search_for_pattern` when you don't know exact symbol names
-5. **Edit strategically:** Use `mcp__serena__replace_symbol_body`, `mcp__serena__insert_after_symbol`, `mcp__serena__insert_before_symbol`
+1. **Start with overview:** Use serena's `get_symbols_overview` to understand file structure
+2. **Find symbols:** Use serena's `find_symbol` to locate specific classes, functions, methods
+3. **Understand relationships:** Use serena's `find_referencing_symbols` to see where code is used
+4. **Search patterns:** Use serena's `search_for_pattern` when you don't know exact symbol names
+5. **Edit strategically:** Use serena's `replace_symbol_body`, `insert_after_symbol`, `insert_before_symbol`
 6. **Always:** Check for existing code structure using serena tools before writing anything new
 
 ---
@@ -196,7 +196,7 @@ Untitled.png"), it is at the project root. Read it with the Read tool. Never com
 
 - All `import` statements at the top of the file — no dynamic/inline imports
 - No `* as` star imports — name every symbol explicitly
-- Before removing code, use `mcp__serena__find_referencing_symbols` to verify it is unused
+- Before removing code, use serena's `find_referencing_symbols` to verify it is unused
 
 ## Error Handling
 
