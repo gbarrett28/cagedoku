@@ -850,6 +850,26 @@ body:has(#playing-actions:not([hidden])) #side-panel {
      prevent their white-space:nowrap ::after elements causing scroll overflow */
   [data-tooltip]::after { display: none; }
 
+  /* Review mode: two grids side-by-side instead of three stacked columns.
+     Original photo is hidden — the warped grid is sufficient for reviewing
+     detected layout on a small screen.
+     Playing mode is unaffected: the body:has() playing-mode rules override
+     max-width (to none) and flex for #canvas-col, and #warped-col/#original-col
+     are hidden by JS in playing mode. */
+  #images-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  #canvas-col,
+  #warped-col {
+    flex: 1 1 0;
+    max-width: 50%;
+    min-width: 0;
+  }
+  #original-col {
+    display: none;
+  }
+
   /* In playing mode, wrap action group to its own row below COACH + nav buttons */
   body:has(#action-group:not([hidden])) .header-inner {
     flex-wrap: wrap;
