@@ -53,6 +53,7 @@ import { applyAutoApplyLock } from './autoApplyLock.js';
 import { showHintPill, hideHintPill } from './hintPill.js';
 import { AssertionViolation, buildGitHubIssueUrl } from './session/assertions.js';
 import { initTutorial, appendCallouts } from './tutorial.js';
+import { resolveDigitKey } from './resolveDigitKey.js';
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -529,7 +530,7 @@ function renderPlayingMode(state: PuzzleState): void {
     { id: 'hints-btn',     text: 'Request a logical hint to guide your next step.' },
     { id: 'mode-toggle',   text: 'Switch between Normal mode (place digits) and Candidate mode (edit pencil marks). The digit buttons work the same way in both modes.' },
     { id: 'reveal-btn',    text: 'Reveal the correct digit for the selected cell.' },
-    { id: 'digit-1',       text: 'Use these buttons to enter digits. In Candidate mode, they toggle pencil marks instead.' },
+    { id: 'digit-1',       text: 'Use these buttons to enter digits. In Candidate mode, they toggle pencil marks instead. On a keyboard, Ctrl+digit works in the opposite mode.' },
     { id: 'help-btn',      text: 'Re-open this guide at any time.' },
     { id: 'config-btn',    text: 'Configure which logical rules run automatically.' },
     { id: 'new-puzzle-btn', text: 'Start a fresh puzzle.' },
@@ -1529,12 +1530,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'SELECT') return;
 
-    if (candidateEditMode && selectedCell !== null) {
-      if (e.key >= '1' && e.key <= '9') { void handleCandidateCycle(selectedCell.row, selectedCell.col, Number(e.key)); return; }
-      if (e.key === 'Backspace' || e.key === 'Delete') { void handleCandidateCycle(selectedCell.row, selectedCell.col, 0); return; }
-    } else if (selectedCell !== null) {
-      if (e.key >= '1' && e.key <= '9') { void handleCellEntry(Number(e.key)); return; }
-      if (e.key === 'Backspace' || e.key === 'Delete') { void handleCellEntry(0); return; }
+    if (selectedCell !== null) {
+      const resolved = resolveDigitKey(candidateEditMode, e.ctrlKey, e.key);
+      if (resolved !== null) {
+        if (e.ctrlKey) e.preventDefault();
+        if (resolved.action === 'placeDigit') {
+          void handleCellEntry(resolved.digit);
+        } else {
+          void handleCandidateCycle(selectedCell.row, selectedCell.col, resolved.digit);
+        }
+        return;
+      }
     }
 
     if (selectedCell !== null) {
