@@ -1059,6 +1059,49 @@ dialog::backdrop {
 
 #hint-pill:hover { opacity: 0.85; }
 
+/* ── Tutorial callout ── */
+
+#callout {
+  position: fixed;
+  z-index: 200;
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  max-width: 260px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+#callout p { font-size: 0.85rem; line-height: 1.5; }
+
+#callout-got-it {
+  align-self: flex-end;
+  font-size: 0.75rem;
+  padding: 0.3rem 0.75rem;
+}
+
+.tutorial-suppress-row {
+  margin-top: 1rem;
+}
+
+.tutorial-suppress-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.tutorial-suppress-label input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 1rem;
+  height: 1rem;
+}
+
 .hint-modal-explanation {
   margin: 1rem 0 0.5rem;
   line-height: 1.6;

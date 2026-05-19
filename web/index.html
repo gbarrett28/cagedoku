@@ -268,6 +268,11 @@
     <tr><td>Arrow keys</td><td>Move selection</td></tr>
   </table>
 
+  <div class="tutorial-suppress-row">
+    <label class="tutorial-suppress-label">
+      <input type="checkbox" id="tutorial-suppress-cb"> Don't show this again
+    </label>
+  </div>
   <div class="form-actions">
     <button id="general-help-close-btn" class="btn-secondary">Close</button>
   </div>
@@ -329,6 +334,10 @@
 
 <div id="hint-pill" hidden role="status" aria-live="polite">
   <span id="hint-pill-label"></span>
+</div>
+<div id="callout" hidden role="tooltip" aria-live="polite">
+  <p id="callout-text"></p>
+  <button id="callout-got-it">Got it</button>
 </div>
 <div id="version-banner"></div>
 <script type="module" src="/src/main.ts"></script>

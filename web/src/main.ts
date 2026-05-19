@@ -52,6 +52,7 @@ import { UserFacingError } from './session/errors.js';
 import { applyAutoApplyLock } from './autoApplyLock.js';
 import { showHintPill, hideHintPill } from './hintPill.js';
 import { AssertionViolation, buildGitHubIssueUrl } from './session/assertions.js';
+import { initTutorial, appendCallouts } from './tutorial.js';
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -522,6 +523,24 @@ function renderPlayingMode(state: PuzzleState): void {
   el<HTMLButtonElement>('virtual-cage-btn').hidden = !isKiller;
   el<HTMLButtonElement>('mode-toggle').hidden = !showCandidates;
   el<HTMLButtonElement>('mode-toggle').classList.remove('active');
+
+  const playingCallouts: { id: string; text: string }[] = [
+    { id: 'undo-btn',      text: 'Undo your last move.' },
+    { id: 'hints-btn',     text: 'Request a logical hint to guide your next step.' },
+    { id: 'mode-toggle',   text: 'Switch between Normal mode (place digits) and Candidate mode (edit pencil marks). The digit buttons work the same way in both modes.' },
+    { id: 'reveal-btn',    text: 'Reveal the correct digit for the selected cell.' },
+    { id: 'digit-1',       text: 'Use these buttons to enter digits. In Candidate mode, they toggle pencil marks instead.' },
+    { id: 'help-btn',      text: 'Re-open this guide at any time.' },
+    { id: 'config-btn',    text: 'Configure which logical rules run automatically.' },
+    { id: 'new-puzzle-btn', text: 'Start a fresh puzzle.' },
+  ];
+  if (isKiller) {
+    playingCallouts.splice(3, 0,
+      { id: 'inspect-cage-btn', text: 'Show remaining valid digit combinations for a cage.' },
+      { id: 'virtual-cage-btn', text: 'Add a virtual cage constraint derived from the current board state.' },
+    );
+  }
+  appendCallouts(playingCallouts);
 }
 
 function updateUndoButton(state: PuzzleState): void {
@@ -819,6 +838,7 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
   el<HTMLElement>('upload-panel').hidden = true;
   el<HTMLButtonElement>('new-puzzle-btn').hidden = false;
   setStatus(warning ? `Warning: ${warning}` : '');
+  appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
 }
 
 async function handleProcess(): Promise<void> {
@@ -1214,6 +1234,10 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('[CV] Pipeline load failed:', e);
       setStatus(`Image pipeline failed: ${String(e)} — open DevTools (F12) for details`, true);
     });
+
+  // Tutorial — show help modal on first visit, then walk through button callouts.
+  initTutorial();
+  appendCallouts([{ id: 'process-btn', text: 'Tap here to analyse your photo and detect the grid and cages.' }]);
 
   el<HTMLButtonElement>('process-btn').addEventListener('click', () => { void handleProcess(); });
   el<HTMLButtonElement>('confirm-btn').addEventListener('click', () => { void handleConfirm(); });
