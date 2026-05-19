@@ -420,10 +420,10 @@ body:has(#playing-actions:not([hidden])) #side-panel {
 }
 
 /* Side-panel is a switchable zone: inspector or virtual-cage replaces the digit pad.
-   We cannot use [hidden] on #playing-actions (it drives the playing-mode :has() selector),
-   so we suppress it with display:none instead. */
-#side-panel:has(#inspector-col:not([hidden])) #playing-actions,
-#side-panel:has(#virtual-cage-col:not([hidden])) #playing-actions {
+   Class is toggled by JS; we cannot use [hidden] on #playing-actions because it
+   drives the body:has() playing-mode layout selector. */
+#side-panel.inspector-open #playing-actions,
+#side-panel.virtual-cage-open #playing-actions {
   display: none;
 }
 

@@ -628,6 +628,7 @@ function renderCageInspector(label: string): void {
     clearChildren(inspector);
     el<HTMLElement>('inspector-heading').textContent = `Cage ${label}`;
     el<HTMLElement>('inspector-col').hidden = false;
+    el<HTMLElement>('side-panel').classList.add('inspector-open');
     renderSolutionList(
       inspector,
       cage.allSolutions,
@@ -1230,6 +1231,7 @@ document.addEventListener('DOMContentLoaded', () => {
     inspectCageMode = false;
     el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');
     el<HTMLElement>('inspector-col').hidden = true;
+    el<HTMLElement>('side-panel').classList.remove('inspector-open');
     totalEditCell = null;
     reviewErrorCells = new Set();
     draftEdited = false;
@@ -1349,7 +1351,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const inspBtn = el<HTMLButtonElement>('inspect-cage-btn');
     inspBtn.classList.toggle('active', inspectCageMode);
     inspBtn.dataset['tooltip'] = inspectCageMode ? 'Done inspecting' : 'Inspect cage';
-    if (!inspectCageMode) el<HTMLElement>('inspector-col').hidden = true;
+    if (!inspectCageMode) {
+      el<HTMLElement>('inspector-col').hidden = true;
+      el<HTMLElement>('side-panel').classList.remove('inspector-open');
+    }
   });
 
   // Hints dropdown
