@@ -148,7 +148,7 @@ export class BoardState {
   /** Candidates for cell (r, c). Indices are always 0–8 by solver invariant. */
   cands(r: number, c: number): Set<number> { return this.candidates[r]![c]!; }
 
-  /** Count of cells in unit uid that still have digit d. */
+  /** Count of cells in unit uid that still have digit d (d ∈ [1..9]; index 0 is unused). */
   count(uid: number, d: number): number { return this.counts[uid]![d]!; }
 
   // ── Unit ID accessors ────────────────────────────────────────────────────
@@ -224,6 +224,11 @@ export class BoardState {
 
   /**
    * Add a user-acknowledged virtual cage as a new cage unit.
+   *
+   * @param cells - cells that form the cage (row-major Cell tuples)
+   * @param total - the cage sum constraint
+   * @param eliminatedSolns - solutions the user has already ruled out; pre-filtered from the generated solution list
+   * @param distinct - whether digits must be distinct within the cage (default true)
    */
   addVirtualCage(
     cells: readonly Cell[],
@@ -257,7 +262,7 @@ function nextInSet<T>(s: Set<T>): T {
   return s.values().next().value as T;
 }
 
-/** Validate that a fully-solved board satisfies all row/col/box constraints. */
+/** Validate that a fully-solved board satisfies row/col/box constraints (cages are skipped — validate separately). */
 export function validateSolution(board: BoardState): string[] {
   const violations: string[] = [];
   for (const unit of board.units) {

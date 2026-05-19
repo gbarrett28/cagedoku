@@ -71,6 +71,14 @@ export function mrvBacktrack(board: BoardState): number[][] | null {
 // Internal search
 // ---------------------------------------------------------------------------
 
+/**
+ * Check whether a cage's current candidate state is still consistent with its sum constraint.
+ *
+ * Sums placed digits (singleton candidate sets) and checks that the remaining unplaced
+ * cells can still reach the target total using distinct digits 1–9. Returns true if no
+ * constraint is violated and the sum remains reachable; returns false immediately if any
+ * cell has an empty candidate set or the placed sum already exceeds the total.
+ */
 function cageValid(
   cands: Set<number>[][],
   cid: number,
@@ -95,6 +103,15 @@ function cageValid(
   return minFill <= needed && needed <= maxFill;
 }
 
+/**
+ * Assign digit `d` to cell (r, c) and propagate via unit-arc consistency.
+ *
+ * Mutates `cands` in place. Eliminates `d` from all peers (same row/col/box);
+ * when a peer is reduced to a singleton, enqueues it for further propagation.
+ * Validates the affected cage after each step. Returns false (contradiction) if
+ * any cell's candidate set becomes empty or any cage constraint is violated;
+ * otherwise returns true.
+ */
 function assign(
   cands: Set<number>[][],
   r: number,
@@ -127,6 +144,14 @@ function assign(
 
 const MAX_BACKTRACK_NODES = 100_000;
 
+/**
+ * Recursive MRV backtracking search over candidate sets.
+ *
+ * Selects the unassigned cell with the fewest remaining candidates (minimum remaining
+ * values heuristic), tries each candidate via `assign`, and recurses. Returns the
+ * completed 9×9 grid on success or `null` on contradiction or node-limit breach
+ * (`counter.n > MAX_BACKTRACK_NODES`).
+ */
 function search(
   cands: Set<number>[][],
   cageOf: number[][],

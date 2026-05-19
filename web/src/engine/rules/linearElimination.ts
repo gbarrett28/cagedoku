@@ -4,9 +4,9 @@
  * Mirrors Python's `killer_sudoku.solver.engine.rules.incomplete.linear_elimination` module.
  *
  * Fires as GLOBAL. Returns initial_eliminations still present in the candidate
- * sets. As hints, returns:
- *  T1 — placement hints for uniquely-determined cells.
- *  T3 — virtual cage suggestion hints for RREF-derived cages not yet added.
+ * sets. As hints, returns two kinds:
+ *  T1 (single-cell placement) — a cell whose digit is uniquely determined by the system.
+ *  T3 (virtual cage addition) — an RREF-derived sub-cage not yet acknowledged by the user.
  */
 
 import type { HintResult } from '../hint.js';

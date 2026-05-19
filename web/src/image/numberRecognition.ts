@@ -82,7 +82,16 @@ export interface Recognition {
   confident: boolean;
 }
 
-/** OVO vote loop shared by both classifier types. */
+/**
+ * Aggregate one-vs-one classifier votes into a per-sample prediction.
+ *
+ * Iterates over every ordered pair (i, j) with i < j — one classifier per pair.
+ * `scoreForPair(s, clfIdx)` returns a signed score; positive → class i wins,
+ * negative → class j wins. The class with the most accumulated votes wins.
+ * Confidence is `maxVotes / (nClasses - 1)` (normalised by the maximum a single
+ * class can receive, not total classifiers); samples below `threshold` are flagged
+ * as not confident.
+ */
 function ovoVote(
   nSamples: number,
   nClasses: number,
@@ -186,6 +195,9 @@ export interface NumRecogniser {
  * Matches extract_hog() in web/train_recogniser.py exactly:
  * centered differences, unsigned atan2(|Gy|,Gx) mod 180, nearest-bin voting,
  * L2 block normalisation. No OpenCV dependency — pure arithmetic.
+ *
+ * @param imgs - flat uint8 pixel data for each image, each of length winSize²
+ * @returns Float64Array of shape [n × nFeat] where nFeat = nBlocks² × cpb² × nbins
  */
 function hogExtract(imgs: Uint8Array[], params: HOGParams): Float64Array {
   const { winSize, cellSize, blockSize, blockStride, nbins } = params;
