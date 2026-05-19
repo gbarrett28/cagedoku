@@ -994,6 +994,7 @@ async function handleCandidateCycle(row1b: number, col1b: number, digit: number)
     const state = cycleCandidate(row1b, col1b, digit);
     currentState = state;
     refreshDisplay();
+    updateUndoButton(state);
   } catch (e) { setStatus(String(e), true); }
 }
 

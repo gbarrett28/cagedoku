@@ -521,3 +521,43 @@ describe('Bug #60 regression — addVirtualCage triggers auto-placements', () =>
     expect(state.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]!); // 5
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bug #61 — candidate elimination should enable undo
+// ---------------------------------------------------------------------------
+
+describe('Bug #61 regression — cycleCandidate records an undoable turn', () => {
+  // After confirmPuzzle for a classic puzzle, the turns array ends with
+  // source:'given' turns. updateUndoButton disables undo while last turn
+  // is 'given'. Eliminating a candidate must record an 'eliminateCandidate'
+  // turn so that the button can be re-enabled.
+  beforeEach(() => { makeClassicConfirmed(); });
+
+  it('cycleCandidate appends an eliminateCandidate turn (not a given turn)', () => {
+    const before = getState()!;
+    // Confirm all initial turns are 'given'
+    expect(before.turns.every(t =>
+      t.action.type === 'placeDigit' && t.action.source === 'given',
+    )).toBe(true);
+
+    // Eliminate digit 5 from cell (0,0) — the blank cell in makeClassicGivenDigits
+    cycleCandidate(1, 1, 5);
+
+    const after = getState()!;
+    const last = after.turns[after.turns.length - 1]!.action;
+    // Last turn must be eliminateCandidate so updateUndoButton enables the button
+    expect(last.type).toBe('eliminateCandidate');
+  });
+
+  it('undo after cycleCandidate removes the eliminateCandidate turn', () => {
+    const beforeCount = getState()!.turns.length;
+    cycleCandidate(1, 1, 5);
+    expect(getState()!.turns.length).toBe(beforeCount + 1);
+
+    undo();
+    expect(getState()!.turns.length).toBe(beforeCount);
+    const last = getState()!.turns[getState()!.turns.length - 1]!.action;
+    expect(last.type).toBe('placeDigit');
+    if (last.type === 'placeDigit') expect(last.source).toBe('given');
+  });
+});
