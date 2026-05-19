@@ -48,6 +48,7 @@ import type {
 import type { Cell } from './engine/types.js';
 import { GridNotFoundError } from './image/inpImage.js';
 import { UserFacingError } from './session/errors.js';
+import { applyAutoApplyLock } from './autoApplyLock.js';
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -90,6 +91,8 @@ let virtualCageSelection = new Set<string>();   // "r,c" keys, 0-based
 let hintHighlightCells = new Set<string>();     // "r,c" keys, 0-based
 let activeHintItem: HintItem | null = null;
 let inspectCageMode = false;
+
+let fastForwardRequested = false;
 
 let draftBorderX: boolean[][] = [];   // [col][rowGap] — cage horizontal walls
 let draftBorderY: boolean[][] = [];   // [colGap][row] — cage vertical walls
@@ -530,6 +533,18 @@ function updateRevealButton(): void {
     currentState === null || currentState.userGrid === null || selectedCell === null;
 }
 
+function setAutoApplyLock(locked: boolean): void {
+  const lockable = [
+    'undo-btn', 'hints-btn', 'mode-toggle', 'inspect-cage-btn',
+    'virtual-cage-btn', 'reveal-btn',
+    'digit-0', 'digit-1', 'digit-2', 'digit-3', 'digit-4',
+    'digit-5', 'digit-6', 'digit-7', 'digit-8', 'digit-9',
+    'new-puzzle-btn',
+  ].map(id => el<HTMLButtonElement>(id));
+  applyAutoApplyLock(lockable, el<HTMLButtonElement>('fast-forward-btn'), locked);
+  if (!locked) fastForwardRequested = false;
+}
+
 async function handleReveal(): Promise<void> {
   if (currentState === null || selectedCell === null) return;
   const { row, col } = selectedCell;
@@ -959,18 +974,23 @@ async function handleCellEntry(digit: number): Promise<void> {
       updateUndoButton(state);
     } else {
       // Animated path: show the user's placement first, then step through auto-placements.
-      let state = enterCellStep(selectedCell.row, selectedCell.col, digit);
-      currentState = state;
-      refreshDisplay();
-      updateUndoButton(state);
-      await new Promise<void>(resolve => { setTimeout(resolve, delay); });
-      while (true) {
-        const next = stepAutoPlacement();
-        if (next === null) break;
-        currentState = next;
+      setAutoApplyLock(true);
+      try {
+        let state = enterCellStep(selectedCell.row, selectedCell.col, digit);
+        currentState = state;
         refreshDisplay();
-        updateUndoButton(next);
-        await new Promise<void>(resolve => { setTimeout(resolve, delay); });
+        updateUndoButton(state);
+        await new Promise<void>(resolve => { setTimeout(resolve, fastForwardRequested ? 0 : delay); });
+        while (true) {
+          const next = stepAutoPlacement();
+          if (next === null) break;
+          currentState = next;
+          refreshDisplay();
+          updateUndoButton(next);
+          await new Promise<void>(resolve => { setTimeout(resolve, fastForwardRequested ? 0 : delay); });
+        }
+      } finally {
+        setAutoApplyLock(false);
       }
     }
   } catch (e) { setStatus(String(e), true); }
@@ -1429,6 +1449,10 @@ document.addEventListener('DOMContentLoaded', () => {
   el<HTMLButtonElement>('hint-close-btn').addEventListener('click', () => {
     (el<HTMLDialogElement>('hint-modal') as HTMLDialogElement).close();
     clearHintHighlight();
+  });
+
+  el<HTMLButtonElement>('fast-forward-btn').addEventListener('click', () => {
+    fastForwardRequested = true;
   });
 
   // Keyboard
