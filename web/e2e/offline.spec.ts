@@ -1,5 +1,5 @@
 /**
- * Offline / service-worker tests for the COACH killer sudoku app.
+ * Offline / service-worker tests for the COACH sudoku app.
  *
  * These tests run against `vite preview` (http://localhost:4173), the same
  * production build used by app.spec.ts. The service worker is active in

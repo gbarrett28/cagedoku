@@ -1,5 +1,5 @@
 /**
- * End-to-end tests for the COACH killer sudoku app.
+ * End-to-end tests for the COACH sudoku app.
  *
  * Tests run against `vite preview` (http://localhost:4173), serving the
  * production build from `dist/`.  Run `npm run build` before running tests

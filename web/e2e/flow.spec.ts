@@ -1,5 +1,5 @@
 /**
- * Fast UI-flow tests for the COACH killer sudoku app.
+ * Fast UI-flow tests for the COACH sudoku app.
  *
  * These run against `vite dev` (http://localhost:5173) and use
  * window.__testLoad() — a dev-only hook that injects a trivial puzzle spec

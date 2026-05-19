@@ -313,7 +313,7 @@ compresses the canvas.
 `max-height: 100%` instead of `max-width: 100%` as its square constraint.
 
 **K badge** (`.logo-k`): replaces `<h1>COACH</h1>`. Blue rounded-rect badge matching
-the favicon. `.header-sub` ("Killer Sudoku Coaching App") is still present but
+the favicon. `.header-sub` ("Sudoku Coaching App") is still present but
 hidden in playing mode via `:has(#action-group:not([hidden]))`.
 
 **`#side-panel`:** unified switchable zone inside `#canvas-col`, after `#canvas-wrapper`.

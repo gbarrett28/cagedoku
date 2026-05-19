@@ -80,7 +80,7 @@ plugin's aesthetic direction on this project.
 
 ## What This Project Is
 
-A browser-based coaching companion for killer sudoku. Reads newspaper puzzle images
+A browser-based coaching companion for killer and classic sudoku. Reads newspaper puzzle images
 in-browser (OpenCV.js WASM), locates the grid, detects cage borders, reads cage totals,
 and guides the user through solving with candidates, logical hints, and rule-based
 deductions. All processing runs client-side.

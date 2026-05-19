@@ -1,5 +1,5 @@
 /**
- * COACH — Killer Sudoku offline service worker.
+ * COACH — Sudoku offline service worker.
  *
  * Strategy: cache-first for all precached assets; network-first for everything
  * else (e.g. future API calls or unknown navigation requests).

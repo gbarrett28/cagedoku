@@ -1,5 +1,5 @@
 /**
- * Killer Sudoku COACH — browser entry point.
+ * Sudoku COACH — browser entry point.
  *
  * Adapted from killer_sudoku/static/main.ts.  All `fetch('/api/...')` calls
  * replaced with direct calls to session/actions.ts functions.

@@ -58,7 +58,7 @@ import type {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** 1–9 each appear 9 times → the only valid sum for a full 9×9 killer grid. */
+/** 1–9 each appear 9 times → the only valid sum for a full 9×9 sudoku grid. */
 const GRID_TOTAL_SUM = 405;
 
 /** Intersection of all sets, returned as a sorted array. */
