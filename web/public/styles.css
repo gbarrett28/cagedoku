@@ -1024,6 +1024,41 @@ dialog::backdrop {
 }
 .btn-rule-info:hover { opacity: 0.7; }
 
+.hint-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.hint-modal-header h2 { margin: 0; }
+
+#hint-minimize-btn {
+  flex-shrink: 0;
+  font-size: 1.2rem;
+  line-height: 1;
+  padding: 0.1rem 0.5rem;
+}
+
+#hint-pill {
+  position: fixed;
+  bottom: 5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.4rem 1.1rem;
+  cursor: pointer;
+  z-index: 50;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+  user-select: none;
+}
+
+#hint-pill:hover { opacity: 0.85; }
+
 .hint-modal-explanation {
   margin: 1rem 0 0.5rem;
   line-height: 1.6;

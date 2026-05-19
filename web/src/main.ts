@@ -49,6 +49,7 @@ import type { Cell } from './engine/types.js';
 import { GridNotFoundError } from './image/inpImage.js';
 import { UserFacingError } from './session/errors.js';
 import { applyAutoApplyLock } from './autoApplyLock.js';
+import { showHintPill, hideHintPill } from './hintPill.js';
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -731,6 +732,7 @@ function showHintModal(hint: HintItem): void {
 function clearHintHighlight(): void {
   hintHighlightCells = new Set();
   activeHintItem = null;
+  hideHintPill(el('hint-pill'));
   redrawGrid();
 }
 
@@ -1453,6 +1455,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   el<HTMLButtonElement>('fast-forward-btn').addEventListener('click', () => {
     fastForwardRequested = true;
+  });
+
+  el<HTMLButtonElement>('hint-minimize-btn').addEventListener('click', () => {
+    if (activeHintItem === null) return;
+    (el<HTMLDialogElement>('hint-modal') as HTMLDialogElement).close();
+    showHintPill(el('hint-pill'), el('hint-pill-label'), activeHintItem.displayName);
+  });
+
+  el('hint-pill').addEventListener('click', () => {
+    if (activeHintItem === null) return;
+    hideHintPill(el('hint-pill'));
+    showHintModal(activeHintItem);
   });
 
   // Keyboard

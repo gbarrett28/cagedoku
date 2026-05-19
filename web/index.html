@@ -190,7 +190,10 @@
 </dialog>
 
 <dialog id="hint-modal">
-  <h2 id="hint-modal-title"></h2>
+  <div class="hint-modal-header">
+    <h2 id="hint-modal-title"></h2>
+    <button id="hint-minimize-btn" class="btn-icon btn-secondary" aria-label="Minimise hint" data-tooltip="Minimise">&#x2013;</button>
+  </div>
   <p id="hint-modal-explanation" class="hint-modal-explanation"></p>
   <p id="hint-modal-summary" class="hint-modal-summary"></p>
   <div class="form-actions">
@@ -315,6 +318,9 @@
   </div>
 </dialog>
 
+<div id="hint-pill" hidden role="status" aria-live="polite">
+  <span id="hint-pill-label"></span>
+</div>
 <div id="version-banner"></div>
 <script type="module" src="/src/main.ts"></script>
 </body>
