@@ -364,7 +364,7 @@ button:hover:not(:disabled) {
    :has() re-evaluates when JS toggles [hidden]. */
 body:has(#playing-actions:not([hidden])) {
   height: 100dvh;
-  overflow: hidden;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -408,12 +408,23 @@ body:has(#playing-actions:not([hidden])) #canvas-wrapper {
   min-height: 0;
   min-width: 0;
   aspect-ratio: 1;
+  width: auto;
   max-width: 100%;
   max-height: 100cqw;
 }
 
 body:has(#playing-actions:not([hidden])) #side-panel {
   flex-shrink: 0;
+  overflow-y: auto;
+  max-height: 55cqh;
+}
+
+/* Side-panel is a switchable zone: inspector or virtual-cage replaces the digit pad.
+   We cannot use [hidden] on #playing-actions (it drives the playing-mode :has() selector),
+   so we suppress it with display:none instead. */
+#side-panel:has(#inspector-col:not([hidden])) #playing-actions,
+#side-panel:has(#virtual-cage-col:not([hidden])) #playing-actions {
+  display: none;
 }
 
 #canvas-wrapper {
@@ -771,6 +782,7 @@ body:has(#playing-actions:not([hidden])) #side-panel {
     align-self: stretch;
     overflow-y: auto;
     width: auto;
+    max-height: none;
   }
 
   /* Digit pad reflows to two vertical columns:
