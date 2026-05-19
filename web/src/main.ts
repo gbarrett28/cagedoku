@@ -38,6 +38,7 @@ import {
   solveCurrentSpec,
   getSettingsData,
   saveSettingsData,
+  checkSolutionAssertions,
 } from './session/actions.js';
 import type {
   CandidatesResponse,
@@ -50,6 +51,7 @@ import { GridNotFoundError } from './image/inpImage.js';
 import { UserFacingError } from './session/errors.js';
 import { applyAutoApplyLock } from './autoApplyLock.js';
 import { showHintPill, hideHintPill } from './hintPill.js';
+import { AssertionViolation, buildGitHubIssueUrl } from './session/assertions.js';
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -736,6 +738,14 @@ function clearHintHighlight(): void {
   redrawGrid();
 }
 
+function showAssertionModal(violation: AssertionViolation): void {
+  el<HTMLElement>('assertion-desc').textContent = violation.ctx.description;
+  el<HTMLButtonElement>('assertion-submit-btn').onclick = () => {
+    window.open(buildGitHubIssueUrl(violation.ctx), '_blank');
+  };
+  (el<HTMLDialogElement>('assertion-modal') as HTMLDialogElement).showModal();
+}
+
 // ---------------------------------------------------------------------------
 // Hint dropdown
 // ---------------------------------------------------------------------------
@@ -849,6 +859,8 @@ async function handleProcess(): Promise<void> {
           logAction('auto_confirmed');
           const playing = confirmPuzzle(board);
           renderPlayingMode(playing);
+          const autoViolation = checkSolutionAssertions(playing);
+          if (autoViolation !== null) showAssertionModal(autoViolation);
           pendingCellThumbs = new Map();
           pendingMergedThumbs = new Map();
           setStatus('');
@@ -922,6 +934,8 @@ async function handleConfirm(): Promise<void> {
     logAction('confirmed', currentState.puzzleType);
     renderPlayingMode(playing);
     setStatus('');
+    const assertionViolation = checkSolutionAssertions(playing);
+    if (assertionViolation !== null) showAssertionModal(assertionViolation);
 
     // Upload puzzle spec when backtracking was needed (rules alone couldn't solve it).
     if (confirmUsedBacktracking) {
@@ -1415,6 +1429,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
     } catch (e) {
+      if (e instanceof AssertionViolation) {
+        dropdown.hidden = true;
+        showAssertionModal(e);
+        return;
+      }
       const p = document.createElement('p'); p.className = 'hints-empty'; p.textContent = String(e); dropdown.appendChild(p);
     }
     dropdown.hidden = false;
@@ -1467,6 +1486,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (activeHintItem === null) return;
     hideHintPill(el('hint-pill'));
     showHintModal(activeHintItem);
+  });
+
+  el<HTMLButtonElement>('assertion-dismiss-btn').addEventListener('click', () => {
+    (el<HTMLDialogElement>('assertion-modal') as HTMLDialogElement).close();
   });
 
   // Keyboard

@@ -14,6 +14,8 @@ import { cageSumRange, cellKey, keyToCell } from '../engine/types.js';
 import type { Cell } from '../engine/types.js';
 import { parsePuzzleImage, ImageDecodeError, GridNotFoundError } from '../image/inpImage.js';
 import { UserFacingError } from './errors.js';
+import { AssertionViolation, validateSudokuSolution } from './assertions.js';
+import { formatActionLog } from './actionLog.js';
 
 import type { ParseResult } from '../image/inpImage.js';
 import { defaultImagePipelineConfig } from '../image/config.js';
@@ -514,6 +516,40 @@ export function confirmPuzzle(board: BoardState): PuzzleState {
   return updated;
 }
 
+/** Checks post-confirmation assertions about the golden solution.
+ *  Returns a violation if the solution is incomplete or invalid, null otherwise.
+ *  Called by the UI layer after confirmPuzzle succeeds so the puzzle always
+ *  reaches playing state regardless of the assertion result. */
+export function checkSolutionAssertions(state: PuzzleState): AssertionViolation | null {
+  const sol = state.goldenSolution;
+  if (sol === null) return null;
+
+  // Assertion 1: solver could not determine all cells using logical rules alone.
+  if (sol.some(row => row.some(d => d === 0))) {
+    return new AssertionViolation({
+      name: 'UnsolvedByRules',
+      description: 'The rule-based solver could not fill every cell. This puzzle may require techniques the rule set does not yet cover.',
+      puzzleSpecJson: JSON.stringify(state.specData),
+      solutionJson: JSON.stringify(sol),
+      actionLog: formatActionLog(),
+    });
+  }
+
+  // Assertion 2: the solution the solver produced fails basic sudoku validity.
+  const reason = validateSudokuSolution(sol);
+  if (reason !== null) {
+    return new AssertionViolation({
+      name: 'InvalidSolution',
+      description: `The solver produced an invalid solution: ${reason}`,
+      puzzleSpecJson: JSON.stringify(state.specData),
+      solutionJson: JSON.stringify(sol),
+      actionLog: formatActionLog(),
+    });
+  }
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Candidates
 // ---------------------------------------------------------------------------
@@ -863,8 +899,24 @@ export function getHints(): HintsResponse {
 
   // Build engine from full current state so user placements, candidate removals,
   // and virtual cages are all reflected before generating hints.
-  const { engine } = buildEngine(state, { includeHints: true }); // engine.solve() called inside buildEngine
+  const { board, engine } = buildEngine(state, { includeHints: true }); // engine.solve() called inside buildEngine
   const rawHints = engine.pendingHints;
+
+  // Assertion: if any unsolved cell has no remaining candidates and no user mistake
+  // explains it, the rule engine produced a contradiction.
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      if (state.userGrid[r]![c] === 0 && board.cands(r, c).size === 0) {
+        throw new AssertionViolation({
+          name: 'EmptyCandidateSet',
+          description: `Cell r${r + 1}c${c + 1} has no remaining candidates — the rule engine reached a contradiction with no user mistake to explain it.`,
+          puzzleSpecJson: JSON.stringify(state.specData),
+          solutionJson: JSON.stringify(state.goldenSolution),
+          actionLog: formatActionLog(),
+        });
+      }
+    }
+  }
 
   // Filter out hints for cells that already have a placed digit
   const filtered = rawHints.filter(h =>
@@ -902,6 +954,22 @@ export function getHints(): HintsResponse {
       virtualCageSuggestion: vcSug,
     };
   });
+
+  // Assertion: solvable puzzle is stuck — the rule set can't make progress.
+  // Only fires after the user has placed at least one digit to avoid false positives
+  // at the very start of a puzzle.
+  const goldenComplete = state.goldenSolution !== null && state.goldenSolution.every(row => row.every(d => d !== 0));
+  const puzzleIncomplete = state.userGrid.some(row => row.some(d => d === 0));
+  const hasUserPlacements = state.turns.some(t => t.action.type === 'placeDigit' && t.action.source === 'user');
+  if (hints.length === 0 && goldenComplete && puzzleIncomplete && hasUserPlacements) {
+    throw new AssertionViolation({
+      name: 'StuckPuzzle',
+      description: 'The puzzle has a complete solution but the rule set cannot suggest a next step. Some deduction rule may be missing.',
+      puzzleSpecJson: JSON.stringify(state.specData),
+      solutionJson: JSON.stringify(state.goldenSolution),
+      actionLog: formatActionLog(),
+    });
+  }
 
   return { hints };
 }
