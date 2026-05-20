@@ -16,7 +16,7 @@ import { SolverEngine } from './solverEngine.js';
 import { defaultRules } from './rules/index.js';
 import { LinearElimination } from './rules/linearElimination.js';
 import type { RuleContext, SolverRule } from './rule.js';
-import { emptyResult, Elimination, RuleResult, Trigger, UnitKind } from './types.js';
+import { Cell, emptyResult, Elimination, RuleResult, SolutionElimination, Trigger, UnitKind, VirtualCageAddition } from './types.js';
 import { KNOWN_SOLUTION, makeTrivialSpec } from './fixtures.js';
 
 describe('SolverEngine init', () => {
@@ -115,6 +115,71 @@ describe('SolverEngine rule routing', () => {
     engine.applyEliminations([{ cell: [0, 0] as unknown as Elimination['cell'], digit: 5 }]);
     engine.solve();
     expect(engine.stats.get('noop')!.calls).toBeGreaterThan(0);
+  });
+});
+
+describe('SolverEngine solution eliminations', () => {
+  it('_applyGlobalRuleDefault: removes a cage solution, records mutation, re-enqueues SOLUTION_PRUNED rules', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    const cageIdx = bs.regions[0]![0]!;
+    const initialSolns = bs.cageSolns[cageIdx]!.length;
+    expect(initialSolns).toBeGreaterThan(0);
+    const targetSoln = [...bs.cageSolns[cageIdx]![0]!];
+
+    let fired = false;
+    const se: SolutionElimination = { cageIdx, solution: targetSoln };
+    const prunedCalls: number[] = [];
+    const seRule: SolverRule = {
+      name: 'seStub', description: '', priority: 5,
+      triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
+      apply(_ctx: RuleContext): RuleResult {
+        if (fired) return emptyResult();
+        fired = true;
+        return { ...emptyResult(), solutionEliminations: [se] };
+      },
+      asHints() { return []; },
+    };
+    // SOLUTION_PRUNED subscriber — exercises line 282 (_applyGlobalRuleDefault enqueue path)
+    const pruneRule: SolverRule = {
+      name: 'pruneWatcher', description: '', priority: 5,
+      triggers: new Set([Trigger.SOLUTION_PRUNED]), unitKinds: new Set([UnitKind.CAGE]),
+      apply(_ctx: RuleContext): RuleResult { prunedCalls.push(1); return emptyResult(); },
+      asHints() { return []; },
+    };
+
+    const engine = new SolverEngine(bs, [seRule, pruneRule]);
+    engine.solve();
+
+    expect(bs.cageSolns[cageIdx]!.length).toBe(initialSolns - 1);
+    expect(engine.appliedMutations.some(m => m.type === 'solution_eliminated')).toBe(true);
+    expect(prunedCalls.length).toBeGreaterThan(0); // line 282 was reached
+  });
+});
+
+describe('SolverEngine virtual cage additions', () => {
+  it('records a virtual cage addition produced by a rule', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    const vca: VirtualCageAddition = {
+      cells: [[0, 0] as Cell, [0, 1] as Cell],
+      total: 10,
+    };
+    let fired = false;
+    const rule: SolverRule = {
+      name: 'vcaStub', description: '', priority: 5,
+      triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
+      apply(_ctx: RuleContext): RuleResult {
+        if (fired) return emptyResult();
+        fired = true;
+        return { ...emptyResult(), virtualCageAdditions: [vca] };
+      },
+      asHints() { return []; },
+    };
+
+    const engine = new SolverEngine(bs, [rule]);
+    engine.solve();
+
+    expect(engine.appliedVirtualCages).toHaveLength(1);
+    expect(engine.appliedMutations.some(m => m.type === 'virtual_cage_added')).toBe(true);
   });
 });
 
