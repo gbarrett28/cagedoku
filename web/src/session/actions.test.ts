@@ -16,6 +16,8 @@ import {
   confirmPuzzle,
   solveCurrentSpec,
   enterCell,
+  enterCellStep,
+  stepAutoPlacement,
   undo,
   computeCandidates,
   cycleCandidate,
@@ -559,5 +561,34 @@ describe('Bug #61 regression — cycleCandidate records an undoable turn', () =>
     const last = getState()!.turns[getState()!.turns.length - 1]!.action;
     expect(last.type).toBe('placeDigit');
     if (last.type === 'placeDigit') expect(last.source).toBe('given');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #78 – Fast-forward drain invariant
+// Draining stepAutoPlacement() iteratively after enterCellStep() must reach
+// the same final userGrid as enterCell() in a single call. This is the
+// session-level contract the main.ts fast-forward fix relies on.
+// ---------------------------------------------------------------------------
+
+describe('fast-forward drain invariant (#78)', () => {
+  beforeEach(() => { makeKillerConfirmed(); });
+
+  it('stepAutoPlacement loop reaches same userGrid as enterCell', () => {
+    const snapshot = getState()!;
+    const r = 1, c = 1, digit = KNOWN_SOLUTION[0]![0]!;
+
+    // Single-shot path
+    setState(snapshot);
+    enterCell(r, c, digit);
+    const singleGrid = getState()!.userGrid;
+
+    // Iterative drain path — what the fast-forward fix does in handleCellEntry
+    setState(snapshot);
+    enterCellStep(r, c, digit);
+    while (stepAutoPlacement() !== null) { /* drain */ }
+    const drainGrid = getState()!.userGrid;
+
+    expect(drainGrid).toEqual(singleGrid);
   });
 });
