@@ -36,6 +36,42 @@ describe('SimpleColouring', () => {
     expect(elims.every(e => !([0, 5].includes(e.cell[0]) && [0, 3].includes(e.cell[1])))).toBe(true);
   });
 
+  it('asHints trap: returns a hint with correct shape', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    const d = 3;
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.cands(r, c).delete(d);
+    bs.cands(0, 0).add(d); bs.cands(5, 0).add(d);
+    bs.cands(5, 3).add(d); bs.cands(0, 3).add(d);
+    bs.cands(0, 6).add(d);
+    const ctx = globalCtx(bs);
+    const rule = new SimpleColouring();
+    const elims = rule.apply(ctx).eliminations.filter(e => e.digit === d);
+    expect(elims.length).toBeGreaterThan(0);
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBeGreaterThan(0);
+    expect(hints[0]!.ruleName).toBe('SimpleColouring');
+    expect(hints[0]!.explanation.length).toBeGreaterThan(0);
+    expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
+    expect(hints[0]!.placement).toBeNull();
+  });
+
+  it('asHints wrap: returns a hint with correct shape', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    const d = 5;
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.cands(r, c).delete(d);
+    bs.cands(0, 0).add(d); bs.cands(0, 1).add(d); bs.cands(1, 1).add(d);
+    const ctx = globalCtx(bs);
+    const rule = new SimpleColouring();
+    const elims = rule.apply(ctx).eliminations.filter(e => e.digit === d);
+    expect(elims.length).toBeGreaterThan(0);
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBeGreaterThan(0);
+    expect(hints[0]!.ruleName).toBe('SimpleColouring');
+    expect(hints[0]!.explanation.length).toBeGreaterThan(0);
+    expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
+    expect(hints[0]!.placement).toBeNull();
+  });
+
   it('wrap: eliminates digit from a colour group when two same-colour cells see each other', () => {
     const bs = new BoardState(makeTrivialSpec());
     const d = 5;

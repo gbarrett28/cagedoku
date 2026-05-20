@@ -47,6 +47,44 @@ describe('NakedHiddenTriple', () => {
     expect(elims.every(e => e.cell[1] >= 3)).toBe(true);
   });
 
+  it('asHints: naked triple returns hint with correct shape', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    bs.candidates[0]![0]! = new Set([1, 2]);
+    bs.candidates[0]![1]! = new Set([2, 3]);
+    bs.candidates[0]![2]! = new Set([1, 3]);
+    for (let c = 3; c < 9; c++) bs.candidates[0]![c]! = new Set([1, 2, 3, 4, 5]);
+    const ctx = makeCtx(bs, 0);
+    const rule = new NakedHiddenTriple();
+    const elims = rule.apply(ctx).eliminations;
+    expect(elims.length).toBeGreaterThan(0);
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBe(1);
+    expect(hints[0]!.ruleName).toBe('NakedHiddenTriple');
+    expect(hints[0]!.displayName).toBe('Naked Triple');
+    expect(hints[0]!.explanation).toContain('1');
+    expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
+    expect(hints[0]!.placement).toBeNull();
+  });
+
+  it('asHints: hidden triple returns hint with correct shape', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    bs.candidates[0]![0]! = new Set([1, 2, 4, 5]);
+    bs.candidates[0]![1]! = new Set([2, 3, 6, 7]);
+    bs.candidates[0]![2]! = new Set([1, 3, 8, 9]);
+    for (let c = 3; c < 9; c++) bs.candidates[0]![c]! = new Set([4, 5, 6, 7]);
+    const ctx = makeCtx(bs, 0);
+    const rule = new NakedHiddenTriple();
+    const elims = rule.apply(ctx).eliminations;
+    expect(elims.length).toBeGreaterThan(0);
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBe(1);
+    expect(hints[0]!.ruleName).toBe('NakedHiddenTriple');
+    expect(hints[0]!.displayName).toBe('Hidden Triple');
+    expect(hints[0]!.explanation).toContain('Hidden Triple');
+    expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
+    expect(hints[0]!.placement).toBeNull();
+  });
+
   it('hidden triple: restricts three cells to only the triple digits', () => {
     const bs = new BoardState(makeTrivialSpec());
 

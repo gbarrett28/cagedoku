@@ -72,8 +72,31 @@ describe('Swordfish', () => {
   });
 });
 
+describe('Swordfish.asHints', () => {
+  it('returns a hint with correct shape when swordfish pattern exists', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    setDigitCells(bs, 2, [
+      [0, 1], [0, 4],
+      [3, 1], [3, 7],
+      [6, 4], [6, 7],
+      [2, 1], [5, 7],
+    ]);
+    const ctx = globalCtx(bs);
+    const rule = new Swordfish();
+    const elims = rule.apply(ctx).eliminations.filter(e => e.digit === 2);
+    expect(elims.length).toBeGreaterThan(0);
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBeGreaterThan(0);
+    expect(hints[0]!.ruleName).toBe('Swordfish');
+    expect(hints[0]!.explanation).toContain('2');
+    expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
+    expect(hints[0]!.placement).toBeNull();
+  });
+});
+
 describe('Jellyfish', () => {
   it('row variant: eliminates digit from cover columns outside the four base rows', () => {
+
     const bs = new BoardState(makeTrivialSpec());
     // Digit 7 in rows 0,2,5,7 covering exactly cols 1,3,6,8
     setDigitCells(bs, 7, [
@@ -90,5 +113,26 @@ describe('Jellyfish', () => {
     // Base rows not targeted
     const baseRows = new Set([0, 2, 5, 7]);
     expect(elims.every(e => !baseRows.has(e.cell[0]))).toBe(true);
+  });
+
+  it('asHints: returns a hint with correct shape when jellyfish pattern exists', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    setDigitCells(bs, 7, [
+      [0, 1], [0, 3],
+      [2, 1], [2, 6],
+      [5, 3], [5, 8],
+      [7, 6], [7, 8],
+      [1, 1], [4, 6],
+    ]);
+    const ctx = globalCtx(bs);
+    const rule = new Jellyfish();
+    const elims = rule.apply(ctx).eliminations.filter(e => e.digit === 7);
+    expect(elims.length).toBeGreaterThan(0);
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBeGreaterThan(0);
+    expect(hints[0]!.ruleName).toBe('Jellyfish');
+    expect(hints[0]!.explanation).toContain('7');
+    expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
+    expect(hints[0]!.placement).toBeNull();
   });
 });

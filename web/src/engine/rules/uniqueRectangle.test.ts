@@ -33,6 +33,45 @@ describe('UniqueRectangle', () => {
     expect(elims.every(e => e.digit !== 3)).toBe(true);
   });
 
+  it('asHints type 1: returns hint with correct shape', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
+    bs.candidates[0]![0]! = new Set([4, 7]);
+    bs.candidates[0]![3]! = new Set([4, 7]);
+    bs.candidates[3]![0]! = new Set([4, 7]);
+    bs.candidates[3]![3]! = new Set([3, 4, 7]);
+    const ctx = globalCtx(bs);
+    const rule = new UniqueRectangle();
+    const elims = rule.apply(ctx).eliminations;
+    expect(elims.length).toBeGreaterThan(0);
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBeGreaterThan(0);
+    expect(hints[0]!.ruleName).toBe('UniqueRectangle');
+    expect(hints[0]!.explanation.length).toBeGreaterThan(0);
+    expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
+    expect(hints[0]!.placement).toBeNull();
+  });
+
+  it('asHints type 2: returns hint with correct shape', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
+    bs.candidates[0]![0]! = new Set([4, 7]);
+    bs.candidates[1]![1]! = new Set([4, 7]);
+    bs.candidates[0]![1]! = new Set([4, 5, 7]);
+    bs.candidates[1]![0]! = new Set([4, 5, 7]);
+    bs.candidates[0]![2]! = new Set([5, 8]); // target
+    const ctx = globalCtx(bs);
+    const rule = new UniqueRectangle();
+    const elims = rule.apply(ctx).eliminations;
+    expect(elims.length).toBeGreaterThan(0);
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBeGreaterThan(0);
+    expect(hints[0]!.ruleName).toBe('UniqueRectangle');
+    expect(hints[0]!.explanation).toContain('Type 2');
+    expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
+    expect(hints[0]!.placement).toBeNull();
+  });
+
   it('type 2: eliminates extra digit from cells seeing both extra corners', () => {
     const bs = new BoardState(makeTrivialSpec());
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();

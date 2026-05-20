@@ -42,6 +42,33 @@ describe('HiddenPair', () => {
     expect(elims.every(e => e.cell[1] === 0 || e.cell[1] === 1)).toBe(true);
   });
 
+  it('asHints: returns a hint with correct shape for a hidden pair', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    const rowUid = bs.rowUnitId(0);
+    bs.candidates[0]![0]! = new Set([1, 4, 6]);
+    bs.candidates[0]![1]! = new Set([4, 5, 6]);
+    for (let c = 2; c < 9; c++) bs.candidates[0]![c]! = new Set([2, 3, 7, 8, 9]);
+    for (let d = 1; d <= 9; d++)
+      bs.counts[rowUid]![d] = [0,1,2,3,4,5,6,7,8].filter(c => bs.cands(0, c).has(d)).length;
+
+    const ctx: RuleContext = {
+      unit: bs.units[rowUid] ?? null, cell: null,
+      board: bs, hint: Trigger.COUNT_HIT_TWO, hintDigit: 4,
+    };
+    const rule = new HiddenPair();
+    const elims = rule.apply(ctx).eliminations;
+    expect(elims.length).toBeGreaterThan(0);
+
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBe(1);
+    expect(hints[0]!.ruleName).toBe('HiddenPair');
+    expect(hints[0]!.displayName).toBe('Hidden Pair');
+    expect(hints[0]!.explanation).toContain('4');
+    expect(hints[0]!.explanation).toContain('6');
+    expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
+    expect(hints[0]!.placement).toBeNull();
+  });
+
   it('returns empty when two digits do not share the same two cells', () => {
     const bs = new BoardState(makeTrivialSpec());
     const rowUid = bs.rowUnitId(0);

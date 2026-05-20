@@ -47,6 +47,46 @@ describe('NakedHiddenQuad', () => {
     expect(elims.every(e => e.cell[1] >= 4)).toBe(true);
   });
 
+  it('asHints: naked quad returns hint with correct shape', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    bs.candidates[0]![0]! = new Set([1, 2]);
+    bs.candidates[0]![1]! = new Set([2, 3]);
+    bs.candidates[0]![2]! = new Set([3, 4]);
+    bs.candidates[0]![3]! = new Set([1, 4]);
+    for (let c = 4; c < 9; c++) bs.candidates[0]![c]! = new Set([1, 2, 3, 4, 5]);
+    const ctx = makeCtx(bs, 0);
+    const rule = new NakedHiddenQuad();
+    const elims = rule.apply(ctx).eliminations;
+    expect(elims.length).toBeGreaterThan(0);
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBe(1);
+    expect(hints[0]!.ruleName).toBe('NakedHiddenQuad');
+    expect(hints[0]!.displayName).toBe('Naked Quad');
+    expect(hints[0]!.explanation).toContain('1');
+    expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
+    expect(hints[0]!.placement).toBeNull();
+  });
+
+  it('asHints: hidden quad returns hint with correct shape', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    bs.candidates[0]![0]! = new Set([1, 2, 5]);
+    bs.candidates[0]![1]! = new Set([2, 3, 6]);
+    bs.candidates[0]![2]! = new Set([3, 4, 7]);
+    bs.candidates[0]![3]! = new Set([1, 4, 8]);
+    for (let c = 4; c < 9; c++) bs.candidates[0]![c]! = new Set([5, 6, 7, 8, 9]);
+    const ctx = makeCtx(bs, 0);
+    const rule = new NakedHiddenQuad();
+    const elims = rule.apply(ctx).eliminations;
+    expect(elims.length).toBeGreaterThan(0);
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBe(1);
+    expect(hints[0]!.ruleName).toBe('NakedHiddenQuad');
+    expect(hints[0]!.displayName).toBe('Hidden Quad');
+    expect(hints[0]!.explanation).toContain('Hidden Quad');
+    expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
+    expect(hints[0]!.placement).toBeNull();
+  });
+
   it('hidden quad: restricts four cells to only the quad digits', () => {
     const bs = new BoardState(makeTrivialSpec());
 

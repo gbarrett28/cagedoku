@@ -55,6 +55,38 @@ describe('DeltaConstraint', () => {
     expect(elims01.has(9)).toBe(true);
   });
 
+  it('asHints: returns a hint with correct shape for a delta pair', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    bs.candidates[0]![0]! = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    bs.candidates[0]![1]! = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
+    const cellA = [0, 0] as Cell;
+    const cellB = [0, 1] as Cell;
+    const pair = [cellA, cellB, 2] as unknown as readonly [Cell, Cell, number];
+    bs.linearSystem.deltaPairs.push(pair);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pairsMap = (bs.linearSystem as any)._pairsByCell as Map<string, typeof pair[]>;
+    const kA = cellKey(cellA); const kB = cellKey(cellB);
+    if (!pairsMap.has(kA)) pairsMap.set(kA, []);
+    if (!pairsMap.has(kB)) pairsMap.set(kB, []);
+    pairsMap.get(kA)!.push(pair); pairsMap.get(kB)!.push(pair);
+
+    const ctx: RuleContext = {
+      unit: bs.units[bs.rowUnitId(0)] ?? null, cell: null,
+      board: bs, hint: Trigger.COUNT_DECREASED, hintDigit: null,
+    };
+    const rule = new DeltaConstraint();
+    const elims = rule.apply(ctx).eliminations;
+    expect(elims.length).toBeGreaterThan(0);
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBeGreaterThan(0);
+    expect(hints[0]!.ruleName).toBe('DeltaConstraint');
+    expect(hints[0]!.explanation).toContain('r1c1');
+    expect(hints[0]!.explanation).toContain('r1c2');
+    expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
+    expect(hints[0]!.placement).toBeNull();
+  });
+
   it('subscribes to COUNT_DECREASED but not CELL_DETERMINED', () => {
     const rule = new DeltaConstraint();
     expect(rule.triggers.has(Trigger.COUNT_DECREASED)).toBe(true);
