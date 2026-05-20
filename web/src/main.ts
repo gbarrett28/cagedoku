@@ -532,6 +532,7 @@ function renderPlayingMode(state: PuzzleState): void {
     { id: 'reveal-btn',    text: 'Reveal the correct digit for the selected cell.' },
     { id: 'digit-1',       text: 'Use these buttons to enter digits. In Candidate mode, they toggle pencil marks instead. On a keyboard, Ctrl+digit works in the opposite mode.' },
     { id: 'help-btn',      text: 'Re-open this guide at any time.' },
+    { id: 'feedback-btn',  text: 'Found a bug or have a suggestion? Tap the envelope to send feedback.' },
     { id: 'config-btn',    text: 'Configure which logical rules run automatically.' },
     { id: 'new-puzzle-btn', text: 'Start a fresh puzzle.' },
   ];
