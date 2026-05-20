@@ -47,18 +47,27 @@ export function appendCallouts(items: CalloutItem[]): void {
   if (calloutStarted && !calloutRunning) advanceCallout();
 }
 
+/** Reset module state for unit tests. Sets tutorialActive and calloutStarted true. */
+export function _resetForTest(): void {
+  calloutQueue = [];
+  calloutRunning = false;
+  calloutStarted = true;
+  tutorialActive = true;
+}
+
 function advanceCallout(): void {
-  const item = calloutQueue.shift();
-  if (item === undefined) {
+  let item: CalloutItem | undefined;
+  let target: HTMLElement | null = null;
+  while ((item = calloutQueue.shift()) !== undefined) {
+    target = document.getElementById(item.id);
+    if (target !== null) break;
+    target = null;
+  }
+  if (item === undefined || target === null) {
     calloutRunning = false;
     return;
   }
   calloutRunning = true;
-  const target = document.getElementById(item.id);
-  if (target === null) {
-    advanceCallout(); // skip missing elements
-    return;
-  }
   showCallout(item, target);
 }
 

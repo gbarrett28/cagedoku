@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { initTutorial, appendCallouts, isTutorialActive } from './tutorial.js';
+import { initTutorial, appendCallouts, isTutorialActive, _resetForTest } from './tutorial.js';
 
 const STORAGE_KEY = 'coach_tutorial_suppressed';
 
@@ -101,5 +101,40 @@ describe('appendCallouts', () => {
     initTutorial();
     appendCallouts([{ id: 'callout-got-it', text: 'tap here' }]);
     expect((document.getElementById('callout') as HTMLElement).hidden).toBe(true);
+  });
+});
+
+describe('advanceCallout — iterative', () => {
+  beforeEach(() => {
+    // module-level beforeEach has already created callout/callout-text/callout-got-it
+    const realBtn = document.createElement('button');
+    realBtn.id = 'real-btn';
+    realBtn.textContent = 'Real';
+    document.body.appendChild(realBtn);
+    _resetForTest();
+  });
+
+  it('skips all-missing elements without throwing', () => {
+    expect(() =>
+      appendCallouts([
+        { id: 'missing-1', text: 'A' },
+        { id: 'missing-2', text: 'B' },
+        { id: 'missing-3', text: 'C' },
+      ])
+    ).not.toThrow();
+  });
+
+  it('leaves callout hidden when every queued element is missing', () => {
+    appendCallouts([{ id: 'missing-1', text: 'A' }]);
+    expect((document.getElementById('callout') as HTMLElement).hidden).toBe(true);
+  });
+
+  it('shows the first element that exists in the DOM', () => {
+    appendCallouts([
+      { id: 'missing-1', text: 'Skipped' },
+      { id: 'real-btn',  text: 'Use this button' },
+    ]);
+    expect((document.getElementById('callout') as HTMLElement).hidden).toBe(false);
+    expect(document.getElementById('callout-text')!.textContent).toBe('Use this button');
   });
 });
