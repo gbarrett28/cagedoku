@@ -502,3 +502,57 @@ The element IDs match the HTML (`index.html`).
 | Candidates help | `#help-candidates-modal` | `#help-candidates-btn` |
 | Training consent | `#training-consent-modal` | After first upload that produces training data |
 
+---
+
+## Tutorial Callout System
+
+**Source:** `web/src/tutorial.ts`, `web/src/main.ts` (callout sequences), `web/public/styles.css` (arrow CSS)
+
+On first visit the app shows a `#general-help-modal`. When dismissed, it starts a step-by-step callout sequence walking the user through each button. The system is suppressed permanently when the user ticks "Don't show again" (stored in `localStorage` as `coach_tutorial_suppressed`).
+
+### Callout Sequences
+
+**Upload screen** (queued immediately at DOMContentLoaded):
+- `process-btn` — "Tap here to analyse your photo and detect the grid and cages."
+
+**Review screen** (queued after OCR completes):
+- `confirm-btn` — "When the grid looks correct, confirm to start solving."
+
+**Playing screen** (queued after `confirmPuzzle`):
+
+| Step | Button ID | Text |
+|---|---|---|
+| 1 | `undo-btn` | "Undo your last move." |
+| 2 | `hints-btn` | "Request a logical hint to guide your next step." |
+| 3 *(killer only)* | `inspect-cage-btn` | "Show remaining valid digit combinations for a cage." |
+| 4 *(killer only)* | `virtual-cage-btn` | "Add a virtual cage constraint derived from the current board state." |
+| 5 | `mode-toggle` | "Switch between Normal mode (place digits) and Candidate mode (edit pencil marks). …" |
+| 6 | `reveal-btn` | "Reveal the correct digit for the selected cell." |
+| 7 | `digit-1` | "Use these buttons to enter digits. …" |
+| 8 | `help-btn` | "Re-open this guide at any time." |
+| 9 | `feedback-btn` | "Found a bug or have a suggestion? Tap the envelope to send feedback." |
+| 10 | `config-btn` | "Configure which logical rules run automatically." |
+| 11 | `new-puzzle-btn` | "Start a fresh puzzle." |
+
+`inspect-cage-btn` and `virtual-cage-btn` (steps 3–4) are absent from the DOM on classic puzzles. `advanceCallout()` silently skips any element not found in the DOM, so the sequence works correctly for both puzzle types.
+
+### Positioning and Arrow
+
+`calcCalloutPosition()` (`web/src/tutorial.ts`, exported for testing) is a pure function that computes the callout's CSS position and arrow offset from element geometry:
+
+- **Horizontal clamping:** centres the callout on the button, then clamps to `[8px, vpWidth − calloutWidth − 8px]` so the box never overflows the viewport edge.
+- **Arrow offset:** `clamp(buttonCenterX − clampedLeft, 16, calloutWidth − 16)`. Applied as `--arrow-offset` CSS custom property; the `::before` triangle slides along the callout's edge to always point at the button's centre.
+- **Vertical placement:** above the button if `spaceAbove ≥ calloutHeight + 12 px`; else below; else centred in the viewport (class `callout-no-arrow`).
+
+Direction classes on `#callout`:
+
+| Class | Arrow side | Points |
+|---|---|---|
+| `callout-above` | bottom of box | Down toward button |
+| `callout-below` | top of box | Up toward button |
+| `callout-no-arrow` | — | No arrow |
+
+### `advanceCallout()` Behaviour
+
+The queue is drained iteratively (a `while` loop). Elements absent from the DOM (e.g. killer-only buttons on a classic puzzle) are silently skipped. `calloutRunning` is only set `true` when a callout is actually shown, so `appendCallouts()` calls made while the sequence is paused at a missing element are never dropped.
+

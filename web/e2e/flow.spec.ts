@@ -22,6 +22,9 @@ type TestLoad = (specName?: string) => void;
 
 /** Inject a spec via the dev test hook and wait for the review panel. */
 async function loadSpec(page: Page, specName?: string): Promise<void> {
+  // Suppress the first-visit tutorial modal before the page loads so it doesn't
+  // block interaction with buttons during tests (dialog.showModal() is blocking).
+  await page.addInitScript(() => localStorage.setItem('coach_tutorial_suppressed', 'true'));
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => '__testLoad' in window);
   await page.evaluate((name) => {
