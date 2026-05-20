@@ -1020,12 +1020,20 @@ async function handleCellEntry(digit: number): Promise<void> {
         updateUndoButton(state);
         await new Promise<void>(resolve => { setTimeout(resolve, fastForwardRequested ? 0 : delay); });
         while (true) {
+          if (fastForwardRequested) {
+            // Drain all remaining auto-placements synchronously — one DOM update at the end.
+            let ff: PuzzleState | null;
+            while ((ff = stepAutoPlacement()) !== null) currentState = ff;
+            refreshDisplay();
+            updateUndoButton(currentState);
+            break;
+          }
           const next = stepAutoPlacement();
           if (next === null) break;
           currentState = next;
           refreshDisplay();
           updateUndoButton(next);
-          await new Promise<void>(resolve => { setTimeout(resolve, fastForwardRequested ? 0 : delay); });
+          await new Promise<void>(resolve => { setTimeout(resolve, delay); });
         }
       } finally {
         setAutoApplyLock(false);
