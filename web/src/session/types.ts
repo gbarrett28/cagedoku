@@ -197,6 +197,8 @@ export interface HintItem {
 
 export interface HintsResponse {
   readonly hints: readonly HintItem[];
+  /** Present when the golden solution was updated due to a multi-solution puzzle. */
+  readonly warning?: string;
 }
 
 // ---------------------------------------------------------------------------

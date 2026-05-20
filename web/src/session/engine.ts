@@ -156,26 +156,27 @@ export function buildEngine(
     goldenSolution: state.goldenSolution,
   });
 
-  // Apply user placements as eliminations (all non-placed digits in each solved cell)
-  const placementElims = userEliminations(board, state.userGrid);
-  if (placementElims.length > 0) engine.applyEliminations(placementElims);
-
-  // Apply explicit user-removed candidates
-  const removed = userRemoved(state);
-  if (removed.length > 0) {
-    engine.applyEliminations(
-      removed.map(([r, c, d]) => ({ cell: [r, c] as Cell, digit: d })),
-    );
-  }
-
-  // Solve immediately — mirrors Python's _build_engine which calls engine.solve() before returning.
-  // All callers receive a fully-reduced board; none need to call engine.solve() themselves.
+  // Apply user placements and explicit candidate removals, then solve.
+  // All three steps are wrapped in a single try/catch: any step can produce a
+  // NoSolnError (e.g. removing the last candidate from a cell), and in every case
+  // the board should be returned as-is so the caller can detect the contradiction
+  // and offer a Rewind hint.
   try {
+    const placementElims = userEliminations(board, state.userGrid);
+    if (placementElims.length > 0) engine.applyEliminations(placementElims);
+
+    const removed = userRemoved(state);
+    if (removed.length > 0) {
+      engine.applyEliminations(
+        removed.map(([r, c, d]) => ({ cell: [r, c] as Cell, digit: d })),
+      );
+    }
+
     engine.solve();
   } catch (e) {
     if (!(e instanceof NoSolnError)) throw e;
     // Board is contradictory — return as-is so callers can detect the inconsistency
-    // via findLastConsistentTurnIdx and offer a Rewind hint.
+    // via findLastConsistentTurnIdx / findMissingGoldenCandidate and offer a Rewind hint.
   }
 
   return { board, engine };

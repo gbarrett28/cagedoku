@@ -8,6 +8,7 @@
  */
 
 import { solve, BoardState, SolveResult } from '../engine/index.js';
+import { mrvBacktrack } from '../engine/backtracker.js';
 import { solSums } from '../solver/equation.js';
 import { defaultRules } from '../engine/rules/index.js';
 import { cageSumRange, cellKey, keyToCell } from '../engine/types.js';
@@ -874,39 +875,153 @@ const LINEAR_RULE_NAMES = new Set(['LinearElimination', 'DeltaConstraint', 'SumP
  * Computes and returns hints for the current state.
  * Replaces GET /hints.
  */
+/** Build a Rewind HintItem pointing to turn `idx`. */
+function makeRewindHint(idx: number): HintItem {
+  return {
+    ruleName: 'Rewind',
+    displayName: 'Rewind to last consistent state',
+    explanation: 'A mistake has been detected. Rewinding will undo all moves back to the last correct state.',
+    highlightCells: [],
+    eliminations: [],
+    eliminationCount: 0,
+    placement: null,
+    rewindToTurnIdx: idx,
+    virtualCageSuggestion: null,
+  };
+}
+
+/**
+ * Scan turn history for the first turn that explicitly eliminated `digit` from
+ * cell `(r,c)` — either via eliminateCandidate or via applyHint.
+ * Returns the turn index, or null if not found (e.g. was eliminated by a rule).
+ */
+function findFirstElimTurnIdx(
+  state: PuzzleState,
+  r: number,
+  c: number,
+  digit: number,
+): number | null {
+  for (let i = 0; i < state.turns.length; i++) {
+    const a = state.turns[i]!.action;
+    if (a.type === 'eliminateCandidate' && a.row === r && a.col === c && a.digit === digit) return i;
+    if (a.type === 'applyHint') {
+      for (const [er, ec, ed] of a.eliminations) {
+        if (er === r && ec === c && ed === digit) return i;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Checks the user's recorded eliminations (cycleCandidate, applyHint) against
+ * goldenSolution.  Returns the first cell where the correct solution digit was
+ * explicitly removed by the user, or null if all golden candidates are intact.
+ *
+ * State-based (no board build required) so it is safe to call before buildEngine.
+ */
+function findMissingGoldenCandidate(
+  state: PuzzleState,
+): { r: number; c: number; gold: number } | null {
+  const gs = state.goldenSolution;
+  if (gs === null) return null;
+
+  // Check explicit eliminateCandidate actions via userRemoved()
+  for (const [r, c, d] of userRemoved(state)) {
+    const gold = gs[r]?.[c];
+    if (gold !== undefined && gold !== 0 && d === gold && state.userGrid![r]![c] === 0) {
+      return { r, c, gold };
+    }
+  }
+  return null;
+}
+
 export function getHints(): HintsResponse {
-  const state = requireConfirmed();
+  let state = requireConfirmed();
   if (state.userGrid === null) return { hints: [] };
 
-  // Inconsistency check: if any move conflicts with the golden solution,
-  // return only a Rewind hint.
-  const rewindIdx = findLastConsistentTurnIdx(state);
-  if (rewindIdx !== null) {
-    return {
-      hints: [{
-        ruleName: 'Rewind',
-        displayName: 'Rewind to last consistent state',
-        explanation: 'A mistake has been detected. Rewinding will undo all moves back to the last correct state.',
-        highlightCells: [],
-        eliminations: [],
-        eliminationCount: 0,
-        placement: null,
-        rewindToTurnIdx: rewindIdx,
-        virtualCageSuggestion: null,
-      }],
-    };
+  // ── Inconsistency detection ─────────────────────────────────────────────────
+  // Three paths can put the board in a state inconsistent with goldenSolution:
+  //   1. A wrong digit was placed (detectable via userGrid vs goldenSolution).
+  //      findLastConsistentTurnIdx also finds the responsible turn when it was
+  //      a user placeDigit action; wrong auto-placed digits fall back to turn 0.
+  //   2. The correct solution digit was explicitly eliminated from a cell's
+  //      candidates (cycleCandidate / applyHint) — detectable from turn history.
+  //   3. Wrong digits in userGrid that have no corresponding turn (legacy states
+  //      from pre-soundness-assertion auto-placement cascades) — detected as any
+  //      non-zero wrong cell in userGrid.
+  const gs = state.goldenSolution;
+  let inconsistent = false;
+  let rewindTurnIdx: number | null = null;
+  let missingCell: { r: number; c: number; gold: number } | null = null;
+
+  if (gs !== null) {
+    // Check 1 & 3: wrong digit anywhere in userGrid
+    for (let r = 0; r < 9 && !inconsistent; r++) {
+      for (let c = 0; c < 9 && !inconsistent; c++) {
+        const placed = state.userGrid[r]![c]!;
+        const gold = gs[r]![c]!;
+        if (placed !== 0 && gold !== 0 && placed !== gold) {
+          inconsistent = true;
+          rewindTurnIdx = findLastConsistentTurnIdx(state); // null if no turn
+        }
+      }
+    }
+
+    // Check 2: correct golden candidate explicitly eliminated by user
+    if (!inconsistent) {
+      missingCell = findMissingGoldenCandidate(state);
+      if (missingCell !== null) {
+        inconsistent = true;
+        rewindTurnIdx = findFirstElimTurnIdx(state, missingCell.r, missingCell.c, missingCell.gold);
+      }
+    }
   }
 
-  // Build engine from full current state so user placements, candidate removals,
-  // and virtual cages are all reflected before generating hints.
-  const { board, engine } = buildEngine(state, { includeHints: true }); // engine.solve() called inside buildEngine
+  if (inconsistent) {
+    if (missingCell !== null) {
+      // User explicitly eliminated the correct candidate — this is unambiguously a
+      // mistake; skip the alt-solution check (the board still shows the candidate
+      // because NoSolnError is now caught inside buildEngine) and Rewind directly.
+      return { hints: [makeRewindHint(rewindTurnIdx ?? 0)] };
+    }
+
+    // Wrong digit in userGrid — two sub-cases:
+    //   A) rewindTurnIdx !== null — the wrong digit came from a user placeDigit turn.
+    //      Before offering Rewind, check for an alternative valid solution (multi-solution
+    //      puzzle: the user's placement might be consistent with a different valid solution).
+    //   B) rewindTurnIdx === null — no matching turn exists; this wrong digit is from an
+    //      auto-placement cascade (pre-soundness-assertion state).  Rewind immediately.
+    if (rewindTurnIdx === null) {
+      // Case B: auto-placed wrong digit — no turn to point to, Rewind to start.
+      return { hints: [makeRewindHint(0)] };
+    }
+
+    // Case A: user's intentional wrong placement — check for alternative solution.
+    const { board } = buildEngine(state); // safe: NoSolnError caught inside buildEngine
+    const altSolution = mrvBacktrack(board);
+    if (altSolution !== null) {
+      // Puzzle has multiple solutions — update goldenSolution and fall through
+      // to normal hint generation with the revised golden.
+      state = { ...state, goldenSolution: altSolution };
+      setState(state);
+    } else {
+      // No alternative — genuine mistake.  Rewind to the earliest bad turn.
+      return { hints: [makeRewindHint(rewindTurnIdx)] };
+    }
+  }
+  // ── End inconsistency detection ─────────────────────────────────────────────
+
+  // Build engine so user placements, candidate removals, and virtual cages are
+  // all reflected in the board before generating hints.
+  const { board, engine } = buildEngine(state, { includeHints: true });
   const rawHints = engine.pendingHints;
 
   // Assertion: if any unsolved cell has no remaining candidates and no user mistake
   // explains it, the rule engine produced a contradiction.
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
-      if (state.userGrid[r]![c] === 0 && board.cands(r, c).size === 0) {
+      if (state.userGrid![r]![c] === 0 && board.cands(r, c).size === 0) {
         throw new AssertionViolation({
           name: 'EmptyCandidateSet',
           description: `Cell r${r + 1}c${c + 1} has no remaining candidates — the rule engine reached a contradiction with no user mistake to explain it.`,
@@ -959,7 +1074,7 @@ export function getHints(): HintsResponse {
   // Only fires after the user has placed at least one digit to avoid false positives
   // at the very start of a puzzle.
   const goldenComplete = state.goldenSolution !== null && state.goldenSolution.every(row => row.every(d => d !== 0));
-  const puzzleIncomplete = state.userGrid.some(row => row.some(d => d === 0));
+  const puzzleIncomplete = state.userGrid!.some(row => row.some(d => d === 0));
   const hasUserPlacements = state.turns.some(t => t.action.type === 'placeDigit' && t.action.source === 'user');
   if (hints.length === 0 && goldenComplete && puzzleIncomplete && hasUserPlacements) {
     throw new AssertionViolation({

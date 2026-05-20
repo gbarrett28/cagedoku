@@ -708,3 +708,44 @@ describe('saveSettingsData', () => {
     expect(result!.alwaysApplyRules).toEqual(['NakedSingle', 'CageCandidateFilter']);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Rewind hint — wrong candidate elimination and wrong placement detection
+// ---------------------------------------------------------------------------
+
+describe('getHints — Rewind on wrong candidate elimination', () => {
+  it('returns a Rewind hint when the user has eliminated the correct solution digit', () => {
+    // Classic puzzle with one blank cell (0,0). Golden solution has digit 5 at (0,0).
+    makeClassicConfirmed();
+    const gold = getState()!.goldenSolution![0]![0]!; // correct digit for (0,0)
+    expect(gold).toBeGreaterThan(0);
+
+    // User explicitly eliminates the correct candidate at (0,0)
+    cycleCandidate(1, 1, gold); // eliminateCandidate action
+
+    const { hints } = getHints();
+    // The Rewind hint must appear (no other valid solution exists for this over-constrained classic puzzle)
+    const rewindHint = hints.find(h => h.rewindToTurnIdx !== null);
+    expect(rewindHint).toBeDefined();
+    expect(rewindHint!.displayName).toMatch(/[Rr]ewind/);
+  });
+
+  it('returns a Rewind hint when userGrid has a wrong auto-placed digit not in any turn', () => {
+    // Simulate a state where a wrong digit is in userGrid but came from an auto-placement
+    // (not from a user placeDigit turn) — findLastConsistentTurnIdx would return null for it.
+    makeClassicConfirmed();
+    const state = getState()!;
+    const gold = state.goldenSolution![0]![0]!;
+    const wrong = gold === 1 ? 2 : 1;
+
+    // Directly inject a wrong digit into userGrid without recording a turn
+    const newGrid = state.userGrid!.map(row => [...row]);
+    newGrid[0]![0] = wrong;
+    setState({ ...state, userGrid: newGrid }); // no turn recorded
+
+    const { hints } = getHints();
+    // Must detect the wrong digit even though no placeDigit turn exists for it
+    const rewindHint = hints.find(h => h.rewindToTurnIdx !== null);
+    expect(rewindHint).toBeDefined();
+  });
+});
