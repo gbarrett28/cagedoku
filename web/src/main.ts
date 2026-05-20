@@ -500,6 +500,28 @@ function renderState(state: PuzzleState): void {
   el<HTMLElement>('solution-panel').hidden = true;
 }
 
+function buildPlayingCallouts(isKiller: boolean): { id: string; text: string }[] {
+  const callouts: { id: string; text: string }[] = [
+    { id: 'undo-btn',       text: 'Undo your last move.' },
+    { id: 'hints-btn',      text: 'Request a logical hint to guide your next step.' },
+    { id: 'mode-toggle',    text: 'Switch between Normal mode (place digits) and Candidate mode (edit pencil marks). The digit buttons work the same way in both modes.' },
+    { id: 'reveal-btn',     text: 'Reveal the correct digit for the selected cell.' },
+    { id: 'digit-1',        text: 'Use these buttons to enter digits. In Candidate mode, they toggle pencil marks instead. On a keyboard, Ctrl+digit works in the opposite mode.' },
+    { id: 'help-btn',       text: 'Re-open this guide at any time.' },
+    { id: 'feedback-btn',   text: 'Found a bug or have a suggestion? Tap the envelope to send feedback.' },
+    { id: 'config-btn',     text: 'Configure which logical rules run automatically.' },
+    { id: 'new-puzzle-btn', text: 'Start a fresh puzzle.' },
+    { id: 'logo-k',         text: 'Tap the K badge at any time to restart this tutorial.' },
+  ];
+  if (isKiller) {
+    callouts.splice(3, 0,
+      { id: 'inspect-cage-btn', text: 'Show remaining valid digit combinations for a cage.' },
+      { id: 'virtual-cage-btn', text: 'Add a virtual cage constraint derived from the current board state.' },
+    );
+  }
+  return callouts;
+}
+
 function renderPlayingMode(state: PuzzleState): void {
   currentState = state;
   reviewErrorCells = new Set();
@@ -525,24 +547,7 @@ function renderPlayingMode(state: PuzzleState): void {
   el<HTMLButtonElement>('mode-toggle').hidden = !showCandidates;
   el<HTMLButtonElement>('mode-toggle').classList.remove('active');
 
-  const playingCallouts: { id: string; text: string }[] = [
-    { id: 'undo-btn',      text: 'Undo your last move.' },
-    { id: 'hints-btn',     text: 'Request a logical hint to guide your next step.' },
-    { id: 'mode-toggle',   text: 'Switch between Normal mode (place digits) and Candidate mode (edit pencil marks). The digit buttons work the same way in both modes.' },
-    { id: 'reveal-btn',    text: 'Reveal the correct digit for the selected cell.' },
-    { id: 'digit-1',       text: 'Use these buttons to enter digits. In Candidate mode, they toggle pencil marks instead. On a keyboard, Ctrl+digit works in the opposite mode.' },
-    { id: 'help-btn',      text: 'Re-open this guide at any time.' },
-    { id: 'feedback-btn',  text: 'Found a bug or have a suggestion? Tap the envelope to send feedback.' },
-    { id: 'config-btn',    text: 'Configure which logical rules run automatically.' },
-    { id: 'new-puzzle-btn', text: 'Start a fresh puzzle.' },
-  ];
-  if (isKiller) {
-    playingCallouts.splice(3, 0,
-      { id: 'inspect-cage-btn', text: 'Show remaining valid digit combinations for a cage.' },
-      { id: 'virtual-cage-btn', text: 'Add a virtual cage constraint derived from the current board state.' },
-    );
-  }
-  appendCallouts(playingCallouts);
+  appendCallouts(buildPlayingCallouts(isKiller));
 }
 
 function updateUndoButton(state: PuzzleState): void {
@@ -1248,6 +1253,29 @@ document.addEventListener('DOMContentLoaded', () => {
   // Tutorial — show help modal on first visit, then walk through button callouts.
   initTutorial();
   appendCallouts([{ id: 'process-btn', text: 'Tap here to analyse your photo and detect the grid and cages.' }]);
+
+  el<HTMLDivElement>('logo-k').addEventListener('click', () => {
+    const calloutEl = el<HTMLElement>('callout');
+    const modalEl  = el<HTMLDialogElement>('general-help-modal');
+    // No-op if a callout is showing or the modal is already open.
+    if (!calloutEl.hidden || modalEl.open) return;
+
+    localStorage.removeItem('coach_tutorial_suppressed');
+    initTutorial(); // resets calloutQueue/calloutStarted/tutorialActive; shows modal
+
+    // Pre-fill the queue for the current screen BEFORE the user dismisses the modal.
+    // appendCallouts() skips advanceCallout() while calloutStarted === false, so the
+    // sequence only starts when the modal closes and sets calloutStarted = true.
+    const inPlaying = currentState !== null;
+    const inReview  = !inPlaying && !el<HTMLElement>('review-panel').hidden;
+    if (inPlaying) {
+      appendCallouts(buildPlayingCallouts(currentState!.puzzleType !== 'classic'));
+    } else if (inReview) {
+      appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
+    } else {
+      appendCallouts([{ id: 'process-btn', text: 'Tap here to analyse your photo and detect the grid and cages.' }]);
+    }
+  });
 
   el<HTMLButtonElement>('process-btn').addEventListener('click', () => { void handleProcess(); });
   el<HTMLButtonElement>('confirm-btn').addEventListener('click', () => { void handleConfirm(); });

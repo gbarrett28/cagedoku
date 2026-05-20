@@ -431,3 +431,19 @@ test('consent modal Send this time closes modal without setting cookie', async (
   const cookies = await page.context().cookies();
   expect(cookies.find(c => c.name === 'training_consent')).toBeUndefined();
 });
+
+test('logo-k resets tutorial — re-shows help modal when tutorial was suppressed', async ({ page }) => {
+  await loadAndConfirm(page); // tutorial suppressed via addInitScript in loadSpec
+  await expect(page.locator('#general-help-modal')).toBeHidden();
+
+  await page.locator('#logo-k').click();
+  await expect(page.locator('#general-help-modal')).toBeVisible({ timeout: 2_000 });
+});
+
+test('logo-k reset — callouts restart after modal is dismissed', async ({ page }) => {
+  await loadAndConfirm(page);
+  await page.locator('#logo-k').click();
+  await expect(page.locator('#general-help-modal')).toBeVisible({ timeout: 2_000 });
+  await page.locator('#general-help-close-btn').click();
+  await expect(page.locator('#callout')).toBeVisible({ timeout: 2_000 });
+});
