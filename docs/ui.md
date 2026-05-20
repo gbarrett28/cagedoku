@@ -556,3 +556,20 @@ Direction classes on `#callout`:
 
 The queue is drained iteratively (a `while` loop). Elements absent from the DOM (e.g. killer-only buttons on a classic puzzle) are silently skipped. `calloutRunning` is only set `true` when a callout is actually shown, so `appendCallouts()` calls made while the sequence is paused at a missing element are never dropped.
 
+### Resetting the Tutorial (K Badge)
+
+Clicking `#logo-k` (the K badge in the header) resets the tutorial in-place:
+
+1. **No-op guard** — ignored if the callout box is currently visible or the help modal is already open.
+2. **Clear suppression** — `localStorage.removeItem('coach_tutorial_suppressed')`.
+3. **Re-initialise** — calls `initTutorial()`, which resets all module state and re-shows `#general-help-modal`.
+4. **Pre-fill queue** — `appendCallouts()` is called with the appropriate sequence for the current screen *before* the user closes the modal. Because `calloutStarted === false` at this point, items are only queued; `advanceCallout()` fires when the modal closes.
+
+| Current screen | Queue pre-filled with |
+|---|---|
+| Upload | `process-btn` callout |
+| Review | `confirm-btn` callout |
+| Playing | Full `buildPlayingCallouts(isKiller)` sequence |
+
+Puzzle state is fully preserved — no page reload occurs. The `logo-k` callout step at the end of the playing-screen sequence ("Tap the K badge at any time to restart this tutorial.") teaches users about this mechanism.
+
