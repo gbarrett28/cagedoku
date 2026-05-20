@@ -1446,7 +1446,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const { hints } = getHints();
       if (hints.length === 0) {
-        const p = document.createElement('p'); p.className = 'hints-empty'; p.textContent = 'No hints available'; dropdown.appendChild(p);
+        const p = document.createElement('p'); p.className = 'hints-empty'; p.textContent = 'No hint found — this position may require a technique not yet supported. Try Reveal for the selected cell.'; dropdown.appendChild(p);
       } else {
         for (const hint of hints) {
           const btn = document.createElement('button'); btn.className = 'hint-item'; btn.textContent = hint.displayName;
