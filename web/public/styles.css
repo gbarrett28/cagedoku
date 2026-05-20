@@ -1083,6 +1083,32 @@ dialog::backdrop {
   padding: 0.3rem 0.75rem;
 }
 
+/* Sliding arrow pointer — tracks the target button's centre via --arrow-offset */
+#callout::before {
+  content: '';
+  position: absolute;
+  left: var(--arrow-offset, 50%);
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+}
+
+#callout.callout-above::before {
+  bottom: -8px;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid var(--accent);
+}
+
+#callout.callout-below::before {
+  top: -8px;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 8px solid var(--accent);
+}
+
+#callout.callout-no-arrow::before { display: none; }
+
 .tutorial-suppress-row {
   margin-top: 1rem;
 }
