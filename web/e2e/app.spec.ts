@@ -272,3 +272,69 @@ test('new puzzle button returns to upload panel', async ({ page }) => {
   await expect(page.locator('#upload-panel')).toBeVisible();
   await expect(page.locator('#review-panel')).toBeHidden();
 });
+
+// ---------------------------------------------------------------------------
+// Test: cageTotals row-major orientation (replaces it.todo in inpImage.test.ts)
+// ---------------------------------------------------------------------------
+
+test('cageTotals row-major orientation — connectivityScore ≥ threshold', async ({ page }) => {
+  test.skip(!PIPELINE, 'Needs PLAYWRIGHT_PIPELINE_TESTS=1');
+  // 10 min: WASM compilation takes 150–300 s when run in isolation (no cache
+  // warm-up from prior tests). 600 s gives ~300 s for WASM + 300 s for processing.
+  test.setTimeout(600_000);
+
+  // Suppress the tutorial modal so it doesn't block #process-btn (same fix as flow.spec.ts).
+  await page.addInitScript(() => localStorage.setItem('coach_tutorial_suppressed', 'true'));
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await waitForPipelineReady(page, 540_000); // 9 min ceiling for WASM load
+
+  await page.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
+  await page.locator('#process-btn').click();
+  // The hook is set as soon as borders are computed, regardless of whether the puzzle
+  // auto-confirms (goes directly to playing mode) or shows the review screen.
+  // Classic puzzles always go to review; killer puzzles may auto-confirm.
+  await page.waitForFunction(
+    () => (window as unknown as Record<string, unknown>)['__lastPipelineResult'] !== undefined,
+    { timeout: 60_000 },
+  );
+
+  // Read the pipeline result exposed by window.__lastPipelineResult and compute
+  // connectivity score inline. Mirrors buildUnionFind in validation.ts.
+  // Correct row-major orientation → score ≈ 26 (one head per cage).
+  // Transposed orientation → score ≤ 2 (heads land in wrong regions).
+  const score = await page.evaluate(() => {
+    const result = (window as unknown as Record<string, unknown>)['__lastPipelineResult'] as {
+      cageTotals: number[][]; borderX: boolean[][]; borderY: boolean[][];
+    } | undefined;
+    if (!result) throw new Error('__lastPipelineResult not set — hook missing in main.ts');
+
+    const { cageTotals, borderX, borderY } = result;
+    const rep: Record<string, string> = {};
+    const members: Record<string, string[]> = {};
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
+      const k = `${r},${c}`; rep[k] = k; members[k] = [k];
+    }
+    const find = (k: string): string => rep[k]!;
+    const union = (a: string, b: string): void => {
+      const [ra, rb] = [find(a), find(b)]; if (ra === rb) return;
+      const [keep, drop] = ra < rb ? [ra, rb] : [rb, ra];
+      for (const p of members[drop]!) { rep[p] = keep; members[keep]!.push(p); }
+      delete members[drop];
+    };
+    for (let col = 0; col < 9; col++) for (let rowGap = 0; rowGap < 8; rowGap++)
+      if (!borderX[col]![rowGap]) union(`${rowGap},${col}`, `${rowGap+1},${col}`);
+    for (let colGap = 0; colGap < 8; colGap++) for (let row = 0; row < 9; row++)
+      if (!borderY[colGap]![row]) union(`${row},${colGap}`, `${row},${colGap+1}`);
+    let score = 0;
+    for (const cells of Object.values(members)) {
+      const heads = cells.filter(k => {
+        const [r, c] = k.split(',').map(Number) as [number, number];
+        return (cageTotals[r]?.[c] ?? 0) > 0;
+      });
+      if (heads.length === 1) score++;
+    }
+    return score;
+  });
+
+  expect(score).toBeGreaterThanOrEqual(10);
+});
