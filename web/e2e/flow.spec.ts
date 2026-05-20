@@ -447,3 +447,46 @@ test('logo-k reset — callouts restart after modal is dismissed', async ({ page
   await page.locator('#general-help-close-btn').click();
   await expect(page.locator('#callout')).toBeVisible({ timeout: 2_000 });
 });
+
+test('tutorial callouts do not re-trigger when cage inspector eliminates a solution', async ({ page }) => {
+  // Tutorial NOT suppressed — we want the full callout system active.
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => '__testLoad' in window);
+  await page.evaluate(() => (window as unknown as Record<string, (s?: string) => void>)['__testLoad']!('boxCage'));
+  await expect(page.locator('#review-panel')).toBeVisible({ timeout: 5_000 });
+
+  // Close tutorial modal to start the callout sequence.
+  await page.locator('#general-help-close-btn').click();
+
+  // Drain all upload-screen and review-screen callouts before confirming.
+  while (await page.locator('#callout').isVisible()) {
+    await page.locator('#callout-got-it').click();
+  }
+
+  // Confirm to enter playing mode (queues the playing-mode callouts).
+  await page.locator('#confirm-btn').click();
+  await expect(page.locator('#playing-actions')).toBeVisible({ timeout: 5_000 });
+
+  // Drain every playing-mode callout.
+  while (await page.locator('#callout').isVisible()) {
+    await page.locator('#callout-got-it').click();
+  }
+  await expect(page.locator('#callout')).toBeHidden();
+
+  // Open cage inspector and click a cell to reveal its cage solutions.
+  await page.locator('#inspect-cage-btn').click();
+  const canvas = page.locator('#grid-canvas');
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  const CELL = box!.width / 9;
+  await canvas.click({ position: { x: CELL * 0.5, y: CELL * 0.5 } });
+
+  // Click the first active solution span to trigger eliminateCageSolution.
+  const activeSolution = page.locator('#cage-inspector .soln-item.active').first();
+  await expect(activeSolution).toBeVisible({ timeout: 2_000 });
+  await activeSolution.click();
+
+  // The callout must stay hidden — eliminating a solution must not re-queue callouts.
+  await page.waitForTimeout(300);
+  await expect(page.locator('#callout')).toBeHidden();
+});

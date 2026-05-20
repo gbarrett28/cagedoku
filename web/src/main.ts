@@ -500,6 +500,15 @@ function renderState(state: PuzzleState): void {
   el<HTMLElement>('solution-panel').hidden = true;
 }
 
+function buildUploadCallouts(): { id: string; text: string }[] {
+  return [
+    { id: 'process-btn',  text: 'Tap here to analyse your photo and detect the grid and cages.' },
+    { id: 'help-btn',     text: 'Re-open this guide at any time.' },
+    { id: 'feedback-btn', text: 'Found a bug or have a suggestion? Tap the envelope to send feedback.' },
+    { id: 'config-btn',   text: 'Configure which logical rules run automatically.' },
+  ];
+}
+
 function buildPlayingCallouts(isKiller: boolean): { id: string; text: string }[] {
   const callouts: { id: string; text: string }[] = [
     { id: 'undo-btn',       text: 'Undo your last move.' },
@@ -507,9 +516,6 @@ function buildPlayingCallouts(isKiller: boolean): { id: string; text: string }[]
     { id: 'mode-toggle',    text: 'Switch between Normal mode (place digits) and Candidate mode (edit pencil marks). The digit buttons work the same way in both modes.' },
     { id: 'reveal-btn',     text: 'Reveal the correct digit for the selected cell.' },
     { id: 'digit-1',        text: 'Use these buttons to enter digits. In Candidate mode, they toggle pencil marks instead. On a keyboard, Ctrl+digit works in the opposite mode.' },
-    { id: 'help-btn',       text: 'Re-open this guide at any time.' },
-    { id: 'feedback-btn',   text: 'Found a bug or have a suggestion? Tap the envelope to send feedback.' },
-    { id: 'config-btn',     text: 'Configure which logical rules run automatically.' },
     { id: 'new-puzzle-btn', text: 'Start a fresh puzzle.' },
     { id: 'logo-k',         text: 'Tap the K badge at any time to restart this tutorial.' },
   ];
@@ -546,8 +552,6 @@ function renderPlayingMode(state: PuzzleState): void {
   el<HTMLButtonElement>('virtual-cage-btn').hidden = !isKiller;
   el<HTMLButtonElement>('mode-toggle').hidden = !showCandidates;
   el<HTMLButtonElement>('mode-toggle').classList.remove('active');
-
-  appendCallouts(buildPlayingCallouts(isKiller));
 }
 
 function updateUndoButton(state: PuzzleState): void {
@@ -845,7 +849,6 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
   el<HTMLElement>('upload-panel').hidden = true;
   el<HTMLButtonElement>('new-puzzle-btn').hidden = false;
   setStatus(warning ? `Warning: ${warning}` : '');
-  appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
 }
 
 async function handleProcess(): Promise<void> {
@@ -892,6 +895,7 @@ async function handleProcess(): Promise<void> {
           logAction('auto_confirmed');
           const playing = confirmPuzzle(board);
           renderPlayingMode(playing);
+          appendCallouts(buildPlayingCallouts(playing.puzzleType !== 'classic'));
           const autoViolation = checkSolutionAssertions(playing);
           if (autoViolation !== null) showAssertionModal(autoViolation);
           pendingCellThumbs = new Map();
@@ -907,6 +911,7 @@ async function handleProcess(): Promise<void> {
       // applyDraftLayout returns the original state unchanged when errorCells exist.
       const stateToShow = layoutResult.errorCells.size > 0 ? state : layoutResult.state;
       applyUploadResult(stateToShow, warpedImageUrl, null);
+      appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
       if (layoutResult.errorCells.size > 0) {
         logAction('review_shown', 'layout errors');
         reviewErrorCells = layoutResult.errorCells;
@@ -926,6 +931,7 @@ async function handleProcess(): Promise<void> {
     // Classic with no OCR warning gets an informational prompt instead of an error.
     logAction('review_shown', state.puzzleType === 'classic' ? 'classic' : 'ocr warning');
     applyUploadResult(state, warpedImageUrl, warning ?? 'Review the detected digits and press Confirm & Solve');
+    appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
   } catch (e) {
     if (e instanceof GridNotFoundError) {
       setStatus(e.message, true);
@@ -966,6 +972,7 @@ async function handleConfirm(): Promise<void> {
     const playing = confirmPuzzle(confirmedBoard);
     logAction('confirmed', currentState.puzzleType);
     renderPlayingMode(playing);
+    appendCallouts(buildPlayingCallouts(playing.puzzleType !== 'classic'));
     setStatus('');
     const assertionViolation = checkSolutionAssertions(playing);
     if (assertionViolation !== null) showAssertionModal(assertionViolation);
@@ -1258,7 +1265,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Tutorial — show help modal on first visit, then walk through button callouts.
   initTutorial();
-  appendCallouts([{ id: 'process-btn', text: 'Tap here to analyse your photo and detect the grid and cages.' }]);
+  appendCallouts(buildUploadCallouts());
 
   el<HTMLDivElement>('logo-k').addEventListener('click', () => {
     const calloutEl = el<HTMLElement>('callout');
@@ -1279,7 +1286,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (inReview) {
       appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
     } else {
-      appendCallouts([{ id: 'process-btn', text: 'Tap here to analyse your photo and detect the grid and cages.' }]);
+      appendCallouts(buildUploadCallouts());
     }
   });
 
