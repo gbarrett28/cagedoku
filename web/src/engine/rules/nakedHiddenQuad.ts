@@ -8,6 +8,7 @@ import type { HintResult } from '../hint.js';
 import type { RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { combinations } from './_helpers.js';
+import { cellLabel, unitLabel } from './_labels.js';
 
 export class NakedHiddenQuad {
   readonly name = 'NakedHiddenQuad';
@@ -69,7 +70,55 @@ export class NakedHiddenQuad {
     return { ...emptyResult(), eliminations: elims };
   }
 
-  asHints(_ctx: RuleContext, _eliminations: readonly Elimination[]): HintResult[] {
+  asHints(ctx: RuleContext, eliminations: readonly Elimination[]): HintResult[] {
+    if (!eliminations.length || !ctx.unit) return [];
+    const board = ctx.board;
+    const cells = ctx.unit.cells as Cell[];
+    const uid = ctx.unit.unitId;
+
+    // Naked quad
+    for (const quad of combinations(cells, 4)) {
+      const union = new Set<number>();
+      for (const [r, c] of quad) for (const d of board.cands(r, c)) union.add(d);
+      if (union.size !== 4) continue;
+      const quadSet = new Set(quad.map(([r, c]) => `${r},${c}`));
+      const elims = cells.flatMap(([r, c]) =>
+        quadSet.has(`${r},${c}`) ? [] :
+        [...union].filter(d => board.cands(r, c).has(d)).map(d => ({ cell: [r, c] as Cell, digit: d })),
+      );
+      if (!elims.length) continue;
+      const digits = [...union].sort((a, b) => a - b);
+      return [{
+        ruleName: this.name, displayName: 'Naked Quad',
+        explanation: `Naked Quad {${digits.join(',')}} in ${(quad as Cell[]).map(c => cellLabel(c)).join(', ')} within ${unitLabel(ctx.unit)}. These digits can be removed from all other cells in the unit.`,
+        highlightCells: [...quad as Cell[], ...elims.map(e => e.cell)],
+        eliminations: elims, placement: null, virtualCageSuggestion: null,
+      }];
+    }
+
+    // Hidden quad
+    const candidateDigits = Array.from({ length: 9 }, (_, i) => i + 1)
+      .filter(d => board.count(uid, d) > 1 && board.count(uid, d) <= 4);
+    for (const dQuad of combinations(candidateDigits, 4)) {
+      const cellMap = new Map<string, Cell>();
+      for (const d of dQuad)
+        for (const [r, c] of cells)
+          if (board.cands(r, c).has(d)) cellMap.set(`${r},${c}`, [r, c] as Cell);
+      if (cellMap.size !== 4) continue;
+      const quadSet = new Set(dQuad);
+      const quadCells = [...cellMap.values()];
+      const elims = quadCells.flatMap(([r, c]) =>
+        [...board.cands(r, c)].filter(d => !quadSet.has(d)).map(d => ({ cell: [r, c] as Cell, digit: d })),
+      );
+      if (!elims.length) continue;
+      const digits = [...dQuad].sort((a, b) => a - b);
+      return [{
+        ruleName: this.name, displayName: 'Hidden Quad',
+        explanation: `Hidden Quad: {${digits.join(',')}} are confined to ${quadCells.map(c => cellLabel(c)).join(', ')} within ${unitLabel(ctx.unit)}. Remove all other candidates from these cells.`,
+        highlightCells: [...quadCells, ...elims.map(e => e.cell)],
+        eliminations: elims, placement: null, virtualCageSuggestion: null,
+      }];
+    }
     return [];
   }
 }

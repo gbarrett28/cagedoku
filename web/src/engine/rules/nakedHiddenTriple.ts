@@ -8,6 +8,7 @@ import type { HintResult } from '../hint.js';
 import type { RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { combinations } from './_helpers.js';
+import { cellLabel, unitLabel } from './_labels.js';
 
 export class NakedHiddenTriple {
   readonly name = 'NakedHiddenTriple';
@@ -69,7 +70,55 @@ export class NakedHiddenTriple {
     return { ...emptyResult(), eliminations: elims };
   }
 
-  asHints(_ctx: RuleContext, _eliminations: readonly Elimination[]): HintResult[] {
+  asHints(ctx: RuleContext, eliminations: readonly Elimination[]): HintResult[] {
+    if (!eliminations.length || !ctx.unit) return [];
+    const board = ctx.board;
+    const cells = ctx.unit.cells as Cell[];
+    const uid = ctx.unit.unitId;
+
+    // Naked triple: three cells whose candidate union has exactly 3 digits
+    for (const triple of combinations(cells, 3)) {
+      const union = new Set<number>();
+      for (const [r, c] of triple) for (const d of board.cands(r, c)) union.add(d);
+      if (union.size !== 3) continue;
+      const tripleSet = new Set(triple.map(([r, c]) => `${r},${c}`));
+      const elims = cells.flatMap(([r, c]) =>
+        tripleSet.has(`${r},${c}`) ? [] :
+        [...union].filter(d => board.cands(r, c).has(d)).map(d => ({ cell: [r, c] as Cell, digit: d })),
+      );
+      if (!elims.length) continue;
+      const digits = [...union].sort((a, b) => a - b);
+      return [{
+        ruleName: this.name, displayName: 'Naked Triple',
+        explanation: `Naked Triple {${digits.join(',')}} in ${triple.map(([r, c]) => cellLabel([r, c] as Cell)).join(', ')} within ${unitLabel(ctx.unit)}. These digits can be removed from all other cells in the unit.`,
+        highlightCells: [...triple as Cell[], ...elims.map(e => e.cell)],
+        eliminations: elims, placement: null, virtualCageSuggestion: null,
+      }];
+    }
+
+    // Hidden triple: three digits confined to exactly 3 cells
+    const candidateDigits = Array.from({ length: 9 }, (_, i) => i + 1)
+      .filter(d => board.count(uid, d) > 1 && board.count(uid, d) <= 3);
+    for (const dTriple of combinations(candidateDigits, 3)) {
+      const cellMap = new Map<string, Cell>();
+      for (const d of dTriple)
+        for (const [r, c] of cells)
+          if (board.cands(r, c).has(d)) cellMap.set(`${r},${c}`, [r, c] as Cell);
+      if (cellMap.size !== 3) continue;
+      const tripleSet = new Set(dTriple);
+      const tripleCells = [...cellMap.values()];
+      const elims = tripleCells.flatMap(([r, c]) =>
+        [...board.cands(r, c)].filter(d => !tripleSet.has(d)).map(d => ({ cell: [r, c] as Cell, digit: d })),
+      );
+      if (!elims.length) continue;
+      const digits = [...dTriple].sort((a, b) => a - b);
+      return [{
+        ruleName: this.name, displayName: 'Hidden Triple',
+        explanation: `Hidden Triple: {${digits.join(',')}} are confined to ${tripleCells.map(c => cellLabel(c)).join(', ')} within ${unitLabel(ctx.unit)}. Remove all other candidates from these cells.`,
+        highlightCells: [...tripleCells, ...elims.map(e => e.cell)],
+        eliminations: elims, placement: null, virtualCageSuggestion: null,
+      }];
+    }
     return [];
   }
 }
