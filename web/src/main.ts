@@ -865,6 +865,12 @@ async function handleProcess(): Promise<void> {
     draftBorderX = ocrSpec.borderX.map(col => [...col]);
     draftBorderY = ocrSpec.borderY.map(row => [...row]);
     draftEdited = false;
+    // Expose pipeline result for Playwright integration tests (app.spec.ts).
+    (window as unknown as Record<string, unknown>)['__lastPipelineResult'] = {
+      cageTotals: state.specData.cageTotals,
+      borderX: draftBorderX,
+      borderY: draftBorderY,
+    };
 
     const nCages = Math.max(...state.specData.regions.flat()) + 1;
     logAction('ocr_complete', `${state.puzzleType}, ${nCages} cage(s)${warning ? ', warning: ' + warning : ''}`);

@@ -20,17 +20,10 @@ import { connectivityScore } from './inpImage.js';
 // cageTotals[row][col], NOT cageTotals[col][row].
 // ---------------------------------------------------------------------------
 
-describe('buildCageTotals — row-major orientation (T1)', () => {
-  it.todo(
-    'cageTotals[row][col] stores digit from pixel (x=col*subres, y=row*subres)' +
-    ' — requires OpenCV WASM; port to Playwright when browser tests are available',
-  );
-
-  it.todo(
-    'cageTotals[row=3][col=1] is non-zero when digit is centred at' +
-    ' y=3.5*subres, x=1.5*subres — requires OpenCV WASM',
-  );
-});
+// buildCageTotals row-major orientation (T1)
+// Ported to Playwright: web/e2e/app.spec.ts
+// 'cageTotals row-major orientation — connectivityScore ≥ threshold'
+// Run with: PLAYWRIGHT_PIPELINE_TESTS=1 npx playwright test app.spec.ts
 
 // ---------------------------------------------------------------------------
 // Three-region asymmetric baseline (T2)
