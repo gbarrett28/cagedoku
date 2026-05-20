@@ -522,3 +522,42 @@ Removed in a single commit:
   photos taken with the phone sideways or upside-down.
 - **Classic sudoku coaching rules:** hidden single, naked single, etc.  These are a
   superset of killer sudoku rules and will improve hint coverage for both puzzle types.
+
+---
+
+## Testing
+
+### Row-Major Orientation Contract
+
+`buildCageTotals` must produce a row-major `cageTotals[row][col]` array. The
+Vitest unit tests in `web/src/image/inpImage.test.ts` cover the `connectivityScore`
+function in isolation. The end-to-end row-major contract is verified in
+`web/e2e/app.spec.ts` via a gated Playwright test.
+
+**Dev hook — `window.__lastPipelineResult`**
+
+`main.ts` sets this global in `handleProcess()` immediately after a successful
+`applyUploadResult()` call:
+
+```ts
+(window as unknown as Record<string, unknown>)['__lastPipelineResult'] = {
+  cageTotals: state.specData.cageTotals,  // 9×9 row-major from buildCageTotals
+  borderX: draftBorderX,                  // 9×8 [col][rowGap]
+  borderY: draftBorderY,                  // 8×9 [colGap][row]
+};
+```
+
+The hook is only set on success — if `parsePuzzleImage` throws, the hook is not set.
+
+**Playwright test — `cageTotals row-major orientation — connectivityScore ≥ threshold`**
+
+Gated by `PLAYWRIGHT_PIPELINE_TESTS=1` (requires the Chunk 4 minimal OpenCV build;
+see `app.spec.ts` header comments). Uploads `guardian/killer_sudoku_0.jpg`, waits for
+`window.__lastPipelineResult` to be set, then runs an inline union-find over
+`borderX`/`borderY` to count cage regions that contain exactly one non-zero
+`cageTotals` cell (the connectivity score). Asserts `score >= 10`.
+
+**Threshold rationale:** a Guardian killer sudoku has ~26 cages. Correct row-major
+orientation → score ≈ 26. Transposed (col-major) orientation → most cage heads land in
+the wrong region → score ≤ 2. Threshold 10 is conservative and immune to minor OCR
+misses.
