@@ -850,12 +850,9 @@ body:has(#playing-actions:not([hidden])) #side-panel {
      prevent their white-space:nowrap ::after elements causing scroll overflow */
   [data-tooltip]::after { display: none; }
 
-  /* Review mode: two grids side-by-side instead of three stacked columns.
-     Original photo is hidden — the warped grid is sufficient for reviewing
-     detected layout on a small screen.
-     Playing mode is unaffected: the body:has() playing-mode rules override
-     max-width (to none) and flex for #canvas-col, and #warped-col/#original-col
-     are hidden by JS in playing mode. */
+  /* Playing mode: one column visible (JS hides original-col and warped-col),
+     so flex-direction: row is a no-op. The body:has() playing-mode rules
+     override max-width and flex for #canvas-col independently. */
   #images-row {
     flex-direction: row;
     flex-wrap: wrap;
@@ -868,6 +865,19 @@ body:has(#playing-actions:not([hidden])) #side-panel {
   }
   #original-col {
     display: none;
+  }
+
+  /* Review mode: restore vertical stack so all three images are full-width
+     and legible on narrow screens. Digit pad (inside #canvas-col) also gets
+     full width, fixing the cut-off keypad on classic review. */
+  body:has(#review-actions:not([hidden])) #images-row {
+    flex-direction: column;
+  }
+  body:has(#review-actions:not([hidden])) #canvas-col,
+  body:has(#review-actions:not([hidden])) #warped-col,
+  body:has(#review-actions:not([hidden])) #original-col {
+    max-width: 100%;
+    display: flex;
   }
 
   /* In playing mode, wrap action group to its own row below COACH + nav buttons */
