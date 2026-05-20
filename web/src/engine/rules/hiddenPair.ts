@@ -8,6 +8,7 @@ import type { HintResult } from '../hint.js';
 import type { RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { sameCellSet } from './_helpers.js';
+import { cellLabel, unitLabel } from './_labels.js';
 
 export class HiddenPair {
   readonly name = 'HiddenPair';
@@ -48,7 +49,27 @@ export class HiddenPair {
     return { ...emptyResult(), eliminations: elims };
   }
 
-  asHints(_ctx: RuleContext, _eliminations: readonly Elimination[]): HintResult[] {
-    return [];
+  asHints(ctx: RuleContext, eliminations: readonly Elimination[]): HintResult[] {
+    if (!eliminations.length || !ctx.unit || ctx.hintDigit === null) return [];
+    const board = ctx.board;
+    const uid = ctx.unit.unitId;
+    const cells = ctx.unit.cells as Cell[];
+    const d1 = ctx.hintDigit;
+    const pairCells = cells.filter(([r, c]) => board.cands(r, c).has(d1));
+    if (pairCells.length !== 2) return [];
+    let d2: number | null = null;
+    for (let d = 1; d <= 9; d++) {
+      if (d === d1 || board.count(uid, d) !== 2) continue;
+      if (sameCellSet(cells.filter(([r, c]) => board.cands(r, c).has(d)), pairCells)) { d2 = d; break; }
+    }
+    if (d2 === null) return [];
+    const [c1, c2] = pairCells as [Cell, Cell];
+    const digits = [d1, d2].sort((a, b) => a - b);
+    return [{
+      ruleName: this.name, displayName: 'Hidden Pair',
+      explanation: `Hidden Pair: only {${digits.join(',')}} can go in ${cellLabel(c1)} and ${cellLabel(c2)} within ${unitLabel(ctx.unit)}. Remove all other candidates from these two cells.`,
+      highlightCells: [...pairCells, ...eliminations.map(e => e.cell)],
+      eliminations: [...eliminations], placement: null, virtualCageSuggestion: null,
+    }];
   }
 }

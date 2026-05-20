@@ -62,7 +62,68 @@ export class Swordfish {
     return { ...emptyResult(), eliminations: dedupElims(elims) };
   }
 
-  asHints(_ctx: RuleContext, _eliminations: readonly Elimination[]): HintResult[] {
-    return [];
+  asHints(ctx: RuleContext, _eliminations: readonly Elimination[]): HintResult[] {
+    if (!_eliminations.length) return [];
+    const board = ctx.board;
+    const hints: HintResult[] = [];
+
+    for (let d = 1; d <= 9; d++) {
+      // Row variant
+      const rowCols: [number, Set<number>][] = [];
+      for (let r = 0; r < 9; r++) {
+        const cols = new Set<number>();
+        for (let c = 0; c < 9; c++) if (board.cands(r, c).has(d)) cols.add(c);
+        if (cols.size >= 2 && cols.size <= 3) rowCols.push([r, cols]);
+      }
+      for (const triple of combinations(rowCols, 3)) {
+        const baseRows = new Set(triple.map(([r]) => r));
+        const coverCols = new Set(triple.flatMap(([, cs]) => [...cs]));
+        if (coverCols.size !== 3) continue;
+        const elims: Elimination[] = [];
+        for (const col of coverCols)
+          for (let r = 0; r < 9; r++)
+            if (!baseRows.has(r) && board.cands(r, col).has(d))
+              elims.push({ cell: [r, col] as Cell, digit: d });
+        if (!elims.length) continue;
+        const rowList = [...baseRows].sort((a, b) => a - b);
+        const colList = [...coverCols].sort((a, b) => a - b);
+        const pivots: Cell[] = rowList.flatMap(r => colList.map(c => [r, c] as Cell));
+        hints.push({
+          ruleName: this.name, displayName: 'Swordfish',
+          explanation: `Swordfish: ${d} is confined to columns ${colList.map(c => c + 1).join(', ')} across rows ${rowList.map(r => r + 1).join(', ')}. Remove ${d} from all other cells in those columns.`,
+          highlightCells: [...pivots, ...elims.map(e => e.cell)],
+          eliminations: elims, placement: null, virtualCageSuggestion: null,
+        });
+      }
+
+      // Column variant
+      const colRows: [number, Set<number>][] = [];
+      for (let c = 0; c < 9; c++) {
+        const rows = new Set<number>();
+        for (let r = 0; r < 9; r++) if (board.cands(r, c).has(d)) rows.add(r);
+        if (rows.size >= 2 && rows.size <= 3) colRows.push([c, rows]);
+      }
+      for (const triple of combinations(colRows, 3)) {
+        const baseCols = new Set(triple.map(([c]) => c));
+        const coverRows = new Set(triple.flatMap(([, rs]) => [...rs]));
+        if (coverRows.size !== 3) continue;
+        const elims: Elimination[] = [];
+        for (const row of coverRows)
+          for (let c = 0; c < 9; c++)
+            if (!baseCols.has(c) && board.cands(row, c).has(d))
+              elims.push({ cell: [row, c] as Cell, digit: d });
+        if (!elims.length) continue;
+        const rowList = [...coverRows].sort((a, b) => a - b);
+        const colList = [...baseCols].sort((a, b) => a - b);
+        const pivots: Cell[] = rowList.flatMap(r => colList.map(c => [r, c] as Cell));
+        hints.push({
+          ruleName: this.name, displayName: 'Swordfish',
+          explanation: `Swordfish: ${d} is confined to rows ${rowList.map(r => r + 1).join(', ')} across columns ${colList.map(c => c + 1).join(', ')}. Remove ${d} from all other cells in those rows.`,
+          highlightCells: [...pivots, ...elims.map(e => e.cell)],
+          eliminations: elims, placement: null, virtualCageSuggestion: null,
+        });
+      }
+    }
+    return hints;
   }
 }

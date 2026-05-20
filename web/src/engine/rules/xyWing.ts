@@ -8,6 +8,7 @@ import type { HintResult } from '../hint.js';
 import type { RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { dedupElims, sees } from './_helpers.js';
+import { cellLabel } from './_labels.js';
 
 export class XYWing {
   readonly name = 'XYWing';
@@ -70,7 +71,55 @@ export class XYWing {
     return { ...emptyResult(), eliminations: dedupElims(elims) };
   }
 
-  asHints(_ctx: RuleContext, _eliminations: readonly Elimination[]): HintResult[] {
-    return [];
+  asHints(ctx: RuleContext, _eliminations: readonly Elimination[]): HintResult[] {
+    if (!_eliminations.length) return [];
+    const board = ctx.board;
+    const hints: HintResult[] = [];
+
+    const bivalue: [Cell, number, number][] = [];
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++)
+        if (board.cands(r, c).size === 2) {
+          const [d1, d2] = [...board.cands(r, c)].sort((a, b) => a - b) as [number, number];
+          bivalue.push([[r, c] as Cell, d1, d2]);
+        }
+
+    const seen = new Set<string>();
+    for (const [[pr, pc], x, y] of bivalue) {
+      const xPincers: [Cell, number][] = [];
+      const yPincers: [Cell, number][] = [];
+      for (const [[ar, ac], a1, a2] of bivalue) {
+        if (ar === pr && ac === pc) continue;
+        if (!sees(pr, pc, ar, ac)) continue;
+        if (a1 === x && a2 !== y) xPincers.push([[ar, ac] as Cell, a2]);
+        else if (a2 === x && a1 !== y) xPincers.push([[ar, ac] as Cell, a1]);
+        if (a1 === y && a2 !== x) yPincers.push([[ar, ac] as Cell, a2]);
+        else if (a2 === y && a1 !== x) yPincers.push([[ar, ac] as Cell, a1]);
+      }
+      for (const [pinA, zA] of xPincers) {
+        for (const [pinB, zB] of yPincers) {
+          if (zA !== zB || (pinA[0] === pinB[0] && pinA[1] === pinB[1])) continue;
+          const z = zA;
+          const elims: Elimination[] = [];
+          for (let r = 0; r < 9; r++)
+            for (let c = 0; c < 9; c++) {
+              if ((r === pinA[0] && c === pinA[1]) || (r === pinB[0] && c === pinB[1])) continue;
+              if (board.cands(r, c).has(z) && sees(r, c, pinA[0], pinA[1]) && sees(r, c, pinB[0], pinB[1]))
+                elims.push({ cell: [r, c] as Cell, digit: z });
+            }
+          if (!elims.length) continue;
+          const key = `${pr},${pc}|${pinA}|${pinB}|${z}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          hints.push({
+            ruleName: this.name, displayName: 'XY-Wing',
+            explanation: `XY-Wing: pivot ${cellLabel([pr, pc] as Cell)} links pincers ${cellLabel(pinA)} and ${cellLabel(pinB)} — ${z} can be removed from cells seeing both pincers.`,
+            highlightCells: [[pr, pc] as Cell, pinA, pinB, ...elims.map(e => e.cell)],
+            eliminations: elims, placement: null, virtualCageSuggestion: null,
+          });
+        }
+      }
+    }
+    return hints;
   }
 }

@@ -8,6 +8,7 @@ import type { HintResult } from '../hint.js';
 import type { RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { dedupElims, sees } from './_helpers.js';
+import { cellLabel } from './_labels.js';
 
 export class SimpleColouring {
   readonly name = 'SimpleColouring';
@@ -129,7 +130,96 @@ export class SimpleColouring {
     return { ...emptyResult(), eliminations: dedupElims(elims) };
   }
 
-  asHints(_ctx: RuleContext, _eliminations: readonly Elimination[]): HintResult[] {
-    return [];
+  asHints(ctx: RuleContext, _eliminations: readonly Elimination[]): HintResult[] {
+    if (!_eliminations.length) return [];
+    const board = ctx.board;
+    const hints: HintResult[] = [];
+
+    for (let d = 1; d <= 9; d++) {
+      const adj = new Map<string, string[]>();
+      const ck = (r: number, c: number) => `${r},${c}`;
+      const addEdge = (r1: number, c1: number, r2: number, c2: number) => {
+        const [a, b] = [ck(r1, c1), ck(r2, c2)];
+        if (!adj.has(a)) adj.set(a, []); if (!adj.has(b)) adj.set(b, []);
+        adj.get(a)!.push(b); adj.get(b)!.push(a);
+      };
+      for (let r = 0; r < 9; r++) {
+        const cols = Array.from({ length: 9 }, (_, c) => c).filter(c => board.cands(r, c).has(d));
+        if (cols.length === 2) addEdge(r, cols[0]!, r, cols[1]!);
+      }
+      for (let c = 0; c < 9; c++) {
+        const rows = Array.from({ length: 9 }, (_, r) => r).filter(r => board.cands(r, c).has(d));
+        if (rows.length === 2) addEdge(rows[0]!, c, rows[1]!, c);
+      }
+      for (let br = 0; br < 3; br++) for (let bc = 0; bc < 3; bc++) {
+        const boxCells: [number, number][] = [];
+        for (let dr = 0; dr < 3; dr++) for (let dc = 0; dc < 3; dc++) {
+          const r = br * 3 + dr, c = bc * 3 + dc;
+          if (board.cands(r, c).has(d)) boxCells.push([r, c]);
+        }
+        if (boxCells.length === 2) addEdge(boxCells[0]![0], boxCells[0]![1], boxCells[1]![0], boxCells[1]![1]);
+      }
+
+      const colour = new Map<string, number>();
+      const compOf = new Map<string, number>();
+      let compId = 0;
+      for (const start of adj.keys()) {
+        if (compOf.has(start)) continue;
+        const queue = [start]; compOf.set(start, compId); colour.set(start, 0); let head = 0;
+        while (head < queue.length) {
+          const cell = queue[head++]!;
+          for (const nb of adj.get(cell)!) {
+            if (!colour.has(nb)) colour.set(nb, 1 - colour.get(cell)!);
+            if (!compOf.has(nb)) { compOf.set(nb, compId); queue.push(nb); }
+          }
+        }
+        compId++;
+      }
+
+      const compColours = new Map<number, [Cell[], Cell[]]>();
+      for (const [key, cid] of compOf) {
+        if (!compColours.has(cid)) compColours.set(cid, [[], []]);
+        const [r, c] = key.split(',').map(Number) as [number, number];
+        compColours.get(cid)![colour.get(key)!]!.push([r, c] as Cell);
+      }
+
+      for (const [c0, c1] of compColours.values()) {
+        if (!c0.length || !c1.length) continue;
+        const hasConflict = (cells: Cell[]) =>
+          cells.some(([r1, c1], i) => cells.slice(i + 1).some(([r2, c2]) => sees(r1, c1, r2, c2)));
+
+        const tryWrap = (bad: Cell[], _good: Cell[]) => {
+          if (!hasConflict(bad)) return;
+          const elims = bad.filter(([r, c]) => board.cands(r, c).has(d))
+            .map(([r, c]) => ({ cell: [r, c] as Cell, digit: d }));
+          if (!elims.length) return;
+          hints.push({
+            ruleName: this.name, displayName: 'Simple Colouring',
+            explanation: `Simple Colouring: two same-colour cells for ${d} see each other — that colour must be false. Remove ${d} from ${elims.map(e => cellLabel(e.cell)).join(', ')}.`,
+            highlightCells: [...c0, ...c1, ...elims.map(e => e.cell)],
+            eliminations: elims, placement: null, virtualCageSuggestion: null,
+          });
+        };
+        tryWrap(c0, c1); tryWrap(c1, c0);
+
+        // Trap: cell outside chain seeing both colours
+        const allColoured = new Set([...c0, ...c1].map(([r, c]) => ck(r, c)));
+        const trapElims: Elimination[] = [];
+        for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
+          if (allColoured.has(ck(r, c)) || !board.cands(r, c).has(d)) continue;
+          if (c0.some(([cr, cc]) => sees(r, c, cr, cc)) && c1.some(([cr, cc]) => sees(r, c, cr, cc)))
+            trapElims.push({ cell: [r, c] as Cell, digit: d });
+        }
+        if (trapElims.length) {
+          hints.push({
+            ruleName: this.name, displayName: 'Simple Colouring',
+            explanation: `Simple Colouring: ${trapElims.map(e => cellLabel(e.cell)).join(', ')} see both colours in a ${d}-chain — remove ${d} from those cells.`,
+            highlightCells: [...c0, ...c1, ...trapElims.map(e => e.cell)],
+            eliminations: trapElims, placement: null, virtualCageSuggestion: null,
+          });
+        }
+      }
+    }
+    return hints;
   }
 }

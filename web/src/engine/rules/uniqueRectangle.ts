@@ -8,6 +8,7 @@ import type { HintResult } from '../hint.js';
 import type { RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { combinations, dedupElims, sees } from './_helpers.js';
+import { cellLabel } from './_labels.js';
 
 export class UniqueRectangle {
   readonly name = 'UniqueRectangle';
@@ -86,7 +87,71 @@ export class UniqueRectangle {
     return { ...emptyResult(), eliminations: dedupElims(elims) };
   }
 
-  asHints(_ctx: RuleContext, _eliminations: readonly Elimination[]): HintResult[] {
-    return [];
+  asHints(ctx: RuleContext, _eliminations: readonly Elimination[]): HintResult[] {
+    if (!_eliminations.length) return [];
+    const board = ctx.board;
+    const hints: HintResult[] = [];
+    const rows = Array.from({ length: 9 }, (_, i) => i);
+    const cols = Array.from({ length: 9 }, (_, i) => i);
+
+    for (const [r1, r2] of combinations(rows, 2) as [number, number][]) {
+      for (const [c1, c2] of combinations(cols, 2) as [number, number][]) {
+        const corners: Cell[] = [[r1, c1], [r1, c2], [r2, c1], [r2, c2]];
+        const cands = corners.map(([r, c]) => board.cands(r, c));
+        const allCands = new Set<number>();
+        for (const s of cands) for (const d of s) allCands.add(d);
+        if (allCands.size < 2) continue;
+
+        for (const [a, b] of combinations([...allCands].sort((x, y) => x - y), 2) as [number, number][]) {
+          // Type 1: three corners are {a,b}; eliminate {a,b} from floor
+          const roofIdx = cands.reduce<number[]>((acc, s, i) =>
+            s.size === 2 && s.has(a) && s.has(b) ? [...acc, i] : acc, []);
+          if (roofIdx.length === 3) {
+            const floorIdx = [0, 1, 2, 3].find(i => !roofIdx.includes(i))!;
+            const floor = corners[floorIdx]!;
+            const elims = [a, b].filter(d => board.cands(floor[0], floor[1]).has(d))
+              .map(d => ({ cell: floor, digit: d }));
+            if (elims.length) {
+              hints.push({
+                ruleName: this.name, displayName: 'Unique Rectangle',
+                explanation: `Unique Rectangle (Type 1): {${a},${b}} locked in ${roofIdx.map(i => cellLabel(corners[i]!)).join(', ')}. Remove {${a},${b}} from floor cell ${cellLabel(floor)}.`,
+                highlightCells: [...corners, ...elims.map(e => e.cell)],
+                eliminations: elims, placement: null, virtualCageSuggestion: null,
+              });
+            }
+          }
+
+          // Type 2: two {a,b} corners, two {a,b,x} corners sharing same x
+          const baseIdx = cands.reduce<number[]>((acc, s, i) =>
+            s.size === 2 && s.has(a) && s.has(b) ? [...acc, i] : acc, []);
+          const extraIdx = cands.reduce<number[]>((acc, s, i) =>
+            s.size === 3 && s.has(a) && s.has(b) ? [...acc, i] : acc, []);
+          if (baseIdx.length === 2 && extraIdx.length === 2) {
+            const extra0 = [...cands[extraIdx[0]!]!].filter(d => d !== a && d !== b);
+            const extra1 = [...cands[extraIdx[1]!]!].filter(d => d !== a && d !== b);
+            if (extra0.length === 1 && extra0[0] === extra1[0]) {
+              const x = extra0[0]!;
+              const [ea, eb] = [corners[extraIdx[0]!]!, corners[extraIdx[1]!]!] as [Cell, Cell];
+              const elims: Elimination[] = [];
+              for (let r = 0; r < 9; r++)
+                for (let c = 0; c < 9; c++) {
+                  if ((r === ea[0] && c === ea[1]) || (r === eb[0] && c === eb[1])) continue;
+                  if (board.cands(r, c).has(x) && sees(r, c, ea[0], ea[1]) && sees(r, c, eb[0], eb[1]))
+                    elims.push({ cell: [r, c] as Cell, digit: x });
+                }
+              if (elims.length) {
+                hints.push({
+                  ruleName: this.name, displayName: 'Unique Rectangle',
+                  explanation: `Unique Rectangle (Type 2): extra digit ${x} in ${cellLabel(ea)} and ${cellLabel(eb)} — remove ${x} from cells seeing both.`,
+                  highlightCells: [...corners, ...elims.map(e => e.cell)],
+                  eliminations: elims, placement: null, virtualCageSuggestion: null,
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+    return hints;
   }
 }

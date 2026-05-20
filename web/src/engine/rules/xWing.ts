@@ -62,7 +62,64 @@ export class XWing {
     return { ...emptyResult(), eliminations: dedupElims(elims) };
   }
 
-  asHints(_ctx: RuleContext, _eliminations: readonly Elimination[]): HintResult[] {
-    return [];
+  asHints(ctx: RuleContext, _eliminations: readonly Elimination[]): HintResult[] {
+    if (!_eliminations.length) return [];
+    const board = ctx.board;
+    const hints: HintResult[] = [];
+
+    for (let d = 1; d <= 9; d++) {
+      // Row variant: find pairs of rows where d is confined to the same 2 columns
+      const rowCols: [number, Set<number>][] = [];
+      for (let r = 0; r < 9; r++) {
+        const cols = new Set<number>();
+        for (let c = 0; c < 9; c++) if (board.cands(r, c).has(d)) cols.add(c);
+        if (cols.size === 2) rowCols.push([r, cols]);
+      }
+      for (const [p1, p2] of combinations(rowCols, 2)) {
+        const [r1, cols1] = p1!; const [r2, cols2] = p2!;
+        if (![...cols1].every(c => cols2.has(c))) continue;
+        const [ca, cb] = [...cols1].sort((a, b) => a - b) as [number, number];
+        const elims: Elimination[] = [];
+        for (const col of [ca, cb])
+          for (let r = 0; r < 9; r++)
+            if (r !== r1 && r !== r2 && board.cands(r, col).has(d))
+              elims.push({ cell: [r, col] as Cell, digit: d });
+        if (!elims.length) continue;
+        const pivots: Cell[] = [[r1, ca], [r1, cb], [r2, ca], [r2, cb]];
+        hints.push({
+          ruleName: this.name, displayName: 'X-Wing',
+          explanation: `X-Wing: ${d} is confined to columns ${ca + 1} and ${cb + 1} in rows ${r1 + 1} and ${r2 + 1}. Remove ${d} from all other cells in those columns.`,
+          highlightCells: [...pivots, ...elims.map(e => e.cell)],
+          eliminations: elims, placement: null, virtualCageSuggestion: null,
+        });
+      }
+
+      // Column variant: find pairs of cols where d is confined to the same 2 rows
+      const colRows: [number, Set<number>][] = [];
+      for (let c = 0; c < 9; c++) {
+        const rows = new Set<number>();
+        for (let r = 0; r < 9; r++) if (board.cands(r, c).has(d)) rows.add(r);
+        if (rows.size === 2) colRows.push([c, rows]);
+      }
+      for (const [p1c, p2c] of combinations(colRows, 2)) {
+        const [c1, rows1] = p1c!; const [c2, rows2] = p2c!;
+        if (![...rows1].every(r => rows2.has(r))) continue;
+        const [ra, rb] = [...rows1].sort((a, b) => a - b) as [number, number];
+        const elims: Elimination[] = [];
+        for (const row of [ra, rb])
+          for (let c = 0; c < 9; c++)
+            if (c !== c1 && c !== c2 && board.cands(row, c).has(d))
+              elims.push({ cell: [row, c] as Cell, digit: d });
+        if (!elims.length) continue;
+        const pivots: Cell[] = [[ra, c1], [ra, c2], [rb, c1], [rb, c2]];
+        hints.push({
+          ruleName: this.name, displayName: 'X-Wing',
+          explanation: `X-Wing: ${d} is confined to rows ${ra + 1} and ${rb + 1} in columns ${c1 + 1} and ${c2 + 1}. Remove ${d} from all other cells in those rows.`,
+          highlightCells: [...pivots, ...elims.map(e => e.cell)],
+          eliminations: elims, placement: null, virtualCageSuggestion: null,
+        });
+      }
+    }
+    return hints;
   }
 }
