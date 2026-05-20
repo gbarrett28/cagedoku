@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { initTutorial, appendCallouts, isTutorialActive, _resetForTest } from './tutorial.js';
+import { initTutorial, appendCallouts, isTutorialActive, calcCalloutPosition, _resetForTest } from './tutorial.js';
 
 const STORAGE_KEY = 'coach_tutorial_suppressed';
 
@@ -136,5 +136,63 @@ describe('advanceCallout — iterative', () => {
     ]);
     expect((document.getElementById('callout') as HTMLElement).hidden).toBe(false);
     expect(document.getElementById('callout-text')!.textContent).toBe('Use this button');
+  });
+});
+
+describe('calcCalloutPosition', () => {
+  const CW = 260; // callout width
+  const CH = 80;  // callout height
+
+  it('centres callout on the button when viewport is wide', () => {
+    // buttonCenterX=230, preferredLeft=100, clamped=100
+    const r = calcCalloutPosition(CW, CH, { left: 200, top: 400, right: 260, bottom: 440, width: 60 }, 800, 600);
+    expect(r.left).toBe(100);
+  });
+
+  it('clamps callout to left edge (min 8px)', () => {
+    const r = calcCalloutPosition(CW, CH, { left: 4, top: 400, right: 44, bottom: 440, width: 40 }, 800, 600);
+    expect(r.left).toBe(8);
+  });
+
+  it('clamps callout to right edge (max vpWidth - calloutWidth - 8)', () => {
+    const r = calcCalloutPosition(CW, CH, { left: 760, top: 400, right: 800, bottom: 440, width: 40 }, 800, 600);
+    expect(r.left).toBe(532); // 800 - 260 - 8
+  });
+
+  it('arrow offset equals distance from clamped left to button centre', () => {
+    // left=100, buttonCenterX=230 → offset=130
+    const r = calcCalloutPosition(CW, CH, { left: 200, top: 400, right: 260, bottom: 440, width: 60 }, 800, 600);
+    expect(r.arrowOffset).toBe(130);
+  });
+
+  it('arrow offset is clamped to minimum 16px', () => {
+    // button at far left: clampedLeft=8, buttonCenterX=24 → raw offset=16=ARROW_MIN
+    const r = calcCalloutPosition(CW, CH, { left: 4, top: 400, right: 44, bottom: 440, width: 40 }, 800, 600);
+    expect(r.arrowOffset).toBeGreaterThanOrEqual(16);
+  });
+
+  it('arrow offset is clamped to max (calloutWidth - 16)', () => {
+    const r = calcCalloutPosition(CW, CH, { left: 760, top: 400, right: 800, bottom: 440, width: 40 }, 800, 600);
+    expect(r.arrowOffset).toBeLessThanOrEqual(CW - 16);
+  });
+
+  it('places callout above when there is enough space above', () => {
+    // spaceAbove=400 >= CH+GAP=92 → above
+    const r = calcCalloutPosition(CW, CH, { left: 200, top: 400, right: 260, bottom: 440, width: 60 }, 800, 600);
+    expect(r.direction).toBe('above');
+    expect(r.top).toBeLessThan(400);
+  });
+
+  it('places callout below when insufficient space above but space below', () => {
+    // target near top; spaceAbove=20 < 92; spaceBelow=540 >= 92
+    const r = calcCalloutPosition(CW, CH, { left: 200, top: 20, right: 260, bottom: 60, width: 60 }, 800, 600);
+    expect(r.direction).toBe('below');
+    expect(r.top).toBeGreaterThan(60);
+  });
+
+  it('returns direction "none" when neither above nor below fits', () => {
+    // 400px-tall callout in 450px viewport: neither 200px above nor 210px below >= 412
+    const r = calcCalloutPosition(CW, 400, { left: 200, top: 200, right: 260, bottom: 240, width: 60 }, 800, 450);
+    expect(r.direction).toBe('none');
   });
 });
