@@ -18,6 +18,7 @@ import type { HintResult } from './hint.js';
 import type { RuleContext, RuleStats, SolverRule } from './rule.js';
 import { makeRuleStats } from './rule.js';
 import { solSums } from '../solver/equation.js';
+import { NoSolnError } from '../solver/errors.js';
 import {
   BoardEvent,
   Cell,
@@ -166,13 +167,18 @@ export class SolverEngine {
   private readonly _ruleIndex: Map<SolverRule, number>;
   private readonly _hintRules: ReadonlySet<string>;
   private readonly _linearSystemActive: boolean;
+  private readonly _goldenSolution: readonly (readonly number[])[] | null;
 
   constructor(
     board: BoardState,
     rules: SolverRule[],
-    { linearSystemActive = true, hintRules = new Set<string>() }: {
+    { linearSystemActive = true, hintRules = new Set<string>(), goldenSolution = null }: {
       linearSystemActive?: boolean;
       hintRules?: ReadonlySet<string>;
+      /** When provided, each rule application is checked: no rule may eliminate
+       *  the correct solution digit from a cell where it is still a candidate.
+       *  Violations throw NoSolnError so the engine is marked contradictory. */
+      goldenSolution?: readonly (readonly number[])[] | null;
     } = {},
   ) {
     this.board = board;
@@ -181,6 +187,7 @@ export class SolverEngine {
     this.stats = new Map(rules.map(r => [r.name, makeRuleStats()]));
     this._hintRules = hintRules;
     this._linearSystemActive = linearSystemActive;
+    this._goldenSolution = goldenSolution;
 
     this._triggerMap = new Map(Object.values(Trigger)
       .filter((v): v is Trigger => typeof v === 'number')
@@ -330,6 +337,16 @@ export class SolverEngine {
         this.pendingHints.push(...item.rule.asHints(ctx, result.eliminations));
       } else {
         if (result.eliminations.length > 0) {
+          if (this._goldenSolution !== null) {
+            for (const e of result.eliminations) {
+              const [r, c] = e.cell;
+              const gold = this._goldenSolution[r]?.[c];
+              if (gold && e.digit === gold && this.board.cands(r, c).has(gold))
+                throw new NoSolnError(
+                  `${item.rule.name}: would eliminate correct digit ${gold} from r${r + 1}c${c + 1}`,
+                );
+            }
+          }
           for (const e of result.eliminations)
             this.appliedMutations.push({ ruleName: item.rule.name, type: 'candidate_removed',
               row: e.cell[0], col: e.cell[1], digit: e.digit });

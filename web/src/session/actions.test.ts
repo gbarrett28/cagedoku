@@ -266,39 +266,44 @@ describe('computeCandidates — placement propagation (#24)', () => {
   beforeEach(() => { makeKillerConfirmed(); });
 
   it('placed digit absent from row peers', () => {
-    // Box-cage spec: (row=0,col=0) starts empty. Place digit 5 there.
-    enterCell(1, 1, 5);
+    // Use the golden solution digit for (0,0) — placing the correct digit avoids
+    // triggering the candidate-soundness assertion in the engine.
+    const d = getState()!.goldenSolution![0]![0]!;
+    enterCell(1, 1, d);
     const cands = computeCandidates();
-    // (row=0,col=3) is a row peer but in a different box — must not contain 5.
-    expect(cands.cells[0]![3]!.candidates).not.toContain(5);
+    // (row=0,col=3) is a row peer but in a different box — must not contain d.
+    expect(cands.cells[0]![3]!.candidates).not.toContain(d);
     // (row=0,col=8) is also a row peer at the far end of the grid.
-    expect(cands.cells[0]![8]!.candidates).not.toContain(5);
+    expect(cands.cells[0]![8]!.candidates).not.toContain(d);
   });
 
   it('placed digit absent from column peers', () => {
-    enterCell(1, 1, 5);
+    const d = getState()!.goldenSolution![0]![0]!;
+    enterCell(1, 1, d);
     const cands = computeCandidates();
     // (row=4,col=0) is a col peer in a different box.
-    expect(cands.cells[4]![0]!.candidates).not.toContain(5);
+    expect(cands.cells[4]![0]!.candidates).not.toContain(d);
   });
 
   it('placed digit absent from box peers', () => {
-    enterCell(1, 1, 5);
+    const d = getState()!.goldenSolution![0]![0]!;
+    enterCell(1, 1, d);
     const cands = computeCandidates();
     // (row=1,col=1) is a box peer (box 0: rows 0–2, cols 0–2).
-    expect(cands.cells[1]![1]!.candidates).not.toContain(5);
+    expect(cands.cells[1]![1]!.candidates).not.toContain(d);
     // (row=2,col=2) is another box peer.
-    expect(cands.cells[2]![2]!.candidates).not.toContain(5);
+    expect(cands.cells[2]![2]!.candidates).not.toContain(d);
   });
 
   it('two placed digits both absent from shared peer', () => {
-    // Place 5 at (0,0) and 3 at (0,1) — both in row 0.
-    enterCell(1, 1, 5);
-    enterCell(1, 2, 3);
+    const d0 = getState()!.goldenSolution![0]![0]!;
+    const d1 = getState()!.goldenSolution![0]![1]!;
+    enterCell(1, 1, d0);
+    enterCell(1, 2, d1);
     const cands = computeCandidates();
     // (row=0,col=5) is a row peer of both placements.
-    expect(cands.cells[0]![5]!.candidates).not.toContain(5);
-    expect(cands.cells[0]![5]!.candidates).not.toContain(3);
+    expect(cands.cells[0]![5]!.candidates).not.toContain(d0);
+    expect(cands.cells[0]![5]!.candidates).not.toContain(d1);
   });
 });
 
@@ -506,10 +511,15 @@ describe('Bug #60 regression — addVirtualCage triggers auto-placements', () =>
   //
   // We then directly set 8 of 9 cells in box-0 via setState (bypassing enterCell
   // so applyAutoPlacements doesn't run yet). This leaves (0,0) as the sole empty
-  // cell in its box — a naked single (only digit 5 can go there).
+  // cell in its box — a naked single whose digit NakedSingle can determine.
   //
   // addVirtualCage must call applyAutoPlacements so NakedSingle fires and (0,0)
   // is placed. Before the fix it was missing that call so (0,0) stayed 0.
+  //
+  // Cells are populated from goldenSolution (not KNOWN_SOLUTION) so that the
+  // candidate-soundness assertion in the engine never fires.
+  let baseState: PuzzleState;
+
   function makeBox0WithPendingNakedSingle(): void {
     const spec = makeBoxCageSpec();
     const pre: PuzzleState = {
@@ -520,12 +530,13 @@ describe('Bug #60 regression — addVirtualCage triggers auto-placements', () =>
       givenDigits: null, originalImageUrl: null, warpedImageUrl: null,
     };
     setState(pre);
-    const base = confirmPuzzle(solveCurrentSpec().board);
-    // Manually place 8 cells in box-0, leave (0,0) empty
-    const grid = base.userGrid!.map(row => [...row]);
+    baseState = confirmPuzzle(solveCurrentSpec().board);
+    const gs = baseState.goldenSolution!;
+    // Manually place 8 cells in box-0 using the engine's golden solution, leaving (0,0) empty
+    const grid = baseState.userGrid!.map(row => [...row]);
     for (const [r, c] of [[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]] as [number,number][])
-      grid[r]![c] = KNOWN_SOLUTION[r]![c]!;
-    setState({ ...base, userGrid: grid });
+      grid[r]![c] = gs[r]![c]!;
+    setState({ ...baseState, userGrid: grid });
   }
 
   beforeEach(() => makeBox0WithPendingNakedSingle());
@@ -537,9 +548,10 @@ describe('Bug #60 regression — addVirtualCage triggers auto-placements', () =>
   it('addVirtualCage triggers applyAutoPlacements — NakedSingle places (0,0)', () => {
     // Any valid VC triggers the auto-placement pass; use two unsolved cells
     // in box-3 so the VC itself plays no role in placing (0,0).
-    const vcTotal = KNOWN_SOLUTION[3]![0]! + KNOWN_SOLUTION[3]![1]!;
+    const gs = baseState.goldenSolution!;
+    const vcTotal = gs[3]![0]! + gs[3]![1]!;
     const state = addVirtualCage([[3, 0], [3, 1]], vcTotal);
-    expect(state.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]!); // 5
+    expect(state.userGrid![0]![0]).toBe(gs[0]![0]!);
   });
 });
 
