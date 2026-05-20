@@ -78,7 +78,7 @@ describe('DeltaConstraint', () => {
     const rule = new DeltaConstraint();
     const elims = rule.apply(ctx).eliminations;
     expect(elims.length).toBeGreaterThan(0);
-    const hints = rule.asHints(ctx, elims);
+    const hints = rule.asHints(ctx, [...elims]);
     expect(hints.length).toBeGreaterThan(0);
     expect(hints[0]!.ruleName).toBe('DeltaConstraint');
     expect(hints[0]!.explanation).toContain('r1c1');

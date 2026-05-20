@@ -60,7 +60,7 @@ describe('SumPairConstraint', () => {
     const rule = new SumPairConstraint();
     const elims = rule.apply(ctx).eliminations;
     expect(elims.length).toBeGreaterThan(0);
-    const hints = rule.asHints(ctx, elims);
+    const hints = rule.asHints(ctx, [...elims]);
     expect(hints.length).toBeGreaterThan(0);
     expect(hints[0]!.ruleName).toBe('SumPairConstraint');
     expect(hints[0]!.displayName).toContain('r1c1');
