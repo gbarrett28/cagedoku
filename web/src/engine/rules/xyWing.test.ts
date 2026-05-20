@@ -37,6 +37,27 @@ describe('XYWing', () => {
     expect(elims.every(e => !(e.cell[0] === 1 && e.cell[1] === 0))).toBe(true);
   });
 
+  it('asHints: returns hint with correct shape for a valid XY-Wing', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
+    bs.candidates[0]![0]! = new Set([1, 2]);
+    bs.candidates[0]![1]! = new Set([1, 3]);
+    bs.candidates[1]![0]! = new Set([2, 3]);
+    bs.candidates[1]![1]! = new Set([3, 5]);
+    const ctx = globalCtx(bs);
+    const rule = new XYWing();
+    const elims = rule.apply(ctx).eliminations;
+    expect(elims.length).toBeGreaterThan(0);
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBeGreaterThan(0);
+    expect(hints[0]!.ruleName).toBe('XYWing');
+    expect(hints[0]!.displayName).toBe('XY-Wing');
+    expect(hints[0]!.explanation).toContain('XY-Wing');
+    expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
+    expect(hints[0]!.highlightCells.length).toBeGreaterThanOrEqual(3);
+    expect(hints[0]!.placement).toBeNull();
+  });
+
   it('returns empty when no bivalue cells form a valid chain', () => {
     const bs = new BoardState(makeTrivialSpec());
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
