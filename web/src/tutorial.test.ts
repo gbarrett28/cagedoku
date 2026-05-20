@@ -137,6 +137,13 @@ describe('advanceCallout — iterative', () => {
     expect((document.getElementById('callout') as HTMLElement).hidden).toBe(false);
     expect(document.getElementById('callout-text')!.textContent).toBe('Use this button');
   });
+
+  it('clicking Got it hides the callout and advances the queue', () => {
+    appendCallouts([{ id: 'real-btn', text: 'First' }]);
+    expect((document.getElementById('callout') as HTMLElement).hidden).toBe(false);
+    (document.getElementById('callout-got-it') as HTMLButtonElement).click();
+    expect((document.getElementById('callout') as HTMLElement).hidden).toBe(true);
+  });
 });
 
 describe('calcCalloutPosition', () => {
