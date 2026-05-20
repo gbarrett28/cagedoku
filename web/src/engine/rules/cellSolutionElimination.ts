@@ -1,10 +1,13 @@
 /**
- * CellSolutionElimination — R1b: solved cell removes digit from row/col/box peers.
+ * CellSolutionElimination — R1b: solved cell removes digit from row/col/box peers
+ * and from distinct-digit cage peers.
  *
  * Mirrors Python's `killer_sudoku.solver.engine.rules.cell_solution_elimination` module.
  *
- * Fires on CELL_SOLVED. Eliminates hintDigit from every non-cage unit peer of
- * ctx.cell. Cage peers are handled by R3/R4/R5 (CageIntersection, etc.).
+ * Fires on CELL_SOLVED. Eliminates hintDigit from every unit peer of ctx.cell,
+ * including cells in the same distinct-digit cage (which have the same exclusion
+ * property as rows/cols/boxes). Non-distinct cage peers are skipped because those
+ * cages allow repeated digits.
  */
 
 import type { HintResult } from '../hint.js';
@@ -34,7 +37,7 @@ export class CellSolutionElimination {
     const elims: Elimination[] = [];
     for (const uid of ctx.board.cellUnitIds(r, c)) {
       const unit = ctx.board.units[uid]!;
-      if (unit.kind === UnitKind.CAGE) continue;
+      if (unit.kind === UnitKind.CAGE && !unit.distinctDigits) continue;
       for (const [pr, pc] of unit.cells as Cell[]) {
         if (!(pr === r && pc === c) && ctx.board.cands(pr, pc).has(d))
           elims.push({ cell: [pr, pc] as Cell, digit: d });
