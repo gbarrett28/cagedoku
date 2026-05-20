@@ -153,6 +153,7 @@ export function buildEngine(
   const engine = new SolverEngine(board, activeRules, {
     linearSystemActive: true,
     hintRules,
+    goldenSolution: state.goldenSolution,
   });
 
   // Apply user placements as eliminations (all non-placed digits in each solved cell)

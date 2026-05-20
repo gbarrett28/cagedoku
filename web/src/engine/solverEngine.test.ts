@@ -183,6 +183,62 @@ describe('SolverEngine virtual cage additions', () => {
   });
 });
 
+describe('SolverEngine candidate soundness assertion', () => {
+  it('throws when a rule eliminates the correct solution digit from a cell', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    // KNOWN_SOLUTION[0][0] = 5; cell (0,0) starts with candidates {1..9}
+    let fired = false;
+    const badRule: SolverRule = {
+      name: 'badRule', description: '', priority: 5,
+      triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
+      apply(_ctx: RuleContext): RuleResult {
+        if (fired) return emptyResult();
+        fired = true;
+        return { ...emptyResult(), eliminations: [{ cell: [0, 0] as Cell, digit: KNOWN_SOLUTION[0]![0]! }] };
+      },
+      asHints() { return []; },
+    };
+    const engine = new SolverEngine(bs, [badRule], { goldenSolution: KNOWN_SOLUTION });
+    expect(() => engine.solve()).toThrow();
+  });
+
+  it('does not throw when a rule eliminates a non-solution digit', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    const gold = KNOWN_SOLUTION[0]![0]!;
+    const safe = gold === 1 ? 2 : 1;
+    let fired = false;
+    const safeRule: SolverRule = {
+      name: 'safeRule', description: '', priority: 5,
+      triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
+      apply(_ctx: RuleContext): RuleResult {
+        if (fired) return emptyResult();
+        fired = true;
+        return { ...emptyResult(), eliminations: [{ cell: [0, 0] as Cell, digit: safe }] };
+      },
+      asHints() { return []; },
+    };
+    const engine = new SolverEngine(bs, [safeRule], { goldenSolution: KNOWN_SOLUTION });
+    expect(() => engine.solve()).not.toThrow();
+  });
+
+  it('does not throw when no goldenSolution is provided', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    let fired = false;
+    const badRule: SolverRule = {
+      name: 'badRule', description: '', priority: 5,
+      triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
+      apply(_ctx: RuleContext): RuleResult {
+        if (fired) return emptyResult();
+        fired = true;
+        return { ...emptyResult(), eliminations: [{ cell: [0, 0] as Cell, digit: KNOWN_SOLUTION[0]![0]! }] };
+      },
+      asHints() { return []; },
+    };
+    const engine = new SolverEngine(bs, [badRule]); // no goldenSolution
+    expect(() => engine.solve()).not.toThrow();
+  });
+});
+
 describe('SolverEngine hint mode', () => {
   it('rules in hintRules populate pendingHints rather than applying eliminations', () => {
     const spec = makeTrivialSpec();
