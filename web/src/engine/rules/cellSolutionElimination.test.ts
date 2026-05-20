@@ -6,8 +6,32 @@ import { describe, expect, it } from 'vitest';
 import { BoardState } from '../boardState.js';
 import { CellSolutionElimination } from './cellSolutionElimination.js';
 import type { RuleContext } from '../rule.js';
-import { Trigger, UnitKind } from '../types.js';
+import { Cell, Trigger, UnitKind } from '../types.js';
 import { makeTrivialSpec } from '../fixtures.js';
+import type { PuzzleSpec } from '../../solver/puzzleSpec.js';
+
+/** Spec where cells (2,5) and (3,6) share one 2-cell distinct cage (sum=3, digits {1,2}).
+ *  They share NO row, col, or box, so any elimination between them must come from the cage. */
+function makeDistinctCageSpec(): PuzzleSpec {
+  const sharedId = 1;
+  let nextId = 2;
+  const regions: number[][] = Array.from({ length: 9 }, (_, r) =>
+    Array.from({ length: 9 }, (__, c) => {
+      if ((r === 2 && c === 5) || (r === 3 && c === 6)) return sharedId;
+      return nextId++;
+    }),
+  );
+  const cageTotals: number[][] = Array.from({ length: 9 }, (_, r) =>
+    Array.from({ length: 9 }, (__, c) => {
+      if (r === 2 && c === 5) return 3; // cage head: sum 1+2
+      if (r === 3 && c === 6) return 0;
+      return (r * 9 + c) % 9 + 1; // arbitrary valid single-digit totals
+    }),
+  );
+  const borderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(true));
+  const borderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(true));
+  return { regions, cageTotals, borderX, borderY };
+}
 
 function makeCtx(bs: BoardState): RuleContext {
   return {
@@ -37,7 +61,7 @@ describe('CellSolutionElimination', () => {
         if (r !== 0 || c !== 0) expect(elimCells.has(`${r},${c}`)).toBe(true);
   });
 
-  it('only targets row/col/box peers — not cage-only peers', () => {
+  it('with single-cell cages (trivial spec) all eliminations are row/col/box peers', () => {
     const bs = new BoardState(makeTrivialSpec());
     bs.candidates[0]![0]! = new Set([5]);
     const elims = new CellSolutionElimination().apply(makeCtx(bs)).eliminations;
@@ -51,6 +75,27 @@ describe('CellSolutionElimination', () => {
       );
       expect(shared).toBe(true);
     }
+  });
+
+  it('eliminates solved digit from distinct-cage peers that share no row/col/box', () => {
+    // (2,5) and (3,6) are cage-mates only — different row, col, and box.
+    // Placing digit 1 at (3,6) must eliminate 1 from (2,5).
+    const bs = new BoardState(makeDistinctCageSpec());
+    bs.candidates[3]![6]! = new Set([1]);
+
+    const ctx: RuleContext = {
+      unit: null,
+      cell: [3, 6] as Cell,
+      board: bs,
+      hint: Trigger.CELL_SOLVED,
+      hintDigit: 1,
+    };
+
+    const elims = new CellSolutionElimination().apply(ctx).eliminations;
+    const eliminates1FromCagePeer = elims.some(
+      e => e.cell[0] === 2 && e.cell[1] === 5 && e.digit === 1,
+    );
+    expect(eliminates1FromCagePeer).toBe(true);
   });
 
   it('declares CELL_SOLVED as trigger, not CELL_DETERMINED', () => {
