@@ -239,31 +239,33 @@ function makeInternallyInconsistentState(): PuzzleState {
   };
 }
 
-describe('applyAutoPlacements — inconsistency guard', () => {
+describe('applyAutoPlacements — continues even with wrong placements', () => {
   it('places the deducible digit when board is consistent', () => {
     const state = makeAlmostCompleteState();
     const result = applyAutoPlacements(state);
     expect(result.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
   });
 
-  it('returns state unchanged when userGrid has row-duplicate and no golden solution', () => {
-    // goldenSolution is null → soundness assertion inactive.
-    // The grid has a row-duplicate (visible inconsistency without needing goldenSolution).
-    // Auto-placements must still be suppressed.
+  it('still places (0,0) when userGrid has a row-duplicate — cage constraint overrides', () => {
+    // Row 0 has a duplicate digit. The engine treats the board as-is.
+    // The trivial spec gives (0,0) a 1-cell cage with total = KNOWN_SOLUTION[0][0],
+    // so the cage constraint uniquely forces (0,0) regardless of the row duplicate.
     const state = makeInternallyInconsistentState();
     const result = applyAutoPlacements(state);
-    expect(result).toBe(state);
-    expect(result.userGrid![0]![0]).toBe(0);
+    expect(result.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
   });
 
-  it('returns state unchanged (no auto-placements) when a wrong digit is present', () => {
+  it('still places (0,0) when a wrong digit is present elsewhere — treat as correct', () => {
+    // Wrong digit at (0,1) — engine proceeds as if it were correct.
+    // (0,0) is forced by its 1-cell cage constraint (total = KNOWN_SOLUTION[0][0]).
     const state = makeAlmostCompleteState({ wrongAt: [0, 1] });
     const result = applyAutoPlacements(state);
-    expect(result).toBe(state);
-    expect(result.userGrid![0]![0]).toBe(0);
+    expect(result.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
   });
 
-  it('returns state unchanged when the golden candidate has been explicitly eliminated', () => {
+  it('places some digit in (0,0) when the golden candidate was explicitly eliminated', () => {
+    // User removed the correct digit from (0,0). Engine continues as if that removal
+    // is intentional — some other digit gets forced via remaining constraints.
     const state = makeAlmostCompleteState();
     const gold = KNOWN_SOLUTION[0]![0]!;
     const stateWithElim: PuzzleState = {
@@ -271,12 +273,12 @@ describe('applyAutoPlacements — inconsistency guard', () => {
       turns: [makeTurn({ type: 'eliminateCandidate', row: 0, col: 0, digit: gold })],
     };
     const result = applyAutoPlacements(stateWithElim);
-    expect(result).toBe(stateWithElim);
-    expect(result.userGrid![0]![0]).toBe(0);
+    expect(result.userGrid![0]![0]).not.toBe(0); // some digit was placed
+    expect(result.userGrid![0]![0]).not.toBe(gold); // not the golden digit
   });
 });
 
-describe('applyNextAutoPlacement — inconsistency guard', () => {
+describe('applyNextAutoPlacement — continues even with wrong placements', () => {
   it('places the next deducible digit when board is consistent', () => {
     const state = makeAlmostCompleteState();
     const result = applyNextAutoPlacement(state);
@@ -284,22 +286,28 @@ describe('applyNextAutoPlacement — inconsistency guard', () => {
     expect(result!.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
   });
 
-  it('returns null when userGrid has row-duplicate and no golden solution', () => {
-    expect(applyNextAutoPlacement(makeInternallyInconsistentState())).toBeNull();
+  it('still places (0,0) when userGrid has a row-duplicate', () => {
+    const result = applyNextAutoPlacement(makeInternallyInconsistentState());
+    expect(result).not.toBeNull();
+    expect(result!.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
   });
 
-  it('returns null (suppressed) when a wrong digit is present', () => {
+  it('still places (0,0) when a wrong digit is present elsewhere', () => {
     const state = makeAlmostCompleteState({ wrongAt: [0, 1] });
-    expect(applyNextAutoPlacement(state)).toBeNull();
+    const result = applyNextAutoPlacement(state);
+    expect(result).not.toBeNull();
+    expect(result!.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
   });
 
-  it('returns null when the golden candidate has been explicitly eliminated', () => {
+  it('places some non-golden digit in (0,0) when the golden candidate was eliminated', () => {
     const state = makeAlmostCompleteState();
     const gold = KNOWN_SOLUTION[0]![0]!;
     const stateWithElim: PuzzleState = {
       ...state,
       turns: [makeTurn({ type: 'eliminateCandidate', row: 0, col: 0, digit: gold })],
     };
-    expect(applyNextAutoPlacement(stateWithElim)).toBeNull();
+    const result = applyNextAutoPlacement(stateWithElim);
+    expect(result).not.toBeNull();
+    expect(result!.userGrid![0]![0]).not.toBe(gold);
   });
 });

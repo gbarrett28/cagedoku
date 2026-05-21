@@ -233,8 +233,8 @@ Renders the 9×9 sudoku grid with the following layers (back → front):
 9. Red cage boundary lines
 10. Cage total numbers (top-left of first cell in cage)
 11. Placed digits (large, centred) — coloured by state:
-    - **Blue**: user-placed, correct (or not yet known to be wrong)
-    - **Red text + red background tint**: wrong — either a row/col/box duplicate, or contradicts the golden solution (placed digit ≠ known correct digit). Cells where the solver couldn't determine the correct digit (`goldenSolution[r][c] === 0`) are never marked wrong.
+    - **Blue**: user-placed
+    - **Red text + red background tint**: row/col/box duplicate (structurally impossible)
 12. Candidate sub-grid (3×3 keypad layout per cell, when candidates shown)
     - Grey: possible but not essential
     - Salmon: essential (must appear in every valid cage solution) — toggleable via config

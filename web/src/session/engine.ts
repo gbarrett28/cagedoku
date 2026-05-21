@@ -153,7 +153,6 @@ export function buildEngine(
   const engine = new SolverEngine(board, activeRules, {
     linearSystemActive: true,
     hintRules,
-    goldenSolution: state.goldenSolution,
   });
 
   // Apply user placements and explicit candidate removals, then solve.
@@ -187,64 +186,11 @@ export function buildEngine(
 // ---------------------------------------------------------------------------
 
 /**
- * Returns true if the current userGrid is self-inconsistent (duplicate digits
- * in a row, column, or box) or contradicts goldenSolution (wrong placed digit
- * or explicitly eliminated golden candidate).
- *
- * Used to suppress auto-placements when the board is known to be wrong so that
- * rule cascades don't drive the grid further into an incorrect state.
- */
-function boardIsInconsistent(state: PuzzleState): boolean {
-  const { userGrid, goldenSolution } = state;
-  if (userGrid === null) return false;
-
-  // Row/col/box self-consistency (detectable without goldenSolution).
-  for (let i = 0; i < 9; i++) {
-    const rowSeen = new Set<number>(), colSeen = new Set<number>();
-    for (let j = 0; j < 9; j++) {
-      const rv = userGrid[i]![j]!;
-      const cv = userGrid[j]![i]!;
-      if (rv !== 0) { if (rowSeen.has(rv)) return true; rowSeen.add(rv); }
-      if (cv !== 0) { if (colSeen.has(cv)) return true; colSeen.add(cv); }
-    }
-  }
-  for (let br = 0; br < 3; br++) {
-    for (let bc = 0; bc < 3; bc++) {
-      const boxSeen = new Set<number>();
-      for (let r = br * 3; r < br * 3 + 3; r++) {
-        for (let c = bc * 3; c < bc * 3 + 3; c++) {
-          const v = userGrid[r]![c]!;
-          if (v !== 0) { if (boxSeen.has(v)) return true; boxSeen.add(v); }
-        }
-      }
-    }
-  }
-
-  // Wrong digit vs golden, or explicitly eliminated golden candidate.
-  if (goldenSolution !== null) {
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 9; c++) {
-        const placed = userGrid[r]![c]!;
-        const gold = goldenSolution[r]![c]!;
-        if (placed !== 0 && gold !== 0 && placed !== gold) return true;
-      }
-    }
-    for (const [r, c, d] of userRemoved(state)) {
-      const gold = goldenSolution[r]?.[c];
-      if (gold !== undefined && gold !== 0 && d === gold && userGrid[r]![c] === 0) return true;
-    }
-  }
-
-  return false;
-}
-
-/**
  * Runs the always-apply rules against the current state and returns an
  * updated PuzzleState with any newly placed digits committed to userGrid.
  */
 export function applyAutoPlacements(state: PuzzleState): PuzzleState {
   if (state.userGrid === null) return state; // no-op before confirm
-  if (boardIsInconsistent(state)) return state;
   const { engine } = buildEngine(state); // engine.solve() called inside buildEngine
 
   let changed = false;
@@ -265,7 +211,6 @@ export function applyAutoPlacements(state: PuzzleState): PuzzleState {
  */
 export function applyNextAutoPlacement(state: PuzzleState): PuzzleState | null {
   if (state.userGrid === null) return null;
-  if (boardIsInconsistent(state)) return null;
   const { engine } = buildEngine(state);
   for (const p of engine.appliedPlacements) {
     const [r, c] = p.cell;
