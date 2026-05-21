@@ -517,6 +517,14 @@ export function confirmPuzzle(board: BoardState): PuzzleState {
   return updated;
 }
 
+/**
+ * Revert session state to a pre-confirm OCR snapshot.
+ * Used by the Edit OCR button to let the user correct OCR digits after auto-confirm.
+ */
+export function revertToOcr(ocrState: PuzzleState): void {
+  setState(ocrState);
+}
+
 /** Checks post-confirmation assertions about the golden solution.
  *  Returns a violation if the solution is incomplete or invalid, null otherwise.
  *  Called by the UI layer after confirmPuzzle succeeds so the puzzle always
