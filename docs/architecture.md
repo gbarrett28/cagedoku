@@ -113,24 +113,42 @@ Browser  →  POST /  →  Cloudflare Worker (cagedoku-training.gbarrett28.worke
                          GitHub Issue #1 comment  (gbarrett28/cagedoku)
 ```
 
-Two payload schemas are accepted:
+Three payload schemas are accepted:
 
 | Version | Type | Trigger | R2 prefix |
 |---|---|---|---|
 | 1 | `TrainingExport` | User confirms killer puzzle with manual OCR edits | `training/` |
 | 2 | `PuzzleSpecExport` | Solver required MRV backtracking (rules alone stalled) | `puzzle-spec/` |
+| 3 | `StallStateExport` | Solver stalled; full candidate grid captured | `stall/` (planned — see issue #105) |
 
 `PuzzleSpecExport` uploads silently (no consent modal) but only when the user has already
 granted consent for digit training. Puzzle specs contain cage layout + totals and are used
 to identify hard puzzles where constraint propagation alone fails, to guide rule-engine
 improvement.
 
+`StallStateExport` (`web/src/image/trainingExport.ts`) captures the full candidate grid
+(`number[][][]` — 9×9 of sorted remaining-digit arrays) at the moment the rule engine
+stalls, before backtracking fills the cells. Unlike `PuzzleSpecExport`, this is
+independent of the original cage spec, making replay fast and deterministic.
+`initiateStallUpload()` and `uploadStallState()` in `trainingUpload.ts` mirror the
+existing training-data upload helpers. The Cloudflare Worker handler for this payload
+is not yet implemented (see issue #105).
+
+**Stall fixtures and replay** — `web/src/engine/rules/stall-fixtures.ts` stores known
+stall states as named entries. `solveFromStall(candidates)` in `engine/index.ts` loads a
+candidate grid into a fresh `BoardState`, runs the full rule engine, and returns a
+`SolveResult`. Tests in `stall-fixtures.test.ts` assert each puzzle solves without
+backtracking — they are skipped (`it.skip`) until the required rule is identified
+and implemented. Removing the skip is the signal that a new rule is sufficient.
+
 Key files:
 
 | File | Purpose |
 |---|---|
-| `web/src/image/trainingExport.ts` | `TrainingExport`, `PuzzleSpecExport`, `extractTrainingData`, `buildPuzzleSpecExport` |
-| `web/src/image/trainingUpload.ts` | `hasConsent`, `grantConsent`, `uploadTrainingData`, `uploadPuzzleSpec`, `initiateUpload` |
+| `web/src/image/trainingExport.ts` | `TrainingExport`, `PuzzleSpecExport`, `StallStateExport`, `extractTrainingData`, `buildPuzzleSpecExport`, `buildStallStateExport` |
+| `web/src/image/trainingUpload.ts` | `hasConsent`, `grantConsent`, `uploadTrainingData`, `uploadPuzzleSpec`, `uploadStallState`, `initiateUpload`, `initiateStallUpload` |
+| `web/src/engine/rules/stall-fixtures.ts` | Known stall states as named `candidates` arrays |
+| `web/src/engine/rules/stall-fixtures.test.ts` | Forward-failing replay tests (skipped until rule added) |
 | `worker/src/index.ts` | Cloudflare Worker fetch handler — routes by schema version |
 | `worker/src/validate.ts` | `isTrainingExport()`, `isPuzzleSpecExport()` schema guards |
 | `worker/wrangler.toml` | Worker + R2 binding config |
@@ -214,6 +232,8 @@ Four tiers applied consistently across all production code:
 
 **Bug reporting:** `reportBug(e, context)` (in `main.ts`) stores the exception for the next feedback modal open. When the user submits feedback via the Feedback button, the exception string is included in the worker payload and appears in the generated GitHub issue.
 
+**Assertion violations:** `checkSolutionAssertions()` (in `session/actions.ts`) validates the `goldenSolution` after every confirm. If the solution is incomplete or fails `validateSudokuSolution()`, an `AssertionViolation` is raised and shown in the assertion modal. The modal's "Submit bug report" button pre-fills `exceptionForSubmission` with the violation details and programmatically opens the feedback modal — no GitHub login required.
+
 ---
 
 ## Solving
@@ -257,6 +277,8 @@ flowchart TD
 ```
 
 The solver has no tunable thresholds — it is exact by construction.
+
+**MRV backtracker (`web/src/engine/backtracker.ts`):** The TypeScript coaching engine falls back to `mrvBacktrack()` when the rule engine stalls. It applies Minimum Remaining Values cell selection with arc-consistency propagation via `assign()`. After `search()` returns, a `gridValid()` defensive guard re-checks the extracted `number[][]` for row/column/box uniqueness before returning it — if the check fails the function logs a `console.error` and returns `null`, converting a corrupt `goldenSolution` into an `UnsolvedByRules` assertion instead of an `InvalidSolution` one.
 
 ---
 
