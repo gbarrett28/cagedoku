@@ -171,6 +171,30 @@ function search(
     }
   }
   if (best === null) {
+    // All cells are singletons. Validate rows, columns, and boxes before returning —
+    // contradictory board states can leave a wrong singleton due to applyEliminations'
+    // size-≤1 guard, producing an all-singleton grid that is not a valid sudoku solution.
+    for (let i = 0; i < 9; i++) {
+      const rowSeen = new Set<number>(), colSeen = new Set<number>();
+      for (let j = 0; j < 9; j++) {
+        const rv = cands[i]![j]!.values().next().value as number;
+        const cv = cands[j]![i]!.values().next().value as number;
+        if (rowSeen.has(rv) || colSeen.has(cv)) return null;
+        rowSeen.add(rv); colSeen.add(cv);
+      }
+    }
+    for (let br = 0; br < 3; br++) {
+      for (let bc = 0; bc < 3; bc++) {
+        const boxSeen = new Set<number>();
+        for (let r = br * 3; r < br * 3 + 3; r++) {
+          for (let c = bc * 3; c < bc * 3 + 3; c++) {
+            const v = cands[r]![c]!.values().next().value as number;
+            if (boxSeen.has(v)) return null;
+            boxSeen.add(v);
+          }
+        }
+      }
+    }
     return Array.from({length: 9}, (_, r) =>
       Array.from({length: 9}, (__, c) => cands[r]![c]!.values().next().value as number));
   }

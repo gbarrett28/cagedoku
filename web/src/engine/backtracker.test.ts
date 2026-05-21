@@ -27,6 +27,22 @@ describe('mrvBacktrack', () => {
         expect(result![r]![c]).toBe(KNOWN_SOLUTION[r]![c]);
   });
 
+  it('returns null when all cells are singletons but contain a unit conflict', () => {
+    // Simulate the contradictory-board scenario: applyEliminations' size-≤1 guard
+    // can leave a wrong singleton when the correct candidate was already removed.
+    // KNOWN_SOLUTION row 0 = [5,3,4,6,7,8,9,1,2]. If (0,0) holds {2} instead of {5},
+    // row 0 has 2 at both (0,0) and (0,8) — an invalid sudoku grid.
+    const bs = new BoardState(makeTrivialSpec());
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        const digit = (r === 0 && c === 0) ? 2 : KNOWN_SOLUTION[r]![c]!;
+        bs.candidates[r]![c]! = new Set([digit]);
+      }
+    }
+    // Row 0 conflict: (0,0)=2 and (0,8)=2 → should return null, not the invalid grid.
+    expect(mrvBacktrack(bs)).toBeNull();
+  });
+
   it('solves a 9-cage box spec (harder constraint structure)', () => {
     // 9 cages, one per 3×3 box, each summing to 45.  No unique solution
     // exists without the uniqueness constraints from rows/cols — the solver

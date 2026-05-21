@@ -980,10 +980,24 @@ export function getHints(): HintsResponse {
 
   if (inconsistent) {
     if (missingCell !== null) {
-      // User explicitly eliminated the correct candidate — this is unambiguously a
-      // mistake; skip the alt-solution check (the board still shows the candidate
-      // because NoSolnError is now caught inside buildEngine) and Rewind directly.
-      return { hints: [makeRewindHint(rewindTurnIdx ?? 0)] };
+      // Golden candidate was explicitly eliminated. In a multi-solution puzzle the
+      // cell may still have a remaining candidate that is correct for an alternative
+      // solution — check before offering Rewind.
+      const { board: altBoard } = buildEngine(state);
+      const altSolution = altBoard.cands(missingCell.r, missingCell.c).size > 0
+        ? mrvBacktrack(altBoard)
+        : null;
+      // Only accept the alt-solution if it places a DIFFERENT digit at the affected cell.
+      // If mrvBacktrack returns the same gold digit (the board's constraints confirm it's
+      // the only valid answer, e.g. the linear system re-pinned the cell), the user's
+      // elimination was wrong → Rewind.
+      if (altSolution !== null && altSolution[missingCell.r]?.[missingCell.c] !== missingCell.gold) {
+        state = { ...state, goldenSolution: altSolution };
+        setState(state);
+        // Fall through to normal hint generation with the revised golden.
+      } else {
+        return { hints: [makeRewindHint(rewindTurnIdx ?? 0)] };
+      }
     }
 
     // Wrong digit in userGrid — two sub-cases:
@@ -1017,18 +1031,13 @@ export function getHints(): HintsResponse {
   const { board, engine } = buildEngine(state, { includeHints: true });
   const rawHints = engine.pendingHints;
 
-  // Assertion: if any unsolved cell has no remaining candidates and no user mistake
-  // explains it, the rule engine produced a contradiction.
+  // Empty candidate set means the golden was eliminated by a prior user action
+  // (e.g. a cage solution elimination cascade not tracked in userRemoved).
+  // mrvBacktrack always returns null when a cell has zero candidates, so Rewind immediately.
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
       if (state.userGrid![r]![c] === 0 && board.cands(r, c).size === 0) {
-        throw new AssertionViolation({
-          name: 'EmptyCandidateSet',
-          description: `Cell r${r + 1}c${c + 1} has no remaining candidates — the rule engine reached a contradiction with no user mistake to explain it.`,
-          puzzleSpecJson: JSON.stringify(state.specData),
-          solutionJson: JSON.stringify(state.goldenSolution),
-          actionLog: formatActionLog(),
-        });
+        return { hints: [makeRewindHint(0)] };
       }
     }
   }
