@@ -4,7 +4,10 @@
  * `solve()` constructs a BoardState, seeds given digits, runs the rule engine,
  * and falls back to MRV backtracking if the engine stalls.
  *
- * `hint()` runs a hint-mode pass and returns the first available hint result.
+ * `solveFromStall()` loads a pre-computed candidate grid and re-runs the rule
+ * engine from that state — useful for replaying known stall states against new rules.
+ *
+ * `getHints()` runs a hint-mode pass and returns the first available hint result.
  */
 
 import { BoardState } from './boardState.js';
@@ -41,18 +44,54 @@ export interface SolveResult {
   /** True when constraint propagation alone could not fully solve the puzzle
    *  and MRV backtracking was required to find a complete assignment. */
   usedBacktracking: boolean;
+  /** Candidate grid captured before backtracking. Only present when usedBacktracking === true.
+   *  Each cell is a sorted array of remaining candidates; single-element = solved. */
+  stalledCandidates?: number[][][];
+}
+
+/** Build a classic spec for use as a neutral board container in solveFromStall.
+ *  Nine row-cages (total=45 each), all vertical walls, no horizontal walls. */
+function makeClassicSpec(): PuzzleSpec {
+  const cageTotals = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+  for (let r = 0; r < 9; r++) cageTotals[r]![0] = 45;
+  return {
+    regions: Array.from({ length: 9 }, (_, r) => new Array<number>(9).fill(r + 1)),
+    cageTotals,
+    borderX: Array.from({ length: 9 }, () => new Array<boolean>(8).fill(true)),
+    borderY: Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false)),
+  };
+}
+
+function checkStalled(board: BoardState): boolean {
+  return Array.from({ length: 9 }, (_, r) =>
+    Array.from({ length: 9 }, (_, c) => board.cands(r, c).size !== 1)
+  ).some(row => row.some(Boolean));
+}
+
+function snapshotCandidates(board: BoardState): number[][][] {
+  return Array.from({ length: 9 }, (_, r) =>
+    Array.from({ length: 9 }, (_, c) => [...board.cands(r, c)].sort((a, b) => a - b))
+  );
+}
+
+function runWithBacktrack(board: BoardState, stalled: boolean): SolveResult {
+  if (!stalled) return { board, usedBacktracking: false };
+  const stalledCandidates = snapshotCandidates(board);
+  const solution = mrvBacktrack(board);
+  if (solution !== null) {
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++)
+        board.candidates[r]![c]! = new Set([solution[r]![c]!]);
+  }
+  return { board, usedBacktracking: true, stalledCandidates };
 }
 
 /**
  * Run the full solver engine on a validated PuzzleSpec.
  *
- * Constructs a BoardState with virtual cages (required by LinearElimination)
- * and runs all rules until no further progress is possible.
- *
- * If givenDigits is provided (classic sudoku), pre-eliminates all non-given
- * candidates from fixed cells before seeding the engine.
- *
  * Falls back to MRV backtracking if the rule engine stalls.
+ * When backtracking is used, `stalledCandidates` in the result holds the
+ * candidate grid as it was at the moment the engine stalled.
  */
 export function solve(spec: PuzzleSpec, givenDigits?: number[][]): SolveResult {
   const board = new BoardState(spec, { includeVirtualCages: false });
@@ -62,28 +101,40 @@ export function solve(spec: PuzzleSpec, givenDigits?: number[][]): SolveResult {
 
   engine.solve();
 
-  // If engine stalled, fall back to MRV backtracking
-  const stalled = Array.from({length: 9}, (_, r) =>
-    Array.from({length: 9}, (__, c) => board.cands(r, c).size !== 1)
-  ).some(row => row.some(Boolean));
+  return runWithBacktrack(board, checkStalled(board));
+}
 
-  if (stalled) {
-    const solution = mrvBacktrack(board);
-    if (solution !== null) {
-      for (let r = 0; r < 9; r++)
-        for (let c = 0; c < 9; c++)
-          board.candidates[r]![c]! = new Set([solution[r]![c]!]);
+/**
+ * Load a pre-computed candidate grid and run the full rule engine from that state.
+ *
+ * `candidates` is a 9×9 array where each cell is a sorted array of remaining
+ * candidates. Single-element arrays represent solved cells. This is the format
+ * produced by `solve().stalledCandidates`.
+ *
+ * Useful for replaying known stall states against the current rule set to verify
+ * whether a newly added rule makes progress.
+ */
+export function solveFromStall(candidates: number[][][]): SolveResult {
+  const board = new BoardState(makeClassicSpec(), { includeVirtualCages: false });
+  const engine = new SolverEngine(board, defaultRules());
+
+  for (let r = 0; r < 9; r++)
+    for (let c = 0; c < 9; c++) {
+      const keep = new Set(candidates[r]![c]!);
+      const elims: Elimination[] = [];
+      for (let d = 1; d <= 9; d++)
+        if (!keep.has(d) && board.cands(r, c).has(d))
+          elims.push({ cell: [r, c] as Cell, digit: d });
+      if (elims.length) engine.applyEliminations(elims);
     }
-  }
 
-  return { board, usedBacktracking: stalled };
+  engine.solve();
+
+  return runWithBacktrack(board, checkStalled(board));
 }
 
 /**
  * Run a hint-mode pass on the board and return deduplicated hints.
- *
- * Uses the same rule set as solve() but routes rule output through asHints()
- * instead of applying eliminations.
  */
 export function getHints(
   spec: PuzzleSpec,
