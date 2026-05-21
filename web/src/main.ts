@@ -238,13 +238,23 @@ function drawGridLines(ctx: CanvasRenderingContext2D): void {
 
 function drawCageTotals(ctx: CanvasRenderingContext2D, state: PuzzleState): void {
   if (state.puzzleType === 'classic') return;
-  ctx.fillStyle = '#000'; ctx.font = 'bold 14px sans-serif';
+  const TOTAL_FONT_PX = Math.round(CELL * 0.36); // ~18px at CELL=50
+  ctx.font = `bold ${TOTAL_FONT_PX}px sans-serif`;
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   const totals = state.specData.cageTotals;
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
       const total = totals[r]?.[c] ?? 0;
-      if (total > 0) ctx.fillText(String(total), MARGIN + c * CELL + 2, MARGIN + r * CELL + 2);
+      if (total === 0) continue;
+      const x = MARGIN + c * CELL + 2;
+      const y = MARGIN + r * CELL + 2;
+      const label = String(total);
+      const tw = ctx.measureText(label).width;
+      // White chip behind the number so it reads cleanly over grid lines.
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(x - 1, y - 1, tw + 2, TOTAL_FONT_PX + 1);
+      ctx.fillStyle = '#111';
+      ctx.fillText(label, x, y);
     }
   }
 }
