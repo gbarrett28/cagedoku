@@ -1085,14 +1085,14 @@ export function getHints(): HintsResponse {
   const goldenComplete = state.goldenSolution !== null && state.goldenSolution.every(row => row.every(d => d !== 0));
   const puzzleIncomplete = state.userGrid!.some(row => row.some(d => d === 0));
   const hasUserPlacements = state.turns.some(t => t.action.type === 'placeDigit' && t.action.source === 'user');
+  // When no hints are found on a solvable puzzle this most likely means the
+  // position requires a technique (XYWing, colouring, forcing chains, …) that
+  // the engine does not yet implement.  Log for developer awareness but do NOT
+  // throw an AssertionViolation — the bug-report modal confuses users who are
+  // simply past the engine's current capability.  The "No hint found" message
+  // in the dropdown is the right user-facing response.
   if (hints.length === 0 && goldenComplete && puzzleIncomplete && hasUserPlacements) {
-    throw new AssertionViolation({
-      name: 'StuckPuzzle',
-      description: 'The puzzle has a complete solution but the rule set cannot suggest a next step. Some deduction rule may be missing.',
-      puzzleSpecJson: JSON.stringify(state.specData),
-      solutionJson: JSON.stringify(state.goldenSolution),
-      actionLog: formatActionLog(),
-    });
+    console.warn('[StuckPuzzle] No hint found for a solvable position — engine may be missing a technique.');
   }
 
   return { hints };
