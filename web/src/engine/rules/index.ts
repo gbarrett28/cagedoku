@@ -58,6 +58,7 @@ import { UnitPartitionFilter } from './unitPartitionFilter.js';
 import { XWing } from './xWing.js';
 import { XYWing } from './xyWing.js';
 import { XYZWing } from './xyzWing.js';
+import { WWing } from './wWing.js';
 
 export {
   CageCandidateFilter,
@@ -86,6 +87,7 @@ export {
   XWing,
   XYWing,
   XYZWing,
+  WWing,
 };
 
 /**
@@ -121,6 +123,7 @@ export function defaultRules(): SolverRule[] {
     new UniqueRectangle(),
     new SimpleColouring(),
     new XYZWing(),
+    new WWing(),
   ];
   return rules.sort((a, b) => a.priority - b.priority);
 }
