@@ -6,7 +6,8 @@
 import { describe, expect, it } from 'vitest';
 import { BoardState } from './boardState.js';
 import { mrvBacktrack } from './backtracker.js';
-import { KNOWN_SOLUTION, makeTrivialSpec, makeBoxCageSpec } from './fixtures.js';
+import { KNOWN_SOLUTION, makeTrivialSpec, makeBoxCageSpec, makeRowCageSpec } from './fixtures.js';
+import { validateSudokuSolution } from '../session/assertions.js';
 
 describe('mrvBacktrack', () => {
   it('returns null when a cell has no candidates', () => {
@@ -41,6 +42,15 @@ describe('mrvBacktrack', () => {
     }
     // Row 0 conflict: (0,0)=2 and (0,8)=2 → should return null, not the invalid grid.
     expect(mrvBacktrack(bs)).toBeNull();
+  });
+
+  it('returns null or a valid solution for a row-cage spec (bug 104 regression)', () => {
+    // Puzzle from bug report #104: 9 row-cages each summing to 45, no given digits.
+    // The backtracker previously returned a solution with a duplicate digit in row 4.
+    const bs = new BoardState(makeRowCageSpec());
+    const result = mrvBacktrack(bs);
+    if (result === null) return; // unsolvable from this state is acceptable
+    expect(validateSudokuSolution(result)).toBeNull();
   });
 
   it('solves a 9-cage box spec (harder constraint structure)', () => {

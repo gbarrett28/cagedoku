@@ -189,3 +189,22 @@ export function makeOutieSpec(): PuzzleSpec {
 
   return validateCageLayout(cageTotals, borderX, borderY);
 }
+
+/**
+ * Return a PuzzleSpec where each row forms its own 9-cell cage with total 45.
+ *
+ * No given digits — the solver must use backtracking to find a solution.
+ * Mirrors the puzzle spec from bug report #104.
+ */
+export function makeRowCageSpec(): PuzzleSpec {
+  // Head cell of cage r is (row=r, col=0) with total=45.
+  const cageTotals: number[][] = Array.from({ length: 9 }, () =>
+    Array.from({ length: 9 }, (_, c) => (c === 0 ? 45 : 0)));
+  // borderX[col][rowGap]: all true — horizontal walls separate every row.
+  const borderX: boolean[][] = Array.from({ length: 9 }, () =>
+    Array.from({ length: 8 }, () => true));
+  // borderY[colGap][row]: all false — no vertical walls within rows.
+  const borderY: boolean[][] = Array.from({ length: 8 }, () =>
+    Array.from({ length: 9 }, () => false));
+  return validateCageLayout(cageTotals, borderX, borderY);
+}
