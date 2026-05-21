@@ -296,32 +296,39 @@ because `flow.spec.ts` uses `window.__testLoad`, a hook only available in dev bu
 Run Playwright only when touching UI rendering, image pipeline, or session flow —
 it runs against the production build and takes ~2–3 min.
 
-## Pre-push Hook
+## Pre-commit Hook
 
-A `pre-push` git hook is committed at `scripts/hooks/pre-push`. It **always blocks**
-a push to `master` unless the silver gate has been explicitly confirmed:
+A `pre-commit` git hook (`scripts/hooks/pre-commit`) enforces the appropriate gate
+for the branch being committed to. Every commit on `master` is therefore a verified
+state, which makes `git bisect` reliable.
 
-- **Interactive terminal (human):** prints the checklist and asks `y/N`.
-- **Non-interactive (agent):** blocks with an error unless
-  `scripts/hooks/confirm-silver-gate.sh` was run immediately before the push.
+| Branch | Gate enforced |
+|---|---|
+| `master` / `main` | Silver gate — blocks until confirmed (see below) |
+| Any feature branch | Bronze gate — runs `tsc` checks automatically; blocks on failure |
 
-### Agent push sequence (MANDATORY)
+### Feature branches (bronze gate)
 
-Every time you push to `master`, you MUST follow these steps in order:
+The hook runs `tsc --noEmit` and `tsc -p tsconfig.node.json --noEmit` automatically.
+If either fails the commit is blocked. `npm test` is not run in the hook (too slow
+for every commit) but **must** have been run before committing — see Bronze Gate above.
+
+### Master — agent commit sequence (MANDATORY)
+
+Every time you commit to `master` (including merge commits), follow these steps:
 
 1. Run all silver gate code checks (see above).
 2. Complete all doc-hygiene steps (see above).
-3. Run the confirmation script — this reprints the checklist and creates a
-   one-time token:
+3. Run the confirmation script — reprints the checklist and creates a one-time token:
    ```bash
    bash scripts/hooks/confirm-silver-gate.sh
    ```
-4. Push immediately after:
+4. Commit immediately after (merge or direct):
    ```bash
-   git push origin master
+   git merge feature/<name>   # token consumed here by the pre-commit hook
    ```
 
-The token is consumed on the first push after it is created. If the push fails
+The token is consumed on the first commit after it is created. If the commit fails
 for any reason, re-run step 3 before retrying.
 
 **Never use `--no-verify`** to bypass the hook.
