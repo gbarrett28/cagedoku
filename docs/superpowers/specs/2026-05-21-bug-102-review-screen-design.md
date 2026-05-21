@@ -113,7 +113,7 @@ let lastOcrState: PuzzleState | null = null;
 let lastWarpedUrl: string | null = null;
 ```
 
-Both are set immediately before Classic auto-confirm only. The Killer auto-confirm path is unchanged — the user did not request an "Edit OCR" button for Killer.
+Both are set immediately before every auto-confirm (Classic and Killer). For Killer auto-confirm, add the same assignment to the existing path in `handleProcess`.
 
 ### Session revert action
 
@@ -151,7 +151,7 @@ After clicking, the review screen appears with the original OCR layout and warpe
 
 ### Show/hide logic
 
-Show `#edit-ocr-btn` after Classic auto-confirm. Hide it: in the click handler above, in `applyUploadResult` (covers all review-screen entries), and at the start of `handleProcess` (new upload). Show it only after a successful Classic auto-confirm.
+Show `#edit-ocr-btn` after any auto-confirm (Classic or Killer). Hide it: in the click handler above, in `applyUploadResult` (covers all review-screen entries), and at the start of `handleProcess` (new upload). Show it only after a successful auto-confirm.
 
 ---
 
