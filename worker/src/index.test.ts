@@ -48,6 +48,15 @@ const validExport = {
   samples: [{ digit: 3, pixels: new Array<number>(4096).fill(128) }],
 };
 
+const validStallState = {
+  version: 1 as const,
+  exportedAt: '2026-05-21T10:00:00.000Z',
+  appVersion: '2026-05-21 09:00',
+  puzzleType: 'classic' as const,
+  stalledCandidates: Array.from({ length: 9 }, () =>
+    Array.from({ length: 9 }, () => [1, 2, 3])),
+};
+
 const validFeedback = {
   version: 3 as const,
   reportedAt: '2026-05-16T12:00:00.000Z',
@@ -206,6 +215,45 @@ describe('Worker fetch handler', () => {
     );
     expect(res.status).toBe(200);
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://gbarrett28.github.io');
+  });
+
+  // --- Stall state path -------------------------------------------------------
+
+  it('stores stall state in R2 and posts GitHub comment', async () => {
+    const env = makeEnv();
+    const res = await worker.fetch(
+      makeRequest({ contentType: 'application/json', body: validStallState }),
+      env,
+    );
+    expect(res.status).toBe(200);
+
+    const bucket = env.TRAINING_BUCKET as unknown as { put: ReturnType<typeof vi.fn> };
+    expect(bucket.put).toHaveBeenCalledOnce();
+    const [key, body] = bucket.put.mock.calls[0] as [string, string, unknown];
+    expect(key).toMatch(/^stall\/2026-05-21T10:00:00\.000Z-[0-9a-f-]+\.json$/);
+    expect(JSON.parse(body)).toMatchObject({ version: 1, puzzleType: 'classic' });
+
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+    const githubCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(githubCall[0]).toContain('/issues/1/comments');
+    const commentBody = JSON.parse(githubCall[1].body as string) as { body: string };
+    expect(commentBody.body).toContain('Stall state');
+    expect(commentBody.body).toContain('stall/');
+  });
+
+  it('returns 200 even when GitHub comment fails for stall state', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('GitHub down'));
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const res = await worker.fetch(
+      makeRequest({ contentType: 'application/json', body: validStallState }),
+      makeEnv(),
+    );
+    expect(res.status).toBe(200);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[training-worker]'),
+      expect.any(Error),
+    );
   });
 
   // --- Feedback path ----------------------------------------------------------

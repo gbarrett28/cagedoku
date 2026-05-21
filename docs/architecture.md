@@ -119,7 +119,7 @@ Three payload schemas are accepted:
 |---|---|---|---|
 | 1 | `TrainingExport` | User confirms killer puzzle with manual OCR edits | `training/` |
 | 2 | `PuzzleSpecExport` | Solver required MRV backtracking (rules alone stalled) | `puzzle-spec/` |
-| 3 | `StallStateExport` | Solver stalled; full candidate grid captured | `stall/` (planned — see issue #105) |
+| 3 | `StallStateExport` | Solver stalled; full candidate grid captured | `stall/` |
 
 `PuzzleSpecExport` uploads silently (no consent modal) but only when the user has already
 granted consent for digit training. Puzzle specs contain cage layout + totals and are used
@@ -131,8 +131,8 @@ improvement.
 stalls, before backtracking fills the cells. Unlike `PuzzleSpecExport`, this is
 independent of the original cage spec, making replay fast and deterministic.
 `initiateStallUpload()` and `uploadStallState()` in `trainingUpload.ts` mirror the
-existing training-data upload helpers. The Cloudflare Worker handler for this payload
-is not yet implemented (see issue #105).
+existing training-data upload helpers. The Worker stores the payload under `stall/`
+in R2 and posts a comment to issue #1, same as the other upload types.
 
 **Stall fixtures and replay** — `web/src/engine/rules/stall-fixtures.ts` stores known
 stall states as named entries. `solveFromStall(candidates)` in `engine/index.ts` loads a

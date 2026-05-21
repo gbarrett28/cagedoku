@@ -1,5 +1,5 @@
-import { isTrainingExport, isPuzzleSpecExport, isFeedbackReport } from './validate.js';
-import type { TrainingExport, PuzzleSpecExport, FeedbackReport } from './validate.js';
+import { isTrainingExport, isPuzzleSpecExport, isStallStateExport, isFeedbackReport } from './validate.js';
+import type { TrainingExport, PuzzleSpecExport, StallStateExport, FeedbackReport } from './validate.js';
 
 export interface Env {
   TRAINING_BUCKET: R2Bucket;
@@ -83,6 +83,22 @@ export default {
       return new Response('OK', { status: 200, headers: corsHeaders(allowed) });
     }
 
+    if (isStallStateExport(body)) {
+      const data: StallStateExport = body;
+      const maxPending = parseInt(env.MAX_PENDING_UPLOADS, 10);
+      const listed = await env.TRAINING_BUCKET.list({ prefix: 'stall/', limit: maxPending + 1 });
+      if (listed.objects.length >= maxPending) {
+        return new Response('Too many pending uploads — try again later', { status: 429, headers: corsHeaders(allowed) });
+      }
+      const key = `stall/${data.exportedAt}-${crypto.randomUUID()}.json`;
+      await env.TRAINING_BUCKET.put(key, JSON.stringify(data), {
+        httpMetadata: { contentType: 'application/json' },
+        customMetadata: { appVersion: data.appVersion, puzzleType: data.puzzleType },
+      });
+      try { await postStallComment(env, data, key); } catch (err) { console.error('[training-worker] GitHub comment failed:', err); }
+      return new Response('OK', { status: 200, headers: corsHeaders(allowed) });
+    }
+
     if (isFeedbackReport(body)) {
       const data: FeedbackReport = body;
       try { await createFeedbackIssue(env, data); } catch (err) { console.error('[training-worker] GitHub issue creation failed:', err); }
@@ -133,6 +149,16 @@ async function postPuzzleSpecComment(env: Env, data: PuzzleSpecExport, key: stri
   await postToGitHub(
     env,
     `**Puzzle spec** — requires backtracking (${data.puzzleType}), ` +
+    `app ${data.appVersion}, ${data.exportedAt}\n` +
+    `R2 key: \`${key}\``,
+  );
+}
+
+async function postStallComment(env: Env, data: StallStateExport, key: string): Promise<void> {
+  const solved = data.stalledCandidates.flat().filter(c => c.length === 1).length;
+  await postToGitHub(
+    env,
+    `**Stall state** — ${solved}/81 cells solved at stall (${data.puzzleType}), ` +
     `app ${data.appVersion}, ${data.exportedAt}\n` +
     `R2 key: \`${key}\``,
   );
