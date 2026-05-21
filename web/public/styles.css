@@ -886,21 +886,12 @@ body:has(#playing-actions:not([hidden])) #side-panel {
      canvas-col's height. Fix: hide the original photo (not needed for digit
      correction), which doubles canvas-col's height to ~300px, then floor
      canvas-wrapper at 120px so the grid is always visible even if the digit
-     pad shrinks slightly to accommodate. Also constrain the warped image so it
-     does not overflow its column. */
+     pad shrinks slightly to accommodate. */
   body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #original-col {
     display: none;
   }
   body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #canvas-wrapper {
     min-height: 120px;
-  }
-  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #warped-col {
-    overflow: hidden;
-  }
-  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #warped-img {
-    width: auto;
-    height: 100%;
-    max-width: 100%;
   }
 
   /* In playing mode, wrap action group to its own row below COACH + nav buttons */
