@@ -51,7 +51,7 @@ import { GridNotFoundError } from './image/inpImage.js';
 import { UserFacingError } from './session/errors.js';
 import { applyAutoApplyLock } from './autoApplyLock.js';
 import { showHintPill, hideHintPill } from './hintPill.js';
-import { AssertionViolation, buildGitHubIssueUrl } from './session/assertions.js';
+import { AssertionViolation } from './session/assertions.js';
 import { initTutorial, appendCallouts } from './tutorial.js';
 import { resolveDigitKey } from './resolveDigitKey.js';
 
@@ -781,7 +781,10 @@ function clearHintHighlight(): void {
 function showAssertionModal(violation: AssertionViolation): void {
   el<HTMLElement>('assertion-desc').textContent = violation.ctx.description;
   el<HTMLButtonElement>('assertion-submit-btn').onclick = () => {
-    window.open(buildGitHubIssueUrl(violation.ctx), '_blank');
+    const info = `[${violation.ctx.name}] ${violation.ctx.description}\n\nSolution:\n${violation.ctx.solutionJson}`;
+    exceptionForSubmission = info;
+    el<HTMLDialogElement>('assertion-modal').close();
+    el<HTMLButtonElement>('feedback-btn').click();
   };
   (el<HTMLDialogElement>('assertion-modal') as HTMLDialogElement).showModal();
 }
