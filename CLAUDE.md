@@ -258,14 +258,28 @@ npx playwright test --config playwright.dev.config.ts
 **If ANY step fails, DO NOT MERGE.**
 
 Then verify manually — these checks are part of the gate, not optional:
-- Every spec in `docs/specs/` (and `docs/superpowers/specs/`) has been incorporated
-  into the relevant live doc (`docs/architecture.md`, `docs/image-pipeline.md`, etc.)
-  with the actual implementation details — not just a pointer to the spec.
-  Then **delete the spec file**.
-- Every plan in `docs/plans/` (and `docs/superpowers/plans/`) has all steps completed
-  — then **delete the plan file**.
 
-**Do not merge if either doc check fails.**
+### Doc hygiene (mandatory — do not skip)
+
+**Specs** — check all three locations:
+- `docs/specs/`
+- `docs/superpowers/specs/`
+
+For each spec file found: the implementation details must be written into the
+relevant live doc (`docs/architecture.md`, `docs/ui.md`, `docs/image-pipeline.md`,
+etc.) with concrete descriptions of what was actually built — not a summary or a
+pointer back to the spec. Once incorporated, **delete the spec file**.
+
+**Plans** — check all three locations:
+- `docs/plans/`
+- `docs/superpowers/plans/`
+- `~/.claude/plans/`  ← session-scoped plans created by the agent during work
+
+For each plan file found: every `- [ ]` step must be ticked. Once all steps are
+complete, **delete the plan file**. A plan with unchecked steps means work is
+unfinished — do not merge.
+
+**Do not merge if any spec or plan file remains.**
 
 After merging, **delete the feature branch**:
 ```bash
@@ -281,6 +295,20 @@ because `flow.spec.ts` uses `window.__testLoad`, a hook only available in dev bu
 
 Run Playwright only when touching UI rendering, image pipeline, or session flow —
 it runs against the production build and takes ~2–3 min.
+
+## Pre-push Hook
+
+A `pre-push` git hook is committed at `scripts/hooks/pre-push`. It prints the full
+silver gate checklist whenever you push to `master` and — in an interactive terminal —
+requires explicit confirmation before the push proceeds.
+
+Install once after cloning:
+```bash
+bash scripts/hooks/install.sh
+```
+
+The hook is already installed in this working copy. **Never use `--no-verify`** to
+bypass it; if the hook fires, run the silver gate checks first.
 
 ---
 
