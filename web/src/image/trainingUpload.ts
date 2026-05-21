@@ -1,4 +1,4 @@
-import type { PuzzleSpecExport, TrainingExport } from './trainingExport.js';
+import type { PuzzleSpecExport, StallStateExport, TrainingExport } from './trainingExport.js';
 
 const CONSENT_COOKIE = 'training_consent';
 
@@ -24,7 +24,7 @@ export function initiateUpload(
 
 /** Fire-and-forget POST to the Cloudflare Worker. Network errors are swallowed
  *  intentionally — a failed upload must never interrupt the solve flow. */
-function postToWorker(data: TrainingExport | PuzzleSpecExport): void {
+function postToWorker(data: TrainingExport | PuzzleSpecExport | StallStateExport): void {
   const workerUrl = import.meta.env['VITE_TRAINING_WORKER_URL'] as string | undefined;
   if (!workerUrl) return;
   void fetch(workerUrl, {
@@ -46,4 +46,21 @@ export function uploadTrainingData(data: TrainingExport): void {
 export function uploadPuzzleSpec(data: PuzzleSpecExport): void {
   if (!hasConsent()) return;
   postToWorker(data);
+}
+
+/** Fire-and-forget POST of a stall state — assumes consent already granted. */
+export function uploadStallState(data: StallStateExport): void {
+  postToWorker(data);
+}
+
+/** Check consent; if granted POST immediately, otherwise call showConsentModal. */
+export function initiateStallUpload(
+  data: StallStateExport,
+  showConsentModal: () => void,
+): void {
+  if (hasConsent()) {
+    uploadStallState(data);
+  } else {
+    showConsentModal();
+  }
 }
