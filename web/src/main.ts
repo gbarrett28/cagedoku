@@ -10,10 +10,10 @@ import { loadCV, loadRec, loadSplitRec, setCandidatesCache, setState } from './s
 import { logAction, clearActionLog, formatActionLog, getActionLog } from './session/actionLog.js';
 import { loadSettings } from './session/settings.js';
 import { cellLabel } from './engine/rules/_labels.js';
-import { extractTrainingData, buildPuzzleSpecExport } from './image/trainingExport.js';
+import { extractTrainingData, buildStallStateExport } from './image/trainingExport.js';
 import type { TrainingExport } from './image/trainingExport.js';
 import { defaultImagePipelineConfig } from './image/config.js';
-import { initiateUpload, grantConsent, uploadTrainingData, uploadPuzzleSpec } from './image/trainingUpload.js';
+import { initiateUpload, grantConsent, uploadTrainingData, uploadStallState, initiateStallUpload } from './image/trainingUpload.js';
 import { dataToSpec } from './session/specUtils.js';
 import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec, makeClassicGivenDigits } from './engine/fixtures.js';
 import {
@@ -896,7 +896,7 @@ async function handleProcess(): Promise<void> {
       if (layoutResult.errorCells.size === 0 && layoutResult.warnings.length === 0) {
         // Yield to the browser so the loading indicator renders before the solve blocks.
         await new Promise<void>(resolve => setTimeout(resolve, 0));
-        const { board, usedBacktracking } = solveCurrentSpec();
+        const { board, usedBacktracking, stalledCandidates } = solveCurrentSpec();
         let boardComplete = true;
         for (let r = 0; r < 9 && boardComplete; r++)
           for (let c = 0; c < 9 && boardComplete; c++)
@@ -911,19 +911,12 @@ async function handleProcess(): Promise<void> {
           pendingCellThumbs = new Map();
           pendingMergedThumbs = new Map();
           setStatus('');
-          if (usedBacktracking) {
-            uploadPuzzleSpec(buildPuzzleSpecExport(dataToSpec(layoutResult.state.specData)));
-            // Only report for real OCR puzzles (originalImageUrl is set). Test-loaded
-            // puzzles have no image URL and should not trigger the modal.
-            if (state.originalImageUrl !== null) {
-              showAssertionModal(new AssertionViolation({
-                name: 'BacktrackingRequired',
-                description: 'The rule engine could not solve this puzzle without backtracking — the rule set is missing at least one logical technique. Please report so we can identify and implement it.',
-                puzzleSpecJson: JSON.stringify(layoutResult.state.specData),
-                solutionJson: 'null',
-                actionLog: '',
-              }));
-            }
+          if (usedBacktracking && stalledCandidates && state.originalImageUrl !== null) {
+            const stallExport = buildStallStateExport(layoutResult.state.puzzleType, stalledCandidates);
+            initiateStallUpload(
+              stallExport,
+              () => showTrainingConsentModal(() => uploadStallState(stallExport)),
+            );
           }
           return;
         }
@@ -989,7 +982,7 @@ async function handleConfirm(): Promise<void> {
     }
     // Yield so the loading indicator renders before the solve blocks the main thread.
     await new Promise<void>(resolve => setTimeout(resolve, 0));
-    const { board: confirmedBoard, usedBacktracking: confirmUsedBacktracking } = solveCurrentSpec();
+    const { board: confirmedBoard, usedBacktracking: confirmUsedBacktracking, stalledCandidates: confirmStalledCandidates } = solveCurrentSpec();
     const playing = confirmPuzzle(confirmedBoard);
     logAction('confirmed', currentState.puzzleType);
     renderPlayingMode(playing);
@@ -999,19 +992,12 @@ async function handleConfirm(): Promise<void> {
     if (assertionViolation !== null) showAssertionModal(assertionViolation);
 
     // Upload puzzle spec when backtracking was needed (rules alone couldn't solve it).
-    if (confirmUsedBacktracking) {
-      uploadPuzzleSpec(buildPuzzleSpecExport(dataToSpec(currentState.specData)));
-      // Only report for real OCR puzzles (originalImageUrl is set). Test-loaded
-      // puzzles have no image URL and should not trigger the modal.
-      if (currentState.originalImageUrl !== null) {
-        showAssertionModal(new AssertionViolation({
-          name: 'BacktrackingRequired',
-          description: 'The rule engine could not solve this puzzle without backtracking — the rule set is missing at least one logical technique. Please report so we can identify and implement it.',
-          puzzleSpecJson: JSON.stringify(currentState.specData),
-          solutionJson: 'null',
-          actionLog: '',
-        }));
-      }
+    if (confirmUsedBacktracking && confirmStalledCandidates && currentState.originalImageUrl !== null) {
+      const stallExport = buildStallStateExport(currentState.puzzleType, confirmStalledCandidates);
+      initiateStallUpload(
+        stallExport,
+        () => showTrainingConsentModal(() => uploadStallState(stallExport)),
+      );
     }
 
     // Upload training samples when the user confirmed a killer puzzle with edits.
@@ -1027,7 +1013,7 @@ async function handleConfirm(): Promise<void> {
       pendingCellThumbs = new Map();
       pendingMergedThumbs = new Map();
       if (data.sampleCount > 0) {
-        initiateUpload(data, showTrainingConsentModal);
+        initiateUpload(data, (d) => showTrainingConsentModal(() => uploadTrainingData(d)));
       }
     } else {
       pendingCellThumbs = new Map();
@@ -1037,14 +1023,14 @@ async function handleConfirm(): Promise<void> {
   finally { setLoading(false); }
 }
 
-function showTrainingConsentModal(data: TrainingExport): void {
+function showTrainingConsentModal(upload: () => void): void {
   const modal = el<HTMLDialogElement>('training-consent-modal');
   const onceBtn   = el<HTMLButtonElement>('training-consent-once-btn');
   const alwaysBtn = el<HTMLButtonElement>('training-consent-always-btn');
   const skipBtn   = el<HTMLButtonElement>('training-consent-skip-btn');
   const close = (): void => { modal.close(); };
-  onceBtn.onclick   = () => { uploadTrainingData(data); close(); };
-  alwaysBtn.onclick = () => { grantConsent(); uploadTrainingData(data); close(); };
+  onceBtn.onclick   = () => { upload(); close(); };
+  alwaysBtn.onclick = () => { grantConsent(); upload(); close(); };
   skipBtn.onclick   = close;
   modal.showModal();
 }
@@ -1776,7 +1762,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Exposes window.__testShowConsentModal() so Playwright tests can exercise
     // the consent modal without needing a real OCR result.
     (window as unknown as Record<string, unknown>)['__testShowConsentModal'] = () => {
-      showTrainingConsentModal({
+      const mockData: TrainingExport = {
         version: 1,
         exportedAt: new Date().toISOString(),
         appVersion: __BUILD_TIME__,
@@ -1785,7 +1771,8 @@ document.addEventListener('DOMContentLoaded', () => {
         thumbnailSize: 64,
         sampleCount: 1,
         samples: [{ digit: 3, pixels: Array<number>(4096).fill(128) }],
-      });
+      };
+      showTrainingConsentModal(() => uploadTrainingData(mockData));
     };
   }
 });
