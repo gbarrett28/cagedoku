@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildGitHubIssueUrl, validateSudokuSolution, AssertionViolation } from './assertions.js';
+import { validateSudokuSolution, AssertionViolation } from './assertions.js';
 
 // A minimal valid 9×9 sudoku solution for testing
 const VALID_SOLUTION: number[][] = [
@@ -71,19 +71,3 @@ describe('validateSudokuSolution', () => {
   });
 });
 
-describe('buildGitHubIssueUrl', () => {
-  it('returns a URL pointing to the cagedoku issues page', () => {
-    const url = buildGitHubIssueUrl({ name: 'Test', description: 'desc', puzzleSpecJson: '{}', solutionJson: '[]', actionLog: '' });
-    expect(url).toContain('github.com/gbarrett28/cagedoku/issues/new');
-  });
-
-  it('encodes the assertion name in the title parameter', () => {
-    const url = buildGitHubIssueUrl({ name: 'InvalidSolution', description: 'desc', puzzleSpecJson: '{}', solutionJson: '[]', actionLog: '' });
-    expect(url).toContain('InvalidSolution');
-  });
-
-  it('encodes the description in the body parameter', () => {
-    const url = buildGitHubIssueUrl({ name: 'X', description: 'row 3 duplicate', puzzleSpecJson: '{}', solutionJson: '[]', actionLog: '' });
-    expect(decodeURIComponent(url)).toContain('row 3 duplicate');
-  });
-});

@@ -13,34 +13,36 @@ Upload Screen
     │  image processed
     ▼
 Auto-confirm attempt
-    │ clean OCR + valid layout + solver complete        │ any check fails
+    │ clean OCR + auto-confirm conditions met           │ any check fails
     ▼                                                    ▼
 Playing Screen ──► Solution Screen (puzzle complete)    OCR Review Screen (always has error message)
-                                                             │  "Confirm & Solve" pressed, layout valid
-                                                             ▼
-                                                        Playing Screen ──► Solution Screen
+    │  ✏ Edit OCR button visible                             │  "Confirm & Solve" pressed, layout valid
+    ▼                                                         ▼
+OCR Review Screen (user corrects then re-confirms)      Playing Screen ──► Solution Screen
 ```
 
-After processing, the app attempts to auto-confirm the OCR result:
-if the cage layout is structurally valid, totals sum to 405, and the solver
-finds a complete assignment for all 81 cells, the review screen is skipped
-entirely and the user lands directly in Playing mode.
+After processing, the app attempts to auto-confirm the OCR result, skipping the
+review screen entirely and landing the user directly in Playing mode. Auto-confirm
+applies to both Killer and Classic puzzles under specific conditions (see below).
 
 The OCR Review Screen only appears when auto-confirm fails (OCR pipeline
-warning, invalid cage layout, incorrect total sum, or solver stall).
+warning, invalid cage layout, incorrect total sum, solver stall, or Classic with
+incomplete/invalid detected digits).
 **Invariant:** the status bar always contains a non-empty error or warning
 message when the review screen is shown.
 
 The upload panel collapses once processing completes. Navigating back via
-"New puzzle" returns to the upload screen.
+"New puzzle" returns to the upload screen. After any auto-confirm, an **Edit OCR**
+button (✏) appears in the header — clicking it returns to the OCR review screen
+with the original OCR result so the user can correct mis-read digits and re-confirm.
 
 ### Auto-Confirm Logic (implementation)
 
-Auto-confirm applies to **Killer puzzles only**. Classic puzzles always proceed to
-the OCR Review Screen so the user can verify the detected given digits.
+Auto-confirm applies to both **Killer** and **Classic** puzzles, with different
+conditions for each.
 
-`handleProcess()` runs these checks in order on the raw OCR output
-(no draft edits applied):
+**Killer auto-confirm** — `handleProcess()` runs these checks in order on the raw
+OCR output (no draft edits applied):
 
 | # | Check | Failure → status message |
 |---|---|---|
@@ -49,22 +51,42 @@ the OCR Review Screen so the user can verify the detected given digits.
 | 3 | **Sum** — cage totals sum to exactly 405 (returned as `warnings` by `applyDraftLayout()`) | *"Cage totals sum to N (expected 405) — please correct the totals before confirming"* |
 | 4 | **Solver completion** — `solveCurrentSpec()` returns a board where every cell has exactly one candidate | *"Solver could not determine all cells — please check the cage layout and totals"* |
 
+**Classic auto-confirm** — applied after the Killer path has been ruled out
+(`state.puzzleType === 'classic'`). Checks:
+
+| # | Check | Failure |
+|---|---|---|
+| 1 | **No OCR warning** | Go straight to review |
+| 2 | **All 81 cells filled** — `givenDigits` has no zeros | Go to review |
+| 3 | **Valid sudoku** — `validateSudokuSolution(givenDigits)` returns null (no row/col/box duplicates) | Go to review |
+
+If all three pass, `solveCurrentSpec()` is called (which seeds given digits and
+returns immediately — no backtracking needed for a pre-filled grid) and
+`confirmPuzzle()` transitions to Playing mode.
+
+**Both paths** (`solveCurrentSpec()` → `confirmPuzzle()`):
+
 `solveCurrentSpec()` (`web/src/session/actions.ts`) runs `solve()` without
 mutating state and returns a `BoardState`. `solve()` uses constraint-propagation
 rules first and falls back to MRV backtracking if stalled. The completeness
 check (all 81 cells with a single candidate) is done inline in `handleProcess()`.
 This is not a uniqueness proof — it finds one complete assignment. For OCR'd
-newspaper puzzles (always uniquely solvable) this is the appropriate proxy: a
-complete assignment signals a plausible layout.
+newspaper puzzles (always uniquely solvable) this is the appropriate proxy.
 
 `confirmPuzzle(board: BoardState)` takes the board as a mandatory parameter —
 it does not call the solver internally. On the auto-confirm path only one solver
-pass occurs total (in `solveCurrentSpec()`); on the manual "Confirm & Solve"
-path `handleConfirm()` calls `confirmPuzzle(solveCurrentSpec())` — also one pass.
+pass occurs total; on the manual "Confirm & Solve" path `handleConfirm()` calls
+`confirmPuzzle(solveCurrentSpec())` — also one pass.
 
-No training data is uploaded on auto-confirm (`draftEdited` is `false`),
-consistent with the existing behaviour when the user clicks "Confirm & Solve"
-without making manual corrections.
+No training data is uploaded on auto-confirm (`draftEdited` is `false`).
+
+**Edit OCR button** — after any successful auto-confirm (Killer or Classic), the
+`#edit-ocr-btn` (✏) button is shown in the header. The pre-confirm `PuzzleState`
+and `warpedImageUrl` are stored as `lastOcrState` / `lastWarpedUrl` in `main.ts`
+before `confirmPuzzle()` is called. Clicking the button calls `revertToOcr()`
+(in `session/actions.ts`, single line: `setState(ocrState)`) to restore the
+session, then calls `applyUploadResult()` to show the review screen. The Edit OCR
+button is hidden on every new upload and on every review-screen entry.
 
 ---
 
@@ -82,12 +104,11 @@ without making manual corrections.
 
 - After processing, an auto-confirm attempt is made (see Application Flow).
   If it succeeds the user lands directly in Playing mode; the review screen
-  is never shown. Auto-confirm only applies to Killer puzzles — Classic
-  puzzles always proceed to the review screen.
-- If auto-confirm fails (or the puzzle is Classic), the upload panel hides and
-  the OCR Review Screen appears with a non-empty status message. On total OCR
-  failure a blank canvas is shown (no borders, no cage totals) so the user can
-  build the layout from scratch.
+  is never shown. Auto-confirm applies to Killer puzzles (clean layout + solver
+  complete) and Classic puzzles (clean OCR + all 81 digits valid).
+- If auto-confirm fails, the upload panel hides and the OCR Review Screen appears
+  with a non-empty status message. On total OCR failure a blank canvas is shown
+  (no borders, no cage totals) so the user can build the layout from scratch.
 - The only exception to reaching the review screen is an unrecognised file
   format: if the browser cannot decode the selected file as an image, an error
   is shown on the upload screen and the user is asked to choose a different
@@ -119,8 +140,8 @@ Three columns, left to right:
 | Column | Description |
 |---|---|
 | Detected Layout | Interactive canvas — borders and cage totals |
-| Original Photo | Uploaded image for visual comparison |
-| Warped Grid | Perspective-corrected image (always shown) |
+| Original Photo | Uploaded image for visual comparison (hidden on mobile Classic review to save space) |
+| Warped Grid | Perspective-corrected square image — fills available width (`width:100%; aspect-ratio:1`). On mobile Classic review both the digit pad and warped image are visible simultaneously; the page scrolls vertically to reach the Confirm button. |
 
 The detected puzzle type (Killer / Classic) appears in the dropdown in the
 action bar. The user can change it if OCR misdetected the type.

@@ -64,12 +64,43 @@ export function mrvBacktrack(board: BoardState): number[][] | null {
   const cands: Set<number>[][] = Array.from({length: 9}, (_, r) =>
     Array.from({length: 9}, (__, c) => new Set(board.cands(r, c))));
 
-  return search(cands, cageOf, cageTotal, cageCells, { n: 0 });
+  const solution = search(cands, cageOf, cageTotal, cageCells, { n: 0 });
+  if (solution !== null && !gridValid(solution)) {
+    console.error('mrvBacktrack: search returned an invalid solution — treating as unsolvable');
+    return null;
+  }
+  return solution;
 }
 
 // ---------------------------------------------------------------------------
-// Internal search
+// Internal helpers
 // ---------------------------------------------------------------------------
+
+/** Returns true iff the 9×9 grid has no duplicate in any row, column, or 3×3 box. */
+function gridValid(grid: number[][]): boolean {
+  for (let i = 0; i < 9; i++) {
+    const rowSeen = new Set<number>(), colSeen = new Set<number>();
+    for (let j = 0; j < 9; j++) {
+      const rv = grid[i]![j]!;
+      const cv = grid[j]![i]!;
+      if (rowSeen.has(rv) || colSeen.has(cv)) return false;
+      rowSeen.add(rv); colSeen.add(cv);
+    }
+  }
+  for (let br = 0; br < 3; br++) {
+    for (let bc = 0; bc < 3; bc++) {
+      const boxSeen = new Set<number>();
+      for (let r = br * 3; r < br * 3 + 3; r++) {
+        for (let c = bc * 3; c < bc * 3 + 3; c++) {
+          const v = grid[r]![c]!;
+          if (boxSeen.has(v)) return false;
+          boxSeen.add(v);
+        }
+      }
+    }
+  }
+  return true;
+}
 
 /**
  * Check whether a cage's current candidate state is still consistent with its sum constraint.

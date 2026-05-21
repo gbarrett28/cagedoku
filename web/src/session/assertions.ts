@@ -54,15 +54,3 @@ export function validateSudokuSolution(solution: number[][]): string | null {
   }
   return null;
 }
-
-/** Builds a pre-filled GitHub new-issue URL for the given assertion violation. */
-export function buildGitHubIssueUrl(ctx: AssertionContext): string {
-  const title = encodeURIComponent(`[Assertion] ${ctx.name}`);
-  const body = encodeURIComponent(
-    `**Anomaly:** ${ctx.description}\n\n` +
-    `**Puzzle spec:**\n\`\`\`json\n${ctx.puzzleSpecJson}\n\`\`\`\n\n` +
-    `**Solution:**\n\`\`\`json\n${ctx.solutionJson}\n\`\`\`\n\n` +
-    `**Action log:**\n\`\`\`\n${ctx.actionLog}\n\`\`\``,
-  );
-  return `https://github.com/gbarrett28/cagedoku/issues/new?title=${title}&body=${body}`;
-}
