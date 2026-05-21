@@ -287,6 +287,49 @@ test('config button opens config-modal', async ({ page }) => {
 // Hints dropdown
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Wrong-digit display
+// ---------------------------------------------------------------------------
+
+test('wrong digit (vs golden solution, no row/col/box duplicate) is drawn in red (bug 107)', async ({ page }) => {
+  // Use box-cage spec: no cells are auto-placed after confirm, so placing a
+  // single digit in one cell cannot create a row/col/box duplicate.
+  // The only way that cell should show red is via the golden-solution check.
+  await loadBoxCageAndConfirm(page);
+
+  // Read the golden solution for cell (0,0) so we can pick a provably wrong digit.
+  type GetGolden = () => number[][] | null;
+  const goldenSolution = await page.evaluate(() =>
+    (window as unknown as Record<string, GetGolden>)['__getGoldenSolution']?.() ?? null,
+  );
+  expect(goldenSolution).not.toBeNull();
+  const golden00 = goldenSolution![0]![0]!;
+  // Pick any digit that is not the golden digit for (0,0).
+  const wrongDigit = golden00 === 1 ? 2 : 1;
+
+  const canvas = page.locator('#grid-canvas');
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  const cellSize = box!.width / 9;
+  await canvas.click({ position: { x: cellSize * 0.5, y: cellSize * 0.5 } });
+  await page.keyboard.press(String(wrongDigit));
+
+  // Scan canvas-internal pixels for cell (0,0): MARGIN=4, CELL=50.
+  // After the fix, wrong-vs-golden digits must render with red text (#dc2626).
+  // Before the fix they render in blue — no red-dominant pixel exists.
+  const hasRedPixel = await canvas.evaluate((el: HTMLCanvasElement) => {
+    const ctx = el.getContext('2d')!;
+    const MARGIN = 4, CELL = 50;
+    const data = ctx.getImageData(MARGIN, MARGIN, CELL, CELL).data;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i]!, g = data[i + 1]!, b = data[i + 2]!;
+      if (r > 150 && r > g * 3 && r > b * 3) return true;
+    }
+    return false;
+  });
+  expect(hasRedPixel).toBe(true);
+});
+
 test('hints button opens dropdown after confirm', async ({ page }) => {
   await loadAndConfirm(page);
   await expect(page.locator('#hints-dropdown')).toBeHidden();

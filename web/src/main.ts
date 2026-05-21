@@ -283,9 +283,23 @@ function drawDigits(ctx: CanvasRenderingContext2D, state: PuzzleState): void {
       }
     }
   }
-  if (duplicateCells.size > 0) {
+  // Cells wrong vs. the golden solution (placed digit ≠ known correct digit).
+  const wrongCells = new Set<string>();
+  if (state.goldenSolution !== null) {
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        const placed = digitGrid[r]![c]!;
+        const golden = state.goldenSolution[r]![c]!;
+        if (placed !== 0 && golden !== 0 && placed !== golden)
+          wrongCells.add(`${r},${c}`);
+      }
+    }
+  }
+
+  const errorCells = new Set([...duplicateCells, ...wrongCells]);
+  if (errorCells.size > 0) {
     ctx.fillStyle = 'rgba(220, 38, 38, 0.15)';
-    for (const key of duplicateCells) {
+    for (const key of errorCells) {
       const parts = key.split(',').map(Number);
       const r = parts[0]!, c = parts[1]!;
       ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
@@ -304,7 +318,7 @@ function drawDigits(ctx: CanvasRenderingContext2D, state: PuzzleState): void {
       const digit = digitGrid[r]?.[c] ?? 0;
       if (digit > 0) {
         const key = `${r},${c}`;
-        ctx.fillStyle = duplicateCells.has(key) ? '#dc2626'
+        ctx.fillStyle = errorCells.has(key) ? '#dc2626'
           : (state.userGrid !== null && !givenCells.has(key)) ? '#2563eb'
           : '#000';
         ctx.fillText(String(digit), MARGIN + c * CELL + CELL / 2, MARGIN + r * CELL + CELL / 2);
@@ -1808,6 +1822,11 @@ document.addEventListener('DOMContentLoaded', () => {
       draftEdited = false;
       applyUploadResult(state, warpedImageUrl, warning);
     };
+
+    // Exposes the current golden solution for Playwright tests that need to
+    // know the correct digit for a cell to enter a provably wrong digit.
+    (window as unknown as Record<string, unknown>)['__getGoldenSolution'] =
+      () => currentState?.goldenSolution ?? null;
 
     // Exposes window.__testShowConsentModal() so Playwright tests can exercise
     // the consent modal without needing a real OCR result.
