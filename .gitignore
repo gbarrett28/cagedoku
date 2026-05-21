@@ -46,3 +46,4 @@ web/src/**/*.js
 web/vite.config.js
 web/vitest.config.js
 web/playwright.config.js
+.silver-gate-ok

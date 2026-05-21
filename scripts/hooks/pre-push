@@ -3,50 +3,64 @@
 #
 # Install: bash scripts/hooks/install.sh
 #
-# Interactive pushes (human terminal): prints checklist and requires y/Y to proceed.
-# Non-interactive pushes (agent/CI):   prints reminder but allows the push through;
-#                                       CLAUDE.md requires the agent to have already
-#                                       run the silver gate before any master push.
+# Interactive terminal: prints checklist, asks y/N.
+# Non-interactive (agent): blocks unless scripts/hooks/confirm-silver-gate.sh
+#   was run first (which creates a one-time token file).
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+TOKEN="$REPO_ROOT/.silver-gate-ok"
+
+print_checklist() {
+  echo ""
+  echo "┌─────────────────────────────────────────────────────────────┐"
+  echo "│           SILVER GATE  —  pushing to master                 │"
+  echo "├─────────────────────────────────────────────────────────────┤"
+  echo "│  Code checks (run from web/):                               │"
+  echo "│    □ tsc --noEmit                                           │"
+  echo "│    □ npm test -- --reporter=verbose                         │"
+  echo "│    □ npx playwright test                                    │"
+  echo "│    □ npx playwright test --config playwright.dev.config.ts  │"
+  echo "│                                                             │"
+  echo "│  Doc hygiene (all locations):                               │"
+  echo "│    □ docs/specs/          — every spec incorporated into    │"
+  echo "│                             the relevant live doc, DELETED  │"
+  echo "│    □ docs/plans/          — every plan fully done, DELETED  │"
+  echo "│    □ docs/superpowers/plans/ — same                        │"
+  echo "│    □ ~/.claude/plans/     — session plans done, DELETED     │"
+  echo "│    □ Live docs updated to reflect what was actually built   │"
+  echo "│      (architecture.md, ui.md, image-pipeline.md, …)        │"
+  echo "└─────────────────────────────────────────────────────────────┘"
+  echo ""
+}
 
 remote="$1"
 
 while IFS=' ' read -r _local_ref _local_sha remote_ref _remote_sha; do
   if [[ "$remote_ref" == "refs/heads/master" || "$remote_ref" == "refs/heads/main" ]]; then
-    echo ""
-    echo "┌─────────────────────────────────────────────────────────────┐"
-    echo "│           SILVER GATE  —  pushing to master                 │"
-    echo "├─────────────────────────────────────────────────────────────┤"
-    echo "│  Code checks (run from web/):                               │"
-    echo "│    □ tsc --noEmit                                           │"
-    echo "│    □ npm test -- --reporter=verbose                         │"
-    echo "│    □ npx playwright test                                    │"
-    echo "│    □ npx playwright test --config playwright.dev.config.ts  │"
-    echo "│                                                             │"
-    echo "│  Doc hygiene (all locations):                               │"
-    echo "│    □ docs/specs/          — every spec incorporated into    │"
-    echo "│                             the relevant live doc, DELETED  │"
-    echo "│    □ docs/plans/          — every plan fully done, DELETED  │"
-    echo "│    □ docs/superpowers/plans/ — same                        │"
-    echo "│    □ ~/.claude/plans/     — session plans done, DELETED     │"
-    echo "│    □ Live docs updated to reflect what was actually built   │"
-    echo "│      (architecture.md, ui.md, image-pipeline.md, …)        │"
-    echo "└─────────────────────────────────────────────────────────────┘"
-    echo ""
+    print_checklist
 
     if [ -t 1 ]; then
-      # Interactive terminal — require explicit confirmation.
+      # Interactive terminal — ask directly.
       exec < /dev/tty
       read -rp "Silver gate complete? [y/N] " confirm
       if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
         echo "Push aborted. Complete the silver gate first."
         exit 1
       fi
-    else
-      # Non-interactive (agent / CI) — reminder printed; push allowed.
-      # The agent is required by CLAUDE.md to have run the silver gate
-      # before issuing the push command.
-      echo "(Non-interactive — push proceeding. CLAUDE.md requires silver gate was run first.)"
+    elif [ -f "$TOKEN" ]; then
+      # Non-interactive (agent): token present — consume it and allow push.
+      rm "$TOKEN"
+      echo "Silver gate token consumed — push proceeding."
       echo ""
+    else
+      # Non-interactive with no token — block.
+      echo "BLOCKED: no silver gate confirmation token found."
+      echo ""
+      echo "Run the silver gate checks (see CLAUDE.md), then confirm:"
+      echo "  bash scripts/hooks/confirm-silver-gate.sh"
+      echo "  git push origin master"
+      echo ""
+      exit 1
     fi
   fi
 done

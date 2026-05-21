@@ -298,17 +298,38 @@ it runs against the production build and takes ~2–3 min.
 
 ## Pre-push Hook
 
-A `pre-push` git hook is committed at `scripts/hooks/pre-push`. It prints the full
-silver gate checklist whenever you push to `master` and — in an interactive terminal —
-requires explicit confirmation before the push proceeds.
+A `pre-push` git hook is committed at `scripts/hooks/pre-push`. It **always blocks**
+a push to `master` unless the silver gate has been explicitly confirmed:
 
-Install once after cloning:
+- **Interactive terminal (human):** prints the checklist and asks `y/N`.
+- **Non-interactive (agent):** blocks with an error unless
+  `scripts/hooks/confirm-silver-gate.sh` was run immediately before the push.
+
+### Agent push sequence (MANDATORY)
+
+Every time you push to `master`, you MUST follow these steps in order:
+
+1. Run all silver gate code checks (see above).
+2. Complete all doc-hygiene steps (see above).
+3. Run the confirmation script — this reprints the checklist and creates a
+   one-time token:
+   ```bash
+   bash scripts/hooks/confirm-silver-gate.sh
+   ```
+4. Push immediately after:
+   ```bash
+   git push origin master
+   ```
+
+The token is consumed on the first push after it is created. If the push fails
+for any reason, re-run step 3 before retrying.
+
+**Never use `--no-verify`** to bypass the hook.
+
+Install the hook once after cloning:
 ```bash
 bash scripts/hooks/install.sh
 ```
-
-The hook is already installed in this working copy. **Never use `--no-verify`** to
-bypass it; if the hook fires, run the silver gate checks first.
 
 ---
 
