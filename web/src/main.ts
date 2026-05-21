@@ -39,6 +39,7 @@ import {
   getSettingsData,
   saveSettingsData,
   checkSolutionAssertions,
+  revertToOcr,
 } from './session/actions.js';
 import type {
   CandidatesResponse,
@@ -51,7 +52,7 @@ import { GridNotFoundError } from './image/inpImage.js';
 import { UserFacingError } from './session/errors.js';
 import { applyAutoApplyLock } from './autoApplyLock.js';
 import { showHintPill, hideHintPill } from './hintPill.js';
-import { AssertionViolation } from './session/assertions.js';
+import { AssertionViolation, validateSudokuSolution } from './session/assertions.js';
 import { initTutorial, appendCallouts } from './tutorial.js';
 import { resolveDigitKey } from './resolveDigitKey.js';
 
@@ -111,6 +112,10 @@ let reviewErrorCells = new Set<string>(); // "row,col" keys — cages failing Co
 // Bug reporting state
 let pendingBug: { info: string } | null = null;
 let exceptionForSubmission: string | null = null;
+
+// OCR state preserved across auto-confirm for the Edit OCR button.
+let lastOcrState: PuzzleState | null = null;
+let lastWarpedUrl: string | null = null;
 
 // ---------------------------------------------------------------------------
 // Grid rendering
@@ -527,6 +532,7 @@ function buildPlayingCallouts(isKiller: boolean): { id: string; text: string }[]
     { id: 'reveal-btn',     text: 'Reveal the correct digit for the selected cell.' },
     { id: 'digit-1',        text: 'Use these buttons to enter digits. In Candidate mode, they toggle pencil marks instead. On a keyboard, Ctrl+digit works in the opposite mode.' },
     { id: 'new-puzzle-btn', text: 'Start a fresh puzzle.' },
+    { id: 'edit-ocr-btn',   text: 'Return to the OCR review screen to correct any mis-read digits, then re-confirm.' },
     { id: 'logo-k',         text: 'Tap the K badge at any time to restart this tutorial.' },
   ];
   if (isKiller) {
@@ -862,6 +868,7 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
   el<HTMLElement>('playing-actions').hidden = !isClassicReview;
   el<HTMLElement>('upload-panel').hidden = true;
   el<HTMLButtonElement>('new-puzzle-btn').hidden = false;
+  el<HTMLButtonElement>('edit-ocr-btn').hidden = true;
   setStatus(warning ? `Warning: ${warning}` : '');
 }
 
@@ -871,6 +878,9 @@ async function handleProcess(): Promise<void> {
   clearActionLog();
   const f = fileInput.files[0]!;
   logAction('file_selected', `${f.name} (${(f.size / 1024).toFixed(0)} KB)`);
+  el<HTMLButtonElement>('edit-ocr-btn').hidden = true;
+  lastOcrState = null;
+  lastWarpedUrl = null;
   setLoading(true);
   try {
     const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs } = await uploadPuzzle(f);
@@ -906,12 +916,15 @@ async function handleProcess(): Promise<void> {
           for (let c = 0; c < 9 && boardComplete; c++)
             if (board.cands(r, c).size !== 1) boardComplete = false;
         if (boardComplete) {
+          lastOcrState = state;
+          lastWarpedUrl = warpedImageUrl;
           logAction('auto_confirmed');
           const playing = confirmPuzzle(board);
           renderPlayingMode(playing);
           appendCallouts(buildPlayingCallouts(playing.puzzleType !== 'classic'));
           const autoViolation = checkSolutionAssertions(playing);
           if (autoViolation !== null) showAssertionModal(autoViolation);
+          el<HTMLButtonElement>('edit-ocr-btn').hidden = false;
           pendingCellThumbs = new Map();
           pendingMergedThumbs = new Map();
           setStatus('');
@@ -945,8 +958,29 @@ async function handleProcess(): Promise<void> {
       return;
     }
 
-    // Reach here when: OCR produced a warning, or this is a Classic puzzle (never auto-confirmed).
-    // Classic with no OCR warning gets an informational prompt instead of an error.
+    // Classic auto-confirm: if OCR is clean and given digits form a complete valid grid,
+    // skip review and go straight to playing mode.
+    if (warning === null && state.puzzleType === 'classic' && state.givenDigits !== null) {
+      const allFilled = state.givenDigits.every(row => row.every(d => d > 0));
+      if (allFilled && validateSudokuSolution(state.givenDigits) === null) {
+        lastOcrState = state;
+        lastWarpedUrl = warpedImageUrl;
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+        const { board: classicBoard } = solveCurrentSpec();
+        logAction('auto_confirmed', 'classic');
+        const classicPlaying = confirmPuzzle(classicBoard);
+        renderPlayingMode(classicPlaying);
+        appendCallouts(buildPlayingCallouts(false));
+        const classicViolation = checkSolutionAssertions(classicPlaying);
+        if (classicViolation !== null) showAssertionModal(classicViolation);
+        el<HTMLButtonElement>('edit-ocr-btn').hidden = false;
+        setStatus('');
+        return;
+      }
+    }
+
+    // Reach here when: OCR produced a warning, Classic grid is incomplete/invalid,
+    // or this is a Classic puzzle the user needs to review.
     logAction('review_shown', state.puzzleType === 'classic' ? 'classic' : 'ocr warning');
     applyUploadResult(state, warpedImageUrl, warning ?? 'Review the detected digits and press Confirm & Solve');
     appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
@@ -1394,6 +1428,18 @@ document.addEventListener('DOMContentLoaded', () => {
     el<HTMLButtonElement>('reveal-btn').hidden = true;
     el<HTMLInputElement>('file-input').value = '';
     setStatus('');
+  });
+
+  el<HTMLButtonElement>('edit-ocr-btn').addEventListener('click', () => {
+    if (lastOcrState === null) return;
+    revertToOcr(lastOcrState);
+    // Re-initialise draft borders from the saved OCR spec.
+    const ocrSpec = dataToSpec(lastOcrState.specData);
+    draftBorderX = ocrSpec.borderX.map(col => [...col]);
+    draftBorderY = ocrSpec.borderY.map(row => [...row]);
+    draftEdited = false;
+    applyUploadResult(lastOcrState, lastWarpedUrl, null);
+    appendCallouts([{ id: 'confirm-btn', text: 'Correct any OCR errors, then confirm to re-solve.' }]);
   });
 
   el<HTMLButtonElement>('help-btn').addEventListener('click', () => {
