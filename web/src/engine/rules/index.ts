@@ -29,6 +29,7 @@
  * 18  SimpleColouring         — GLOBAL
  * 19  XYZWing                 — GLOBAL
  * 20  WWing                   — COUNT_HIT_TWO
+ * 21  Skyscraper              — GLOBAL
  */
 
 import type { SolverRule } from '../rule.js';
@@ -59,6 +60,7 @@ import { XWing } from './xWing.js';
 import { XYWing } from './xyWing.js';
 import { XYZWing } from './xyzWing.js';
 import { WWing } from './wWing.js';
+import { Skyscraper } from './skyscraper.js';
 
 export {
   CageCandidateFilter,
@@ -88,6 +90,7 @@ export {
   XYWing,
   XYZWing,
   WWing,
+  Skyscraper,
 };
 
 /**
@@ -124,6 +127,7 @@ export function defaultRules(): SolverRule[] {
     new SimpleColouring(),
     new XYZWing(),
     new WWing(),
+    new Skyscraper(),
   ];
   return rules.sort((a, b) => a.priority - b.priority);
 }
