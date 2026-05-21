@@ -9,6 +9,8 @@ import {
   buildEngine,
   userRemoved,
   userVirtualCages,
+  applyAutoPlacements,
+  applyNextAutoPlacement,
 } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
 import type { PuzzleState, Turn, UserAction, VirtualCage } from './types.js';
@@ -183,5 +185,121 @@ describe('DEFAULT_ALWAYS_APPLY_RULES', () => {
   it('contains the expected rule names', () => {
     expect(DEFAULT_ALWAYS_APPLY_RULES).toContain('CageCandidateFilter');
     expect(DEFAULT_ALWAYS_APPLY_RULES).toContain('CellSolutionElimination');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyAutoPlacements / applyNextAutoPlacement — inconsistency guard
+// ---------------------------------------------------------------------------
+
+/** State with 80 cells placed (KNOWN_SOLUTION minus (0,0)) and NakedSingle active. */
+function makeAlmostCompleteState(opts: { wrongAt?: [number, number] } = {}): PuzzleState {
+  const spec = makeTrivialSpec();
+  const userGrid = KNOWN_SOLUTION.map(row => [...row]) as number[][];
+  userGrid[0]![0] = 0; // leave (0,0) blank — NakedSingle will deduce it
+  if (opts.wrongAt) {
+    const [wr, wc] = opts.wrongAt;
+    const gold = KNOWN_SOLUTION[wr]![wc]!;
+    userGrid[wr]![wc] = gold === 9 ? 1 : gold + 1; // wrong digit
+  }
+  return {
+    specData: specToData(spec),
+    cageStates: specToCageStates(spec),
+    userGrid,
+    virtualCages: [],
+    turns: [],
+    alwaysApplyRules: ['NakedSingle', ...DEFAULT_ALWAYS_APPLY_RULES],
+    goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
+    puzzleType: 'killer',
+    givenDigits: null,
+    originalImageUrl: null,
+    warpedImageUrl: null,
+  };
+}
+
+/** State with duplicate digits in userGrid and no goldenSolution — soundness assertion inactive. */
+function makeInternallyInconsistentState(): PuzzleState {
+  const spec = makeTrivialSpec();
+  const userGrid = KNOWN_SOLUTION.map(row => [...row]) as number[][];
+  userGrid[0]![0] = 0; // leave (0,0) blank — NakedSingle would place something
+  // Force row 0 to have a duplicate: (0,1) gets the same digit as (0,2)
+  userGrid[0]![1] = KNOWN_SOLUTION[0]![2]!; // row-duplicate
+  return {
+    specData: specToData(spec),
+    cageStates: specToCageStates(spec),
+    userGrid,
+    virtualCages: [],
+    turns: [],
+    alwaysApplyRules: ['NakedSingle', ...DEFAULT_ALWAYS_APPLY_RULES],
+    goldenSolution: null, // no golden → soundness assertion inactive
+    puzzleType: 'killer',
+    givenDigits: null,
+    originalImageUrl: null,
+    warpedImageUrl: null,
+  };
+}
+
+describe('applyAutoPlacements — inconsistency guard', () => {
+  it('places the deducible digit when board is consistent', () => {
+    const state = makeAlmostCompleteState();
+    const result = applyAutoPlacements(state);
+    expect(result.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
+  });
+
+  it('returns state unchanged when userGrid has row-duplicate and no golden solution', () => {
+    // goldenSolution is null → soundness assertion inactive.
+    // The grid has a row-duplicate (visible inconsistency without needing goldenSolution).
+    // Auto-placements must still be suppressed.
+    const state = makeInternallyInconsistentState();
+    const result = applyAutoPlacements(state);
+    expect(result).toBe(state);
+    expect(result.userGrid![0]![0]).toBe(0);
+  });
+
+  it('returns state unchanged (no auto-placements) when a wrong digit is present', () => {
+    const state = makeAlmostCompleteState({ wrongAt: [0, 1] });
+    const result = applyAutoPlacements(state);
+    expect(result).toBe(state);
+    expect(result.userGrid![0]![0]).toBe(0);
+  });
+
+  it('returns state unchanged when the golden candidate has been explicitly eliminated', () => {
+    const state = makeAlmostCompleteState();
+    const gold = KNOWN_SOLUTION[0]![0]!;
+    const stateWithElim: PuzzleState = {
+      ...state,
+      turns: [makeTurn({ type: 'eliminateCandidate', row: 0, col: 0, digit: gold })],
+    };
+    const result = applyAutoPlacements(stateWithElim);
+    expect(result).toBe(stateWithElim);
+    expect(result.userGrid![0]![0]).toBe(0);
+  });
+});
+
+describe('applyNextAutoPlacement — inconsistency guard', () => {
+  it('places the next deducible digit when board is consistent', () => {
+    const state = makeAlmostCompleteState();
+    const result = applyNextAutoPlacement(state);
+    expect(result).not.toBeNull();
+    expect(result!.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
+  });
+
+  it('returns null when userGrid has row-duplicate and no golden solution', () => {
+    expect(applyNextAutoPlacement(makeInternallyInconsistentState())).toBeNull();
+  });
+
+  it('returns null (suppressed) when a wrong digit is present', () => {
+    const state = makeAlmostCompleteState({ wrongAt: [0, 1] });
+    expect(applyNextAutoPlacement(state)).toBeNull();
+  });
+
+  it('returns null when the golden candidate has been explicitly eliminated', () => {
+    const state = makeAlmostCompleteState();
+    const gold = KNOWN_SOLUTION[0]![0]!;
+    const stateWithElim: PuzzleState = {
+      ...state,
+      turns: [makeTurn({ type: 'eliminateCandidate', row: 0, col: 0, digit: gold })],
+    };
+    expect(applyNextAutoPlacement(stateWithElim)).toBeNull();
   });
 });
