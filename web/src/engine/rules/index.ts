@@ -27,6 +27,8 @@
  * 16  XYWing                  — GLOBAL
  * 17  UniqueRectangle         — GLOBAL
  * 18  SimpleColouring         — GLOBAL
+ * 19  XYZWing                 — GLOBAL
+ * 20  WWing                   — COUNT_HIT_TWO
  */
 
 import type { SolverRule } from '../rule.js';
@@ -55,6 +57,7 @@ import { UniqueRectangle } from './uniqueRectangle.js';
 import { UnitPartitionFilter } from './unitPartitionFilter.js';
 import { XWing } from './xWing.js';
 import { XYWing } from './xyWing.js';
+import { XYZWing } from './xyzWing.js';
 
 export {
   CageCandidateFilter,
@@ -82,6 +85,7 @@ export {
   UnitPartitionFilter,
   XWing,
   XYWing,
+  XYZWing,
 };
 
 /**
@@ -116,6 +120,7 @@ export function defaultRules(): SolverRule[] {
     new XYWing(),
     new UniqueRectangle(),
     new SimpleColouring(),
+    new XYZWing(),
   ];
   return rules.sort((a, b) => a.priority - b.priority);
 }
