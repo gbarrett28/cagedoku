@@ -104,6 +104,40 @@ function isSample(value: unknown): value is TrainingSample {
   return true;
 }
 
+export interface StallStateExport {
+  version: 1;
+  exportedAt: string;
+  appVersion: string;
+  puzzleType: 'killer' | 'classic';
+  stalledCandidates: number[][][];
+}
+
+export function isStallStateExport(value: unknown): value is StallStateExport {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (v['version'] !== 1) return false;
+  if (typeof v['exportedAt'] !== 'string') return false;
+  if (typeof v['appVersion'] !== 'string') return false;
+  if (v['puzzleType'] !== 'killer' && v['puzzleType'] !== 'classic') return false;
+  if (!isStallCandidates(v['stalledCandidates'])) return false;
+  return true;
+}
+
+function isStallCandidates(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length !== 9) return false;
+  for (const row of value as unknown[]) {
+    if (!Array.isArray(row) || (row as unknown[]).length !== 9) return false;
+    for (const cell of row as unknown[]) {
+      if (!Array.isArray(cell)) return false;
+      if ((cell as unknown[]).length === 0) return false;
+      for (const d of cell as unknown[]) {
+        if (typeof d !== 'number') return false;
+      }
+    }
+  }
+  return true;
+}
+
 export interface FeedbackReport {
   version: 3;
   reportedAt: string;
