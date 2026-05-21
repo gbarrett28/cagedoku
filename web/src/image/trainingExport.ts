@@ -4,7 +4,8 @@
  * the recogniser actually saw — so no JPEG re-processing is needed.
  *
  * Also provides PuzzleSpecExport for uploading puzzles that required MRV
- * backtracking, so they can be used to improve the constraint-propagation rules.
+ * backtracking, and StallStateExport for uploading the exact candidate grid
+ * at the moment the rule engine stalled.
  */
 
 import { cellLabel } from '../engine/rules/_labels.js';
@@ -83,6 +84,33 @@ export interface TrainingExport {
  * @param puzzleType  Stored verbatim in the export for downstream filtering.
  * @param subres      Pixels per cell side (from ImagePipelineConfig).
  */
+/**
+ * Uploaded when the rule engine stalls and requires backtracking.
+ * Contains the exact candidate grid at stall time so it can be replayed
+ * against new rules to verify whether they make progress.
+ */
+export interface StallStateExport {
+  version: 1;
+  exportedAt: string;
+  appVersion: string;
+  puzzleType: 'killer' | 'classic';
+  /** 9×9 remaining candidates per cell. Single-element arrays = solved cells. */
+  stalledCandidates: number[][][];
+}
+
+export function buildStallStateExport(
+  puzzleType: 'killer' | 'classic',
+  stalledCandidates: number[][][],
+): StallStateExport {
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    appVersion: __BUILD_TIME__,
+    puzzleType,
+    stalledCandidates,
+  };
+}
+
 export function extractTrainingData(
   cellThumbs: ReadonlyMap<string, Uint8Array[]>,
   cageTotals: readonly (readonly number[])[],
