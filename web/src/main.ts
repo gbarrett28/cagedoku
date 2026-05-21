@@ -913,13 +913,17 @@ async function handleProcess(): Promise<void> {
           setStatus('');
           if (usedBacktracking) {
             uploadPuzzleSpec(buildPuzzleSpecExport(dataToSpec(layoutResult.state.specData)));
-            showAssertionModal(new AssertionViolation({
-              name: 'BacktrackingRequired',
-              description: 'The rule engine could not solve this puzzle without backtracking — the rule set is missing at least one logical technique. Please report so we can identify and implement it.',
-              puzzleSpecJson: JSON.stringify(layoutResult.state.specData),
-              solutionJson: 'null',
-              actionLog: '',
-            }));
+            // Only report for real OCR puzzles (originalImageUrl is set). Test-loaded
+            // puzzles have no image URL and should not trigger the modal.
+            if (state.originalImageUrl !== null) {
+              showAssertionModal(new AssertionViolation({
+                name: 'BacktrackingRequired',
+                description: 'The rule engine could not solve this puzzle without backtracking — the rule set is missing at least one logical technique. Please report so we can identify and implement it.',
+                puzzleSpecJson: JSON.stringify(layoutResult.state.specData),
+                solutionJson: 'null',
+                actionLog: '',
+              }));
+            }
           }
           return;
         }
@@ -997,13 +1001,17 @@ async function handleConfirm(): Promise<void> {
     // Upload puzzle spec when backtracking was needed (rules alone couldn't solve it).
     if (confirmUsedBacktracking) {
       uploadPuzzleSpec(buildPuzzleSpecExport(dataToSpec(currentState.specData)));
-      showAssertionModal(new AssertionViolation({
-        name: 'BacktrackingRequired',
-        description: 'The rule engine could not solve this puzzle without backtracking — the rule set is missing at least one logical technique. Please report so we can identify and implement it.',
-        puzzleSpecJson: JSON.stringify(currentState.specData),
-        solutionJson: 'null',
-        actionLog: '',
-      }));
+      // Only report for real OCR puzzles (originalImageUrl is set). Test-loaded
+      // puzzles have no image URL and should not trigger the modal.
+      if (currentState.originalImageUrl !== null) {
+        showAssertionModal(new AssertionViolation({
+          name: 'BacktrackingRequired',
+          description: 'The rule engine could not solve this puzzle without backtracking — the rule set is missing at least one logical technique. Please report so we can identify and implement it.',
+          puzzleSpecJson: JSON.stringify(currentState.specData),
+          solutionJson: 'null',
+          actionLog: '',
+        }));
+      }
     }
 
     // Upload training samples when the user confirmed a killer puzzle with edits.
