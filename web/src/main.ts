@@ -858,6 +858,7 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
   // by clicking buttons (not just keyboard). The action-group (undo, hints, etc.)
   // stays hidden — those controls are only active in playing mode.
   const isClassicReview = state.puzzleType === 'classic';
+  el<HTMLElement>('completion-msg').hidden = true;
   el<HTMLElement>('playing-actions').hidden = !isClassicReview;
   el<HTMLElement>('upload-panel').hidden = true;
   el<HTMLButtonElement>('new-puzzle-btn').hidden = false;
