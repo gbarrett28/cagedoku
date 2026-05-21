@@ -226,20 +226,20 @@ Untitled.png"), it is at the project root. Read it with the Read tool. Never com
 
 **CRITICAL:** Before creating any commit, you MUST automatically run the **bronze gate** checks.
 
-## Bronze Gate (MANDATORY before every commit)
+## Bronze Gate (MANDATORY before every commit on a feature branch)
 
-Run from the `web/` directory:
+Run the gate script from the repo root:
 
 ```bash
-tsc --noEmit
-tsc -p tsconfig.node.json --noEmit
-npm test
+bash scripts/run-bronze-gate.sh
 ```
 
-**If ANY step fails, DO NOT COMMIT.**
+This runs `tsc --noEmit`, `tsc -p tsconfig.node.json --noEmit`, and `npm test`.
+If all pass it creates a one-time `.bronze-gate-ok` token that the pre-commit hook
+consumes when you commit. **The hook blocks the commit if no token is present.**
 
-Then verify manually — these checks are part of the gate, not optional:
-- Every spec in `docs/specs/` still accurately describes the intended design. Update it if the implementation has diverged.
+Also verify manually (not automated):
+- Every spec in `docs/specs/` still accurately describes the intended design.
 - Every plan in `docs/plans/` has its completed steps checked off.
 
 **Do not commit if either doc check fails.**
@@ -313,27 +313,30 @@ The hook runs `tsc --noEmit` and `tsc -p tsconfig.node.json --noEmit` automatica
 If either fails the commit is blocked. `npm test` is not run in the hook (too slow
 for every commit) but **must** have been run before committing — see Bronze Gate above.
 
-### Master — agent commit sequence (MANDATORY)
+### Master — commit sequence (MANDATORY for agent and human)
 
-Every time you commit to `master` (including merge commits), follow these steps:
+The pre-commit hook requires a silver gate token for every commit on master.
+The token is only created by `scripts/run-silver-gate.sh`, which actually
+executes all the checks — so the token cannot be obtained without running them.
 
-1. Run all silver gate code checks (see above).
-2. Complete all doc-hygiene steps (see above).
-3. Run the confirmation script — reprints the checklist and creates a one-time token:
+Steps every time you commit to `master` (including merge commits):
+
+1. Run the silver gate script from the repo root:
    ```bash
-   bash scripts/hooks/confirm-silver-gate.sh
+   bash scripts/run-silver-gate.sh
    ```
-4. Commit immediately after (merge or direct):
+   This runs all code checks, then prompts to confirm doc hygiene, then
+   creates the `.silver-gate-ok` token.
+2. Commit immediately after (the token is consumed on first use):
    ```bash
-   git merge feature/<name>   # token consumed here by the pre-commit hook
+   git merge feature/<name>   # or git commit
    ```
 
-The token is consumed on the first commit after it is created. If the commit fails
-for any reason, re-run step 3 before retrying.
+If the commit fails for any reason, re-run step 1 before retrying.
 
 **Never use `--no-verify`** to bypass the hook.
 
-Install the hook once after cloning:
+Install the hooks once after cloning:
 ```bash
 bash scripts/hooks/install.sh
 ```

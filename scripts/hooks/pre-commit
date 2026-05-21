@@ -3,16 +3,13 @@
 #
 # Install: bash scripts/hooks/install.sh
 #
-# master/main  — silver gate: requires prior confirmation via
-#                scripts/hooks/confirm-silver-gate.sh (non-interactive)
-#                or y/N prompt (interactive terminal).
+# master/main    — silver gate token required (created by scripts/run-silver-gate.sh)
+# feature branch — bronze gate token required (created by scripts/run-bronze-gate.sh)
 #
-# feature branches — bronze gate: runs tsc checks automatically and
-#                    blocks the commit if they fail.  npm test must have
-#                    been run manually before committing (see CLAUDE.md).
+# The token scripts actually run the checks; requiring the token here means
+# the checks were genuinely executed, not just confirmed on trust.
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-WEB="$REPO_ROOT/web"
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
 
 # ── Silver gate (master / main) ─────────────────────────────────────────────
@@ -20,78 +17,42 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
 if [[ "$BRANCH" == "master" || "$BRANCH" == "main" ]]; then
   TOKEN="$REPO_ROOT/.silver-gate-ok"
 
-  print_silver_checklist() {
+  if [ ! -f "$TOKEN" ]; then
     echo ""
-    echo "┌─────────────────────────────────────────────────────────────┐"
-    echo "│           SILVER GATE  —  committing to master              │"
-    echo "├─────────────────────────────────────────────────────────────┤"
-    echo "│  Code checks (run from web/):                               │"
-    echo "│    □ tsc --noEmit                                           │"
-    echo "│    □ npm test -- --reporter=verbose                         │"
-    echo "│    □ npx playwright test                                    │"
-    echo "│    □ npx playwright test --config playwright.dev.config.ts  │"
-    echo "│                                                             │"
-    echo "│  Doc hygiene (all locations):                               │"
-    echo "│    □ docs/specs/          — every spec incorporated into    │"
-    echo "│                             the relevant live doc, DELETED  │"
-    echo "│    □ docs/plans/          — every plan fully done, DELETED  │"
-    echo "│    □ docs/superpowers/plans/ — same                        │"
-    echo "│    □ ~/.claude/plans/     — session plans done, DELETED     │"
-    echo "│    □ Live docs updated to reflect what was actually built   │"
-    echo "│      (architecture.md, ui.md, image-pipeline.md, …)        │"
-    echo "└─────────────────────────────────────────────────────────────┘"
+    echo "BLOCKED: silver gate token not found."
     echo ""
-  }
-
-  print_silver_checklist
-
-  if [ -t 1 ]; then
-    exec < /dev/tty
-    read -rp "Silver gate complete? [y/N] " confirm
-    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-      echo "Commit aborted. Complete the silver gate first."
-      exit 1
-    fi
-  elif [ -f "$TOKEN" ]; then
-    rm "$TOKEN"
-    echo "Silver gate token consumed — commit proceeding."
+    echo "Run the silver gate (executes all checks + doc-hygiene prompt):"
+    echo "  bash scripts/run-silver-gate.sh"
     echo ""
-  else
-    echo "BLOCKED: no silver gate confirmation token found."
-    echo ""
-    echo "Run the silver gate checks (see CLAUDE.md), then confirm:"
-    echo "  bash scripts/hooks/confirm-silver-gate.sh"
-    echo "  git merge / git commit"
+    echo "Then commit:"
+    echo "  git merge feature/<name>   or   git commit"
     echo ""
     exit 1
   fi
 
+  rm "$TOKEN"
+  echo "Silver gate token consumed — commit proceeding."
+  echo ""
   exit 0
 fi
 
 # ── Bronze gate (feature branches) ──────────────────────────────────────────
 
-echo ""
-echo "[ bronze gate ] Running tsc checks..."
+TOKEN="$REPO_ROOT/.bronze-gate-ok"
 
-cd "$WEB" || { echo "Cannot cd to $WEB"; exit 1; }
-
-if ! npx tsc --noEmit 2>&1; then
+if [ ! -f "$TOKEN" ]; then
   echo ""
-  echo "BLOCKED: tsc --noEmit failed. Fix type errors before committing."
+  echo "BLOCKED: bronze gate token not found."
+  echo ""
+  echo "Run the bronze gate (executes tsc + npm test):"
+  echo "  bash scripts/run-bronze-gate.sh"
+  echo ""
+  echo "Then commit."
+  echo ""
   exit 1
 fi
 
-if ! npx tsc -p tsconfig.node.json --noEmit 2>&1; then
-  echo ""
-  echo "BLOCKED: tsc -p tsconfig.node.json --noEmit failed. Fix type errors before committing."
-  exit 1
-fi
-
-echo "[ bronze gate ] tsc OK"
+rm "$TOKEN"
+echo "Bronze gate token consumed — commit proceeding."
 echo ""
-echo "  Reminder: npm test must also pass before this commit (see CLAUDE.md)."
-echo "  If you have not run it yet, abort with Ctrl-C and run it now."
-echo ""
-
 exit 0
