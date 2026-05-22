@@ -149,8 +149,13 @@ def generate_synthetic_samples(
                 x0 = max(0, int(xs.min()) - margin)
                 x1 = min(arr.shape[1], int(xs.max()) + margin + 1)
                 crop = arr[y0:y1, x0:x1]
+                h_c, w_c = crop.shape
+                side = max(h_c, w_c)
+                square = np.zeros((side, side), dtype=np.uint8)
+                square[(side - h_c) // 2:(side - h_c) // 2 + h_c,
+                       (side - w_c) // 2:(side - w_c) // 2 + w_c] = crop
                 out = np.array(
-                    Image.fromarray(crop).resize((win_size, win_size), Image.LANCZOS),
+                    Image.fromarray(square).resize((win_size, win_size), Image.LANCZOS),
                     dtype=np.uint8,
                 )
                 if out.max() > 0:
