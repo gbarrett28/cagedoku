@@ -311,6 +311,46 @@ flowchart TD
 | Confidence threshold | 0.7 | Vote fraction above which a read is `confident` |
 | Split peak height | 4 px | Minimum column-profile peak to split a two-digit rect |
 
+### Classic digit reading (`readClassicDigits`)
+
+For classic puzzles (and as a fallback for type-switching on killer puzzles),
+`readClassicDigits` extracts the pre-filled given digits from each cell where
+`classicConf[r][c] > 0`.
+
+**Thumbnail extraction — square-padded crop:**
+
+The contour bounding rect for a classic digit is not square (a "1" has an
+aspect ratio of roughly 1:4).  Warping a non-square rect directly to 64×64
+distorts gradient orientations — a thin "1" stretched 4× horizontally produces
+HOG features that can fall inside the "9" decision boundary.
+
+Instead, the bounding rect is padded to a square before warping:
+
+```typescript
+// squarePadSrc(ax, ay, bw, bh) — centres rect in a square of side max(bw, bh)
+const side = Math.max(br.width, br.height);
+const cx   = ax + br.width  / 2;
+const cy   = ay + br.height / 2;
+const src  = [
+  [cx - side/2, cy - side/2], [cx + side/2, cy - side/2],
+  [cx + side/2, cy + side/2], [cx - side/2, cy + side/2],
+];
+```
+
+The resulting 64×64 thumbnail has the digit centred in a square canvas with
+whitespace on the narrower sides, preserving natural aspect ratio for HOG
+feature extraction.
+
+**Return value:** `{ digits: number[][]; thumbs: Map<string, Uint8Array[]> }`
+
+`thumbs` is keyed `"r,c"` (0-indexed) and maps each cell to a single-element
+thumbnail array, making it directly compatible with `extractTrainingData` so
+confirmed classic puzzles upload square-padded training samples automatically.
+
+**Training pipeline note:** `generate_synthetic_samples` in `train_recogniser.py`
+uses the same square-pad → resize approach so training and inference thumbnails
+are produced by the same formula.
+
 ---
 
 ## Stage 6: Joint Constraint Validation
