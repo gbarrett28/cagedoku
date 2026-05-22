@@ -995,35 +995,43 @@ async function handleProcess(): Promise<void> {
   finally { setLoading(false); }
 }
 
+/**
+ * Validates the current review state and prepares it for confirmation.
+ * Returns an error string if the puzzle is invalid, or null if it is ready to solve.
+ * For Killer puzzles this also updates reviewErrorCells and currentState as side effects.
+ */
+function validateCurrentReview(): string | null {
+  if (currentState === null) return null;
+  if (currentState.puzzleType === 'classic') {
+    if (currentState.givenDigits !== null && hasDuplicateDigits(currentState.givenDigits)) {
+      return 'Fix the duplicate digits (highlighted in red) before confirming';
+    }
+    return null;
+  }
+  // Killer: validate cage layout, then check the sum advisory.
+  const result = applyDraftLayout(draftBorderX, draftBorderY, currentState.specData.cageTotals);
+  if (result.errorCells.size > 0) {
+    reviewErrorCells = result.errorCells;
+    redrawGrid();
+    return 'Each cage needs exactly one total in its valid range — highlighted in red';
+  }
+  // Sum outside [360, 450] is a strong signal of OCR errors — block and require correction.
+  if (result.warnings.length > 0) {
+    return result.warnings.join('; ') + ' — please correct the totals before confirming';
+  }
+  reviewErrorCells = new Set();
+  currentState = result.state;
+  return null;
+}
+
 async function handleConfirm(): Promise<void> {
   if (currentState === null) return;
   setLoading(true);
   try {
-    // Cage layout validation is Killer-only — Classic has no cage totals.
-    if (currentState.puzzleType !== 'classic') {
-      const result = applyDraftLayout(
-        draftBorderX, draftBorderY, currentState.specData.cageTotals,
-      );
-      if (result.errorCells.size > 0) {
-        reviewErrorCells = result.errorCells;
-        redrawGrid();
-        setStatus('Each cage needs exactly one total in its valid range — highlighted in red', true);
-        return;
-      }
-      // Sum outside [360, 450] is a strong signal of OCR errors — block and require correction.
-      if (result.warnings.length > 0) {
-        setStatus(result.warnings.join('; ') + ' — please correct the totals before confirming', true);
-        return;
-      }
-      reviewErrorCells = new Set();
-      currentState = result.state;
-    }
-    // Classic: reject if any non-zero digit appears more than once in a row, col, or box.
-    if (currentState.puzzleType === 'classic' && currentState.givenDigits !== null) {
-      if (hasDuplicateDigits(currentState.givenDigits)) {
-        setStatus('Fix the duplicate digits (highlighted in red) before confirming', true);
-        return;
-      }
+    const validationError = validateCurrentReview();
+    if (validationError !== null) {
+      setStatus(validationError, true);
+      return;
     }
 
     // Yield so the loading indicator renders before the solve blocks the main thread.
