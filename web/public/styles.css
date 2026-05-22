@@ -880,32 +880,49 @@ body:has(#playing-actions:not([hidden])) #side-panel {
     display: flex;
   }
 
-  /* Classic OCR review on mobile portrait (digit pad + warped image + confirm all visible):
-     Root cause (bug 112): #warped-col has min-height:auto, so its aspect-ratio:1 warped
-     image forces warped-col to claim ~409px of a ~561px images-row, leaving canvas-col
-     only ~112px. The digit pad then overflows canvas-col into warped-col's area and is
-     hidden behind the warped image. Fix:
-       1. min-height:0 on warped-col lets the flex algorithm treat both cols equally.
-       2. overflow:hidden clips the warped image to warped-col's allocated height.
-       3. flex:2 on canvas-col gives it 2/3 of the space (≈358px), enough for the
-          grid (≈248px) and digit pad (≈110px) to sit comfortably side by side.
-       4. Hide both column headings to reclaim the ~24px each for content. */
+  /* Classic OCR review on mobile portrait: revert the playing-mode fixed-height
+     viewport so both the detected layout and the warped grid appear at full size
+     and the page scrolls vertically to reach the Confirm button.
+     The playing-mode body:has() rules lock body to 100dvh with overflow:hidden —
+     override them with a natural scrollable block flow for the review context. */
   body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #original-col {
     display: none;
   }
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) {
+    height: auto;
+    display: block;
+  }
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) main {
+    flex: none;
+    overflow: visible;
+    margin: 0.75rem auto;
+  }
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #review-panel {
+    flex: none;
+    overflow: visible;
+    padding: 1rem;
+  }
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #images-row {
+    flex: none;
+    flex-wrap: nowrap;
+  }
   body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #canvas-col {
-    flex: 2;
+    flex: none;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    container-type: inline-size; /* reset from 'size' — block axis must grow with content */
+    align-items: stretch;
   }
-  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #detected-layout-heading {
-    display: none;
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #canvas-wrapper {
+    flex: none;
+    width: 100%;
+    max-height: none;
+    aspect-ratio: 1;
   }
-  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #warped-col {
-    min-height: 0;
-    overflow: hidden;
-    flex: 1;
-  }
-  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #warped-col > h2 {
-    display: none;
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #side-panel {
+    max-height: none;
+    overflow-y: visible;
   }
 
   /* In playing mode, wrap action group to its own row below COACH + nav buttons */
