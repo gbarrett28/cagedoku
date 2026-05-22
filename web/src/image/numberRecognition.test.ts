@@ -10,8 +10,34 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { loadNumRecogniser, recognise } from './numberRecognition.js';
+import { loadNumRecogniser, recognise, squarePadSrc } from './numberRecognition.js';
 import type { NumRecogniser } from './numberRecognition.js';
+
+// ---------------------------------------------------------------------------
+// squarePadSrc — pure geometry, no OpenCV needed
+// ---------------------------------------------------------------------------
+
+describe('squarePadSrc', () => {
+  it('square input: corners are unchanged', () => {
+    expect(squarePadSrc(10, 20, 30, 30)).toEqual([
+      [10, 20], [40, 20], [40, 50], [10, 50],
+    ]);
+  });
+
+  it('tall input (bh > bw): pads width symmetrically', () => {
+    // ax=10, ay=20, bw=10, bh=30 → side=30, cx=15, cy=35
+    expect(squarePadSrc(10, 20, 10, 30)).toEqual([
+      [0, 20], [30, 20], [30, 50], [0, 50],
+    ]);
+  });
+
+  it('wide input (bw > bh): pads height symmetrically', () => {
+    // ax=10, ay=20, bw=30, bh=10 → side=30, cx=25, cy=25
+    expect(squarePadSrc(10, 20, 30, 10)).toEqual([
+      [10, 10], [40, 10], [40, 40], [10, 40],
+    ]);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Load model and training data once for the suite

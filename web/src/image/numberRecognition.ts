@@ -594,6 +594,24 @@ export function splitNum(
  * @param classicConf - (9×9) [row][col] confidence from scanCells.
  * @returns (9×9) number[][] of given digits (0 for empty/unrecognised cells).
  */
+/**
+ * Compute square-padded warp source corners for a contour bounding rect.
+ * Centres the rect in a square whose side equals max(bw, bh), preserving
+ * the digit's natural aspect ratio when warped to a square thumbnail.
+ * Returns [[TL],[TR],[BR],[BL]] in image (x, y) coordinates.
+ */
+export function squarePadSrc(ax: number, ay: number, bw: number, bh: number): number[][] {
+  const side = Math.max(bw, bh);
+  const cx   = ax + bw / 2;
+  const cy   = ay + bh / 2;
+  return [
+    [cx - side / 2, cy - side / 2],
+    [cx + side / 2, cy - side / 2],
+    [cx + side / 2, cy + side / 2],
+    [cx - side / 2, cy + side / 2],
+  ];
+}
+
 export function readClassicDigits(
   cv: Cv,
   warpedBlk: OpenCVMat,
