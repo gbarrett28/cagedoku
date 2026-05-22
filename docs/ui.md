@@ -211,8 +211,16 @@ digit recognition, validation) run exactly as for a normal upload.
 If any of checks 1–3 fail, the review screen remains open with an error message
 and the problematic cages highlighted in amber on the canvas.
 
-**Classic** — no cage validation. Confirm immediately runs the solver on the
-detected (and optionally corrected) given digits and transitions to Playing mode.
+**Classic** — Confirm runs one check before solving:
+
+1. **No duplicate digits**: no non-zero digit may appear more than once in any
+   row, column, or 3×3 box. Duplicates are already highlighted in red on the
+   canvas as the user edits; pressing Confirm with duplicates present keeps the
+   review screen open and shows an error message.
+
+If the check passes, the solver runs on the given digits and transitions to
+Playing mode. The invariant is that the Playing screen is never entered with a
+structurally invalid puzzle.
 
 ---
 
