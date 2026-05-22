@@ -4,9 +4,151 @@
 
 **Goal:** Re-extract 35 k+ guardian/observer cage-total digits as square-padded thumbnails, retrain the model, add a fast Vitest accuracy benchmark, then unify the killer extraction path (`splitNum`) to also use square-padded thumbnails.
 
-**Architecture:** A standalone Python script reads `.jpk` cage-total ground truth via a stub class, applies the stored perspective transform, extracts square-padded 64×64 thumbnails, and writes JSON files compatible with `train_recogniser.py`. The accuracy benchmark extends the existing `numberRecognition.test.ts` describe pattern. `splitNum` individual-digit thumbnails switch to `squarePadSrc`; the merged thumbnail (for the split-recogniser) stays tight-crop.
+**Architecture:** A standalone Python script migrates `.jpk` pickle caches to plain JSON, then re-extracts cage-total digits as square-padded 64×64 thumbnails using only cv2/numpy. The accuracy benchmark extends the existing `numberRecognition.test.ts` describe pattern. `splitNum` individual-digit thumbnails switch to `squarePadSrc`; the merged thumbnail (for the split-recogniser) stays tight-crop.
 
 **Tech Stack:** Python/cv2/numpy (extraction), TypeScript/Vitest (accuracy test), OpenCV.js (runtime inference)
+
+---
+
+### Task 0: Migrate `.jpk` → `.json`
+
+**Files:**
+- Create: `web/migrate_pic_cache.py`
+
+The `.jpk` files are Python pickle archives of `PicInfo` objects. All their fields
+are plain numpy arrays that serialise trivially to JSON. After migration the stub
+hack is not needed in the extractor.
+
+JSON schema (`<puzzle>.json` alongside each `.jpg`):
+```json
+{
+  "grid": [[x0,y0],[x1,y1],[x2,y2],[x3,y3]],
+  "cage_totals": [[col0row0, col0row1, ...], ...],
+  "border_x": [[...], ...],
+  "border_y": [[...], ...],
+  "brdrs": [[[...]], ...]
+}
+```
+`cage_totals` remains column-major (`[col][row]`) to match `.jpk` access convention.
+
+- [ ] **Step 1: Create `web/migrate_pic_cache.py`**
+
+```python
+#!/usr/bin/env python3
+"""
+Convert guardian/observer .jpk pickle caches to plain JSON.
+
+Usage
+-----
+    python web/migrate_pic_cache.py
+    python web/migrate_pic_cache.py --puzzle-dirs guardian observer
+    python web/migrate_pic_cache.py --delete-jpk   # remove .jpk after conversion
+
+Each .jpk is written as <name>.json next to the original file.  Skips
+puzzles that already have an up-to-date .json (mtime >= .jpk).
+"""
+
+from __future__ import annotations
+import argparse
+import json
+import logging
+import pickle
+import sys
+import types
+from pathlib import Path
+
+_log = logging.getLogger(__name__)
+
+
+def _register_stub() -> None:
+    for mod in ('killer_sudoku.image', 'killer_sudoku.image.inp_image'):
+        if mod not in sys.modules:
+            sys.modules[mod] = types.ModuleType(mod)
+
+    class PicInfo:
+        pass
+
+    sys.modules['killer_sudoku.image.inp_image'].PicInfo = PicInfo  # type: ignore[attr-defined]
+
+
+def migrate_one(jpk_path: Path, delete_jpk: bool = False) -> bool:
+    """Convert one .jpk to .json.  Returns True if written, False if skipped."""
+    json_path = jpk_path.with_suffix('.json')
+    if json_path.exists() and json_path.stat().st_mtime >= jpk_path.stat().st_mtime:
+        return False   # already up to date
+
+    _register_stub()
+    with open(jpk_path, 'rb') as fh:
+        p = pickle.load(fh)  # noqa: S301 — our own data
+
+    import numpy as np
+    data = {
+        'grid':        np.array(p.grid).tolist(),
+        'cage_totals': np.array(p.cage_totals).tolist(),
+        'border_x':    np.array(p.border_x).tolist(),
+        'border_y':    np.array(p.border_y).tolist(),
+        'brdrs':       np.array(p.brdrs).tolist(),
+    }
+    json_path.write_text(json.dumps(data, separators=(',', ':')), encoding='utf-8')
+    if delete_jpk:
+        jpk_path.unlink()
+    return True
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--puzzle-dirs', nargs='+', default=['guardian', 'observer'])
+    parser.add_argument('--delete-jpk', action='store_true',
+                        help='Delete .jpk files after successful conversion')
+    args = parser.parse_args()
+
+    repo_root = Path(__file__).parent.parent
+    for dir_name in args.puzzle_dirs:
+        puzzle_dir = repo_root / dir_name
+        jpks = sorted(puzzle_dir.glob('*.jpk'))
+        written = sum(migrate_one(p, args.delete_jpk) for p in jpks)
+        _log.info('%s: %d converted, %d already up to date', dir_name, written, len(jpks) - written)
+
+
+if __name__ == '__main__':
+    main()
+```
+
+- [ ] **Step 2: Run the migration**
+
+```bash
+cd /c/Users/geoff/PycharmProjects/killer_sudoku
+python web/migrate_pic_cache.py --delete-jpk
+```
+
+Expected:
+```
+INFO guardian: 465 converted, 0 already up to date
+INFO observer: 424 converted, 0 already up to date
+```
+
+- [ ] **Step 3: Spot-check one converted file**
+
+```bash
+python3 -c "
+import json
+d = json.load(open('guardian/killer_sudoku_0.json'))
+print('Keys:', list(d.keys()))
+print('grid:', d['grid'])
+print('cage_totals nonzero:', sum(1 for col in d['cage_totals'] for v in col if v > 0))
+"
+```
+
+Expected: keys `['grid', 'cage_totals', 'border_x', 'border_y', 'brdrs']`, grid shows 4 corner points, nonzero ~30.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add web/migrate_pic_cache.py
+git commit -m "feat: migrate_pic_cache.py converts .jpk to plain JSON"
+```
 
 ---
 
@@ -92,7 +234,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import pickle
 import sys
 import types
 from datetime import UTC, datetime
@@ -110,8 +251,14 @@ RESOLUTION = 9 * SUBRES  # 1152
 
 
 # ---------------------------------------------------------------------------
-# .jpk deserialisation — stub so deleted killer_sudoku.image is not needed
+# Puzzle cache loading — prefers .json (from migrate_pic_cache.py), falls
+# back to .jpk for puzzles not yet migrated.
 # ---------------------------------------------------------------------------
+
+class _PicData:
+    """Minimal struct matching the PicInfo interface used by the extractor."""
+    __slots__ = ('grid', 'cage_totals', 'border_x', 'border_y', 'brdrs')
+
 
 def _register_stub() -> None:
     for mod in ('killer_sudoku.image', 'killer_sudoku.image.inp_image'):
@@ -124,15 +271,27 @@ def _register_stub() -> None:
     sys.modules['killer_sudoku.image.inp_image'].PicInfo = PicInfo  # type: ignore[attr-defined]
 
 
-def load_jpk(path: Path):
-    """Load a .jpk cache file, returning the PicInfo stub instance.
+def load_pic(jpg_path: Path) -> _PicData:
+    """Load puzzle cache from .json (preferred) or .jpk fallback."""
+    json_path = jpg_path.with_suffix('.json')
+    if json_path.exists():
+        raw = json.loads(json_path.read_text(encoding='utf-8'))
+        p = _PicData()
+        p.grid        = np.array(raw['grid'],        dtype=np.float32)
+        p.cage_totals = np.array(raw['cage_totals'], dtype=np.int64)
+        p.border_x    = np.array(raw['border_x'])
+        p.border_y    = np.array(raw['border_y'])
+        p.brdrs       = np.array(raw['brdrs'])
+        return p
 
-    .jpk files are our own generated data (Python pipeline output) — using
-    pickle here is safe and intentional.
-    """
-    _register_stub()
-    with open(path, 'rb') as fh:
-        return pickle.load(fh)  # noqa: S301 — trusted own data
+    jpk_path = jpg_path.with_suffix('.jpk')
+    if jpk_path.exists():
+        _register_stub()
+        import pickle  # noqa: PLC0415
+        with open(jpk_path, 'rb') as fh:
+            return pickle.load(fh)  # noqa: S301 — our own data
+
+    raise FileNotFoundError(f"No .json or .jpk cache for {jpg_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -224,16 +383,15 @@ def split_bounding_rect(
 
 def extract_puzzle_samples(
     jpg_path: Path,
-    jpk_path: Path,
     subres: int = SUBRES,
 ) -> list[tuple[int, NDArray[np.uint8]]]:
     """Extract (digit_label, 64x64_thumb) pairs from one puzzle image."""
     resolution = 9 * subres
 
     try:
-        pic = load_jpk(jpk_path)
+        pic = load_pic(jpg_path)
     except Exception as exc:
-        _log.warning("Cannot load %s: %s -- skipping", jpk_path.name, exc)
+        _log.warning("Cannot load cache for %s: %s -- skipping", jpg_path.name, exc)
         return []
 
     cage_totals: NDArray[np.int64] = np.array(pic.cage_totals, dtype=np.int64)
@@ -318,11 +476,10 @@ def extract_directory(
     skipped = 0
 
     for jpg in jpgs:
-        jpk = jpg.with_suffix(".jpk")
-        if not jpk.exists():
+        if not jpg.with_suffix('.json').exists() and not jpg.with_suffix('.jpk').exists():
             skipped += 1
             continue
-        samples = extract_puzzle_samples(jpg, jpk, subres)
+        samples = extract_puzzle_samples(jpg, subres)
         all_samples.extend(samples)
 
     _log.info(
