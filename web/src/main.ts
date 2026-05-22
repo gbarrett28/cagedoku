@@ -1054,7 +1054,7 @@ async function handleConfirm(): Promise<void> {
       );
     }
 
-    // Upload training samples when the user confirmed a killer puzzle with edits.
+    // Upload training samples when the user confirmed a puzzle.
     // Thumbnails are captured before state replacement; clear them now regardless.
     if (draftEdited && currentState.puzzleType !== 'classic') {
       const data = extractTrainingData(
@@ -1063,6 +1063,18 @@ async function handleConfirm(): Promise<void> {
         currentState.puzzleType,
         defaultImagePipelineConfig().numberRecognition.subres,
         pendingMergedThumbs,
+      );
+      pendingCellThumbs = new Map();
+      pendingMergedThumbs = new Map();
+      if (data.sampleCount > 0) {
+        initiateUpload(data, (d) => showTrainingConsentModal(() => uploadTrainingData(d)));
+      }
+    } else if (currentState.puzzleType === 'classic' && currentState.givenDigits !== null) {
+      const data = extractTrainingData(
+        pendingCellThumbs,
+        currentState.givenDigits,
+        'classic',
+        defaultImagePipelineConfig().numberRecognition.subres,
       );
       pendingCellThumbs = new Map();
       pendingMergedThumbs = new Map();
