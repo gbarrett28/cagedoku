@@ -54,3 +54,36 @@ export function validateSudokuSolution(solution: number[][]): string | null {
   }
   return null;
 }
+
+/**
+ * Returns true if any non-zero digit appears more than once in the same row,
+ * column, or 3×3 box. Zeros (empty cells) are ignored.
+ */
+export function hasDuplicateDigits(grid: readonly (readonly number[])[]): boolean {
+  for (let r = 0; r < 9; r++) {
+    const seen = new Set<number>();
+    for (let c = 0; c < 9; c++) {
+      const d = grid[r]![c]!;
+      if (d !== 0) { if (seen.has(d)) return true; seen.add(d); }
+    }
+  }
+  for (let c = 0; c < 9; c++) {
+    const seen = new Set<number>();
+    for (let r = 0; r < 9; r++) {
+      const d = grid[r]![c]!;
+      if (d !== 0) { if (seen.has(d)) return true; seen.add(d); }
+    }
+  }
+  for (let br = 0; br < 3; br++) {
+    for (let bc = 0; bc < 3; bc++) {
+      const seen = new Set<number>();
+      for (let dr = 0; dr < 3; dr++) {
+        for (let dc = 0; dc < 3; dc++) {
+          const d = grid[br * 3 + dr]![bc * 3 + dc]!;
+          if (d !== 0) { if (seen.has(d)) return true; seen.add(d); }
+        }
+      }
+    }
+  }
+  return false;
+}

@@ -201,6 +201,22 @@ test('classic puzzle: keyboard digit entry during review is accepted', async ({ 
   await expect(page.locator('#playing-actions')).toBeVisible({ timeout: 5_000 });
 });
 
+test('classic puzzle: confirm with duplicate digit stays on review with error', async ({ page }) => {
+  await loadClassicPuzzle(page);
+  // Cell (0,0) is blank. Row 0 already contains 3 — entering 3 creates a row duplicate.
+  const canvas = page.locator('#grid-canvas');
+  const box = await canvas.boundingBox();
+  const cellSize = box!.width / 9;
+  await canvas.click({ position: { x: cellSize * 0.5, y: cellSize * 0.5 } }); // cell (0,0)
+  await page.locator('#digit-3').click(); // creates a duplicate 3 in row 0
+  await page.locator('#confirm-btn').click();
+  // Must stay on the review screen — NOT transition to playing mode
+  await expect(page.locator('#review-actions')).toBeVisible();
+  await expect(page.locator('#action-group')).toBeHidden();
+  // An error message must be visible
+  await expect(page.locator('#status-msg')).not.toBeEmpty();
+});
+
 test('classic puzzle: confirm transitions to playing mode', async ({ page }) => {
   await loadClassicAndConfirm(page);
   await expect(page.locator('#review-actions')).toBeHidden();

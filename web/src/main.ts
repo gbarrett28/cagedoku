@@ -52,7 +52,7 @@ import { GridNotFoundError } from './image/inpImage.js';
 import { UserFacingError } from './session/errors.js';
 import { applyAutoApplyLock } from './autoApplyLock.js';
 import { showHintPill, hideHintPill } from './hintPill.js';
-import { AssertionViolation, validateSudokuSolution } from './session/assertions.js';
+import { AssertionViolation, hasDuplicateDigits, validateSudokuSolution } from './session/assertions.js';
 import { initTutorial, appendCallouts } from './tutorial.js';
 import { resolveDigitKey } from './resolveDigitKey.js';
 
@@ -1018,6 +1018,14 @@ async function handleConfirm(): Promise<void> {
       reviewErrorCells = new Set();
       currentState = result.state;
     }
+    // Classic: reject if any non-zero digit appears more than once in a row, col, or box.
+    if (currentState.puzzleType === 'classic' && currentState.givenDigits !== null) {
+      if (hasDuplicateDigits(currentState.givenDigits)) {
+        setStatus('Fix the duplicate digits (highlighted in red) before confirming', true);
+        return;
+      }
+    }
+
     // Yield so the loading indicator renders before the solve blocks the main thread.
     await new Promise<void>(resolve => setTimeout(resolve, 0));
     const { board: confirmedBoard, usedBacktracking: confirmUsedBacktracking, stalledCandidates: confirmStalledCandidates } = solveCurrentSpec();

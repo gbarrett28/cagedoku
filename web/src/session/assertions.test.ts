@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateSudokuSolution, AssertionViolation } from './assertions.js';
+import { validateSudokuSolution, AssertionViolation, hasDuplicateDigits } from './assertions.js';
 
 // A minimal valid 9×9 sudoku solution for testing
 const VALID_SOLUTION: number[][] = [
@@ -68,6 +68,54 @@ describe('validateSudokuSolution', () => {
     grid[0]![0] = grid[1]![1]!; // duplicate within top-left box
     const result = validateSudokuSolution(grid);
     expect(result).not.toBeNull();
+  });
+});
+
+describe('hasDuplicateDigits', () => {
+  const empty: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+
+  it('returns false for an all-zero (empty) grid', () => {
+    expect(hasDuplicateDigits(empty)).toBe(false);
+  });
+
+  it('returns false when no digit appears twice in any row, col, or box', () => {
+    expect(hasDuplicateDigits(VALID_SOLUTION)).toBe(false);
+  });
+
+  it('returns false for a partial grid with no duplicates', () => {
+    const partial = empty.map(r => [...r]);
+    partial[0]![0] = 5;
+    partial[0]![1] = 3;
+    partial[1]![0] = 6;
+    expect(hasDuplicateDigits(partial)).toBe(false);
+  });
+
+  it('returns true when a row contains a repeated digit', () => {
+    const grid = empty.map(r => [...r]);
+    grid[0]![0] = 5;
+    grid[0]![4] = 5;
+    expect(hasDuplicateDigits(grid)).toBe(true);
+  });
+
+  it('returns true when a column contains a repeated digit', () => {
+    const grid = empty.map(r => [...r]);
+    grid[0]![2] = 7;
+    grid[5]![2] = 7;
+    expect(hasDuplicateDigits(grid)).toBe(true);
+  });
+
+  it('returns true when a 3×3 box contains a repeated digit', () => {
+    const grid = empty.map(r => [...r]);
+    grid[0]![0] = 4;
+    grid[2]![2] = 4; // same top-left box
+    expect(hasDuplicateDigits(grid)).toBe(true);
+  });
+
+  it('ignores zeros — two zeros in a row are not a duplicate', () => {
+    const grid = empty.map(r => [...r]);
+    grid[0]![0] = 0;
+    grid[0]![1] = 0;
+    expect(hasDuplicateDigits(grid)).toBe(false);
   });
 });
 
