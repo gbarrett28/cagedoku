@@ -618,12 +618,13 @@ export function readClassicDigits(
   rec: NumRecogniser,
   subres: number,
   classicConf: number[][],
-): number[][] {
+): { digits: number[][]; thumbs: Map<string, Uint8Array[]> } {
   const half = subres >> 1;
   // Match scanCells: use the same margin/patchSize so tall digits aren't clipped.
   const margin = (subres / 6) | 0;
   const patchSize = subres - 2 * margin;
-  const givenDigits: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+  const digits: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+  const thumbs = new Map<string, Uint8Array[]>();
 
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
@@ -659,16 +660,16 @@ export function readClassicDigits(
 
       const ax = x0 + br.x;
       const ay = y0 + br.y;
-      const src = [
-        [ax, ay], [ax + br.width, ay],
-        [ax + br.width, ay + br.height], [ax, ay + br.height],
-      ];
+      const src = squarePadSrc(ax, ay, br.width, br.height);
       const thumb = getWarpFromRect(cv, src, warpedBlk, half, half);
       const [rec0] = recognise(rec, [thumb]);
       const d = rec0!.label;
-      if (d > 0) givenDigits[r]![c] = d;
+      if (d > 0) {
+        digits[r]![c] = d;
+        thumbs.set(`${r},${c}`, [thumb]);
+      }
     }
   }
 
-  return givenDigits;
+  return { digits, thumbs };
 }

@@ -212,7 +212,7 @@ export async function parsePuzzleImage(
 
   // --- Classic path ---
   if (puzzleType === 'classic') {
-    const givenDigits = readClassicDigits(cv, warpedBlkMat, rec, subres, classicConf);
+    const { digits: givenDigits, thumbs: classicThumbs } = readClassicDigits(cv, warpedBlkMat, rec, subres, classicConf);
     warpedGryMat.delete(); warpedBlkMat.delete();
 
     // Classic borders: rows separated by full walls, columns open.
@@ -229,7 +229,7 @@ export async function parsePuzzleImage(
     } catch (err) {
       specError = String(err);
     }
-    return { spec, specError, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: new Map(), mergedThumbs: new Map() };
+    return { spec, specError, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: classicThumbs, mergedThumbs: new Map() };
   }
 
   // --- Killer path: Stage 4 border clustering ---
@@ -315,7 +315,7 @@ export async function parsePuzzleImage(
   // Read classic digits before deleting mats — classicConf is all-zero for true Killer
   // puzzles (cheap no-op), but captures given digits if OCR misdetected the type so that
   // the user can switch to Classic via the type dropdown and still get a correct solution.
-  const givenDigits = readClassicDigits(cv, warpedBlkMat, rec, subres, classicConf);
+  const { digits: givenDigits } = readClassicDigits(cv, warpedBlkMat, rec, subres, classicConf);
 
   warpedGryMat.delete();
   warpedBlkMat.delete();
