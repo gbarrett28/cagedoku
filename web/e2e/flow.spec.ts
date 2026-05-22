@@ -373,6 +373,28 @@ test('mobile: classic review — digit pad visible and no overflow', async ({ pa
   expect(await hasHorizontalOverflow(page)).toBe(false);
 });
 
+test('mobile: classic review — digit pad visible when warped image present (bug 112)', async ({ page }) => {
+  // Reproduce bug 112: at 411×748 with a real warped image, warped-col's
+  // aspect-ratio image claimed ~426px, leaving canvas-col only 112px and the
+  // digit pad invisible. Simulate by showing #warped-col with a 1×1 SVG.
+  await page.setViewportSize({ width: 411, height: 748 });
+  await loadClassicPuzzle(page);
+  await page.evaluate(() => {
+    const col = document.getElementById('warped-col')!;
+    const img = document.getElementById('warped-img') as HTMLImageElement;
+    img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><rect width="400" height="400" fill="%23ccc"/></svg>';
+    col.hidden = false;
+  });
+  // All digit buttons must be visible — not buried under the warped image
+  for (const d of [1, 5, 9]) {
+    await expect(page.locator(`#digit-${d}`)).toBeVisible();
+  }
+  // Grid canvas must be usably large (broken state was 120px; fix brings it to ~193px).
+  const canvasWidth = await page.locator('#grid-canvas').evaluate(el => el.getBoundingClientRect().width);
+  expect(canvasWidth).toBeGreaterThanOrEqual(180);
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+});
+
 test('mobile: classic playing — key buttons visible; killer-only buttons absent', async ({ page }) => {
   await atMobileViewport(page);
   await loadClassicAndConfirm(page);

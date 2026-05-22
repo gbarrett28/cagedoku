@@ -880,18 +880,32 @@ body:has(#playing-actions:not([hidden])) #side-panel {
     display: flex;
   }
 
-  /* Classic OCR review on mobile portrait (both digit pad and confirm button visible):
-     canvas-col gets ~175px height in the three-column vertical stack, leaving
-     canvas-wrapper with 0px because the digit-pad's flex-basis (~200px) exceeds
-     canvas-col's height. Fix: hide the original photo (not needed for digit
-     correction), which doubles canvas-col's height to ~300px, then floor
-     canvas-wrapper at 120px so the grid is always visible even if the digit
-     pad shrinks slightly to accommodate. */
+  /* Classic OCR review on mobile portrait (digit pad + warped image + confirm all visible):
+     Root cause (bug 112): #warped-col has min-height:auto, so its aspect-ratio:1 warped
+     image forces warped-col to claim ~409px of a ~561px images-row, leaving canvas-col
+     only ~112px. The digit pad then overflows canvas-col into warped-col's area and is
+     hidden behind the warped image. Fix:
+       1. min-height:0 on warped-col lets the flex algorithm treat both cols equally.
+       2. overflow:hidden clips the warped image to warped-col's allocated height.
+       3. flex:2 on canvas-col gives it 2/3 of the space (≈358px), enough for the
+          grid (≈248px) and digit pad (≈110px) to sit comfortably side by side.
+       4. Hide both column headings to reclaim the ~24px each for content. */
   body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #original-col {
     display: none;
   }
-  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #canvas-wrapper {
-    min-height: 120px;
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #canvas-col {
+    flex: 2;
+  }
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #detected-layout-heading {
+    display: none;
+  }
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #warped-col {
+    min-height: 0;
+    overflow: hidden;
+    flex: 1;
+  }
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #warped-col > h2 {
+    display: none;
   }
 
   /* In playing mode, wrap action group to its own row below COACH + nav buttons */
