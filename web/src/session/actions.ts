@@ -567,13 +567,10 @@ export function checkSolutionAssertions(state: PuzzleState): AssertionViolation 
 // ---------------------------------------------------------------------------
 
 /**
- * Builds the full CandidatesResponse for the current state.
- * Replaces GET /candidates.
+ * Builds CandidatesResponse from an already-constructed BoardState.
+ * Shared by computeCandidates (full solve) and computeAnimationCandidates (skip solve).
  */
-export function computeCandidates(): CandidatesResponse {
-  const state = requireConfirmed();
-  const { board } = buildEngine(state); // engine.solve() called inside buildEngine
-
+function candidatesFromBoard(board: BoardState, state: PuzzleState): CandidatesResponse {
   // Per-cell user-removed lookup
   const removedByCell = new Map<string, Set<number>>();
   for (const [r, c, d] of userRemoved(state)) {
@@ -656,6 +653,27 @@ export function computeCandidates(): CandidatesResponse {
   });
 
   return { cells, cages, virtualCages };
+}
+
+/**
+ * Builds the full CandidatesResponse for the current state.
+ * Replaces GET /candidates.
+ */
+export function computeCandidates(): CandidatesResponse {
+  const state = requireConfirmed();
+  const { board } = buildEngine(state); // engine.solve() called inside buildEngine
+  return candidatesFromBoard(board, state);
+}
+
+/**
+ * Builds a partial CandidatesResponse for the rule-by-rule animation loop,
+ * without running the full solver. Candidates reflect only what has been
+ * eliminated so far (user placements + autoRemovedCandidates), giving a
+ * progressive per-rule display rather than instantly collapsing everything.
+ */
+export function computeAnimationCandidates(state: PuzzleState): CandidatesResponse {
+  const { board } = buildEngine(state, { skipSolve: true });
+  return candidatesFromBoard(board, state);
 }
 
 // ---------------------------------------------------------------------------

@@ -22,6 +22,7 @@ import {
   loadClassicDirect,
   confirmPuzzle,
   computeCandidates,
+  computeAnimationCandidates,
   enterCell,
   enterCellStep,
   getAutoPlacementDelay,
@@ -1112,9 +1113,23 @@ async function handleCellEntry(digit: number): Promise<void> {
       // Animated path: show the user's placement first, then step through each rule.
       setAutoApplyLock(true);
       try {
+        // Synchronous display helper for use during animation.
+        // Uses buildEngine(skipSolve:true) so candidates narrow progressively
+        // one rule at a time, rather than collapsing to the solved state instantly.
+        const animRefresh = (animState: PuzzleState): void => {
+          if (showCandidates) {
+            const data = computeAnimationCandidates(animState);
+            currentCandidates = data;
+            setCandidatesCache(data);
+            redrawGrid();
+          } else {
+            redrawGrid();
+          }
+        };
+
         let state = enterCellStep(selectedCell.row, selectedCell.col, digit);
         currentState = state;
-        refreshDisplay();
+        animRefresh(currentState);
         updateUndoButton(state);
         await new Promise<void>(resolve => { setTimeout(resolve, fastForwardRequested ? 0 : delay); });
         while (true) {
@@ -1129,18 +1144,23 @@ async function handleCellEntry(digit: number): Promise<void> {
           // Show hint pill + highlight for this rule, then wait.
           hintHighlightCells = new Set(step.highlightCells.map(([r, c]) => `${r},${c}`));
           showHintPill(el('hint-pill'), el('hint-pill-label'), step.displayName);
-          refreshDisplay();
+          animRefresh(currentState);
           await new Promise<void>(resolve => { setTimeout(resolve, delay); });
 
-          // Apply the rule's changes and move immediately to the next step.
+          // Apply the rule's changes and immediately show the result before next step.
           currentState = applyAutoApplyStep(currentState, step);
           hintHighlightCells = new Set();
           hideHintPill(el('hint-pill'));
-          refreshDisplay();
+          animRefresh(currentState);
         }
         // Final cleanup after all steps (or fast-forward drain).
+        // Commit the animation result to the global store (auto-placed digits in userGrid)
+        // and clear the transient autoRemovedCandidates before the final full-solve refresh.
         hideHintPill(el('hint-pill'));
         hintHighlightCells = new Set();
+        const finalState: PuzzleState = { ...currentState, autoRemovedCandidates: [] };
+        setState(finalState);
+        currentState = finalState;
         refreshDisplay();
         updateUndoButton(currentState);
       } finally {
