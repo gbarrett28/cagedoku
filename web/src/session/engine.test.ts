@@ -34,6 +34,7 @@ function makeState(): PuzzleState {
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
+    autoRemovedCandidates: [],
   };
 }
 
@@ -214,6 +215,7 @@ function makeAlmostCompleteState(opts: { wrongAt?: [number, number] } = {}): Puz
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
+    autoRemovedCandidates: [],
   };
 }
 
@@ -236,6 +238,7 @@ function makeInternallyInconsistentState(): PuzzleState {
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
+    autoRemovedCandidates: [],
   };
 }
 

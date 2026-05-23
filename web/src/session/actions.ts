@@ -142,6 +142,7 @@ export function loadSpecDirect(spec: PuzzleSpec): UploadResult {
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
+    autoRemovedCandidates: [],
   };
   setState(state);
   return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map(), mergedThumbs: new Map() };
@@ -177,6 +178,7 @@ export function loadClassicDirect(givenDigits: readonly (readonly number[])[]): 
     givenDigits: givenDigits.map(row => [...row]),
     originalImageUrl: null,
     warpedImageUrl: null,
+    autoRemovedCandidates: [],
   };
   setState(state);
   return {
@@ -312,6 +314,7 @@ async function buildStateFromParseResult(
     givenDigits: result.givenDigits,
     originalImageUrl,
     warpedImageUrl,
+    autoRemovedCandidates: [],
   };
 
   setState(state);

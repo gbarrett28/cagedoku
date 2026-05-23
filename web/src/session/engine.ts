@@ -19,7 +19,7 @@
 import { BoardState } from '../engine/boardState.js';
 import { SolverEngine } from '../engine/solverEngine.js';
 import { defaultRules } from '../engine/rules/index.js';
-import type { Cell, Elimination } from '../engine/types.js';
+import type { Cell, Elimination, Placement, RuleStep } from '../engine/types.js';
 import { NoSolnError } from '../solver/errors.js';
 import { dataToSpec, virtualCageKeyFromCage, solutionKey } from './specUtils.js';
 import type { AutoMutation, BoardSnapshot, PuzzleState, Turn, UserAction, VirtualCage } from './types.js';
@@ -117,7 +117,7 @@ export function userEliminations(board: BoardState, userGrid: number[][] | null)
  */
 export function buildEngine(
   state: PuzzleState,
-  { includeHints = false }: { includeHints?: boolean } = {},
+  { includeHints = false, skipSolve = false }: { includeHints?: boolean; skipSolve?: boolean } = {},
 ): { board: BoardState; engine: SolverEngine } {
   const spec = dataToSpec(state.specData);
   const board = new BoardState(spec, { includeVirtualCages: false });
@@ -164,14 +164,17 @@ export function buildEngine(
     const placementElims = userEliminations(board, state.userGrid);
     if (placementElims.length > 0) engine.applyEliminations(placementElims);
 
-    const removed = userRemoved(state);
+    const removed = [
+      ...userRemoved(state),
+      ...(state.autoRemovedCandidates ?? []),
+    ];
     if (removed.length > 0) {
       engine.applyEliminations(
         removed.map(([r, c, d]) => ({ cell: [r, c] as Cell, digit: d })),
       );
     }
 
-    engine.solve();
+    if (!skipSolve) engine.solve();
   } catch (e) {
     if (!(e instanceof NoSolnError)) throw e;
     // Board is contradictory — return as-is so callers can detect the inconsistency
@@ -369,4 +372,88 @@ function captureSnapshot(board: BoardState): BoardSnapshot {
     Array.from({ length: 9 }, (__, c) => [...board.cands(r, c)].sort((a, b) => a - b)),
   );
   return { candidates };
+}
+
+// ---------------------------------------------------------------------------
+// Rule-by-rule auto-apply animation helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the next rule step to be animated, or null when no more rules fire.
+ * Builds the engine from scratch (applying autoRemovedCandidates) and returns
+ * the first consecutive group of mutations from the same rule.
+ */
+export function getNextAutoApplyStep(state: PuzzleState): RuleStep | null {
+  if (state.userGrid === null) return null;
+  // skipSolve: we call engine.solve() manually so we can inspect appliedMutations.
+  const { board, engine } = buildEngine(state, { skipSolve: true });
+
+  // Snapshot candidates before the solve mutates the board — used below to filter
+  // out eliminations the solver reports but that are already absent.
+  const preCands = Array.from({ length: 9 }, (_, r) =>
+    Array.from({ length: 9 }, (__, c) => new Set(board.cands(r, c))),
+  );
+
+  engine.solve();
+  const mutations = engine.appliedMutations;
+  if (mutations.length === 0) return null;
+
+  // Walk consecutive same-rule groups; return the first group that has at least
+  // one change that will actually modify PuzzleState:
+  //   placements — cell is currently empty in userGrid
+  //   eliminations — digit was present in the pre-solve candidate set
+  let i = 0;
+  while (i < mutations.length) {
+    const ruleName = mutations[i]!.ruleName;
+    const placements: Placement[] = [];
+    const eliminations: Elimination[] = [];
+
+    while (i < mutations.length && mutations[i]!.ruleName === ruleName) {
+      const m = mutations[i]!;
+      i++;
+      const r = m['row'] as number;
+      const c = m['col'] as number;
+      const d = m['digit'] as number;
+      if (m.type === 'placement') {
+        if (state.userGrid![r]![c] === 0)
+          placements.push({ cell: [r, c] as Cell, digit: d });
+      } else if (m.type === 'candidate_removed') {
+        if (preCands[r]![c]!.has(d))
+          eliminations.push({ cell: [r, c] as Cell, digit: d });
+      }
+    }
+
+    if (placements.length > 0 || eliminations.length > 0) {
+      const cellSet = new Map<string, Cell>();
+      for (const p of placements) cellSet.set(`${p.cell[0]},${p.cell[1]}`, p.cell);
+      for (const e of eliminations) cellSet.set(`${e.cell[0]},${e.cell[1]}`, e.cell);
+      return {
+        ruleName,
+        displayName: ruleName.replace(/([A-Z])/g, ' $1').trim(),
+        highlightCells: [...cellSet.values()],
+        eliminations,
+        placements,
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Applies a RuleStep to the state: places digits in userGrid and accumulates
+ * eliminations in autoRemovedCandidates so subsequent solver calls do not
+ * re-produce them.
+ */
+export function applyAutoApplyStep(state: PuzzleState, step: RuleStep): PuzzleState {
+  const newGrid = state.userGrid!.map(row => [...row]);
+  for (const p of step.placements) newGrid[p.cell[0]]![p.cell[1]] = p.digit;
+  return {
+    ...state,
+    userGrid: newGrid,
+    autoRemovedCandidates: [
+      ...state.autoRemovedCandidates,
+      ...step.eliminations.map(e => [e.cell[0], e.cell[1], e.digit] as [number, number, number]),
+    ],
+  };
 }

@@ -48,6 +48,7 @@ function makeConfirmedState(): PuzzleState {
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
+    autoRemovedCandidates: [],
   };
   setState(pre);
   return confirmPuzzle(solveCurrentSpec().board);

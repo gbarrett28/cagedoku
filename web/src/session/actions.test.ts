@@ -76,6 +76,7 @@ function makeClassicState(givenDigits: number[][]): PuzzleState {
     givenDigits,
     originalImageUrl: null,
     warpedImageUrl: null,
+    autoRemovedCandidates: [],
   };
   setState(state);
   return state;
@@ -95,6 +96,7 @@ function makeKillerConfirmed(): PuzzleState {
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
+    autoRemovedCandidates: [],
   };
   setState(pre);
   return confirmPuzzle(solveCurrentSpec().board);
@@ -455,6 +457,7 @@ describe('findLastConsistentTurnIdx — bug #30: wrong fallback when no matching
       givenDigits: null,
       originalImageUrl: null,
       warpedImageUrl: null,
+      autoRemovedCandidates: [],
     };
 
     // With the bug: returns turns.length - 1 = 1 (the last unrelated turn).
@@ -494,6 +497,7 @@ describe('findLastConsistentTurnIdx — bug #30: wrong fallback when no matching
       givenDigits: null,
       originalImageUrl: null,
       warpedImageUrl: null,
+      autoRemovedCandidates: [],
     };
 
     expect(findLastConsistentTurnIdx(state)).toBe(1);
@@ -528,6 +532,7 @@ describe('Bug #60 regression — addVirtualCage triggers auto-placements', () =>
       alwaysApplyRules: ['NakedSingle', ...DEFAULT_ALWAYS_APPLY_RULES],
       goldenSolution: null, puzzleType: 'killer',
       givenDigits: null, originalImageUrl: null, warpedImageUrl: null,
+      autoRemovedCandidates: [],
     };
     setState(pre);
     baseState = confirmPuzzle(solveCurrentSpec().board);
@@ -693,6 +698,7 @@ describe('saveSettingsData', () => {
       givenDigits: null as number[][] | null,
       originalImageUrl: null as string | null,
       warpedImageUrl: null as string | null,
+      autoRemovedCandidates: [] as const,
     };
     setState(pre);
 

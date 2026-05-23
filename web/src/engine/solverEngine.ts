@@ -29,12 +29,17 @@ import {
   UnitKind,
   VirtualCageAddition,
   hasProgress,
+  RuleStep,
 } from './types.js';
 import { isStale, SolverQueue } from './workQueue.js';
 
 // ---------------------------------------------------------------------------
 // Module-level helpers
 // ---------------------------------------------------------------------------
+
+function toDisplayName(ruleName: string): string {
+  return ruleName.replace(/([A-Z])/g, ' $1').trim();
+}
 
 function unitKindFromId(unitId: number): UnitKind {
   if (unitId < 9)  return UnitKind.ROW;
@@ -368,5 +373,42 @@ export class SolverEngine {
 
     this.pendingHints = dedupHints(this.pendingHints);
     return this.board;
+  }
+
+  /**
+   * Runs the full solver and returns only the first firing rule's mutations as a
+   * RuleStep. Subsequent mutations are discarded — the caller applies the step to
+   * PuzzleState and rebuilds the engine for the next step.
+   *
+   * Returns null when no rules produce any mutations (board is fully deduced).
+   */
+  solveOneStep(): RuleStep | null {
+    this.solve();
+    if (this.appliedMutations.length === 0) return null;
+
+    const firstName = this.appliedMutations[0]!.ruleName;
+    const eliminations: Elimination[] = [];
+    const placements: Placement[] = [];
+    const cellSet = new Map<string, Cell>();
+
+    for (const m of this.appliedMutations) {
+      if (m.ruleName !== firstName) break;
+      const r = m['row'] as number;
+      const c = m['col'] as number;
+      const d = m['digit'] as number;
+      cellSet.set(`${r},${c}`, [r, c] as Cell);
+      if (m.type === 'candidate_removed')
+        eliminations.push({ cell: [r, c] as Cell, digit: d });
+      else if (m.type === 'placement')
+        placements.push({ cell: [r, c] as Cell, digit: d });
+    }
+
+    return {
+      ruleName: firstName,
+      displayName: toDisplayName(firstName),
+      highlightCells: [...cellSet.values()],
+      eliminations,
+      placements,
+    };
   }
 }

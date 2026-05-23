@@ -110,6 +110,13 @@ export interface PuzzleState {
   readonly originalImageUrl: string | null;
   /** Data URL of the perspective-corrected grid image; null for killers. */
   readonly warpedImageUrl: string | null;
+  /**
+   * [row, col, digit] triples eliminated automatically during the rule-by-rule
+   * animation. Applied by buildEngine on every call so each solver step sees
+   * previously applied eliminations and does not re-produce them.
+   * Rolled back automatically when the user undoes (snapshot restoration).
+   */
+  readonly autoRemovedCandidates: readonly [number, number, number][];
 }
 
 // ---------------------------------------------------------------------------

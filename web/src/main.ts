@@ -24,7 +24,6 @@ import {
   computeCandidates,
   enterCell,
   enterCellStep,
-  stepAutoPlacement,
   getAutoPlacementDelay,
   undo,
   rewind,
@@ -52,6 +51,7 @@ import { GridNotFoundError } from './image/inpImage.js';
 import { UserFacingError } from './session/errors.js';
 import { applyAutoApplyLock } from './autoApplyLock.js';
 import { showHintPill, hideHintPill } from './hintPill.js';
+import { getNextAutoApplyStep, applyAutoApplyStep } from './session/engine.js';
 import { AssertionViolation, findDuplicateCells, hasDuplicateDigits, isCageSumCorrect } from './session/assertions.js';
 import { initTutorial, appendCallouts } from './tutorial.js';
 import { resolveDigitKey } from './resolveDigitKey.js';
@@ -1109,7 +1109,7 @@ async function handleCellEntry(digit: number): Promise<void> {
       refreshDisplay();
       updateUndoButton(state);
     } else {
-      // Animated path: show the user's placement first, then step through auto-placements.
+      // Animated path: show the user's placement first, then step through each rule.
       setAutoApplyLock(true);
       try {
         let state = enterCellStep(selectedCell.row, selectedCell.col, digit);
@@ -1118,21 +1118,31 @@ async function handleCellEntry(digit: number): Promise<void> {
         updateUndoButton(state);
         await new Promise<void>(resolve => { setTimeout(resolve, fastForwardRequested ? 0 : delay); });
         while (true) {
+          const step = getNextAutoApplyStep(currentState);
+          if (step === null) break;
+
           if (fastForwardRequested) {
-            // Drain all remaining auto-placements synchronously — one DOM update at the end.
-            let ff: PuzzleState | null;
-            while ((ff = stepAutoPlacement()) !== null) currentState = ff;
-            refreshDisplay();
-            updateUndoButton(currentState);
-            break;
+            currentState = applyAutoApplyStep(currentState, step);
+            continue;
           }
-          const next = stepAutoPlacement();
-          if (next === null) break;
-          currentState = next;
+
+          // Show hint pill + highlight for this rule, then wait.
+          hintHighlightCells = new Set(step.highlightCells.map(([r, c]) => `${r},${c}`));
+          showHintPill(el('hint-pill'), el('hint-pill-label'), step.displayName);
           refreshDisplay();
-          updateUndoButton(next);
           await new Promise<void>(resolve => { setTimeout(resolve, delay); });
+
+          // Apply the rule's changes and move immediately to the next step.
+          currentState = applyAutoApplyStep(currentState, step);
+          hintHighlightCells = new Set();
+          hideHintPill(el('hint-pill'));
+          refreshDisplay();
         }
+        // Final cleanup after all steps (or fast-forward drain).
+        hideHintPill(el('hint-pill'));
+        hintHighlightCells = new Set();
+        refreshDisplay();
+        updateUndoButton(currentState);
       } finally {
         setAutoApplyLock(false);
       }
