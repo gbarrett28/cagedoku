@@ -979,6 +979,24 @@ async function handleProcess(): Promise<void> {
           if (classicViolation !== null) showAssertionModal(classicViolation);
           el<HTMLButtonElement>('edit-ocr-btn').hidden = false;
           setStatus('');
+          // Mirror the killer auto-confirm: upload stall state if backtracking
+          // was needed, and upload OCR thumbnails. Both paths trigger consent.
+          // Note: a direct E2E test of this path is impractical (requires a real
+          // 81/81-digit OCR result); coverage comes from the manual-confirm path
+          // tests and the underlying upload-function unit tests.
+          if (classicUsedBt && classicStalled && state.originalImageUrl !== null) {
+            const classicStallExport = buildStallStateExport('classic', classicStalled);
+            initiateStallUpload(
+              classicStallExport,
+              () => showTrainingConsentModal(() => uploadStallState(classicStallExport)),
+            );
+          }
+          clearAndUploadTrainingData(extractTrainingData(
+            pendingCellThumbs,
+            state.givenDigits,
+            'classic',
+            defaultImagePipelineConfig().numberRecognition.subres,
+          ));
           return;
         }
         applyUploadResult(state, warpedImageUrl, null);
@@ -1873,6 +1891,21 @@ document.addEventListener('DOMContentLoaded', () => {
       draftBorderY = spec.borderY.map(row => [...row]);
       draftEdited = false;
       applyUploadResult(state, warpedImageUrl, warning);
+    };
+
+    // Exposes window.__testSetPendingThumbs() so Playwright tests can inject
+    // fake OCR thumbnails into pendingCellThumbs before calling __testLoad.
+    // This lets tests verify that the confirm flow triggers training-data upload.
+    // Key format: "row,col"; value: one Uint8Array per digit in the cage total.
+    (window as unknown as Record<string, unknown>)['__testSetPendingThumbs'] = (
+      entries: Record<string, number[][]>,
+    ) => {
+      pendingCellThumbs = new Map(
+        Object.entries(entries).map(([key, arrays]) => [
+          key,
+          arrays.map(a => new Uint8Array(a)),
+        ]),
+      );
     };
 
     // Exposes window.__testShowConsentModal() so Playwright tests can exercise

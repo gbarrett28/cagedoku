@@ -440,6 +440,40 @@ test('mobile: header buttons visible at 375 px', async ({ page }) => {
 // Training consent modal
 // ---------------------------------------------------------------------------
 
+test('classic confirm triggers training-consent modal when OCR thumbnails are pending', async ({ page }) => {
+  // This test covers the manual-confirm path for Classic puzzles.  The classic
+  // auto-confirm path (all 81 given digits detected) is not exercisable via
+  // __testLoad because loadClassicDirect always returns warning != null, which
+  // bypasses auto-confirm; a dedicated image-pipeline test with a fully-filled
+  // puzzle image would be needed for that branch.
+  //
+  // Key: "0,1" → row 0, col 1; KNOWN_SOLUTION[0][1] = 3 (single digit).
+  // One thumbnail entry per digit so extractTrainingData produces sampleCount=1.
+  const fakePixels = Array<number>(4096).fill(128);
+
+  await page.addInitScript(() => localStorage.setItem('coach_tutorial_suppressed', 'true'));
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => '__testLoad' in window && '__testSetPendingThumbs' in window);
+
+  // Inject fake thumbnails BEFORE __testLoad so they survive into the confirm step.
+  // (__testLoad('classic') does not reset pendingCellThumbs.)
+  await page.evaluate((pixels) => {
+    type SetThumbs = (e: Record<string, number[][]>) => void;
+    (window as unknown as Record<string, SetThumbs>)['__testSetPendingThumbs']!({ '0,1': [pixels] });
+    (window as unknown as Record<string, (s?: string) => void>)['__testLoad']!('classic');
+  }, fakePixels);
+
+  await expect(page.locator('#review-panel')).toBeVisible({ timeout: 5_000 });
+
+  // Confirm without a consent cookie — the training modal must appear.
+  await page.locator('#confirm-btn').click();
+  await expect(page.locator('#training-consent-modal')).toBeVisible({ timeout: 3_000 });
+
+  // Clean up.
+  await page.locator('#training-consent-skip-btn').click();
+  await expect(page.locator('#training-consent-modal')).toBeHidden();
+});
+
 async function openConsentModal(page: Page): Promise<void> {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => '__testShowConsentModal' in window);
