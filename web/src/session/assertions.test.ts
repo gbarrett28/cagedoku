@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateSudokuSolution, AssertionViolation, hasDuplicateDigits, classicDuplicateCells } from './assertions.js';
+import { validateSudokuSolution, AssertionViolation, hasDuplicateDigits, classicDuplicateCells, isCageSumCorrect } from './assertions.js';
 
 // A minimal valid 9×9 sudoku solution for testing
 const VALID_SOLUTION: number[][] = [
@@ -175,6 +175,53 @@ describe('classicDuplicateCells', () => {
     const grid = empty.map(r => [...r]);
     grid[0]![0] = 1;
     expect(classicDuplicateCells(grid)).toEqual(new Set());
+  });
+});
+
+describe('isCageSumCorrect', () => {
+  // Helper: build a flat 9×9 grid filled with zeros, then apply overrides.
+  const makeGrid = (overrides: [number, number, number][]): number[][] => {
+    const g = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    for (const [r, c, d] of overrides) g[r]![c] = d;
+    return g;
+  };
+  const makeRegions = (map: [number, number, number][]): number[][] => {
+    const g = Array.from({ length: 9 }, () => new Array<number>(9).fill(-1));
+    for (const [r, c, id] of map) g[r]![c] = id;
+    return g;
+  };
+  const makeTotals = (map: [number, number, number][]): number[][] => {
+    const g = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    for (const [r, c, t] of map) g[r]![c] = t;
+    return g;
+  };
+
+  it('returns true when a single cage sums to its total', () => {
+    const grid = makeGrid([[0, 0, 3], [0, 1, 4]]);
+    const regions = makeRegions([[0, 0, 1], [0, 1, 1]]);
+    const totals = makeTotals([[0, 0, 7]]);
+    expect(isCageSumCorrect(grid, regions, totals)).toBe(true);
+  });
+
+  it('returns false when a cage sum does not match its total', () => {
+    const grid = makeGrid([[0, 0, 3], [0, 1, 4]]);
+    const regions = makeRegions([[0, 0, 1], [0, 1, 1]]);
+    const totals = makeTotals([[0, 0, 8]]); // 3+4=7, not 8
+    expect(isCageSumCorrect(grid, regions, totals)).toBe(false);
+  });
+
+  it('returns true when all of several cages sum correctly', () => {
+    const grid = makeGrid([[0, 0, 5], [0, 1, 2], [1, 0, 1], [1, 1, 9]]);
+    const regions = makeRegions([[0, 0, 1], [0, 1, 1], [1, 0, 2], [1, 1, 2]]);
+    const totals = makeTotals([[0, 0, 7], [1, 0, 10]]);
+    expect(isCageSumCorrect(grid, regions, totals)).toBe(true);
+  });
+
+  it('returns false when one cage is wrong among several correct ones', () => {
+    const grid = makeGrid([[0, 0, 5], [0, 1, 2], [1, 0, 1], [1, 1, 9]]);
+    const regions = makeRegions([[0, 0, 1], [0, 1, 1], [1, 0, 2], [1, 1, 2]]);
+    const totals = makeTotals([[0, 0, 7], [1, 0, 99]]); // cage 2 wrong
+    expect(isCageSumCorrect(grid, regions, totals)).toBe(false);
   });
 });
 

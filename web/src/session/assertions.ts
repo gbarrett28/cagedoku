@@ -113,3 +113,24 @@ export function classicDuplicateCells(grid: readonly (readonly number[])[]): Set
         [br * 3 + Math.floor(k / 3), bc * 3 + (k % 3)]));
   return errorCells;
 }
+
+/** Returns true when every cage's actual digit sum matches its declared total.
+ *  Cells with region id < 0 or total === 0 are ignored. */
+export function isCageSumCorrect(
+  grid: readonly (readonly number[])[],
+  regions: readonly (readonly number[])[],
+  cageTotals: readonly (readonly number[])[],
+): boolean {
+  const sums = new Map<number, number>();
+  for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
+    const id = regions[r]?.[c] ?? -1;
+    if (id >= 0) sums.set(id, (sums.get(id) ?? 0) + (grid[r]?.[c] ?? 0));
+  }
+  for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
+    const total = cageTotals[r]?.[c] ?? 0;
+    if (total === 0) continue;
+    const id = regions[r]?.[c] ?? -1;
+    if (id >= 0 && (sums.get(id) ?? 0) !== total) return false;
+  }
+  return true;
+}

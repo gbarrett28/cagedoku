@@ -52,7 +52,7 @@ import { GridNotFoundError } from './image/inpImage.js';
 import { UserFacingError } from './session/errors.js';
 import { applyAutoApplyLock } from './autoApplyLock.js';
 import { showHintPill, hideHintPill } from './hintPill.js';
-import { AssertionViolation, classicDuplicateCells, hasDuplicateDigits } from './session/assertions.js';
+import { AssertionViolation, classicDuplicateCells, hasDuplicateDigits, isCageSumCorrect } from './session/assertions.js';
 import { initTutorial, appendCallouts } from './tutorial.js';
 import { resolveDigitKey } from './resolveDigitKey.js';
 
@@ -267,20 +267,7 @@ function drawDigits(ctx: CanvasRenderingContext2D, state: PuzzleState): void {
     state.userGrid !== null ? state.userGrid : (state.givenDigits ?? null);
   if (digitGrid === null) return;
 
-  const duplicateCells = new Set<string>();
-  for (let r = 0; r < 9; r++) {
-    for (let c = 0; c < 9; c++) {
-      const d = digitGrid[r]?.[c] ?? 0;
-      if (d === 0) continue;
-      for (let cc = 0; cc < 9; cc++) { if (cc !== c && (digitGrid[r]?.[cc] ?? 0) === d) duplicateCells.add(`${r},${c}`); }
-      for (let rr = 0; rr < 9; rr++) { if (rr !== r && (digitGrid[rr]?.[c] ?? 0) === d) duplicateCells.add(`${r},${c}`); }
-      const br = Math.floor(r / 3) * 3; const bc = Math.floor(c / 3) * 3;
-      for (let dr = 0; dr < 3; dr++) for (let dc = 0; dc < 3; dc++) {
-        const rr = br + dr; const cc = bc + dc;
-        if ((rr !== r || cc !== c) && (digitGrid[rr]?.[cc] ?? 0) === d) duplicateCells.add(`${r},${c}`);
-      }
-    }
-  }
+  const duplicateCells = classicDuplicateCells(digitGrid);
   if (duplicateCells.size > 0) {
     ctx.fillStyle = 'rgba(220, 38, 38, 0.15)';
     for (const key of duplicateCells) {
@@ -404,17 +391,7 @@ function isGridSolved(state: PuzzleState): boolean {
     }
   }
   if (state.puzzleType !== 'classic') {
-    const sums = new Map<number, number>();
-    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
-      const id = state.specData.regions[r]?.[c] ?? -1;
-      if (id >= 0) sums.set(id, (sums.get(id) ?? 0) + grid[r]![c]!);
-    }
-    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
-      const total = state.specData.cageTotals[r]?.[c] ?? 0;
-      if (total === 0) continue;
-      const id = state.specData.regions[r]?.[c] ?? -1;
-      if (id >= 0 && (sums.get(id) ?? 0) !== total) return false;
-    }
+    if (!isCageSumCorrect(grid, state.specData.regions, state.specData.cageTotals)) return false;
   }
   return true;
 }
@@ -1046,6 +1023,14 @@ function validateCurrentReview(): string | null {
   return null;
 }
 
+function clearAndUploadTrainingData(data: TrainingExport | null): void {
+  pendingCellThumbs = new Map();
+  pendingMergedThumbs = new Map();
+  if (data !== null && data.sampleCount > 0) {
+    initiateUpload(data, d => showTrainingConsentModal(() => uploadTrainingData(d)));
+  }
+}
+
 async function handleConfirm(): Promise<void> {
   if (currentState === null) return;
   setLoading(true);
@@ -1079,33 +1064,22 @@ async function handleConfirm(): Promise<void> {
     // Upload training samples when the user confirmed a puzzle.
     // Thumbnails are captured before state replacement; clear them now regardless.
     if (draftEdited && currentState.puzzleType !== 'classic') {
-      const data = extractTrainingData(
+      clearAndUploadTrainingData(extractTrainingData(
         pendingCellThumbs,
         currentState.specData.cageTotals,
         currentState.puzzleType,
         defaultImagePipelineConfig().numberRecognition.subres,
         pendingMergedThumbs,
-      );
-      pendingCellThumbs = new Map();
-      pendingMergedThumbs = new Map();
-      if (data.sampleCount > 0) {
-        initiateUpload(data, (d) => showTrainingConsentModal(() => uploadTrainingData(d)));
-      }
+      ));
     } else if (currentState.puzzleType === 'classic' && currentState.givenDigits !== null) {
-      const data = extractTrainingData(
+      clearAndUploadTrainingData(extractTrainingData(
         pendingCellThumbs,
         currentState.givenDigits,
         'classic',
         defaultImagePipelineConfig().numberRecognition.subres,
-      );
-      pendingCellThumbs = new Map();
-      pendingMergedThumbs = new Map();
-      if (data.sampleCount > 0) {
-        initiateUpload(data, (d) => showTrainingConsentModal(() => uploadTrainingData(d)));
-      }
+      ));
     } else {
-      pendingCellThumbs = new Map();
-      pendingMergedThumbs = new Map();
+      clearAndUploadTrainingData(null);
     }
   } catch (e) { setStatus(`Confirm failed: ${String(e)}`, true); }
   finally { setLoading(false); }
