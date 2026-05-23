@@ -16,15 +16,16 @@
     <span class="header-sub">Sudoku Coaching App</span>
     <span id="load-time" class="header-sub" style="font-size:0.75em;opacity:0.6;margin-left:auto;margin-right:0.5rem"></span>
     <!-- Action group: visible in playing mode only -->
-    <div id="action-group" class="hints-anchor" hidden>
+    <div id="action-group" hidden>
       <button id="undo-btn" class="btn-secondary btn-icon" disabled data-tooltip="Undo">↩</button>
-      <button id="hints-btn" class="btn-secondary btn-icon" disabled data-tooltip="Hints">💡</button>
-      <div id="hints-dropdown" class="hints-dropdown" hidden></div>
+      <div class="hints-area">
+        <button id="hints-btn" class="btn-secondary btn-icon" disabled data-tooltip="Hints">💡</button>
+        <button id="fast-forward-btn" class="btn-secondary btn-icon" hidden data-tooltip="Fast forward">⏩</button>
+      </div>
       <button id="mode-toggle" class="mode-toggle" hidden data-tooltip="Toggle candidate edit mode"><span class="mode-opt">N</span><span class="mode-sep">|</span><span class="mode-opt">C</span></button>
       <button id="inspect-cage-btn" class="btn-secondary btn-icon" hidden data-tooltip="Inspect cage">🔍</button>
       <button id="virtual-cage-btn" class="btn-secondary btn-icon" hidden data-tooltip="Virtual cage">➕</button>
       <button id="reveal-btn" class="btn-secondary btn-icon" hidden data-tooltip="Reveal">👁</button>
-      <button id="fast-forward-btn" class="btn-secondary" hidden data-tooltip="Skip animation">⏩ Fast Forward</button>
     </div>
     <button id="new-puzzle-btn" class="btn-secondary btn-icon" hidden data-tooltip="New puzzle">🏠</button>
     <button id="edit-ocr-btn" class="btn-secondary btn-icon" hidden data-tooltip="Edit OCR">✏</button>

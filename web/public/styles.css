@@ -977,23 +977,14 @@ dialog::backdrop {
 
 /* ── Hints dropdown ── */
 
-.hints-anchor {
+.hints-area {
   position: relative;
+  display: inline-flex;
 }
 
-.hints-dropdown {
+#fast-forward-btn {
   position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 100;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  min-width: 260px;
-  max-width: 380px;
-  padding: 0.35rem 0;
-  overflow: hidden;
+  inset: 0;
 }
 
 .hint-item {
