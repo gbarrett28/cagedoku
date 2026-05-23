@@ -1,6 +1,6 @@
-"""Killer sudoku puzzle image scraper.
+"""Puzzle image scraper for Guardian/Observer newspaper series.
 
-Downloads puzzle images from the newspaper series index page. The website
+Downloads puzzle images from a newspaper series index page. The website
 structure may have changed since this scraper was written -- treat existing
 .jpg images as the primary source of training data and only use this as a
 last resort.
@@ -10,8 +10,20 @@ then for each article fetches the print-edition .jpg image. Images are named
 killer_sudoku_N.jpg and saved into the output directory.
 
 Usage:
+    # Killer sudoku (default)
     python -m killer_sudoku.training.scrape_puzzles --output-dir <dir>
-    python -m killer_sudoku.training.scrape_puzzles --output-dir <dir> \
+
+    # Classic sudoku
+    python -m killer_sudoku.training.scrape_puzzles --output-dir <dir> \\
+        --series-url "https://www.theguardian.com/lifeandstyle/series/sudoku?page={}"
+
+    # Classic sudoku, diabolical difficulty only
+    python -m killer_sudoku.training.scrape_puzzles --output-dir <dir> \\
+        --series-url "https://www.theguardian.com/lifeandstyle/series/sudoku?page={}" \\
+        --url-contains diabolical
+
+    # Observer killer sudoku only
+    python -m killer_sudoku.training.scrape_puzzles --output-dir <dir> \\
         --url-contains bserver
 """
 
@@ -25,14 +37,21 @@ from bs4 import BeautifulSoup, Tag
 
 _log = logging.getLogger(__name__)
 
+_DEFAULT_SERIES = "https://www.theguardian.com/lifeandstyle/series/killer-sudoku?page={}"
 
-def scrape_puzzles(output_dir: Path, url_contains: str | None = None) -> None:
-    """Download killer sudoku puzzle images into output_dir.
+
+def scrape_puzzles(
+    output_dir: Path,
+    series_url: str = _DEFAULT_SERIES,
+    url_contains: str | None = None,
+) -> None:
+    """Download puzzle images into output_dir.
 
     Fetches the series index pages, collects article URLs, then downloads the
     print .jpg from each article.  If url_contains is provided, only articles
     whose URL contains that substring are collected (use this to restrict to a
-    specific puzzle series).
+    specific puzzle series or difficulty level -- Guardian URLs often encode
+    difficulty, e.g. "diabolical").
 
     Only runs if output_dir does not already exist. This is intentional:
     the existing .jpg images are the primary source of training data and
@@ -44,10 +63,12 @@ def scrape_puzzles(output_dir: Path, url_contains: str | None = None) -> None:
 
     Args:
         output_dir: Directory to create and populate with .jpg files.
+        series_url: Series index URL with ``{}`` as the page-number
+            placeholder. Defaults to the Guardian killer-sudoku series.
         url_contains: Optional substring filter applied to article URLs.
             If None, all articles from the series index are collected.
     """
-    html_idx = "https://www.theguardian.com/lifeandstyle/series/killer-sudoku?page={}"
+    html_idx = series_url
 
     article_urls: set[str] = set()
     prev_count = 0
@@ -116,10 +137,10 @@ def scrape_puzzles(output_dir: Path, url_contains: str | None = None) -> None:
 
 
 def main() -> None:
-    """CLI entry point: scrape puzzle images from the series index page."""
+    """CLI entry point: scrape puzzle images from a series index page."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(
-        description="Scrape killer sudoku puzzle images from a series index page"
+        description="Scrape puzzle images from a Guardian/Observer series index page"
     )
     parser.add_argument(
         "--output-dir",
@@ -128,15 +149,28 @@ def main() -> None:
         help="Directory to save images into",
     )
     parser.add_argument(
+        "--series-url",
+        default=_DEFAULT_SERIES,
+        help=(
+            "Series index URL with {} as the page-number placeholder. "
+            "Default: Guardian killer-sudoku series."
+        ),
+    )
+    parser.add_argument(
         "--url-contains",
         default=None,
         help=(
             "Only collect articles whose URL contains this substring. "
-            "Use to restrict to a specific puzzle series."
+            "Guardian URLs encode difficulty (e.g. 'diabolical', 'hard'). "
+            "Use to restrict to a specific puzzle series or difficulty."
         ),
     )
     args = parser.parse_args()
-    scrape_puzzles(args.output_dir, url_contains=args.url_contains)
+    scrape_puzzles(
+        args.output_dir,
+        series_url=args.series_url,
+        url_contains=args.url_contains,
+    )
 
 
 if __name__ == "__main__":
