@@ -112,12 +112,17 @@ def scrape_puzzles(
             break
 
         soup = BeautifulSoup(r.text, "html.parser")
-        for link in soup.find_all("a", attrs={"class": "fc-item__link"}):
+        # Guardian DCR design uses data-link-name on article card anchors.
+        # The legacy fc-item__link class was removed in the 2024 redesign.
+        for link in soup.find_all("a", attrs={"data-link-name": re.compile(r"^news \|")}):
             if not isinstance(link, Tag):
                 continue
             href = link.get("href")
             if not isinstance(href, str):
                 continue
+            # Relative paths (e.g. /lifeandstyle/...) — make absolute.
+            if href.startswith("/"):
+                href = "https://www.theguardian.com" + href
             if url_contains is None or url_contains in href:
                 article_urls.add(href)
 
@@ -210,7 +215,9 @@ def main() -> None:
         help=(
             "Only collect articles whose URL contains this substring. "
             "Guardian URLs encode difficulty (e.g. 'diabolical', 'hard'). "
-            "Use to restrict to a specific puzzle series or difficulty."
+            "Use to restrict to a specific puzzle series or difficulty. "
+            "On Windows/Git Bash, set MSYS_NO_PATHCONV=1 before the command "
+            "if the filter starts with '/' to prevent path expansion."
         ),
     )
     parser.add_argument(
