@@ -1013,6 +1013,19 @@ dialog::backdrop {
   margin: 0;
 }
 
+/* ── Hints list modal ── */
+
+#hints-list-modal {
+  max-width: 520px;
+  width: 90vw;
+}
+
+#hints-list-content {
+  max-height: 60vh;
+  overflow-y: auto;
+  margin: 0.5rem 0;
+}
+
 /* ── Hint explanation modal ── */
 
 #hint-modal {

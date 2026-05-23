@@ -1610,38 +1610,39 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Hints dropdown
+  // Hints list modal
+  const hintsListModal = el<HTMLDialogElement>('hints-list-modal');
+  hintsListModal.addEventListener('click', e => {
+    if (e.target === hintsListModal) hintsListModal.close();
+  });
+  el<HTMLButtonElement>('hints-list-close-btn').addEventListener('click', () => {
+    hintsListModal.close();
+  });
+
   el<HTMLButtonElement>('hints-btn').addEventListener('click', () => {
-    const dropdown = el<HTMLElement>('hints-dropdown');
-    if (!dropdown.hidden) { dropdown.hidden = true; return; }
-    clearChildren(dropdown);
+    const content = el<HTMLElement>('hints-list-content');
+    clearChildren(content);
     try {
       const { hints } = getHints();
       if (hints.length === 0) {
-        const p = document.createElement('p'); p.className = 'hints-empty'; p.textContent = 'No hint found — this position may require a technique not yet supported. Try Reveal for the selected cell.'; dropdown.appendChild(p);
+        const p = document.createElement('p'); p.className = 'hints-empty'; p.textContent = 'No hint found — this position may require a technique not yet supported. Try Reveal for the selected cell.';
+        content.appendChild(p);
       } else {
         for (const hint of hints) {
           const btn = document.createElement('button'); btn.className = 'hint-item'; btn.textContent = hint.displayName;
-          btn.addEventListener('click', () => { dropdown.hidden = true; showHintModal(hint); });
-          dropdown.appendChild(btn);
+          btn.addEventListener('click', () => { hintsListModal.close(); showHintModal(hint); });
+          content.appendChild(btn);
         }
       }
     } catch (e) {
       if (e instanceof AssertionViolation) {
-        dropdown.hidden = true;
         showAssertionModal(e);
         return;
       }
-      const p = document.createElement('p'); p.className = 'hints-empty'; p.textContent = String(e); dropdown.appendChild(p);
+      const p = document.createElement('p'); p.className = 'hints-empty'; p.textContent = String(e);
+      content.appendChild(p);
     }
-    dropdown.hidden = false;
-  });
-
-  document.addEventListener('click', (e) => {
-    const dropdown = el<HTMLElement>('hints-dropdown');
-    if (!dropdown.hidden && !(e.target as HTMLElement).closest('.hints-anchor')) {
-      dropdown.hidden = true;
-    }
+    hintsListModal.showModal();
   });
 
   // Hint modal

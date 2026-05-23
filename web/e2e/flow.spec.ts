@@ -300,18 +300,20 @@ test('config button opens config-modal', async ({ page }) => {
 });
 
 // ---------------------------------------------------------------------------
-// Hints dropdown
+// Hints list modal
 // ---------------------------------------------------------------------------
 
 
-test('hints button opens dropdown after confirm', async ({ page }) => {
+test('hints button opens hints-list-modal dialog after confirm', async ({ page }) => {
   await loadAndConfirm(page);
-  await expect(page.locator('#hints-dropdown')).toBeHidden();
+  // Dialog is initially closed — no 'open' attribute
+  await expect(page.locator('#hints-list-modal')).not.toHaveAttribute('open');
   await page.locator('#hints-btn').click();
-  await expect(page.locator('#hints-dropdown')).toBeVisible();
-  // Toggle off
-  await page.locator('#hints-btn').click();
-  await expect(page.locator('#hints-dropdown')).toBeHidden();
+  // showModal() adds the 'open' attribute
+  await expect(page.locator('#hints-list-modal')).toHaveAttribute('open', '');
+  // Close button dismisses the dialog
+  await page.locator('#hints-list-close-btn').click();
+  await expect(page.locator('#hints-list-modal')).not.toHaveAttribute('open');
 });
 
 // ---------------------------------------------------------------------------
