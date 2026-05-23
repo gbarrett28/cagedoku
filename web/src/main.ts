@@ -52,7 +52,7 @@ import { GridNotFoundError } from './image/inpImage.js';
 import { UserFacingError } from './session/errors.js';
 import { applyAutoApplyLock } from './autoApplyLock.js';
 import { showHintPill, hideHintPill } from './hintPill.js';
-import { AssertionViolation, classicDuplicateCells, hasDuplicateDigits, isCageSumCorrect } from './session/assertions.js';
+import { AssertionViolation, findDuplicateCells, hasDuplicateDigits, isCageSumCorrect } from './session/assertions.js';
 import { initTutorial, appendCallouts } from './tutorial.js';
 import { resolveDigitKey } from './resolveDigitKey.js';
 
@@ -267,7 +267,7 @@ function drawDigits(ctx: CanvasRenderingContext2D, state: PuzzleState): void {
     state.userGrid !== null ? state.userGrid : (state.givenDigits ?? null);
   if (digitGrid === null) return;
 
-  const duplicateCells = classicDuplicateCells(digitGrid);
+  const duplicateCells = findDuplicateCells(digitGrid);
   if (duplicateCells.size > 0) {
     ctx.fillStyle = 'rgba(220, 38, 38, 0.15)';
     for (const key of duplicateCells) {
@@ -940,7 +940,7 @@ async function handleProcess(): Promise<void> {
     if (warning === null && state.puzzleType === 'classic' && state.givenDigits !== null) {
       const allFilled = state.givenDigits.every(row => row.every(d => d > 0));
       if (allFilled) {
-        const dupCells = classicDuplicateCells(state.givenDigits);
+        const dupCells = findDuplicateCells(state.givenDigits);
         if (dupCells.size > 0) {
           applyUploadResult(state, warpedImageUrl, null);
           appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
@@ -1170,7 +1170,7 @@ async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number)
   givenDigits[row1b - 1]![col1b - 1] = digit;
   currentState = { ...currentState, givenDigits };
   setState(currentState);
-  reviewErrorCells = classicDuplicateCells(givenDigits);
+  reviewErrorCells = findDuplicateCells(givenDigits);
   redrawGrid();
 }
 

@@ -90,7 +90,7 @@ export function hasDuplicateDigits(grid: readonly (readonly number[])[]): boolea
 
 /** Returns the set of `"row,col"` (0-based) cell keys that participate in any row, column,
  *  or 3×3 box duplicate. Zeros are never treated as duplicates. */
-export function classicDuplicateCells(grid: readonly (readonly number[])[]): Set<string> {
+export function findDuplicateCells(grid: readonly (readonly number[])[]): Set<string> {
   const errorCells = new Set<string>();
   const check = (cells: [number, number][]) => {
     const seen = new Map<number, string>();
