@@ -54,9 +54,13 @@ const workerResults: ImageResult[] = [];
 async function getSharedPage(browser: Browser): Promise<Page> {
   if (sharedPage === null || sharedPage.isClosed()) {
     sharedPage = await browser.newPage();
-    await sharedPage.addInitScript(() =>
-      localStorage.setItem('coach_tutorial_suppressed', 'true'),
-    );
+    await sharedPage.addInitScript(() => {
+      localStorage.setItem('coach_tutorial_suppressed', 'true');
+      // Suppress training-consent modal. Consent is stored as a cookie, not
+      // localStorage. 'granted' is the only value that bypasses the modal;
+      // there is no "permanently declined" state in the consent state machine.
+      document.cookie = 'training_consent=granted; max-age=31536000; SameSite=Strict';
+    });
     await sharedPage.goto('/', { waitUntil: 'domcontentloaded' });
     await waitForPipelineReady(sharedPage, 90_000);
   }
