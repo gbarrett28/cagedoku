@@ -271,7 +271,7 @@ pseudo-element. Tooltips are suppressed on touch-sized viewports.
 | Button | Symbol | Condition | Description |
 |---|---|---|---|
 | `#undo-btn` | ↩ | Always (disabled until a move exists) | Revert the last digit entry |
-| `#hints-btn` | 💡 | Always (disabled until confirmed) | Open hints dropdown |
+| `#hints-btn` | 💡 | Always (disabled until confirmed) | Open hints list modal |
 | `#mode-toggle` | N\|C pill | Visible when `showCandidates = true` | Toggle between Normal entry and Candidates editing mode. Active side is highlighted. |
 | `#inspect-cage-btn` | 🔍 | **Killer** playing mode only | Enter cage inspection mode. Gets `.active` class while active; tooltip changes to "Done inspecting". |
 | `#virtual-cage-btn` | ➕ | **Killer** playing mode only | Enter virtual cage drawing mode. Gets `.active` class while active; tooltip changes to "Cancel virtual cage". |
@@ -359,6 +359,16 @@ canvas (same `#side-panel` wrapper) rather than as separate columns in `#images-
 **N|C pill in landscape:** `transform: rotate(90deg)` applied so the pill reads
 vertically within the sidebar.
 
+### Fast-Forward Button Overlay
+
+`#fast-forward-btn` is wrapped in the same `.hints-area` `<div>` as `#hints-btn`.
+`.hints-area` has `position: relative; display: inline-flex`. The fast-forward button
+is positioned absolutely with `inset: 0` so it overlays exactly the hints button slot.
+When animation is running, `#hints-btn` is disabled (part of the auto-apply lock) and
+`#fast-forward-btn` becomes visible — it appears in the same space with zero layout
+shift. When animation completes, `#fast-forward-btn` is hidden and `#hints-btn` is
+re-enabled.
+
 ### Reveal
 
 Pressing **Reveal** with a cell selected opens a small confirmation popup:
@@ -366,14 +376,21 @@ Pressing **Reveal** with a cell selected opens a small confirmation popup:
 read from `goldenSolution` (cached at confirm time) and placed via the normal
 `enterCell` path so that undo works as expected.
 
-### Hints Dropdown
+### Hints List Modal (`#hints-list-modal`)
 
-Lists all currently applicable hints sorted by impact. Each hint shows:
-- Rule display name
-- Brief explanation
-- Elimination count (or placement action)
+A native `<dialog>` opened by `showModal()` when `#hints-btn` is clicked. Lists all
+currently applicable hints. Each hint appears as a `.hint-item` button showing the
+rule display name. If no hints are available, a `.hints-empty` paragraph is shown
+instead.
 
-Clicking a hint opens the **Hint Modal**.
+Clicking a hint closes the list modal and opens the **Hint Detail Modal**.
+
+The modal is dismissed by:
+- Clicking the **Close** button (`#hints-list-close-btn`)
+- Clicking the backdrop (the `<dialog>` element itself — `e.target === hintsListModal`)
+
+`#hints-list-content` (`max-height: 60vh; overflow-y: auto`) keeps the list scrollable
+on puzzles with many applicable hints.
 
 ### Hint Modal
 
@@ -524,7 +541,6 @@ The element IDs match the HTML (`index.html`).
 |---|---|---|
 | Undo | `#undo-btn` | Always (disabled until a user turn exists) |
 | Hints | `#hints-btn` | Always (disabled before confirm) |
-| Hints dropdown | `#hints-dropdown` | While `#hints-btn` is toggled on |
 | Mode toggle pill | `#mode-toggle` | When `showCandidates = true` |
 | Inspect cage | `#inspect-cage-btn` | **Killer only** — visible from the start of playing mode |
 | Virtual cage | `#virtual-cage-btn` | **Killer only** — visible from the start of playing mode |
@@ -537,7 +553,8 @@ The element IDs match the HTML (`index.html`).
 |---|---|---|
 | General help | `#general-help-modal` | `#help-btn` |
 | Config | `#config-modal` | `#config-btn` |
-| Hint detail | `#hint-modal` | Clicking a hint in `#hints-dropdown` |
+| Hints list | `#hints-list-modal` | `#hints-btn` |
+| Hint detail | `#hint-modal` | Clicking a hint in `#hints-list-modal` |
 | Rule info | `#rule-info-modal` | ⓘ button in `#config-modal` |
 | Candidates help | `#help-candidates-modal` | `#help-candidates-btn` |
 | Training consent | `#training-consent-modal` | After first upload that produces training data |
