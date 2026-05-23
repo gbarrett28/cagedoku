@@ -30,6 +30,7 @@
  * 19  XYZWing                 — GLOBAL
  * 20  WWing                   — COUNT_HIT_TWO
  * 21  Skyscraper              — GLOBAL
+ * 22  TwoStringKite           — GLOBAL
  */
 
 import type { SolverRule } from '../rule.js';
@@ -61,6 +62,7 @@ import { XYWing } from './xyWing.js';
 import { XYZWing } from './xyzWing.js';
 import { WWing } from './wWing.js';
 import { Skyscraper } from './skyscraper.js';
+import { TwoStringKite } from './twoStringKite.js';
 
 export {
   CageCandidateFilter,
@@ -91,6 +93,7 @@ export {
   XYZWing,
   WWing,
   Skyscraper,
+  TwoStringKite,
 };
 
 /**
@@ -128,6 +131,7 @@ export function defaultRules(): SolverRule[] {
     new XYZWing(),
     new WWing(),
     new Skyscraper(),
+    new TwoStringKite(),
   ];
   return rules.sort((a, b) => a.priority - b.priority);
 }
