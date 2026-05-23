@@ -8,8 +8,23 @@
  * Timeout strategy:
  *   - Structural tests (title, panel visibility): 8 s; opencv.js is stubbed
  *     so WASM compilation never starts and teardown is instant.
- *   - Pipeline-dependent tests (opencv load, upload, playing): 360 s; opencv
- *     WASM init takes 150–180 s in headless Chromium (standard 10 MB build).
+ *   - Pipeline-dependent tests (opencv load, upload, playing): 360 s; see
+ *     PIPELINE note below for why these are slow in headless Chromium.
+ *
+ * Why pipeline tests are slow in headless (PIPELINE gate):
+ *   opencv.js is a SINGLE_FILE emscripten build — the WASM binary is
+ *   base64-encoded inside the JS.  V8 cannot stream-compile a base64 data
+ *   URI; it must decode the whole string, then call WebAssembly.instantiate
+ *   (non-streaming, blocking).  In a real browser the compiled module is
+ *   persisted in V8's code cache so reloads are instant; each Playwright
+ *   test context starts with a clean profile and no cache, so it cold-
+ *   compiles the full WASM (~20–40 s) every time.  9 pipeline tests ×
+ *   ~30 s each ≈ 4–5 min total.
+ *
+ *   Fix: rebuild opencv.js as a two-file output (opencv.js + opencv.wasm)
+ *   so loadCV can use WebAssembly.instantiateStreaming — V8 compiles as
+ *   bytes arrive and the result is cacheable.  Until then, opt in with
+ *   PLAYWRIGHT_PIPELINE_TESTS=1.
  */
 
 import { test, expect } from '@playwright/test';
@@ -17,10 +32,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { stubOpenCV, waitForPipelineReady } from './helpers.js';
 
-// Pipeline tests (opencv load, upload, play) require Chunk 4 — a minimal opencv.js
-// build (~2–3 MB, core+imgproc only).  With the standard 10 MB build, WASM
-// compilation blocks headless Chromium for 6+ minutes and the tests always time out.
-// Set PLAYWRIGHT_PIPELINE_TESTS=1 to opt in.
+// Pipeline tests require real opencv.js loading. They are slow in headless Chromium
+// because opencv.js is a SINGLE_FILE base64 build that cannot be stream-compiled
+// (see file header). Set PLAYWRIGHT_PIPELINE_TESTS=1 to opt in.
 const PIPELINE = process.env['PLAYWRIGHT_PIPELINE_TESTS'] === '1';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -77,7 +91,7 @@ test('no console errors on page load', async ({ page }) => {
 // ---------------------------------------------------------------------------
 
 test('image pipeline loads without error', async ({ page }) => {
-  test.skip(!PIPELINE, 'Needs PLAYWRIGHT_PIPELINE_TESTS=1 — standard opencv.js WASM blocks headless Chromium for 6+ min; requires Chunk 4 minimal build');
+  test.skip(!PIPELINE, 'Needs PLAYWRIGHT_PIPELINE_TESTS=1 — cold WASM compile in headless (~30 s); see file header');
   test.setTimeout(360_000); // WASM init in headless Chromium takes 150–180 s on this hardware
 
   const errors: string[] = [];
