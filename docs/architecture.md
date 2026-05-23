@@ -348,3 +348,80 @@ interface HintResult {
 
 The priority order and trigger assignments for all active rules are listed in the
 comment block at the top of `web/src/engine/rules/index.ts`.
+
+---
+
+## Stress-Test Tooling
+
+### Scraper
+
+`killer_sudoku/training/scrape_puzzles.py` downloads puzzle images from any
+Guardian/Observer series index page.
+
+```bash
+# Classic sudoku, sorted into subdirectories by difficulty keyword in URL
+python -m killer_sudoku.training.scrape_puzzles \
+    --output-dir classic_guardian \
+    --series-url "https://www.theguardian.com/lifeandstyle/series/sudoku?page={}" \
+    --subdir-keywords easy medium hard diabolical
+```
+
+`--subdir-keywords` detects the first matching keyword in each article URL and
+saves images into `<output-dir>/<keyword>/`. Articles matching none of the
+keywords go into `other/`. The per-subdirectory guard (skip if directory already
+exists) means re-runs are safe — existing images are never overwritten.
+
+### Stress-Test Runner
+
+`scripts/run-stress-test.sh <puzzle-dir> [workers]` processes every `.jpg`/`.png`
+in a directory through the production app via Playwright and writes
+`eval_report.json` alongside the images.
+
+```bash
+bash scripts/run-stress-test.sh classic_guardian/diabolical 4
+```
+
+Each Playwright worker compiles OpenCV.js WASM once (~60 s); 4 workers on
+~500 images takes ~20 minutes at ~450 MB per worker.
+
+Internally the runner:
+1. Sets `STRESS_PUZZLE_DIR` and runs `web/e2e/stress.spec.ts` via
+   `npx playwright test --workers=N`.
+2. Each worker writes `eval_results_<pid>.json` to the puzzle directory.
+3. `scripts/merge-stress-results.mjs` combines the worker files into
+   `eval_report.json` and deletes the intermediates.
+
+### Report Format
+
+```json
+{
+  "timestamp": "...",
+  "source": "diabolical",
+  "total": 500,
+  "pipeline_ok": 498,
+  "solution_found": 496,
+  "backtracker_required": 41,
+  "pipeline_errors": 2,
+  "work_queue": [
+    { "file": "killer_sudoku_312.jpg", "unsolved_cells": 1, "total_candidates": 2 }
+  ],
+  "per_image": { ... }
+}
+```
+
+`work_queue` lists backtracker puzzles sorted by `(unsolved_cells ASC,
+total_candidates ASC)` — the easiest rule gaps to close first. A puzzle with
+1 unsolved cell and 2 candidates needs only one new rule to eliminate one
+candidate and place the digit. Rules found there often propagate to reduce
+candidates in harder puzzles.
+
+### Implementation Notes
+
+`window.__lastSolverResult` is exposed by `main.ts` immediately after every
+`solveCurrentSpec()` call in `handleProcess()`. It holds
+`{ usedBacktracking: boolean, stalledCandidates: number[][][] | null }` where
+`stalledCandidates` is the candidate grid captured just before backtracking
+(undefined when the rule engine solves the puzzle completely). The stress
+runner reads this via `page.evaluate()` after the review panel or playing mode
+appears.
+
