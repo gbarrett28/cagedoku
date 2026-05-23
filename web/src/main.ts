@@ -857,6 +857,8 @@ async function handleProcess(): Promise<void> {
   el<HTMLButtonElement>('edit-ocr-btn').hidden = true;
   lastOcrState = null;
   lastWarpedUrl = null;
+  // Reset solver result so stale data from a previous run is never read.
+  (window as unknown as Record<string, unknown>)['__lastSolverResult'] = null;
   setLoading(true);
   try {
     const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs } = await uploadPuzzle(f);
@@ -887,6 +889,10 @@ async function handleProcess(): Promise<void> {
         // Yield to the browser so the loading indicator renders before the solve blocks.
         await new Promise<void>(resolve => setTimeout(resolve, 0));
         const { board, usedBacktracking, stalledCandidates } = solveCurrentSpec();
+        (window as unknown as Record<string, unknown>)['__lastSolverResult'] = {
+          usedBacktracking,
+          stalledCandidates: stalledCandidates ?? null,
+        };
         let boardComplete = true;
         for (let r = 0; r < 9 && boardComplete; r++)
           for (let c = 0; c < 9 && boardComplete; c++)
@@ -953,7 +959,11 @@ async function handleProcess(): Promise<void> {
         }
         // All 81 cells filled, no duplicates — run solver and verify completeness (mirrors Killer path).
         await new Promise<void>(resolve => setTimeout(resolve, 0));
-        const { board: classicBoard } = solveCurrentSpec();
+        const { board: classicBoard, usedBacktracking: classicUsedBt, stalledCandidates: classicStalled } = solveCurrentSpec();
+        (window as unknown as Record<string, unknown>)['__lastSolverResult'] = {
+          usedBacktracking: classicUsedBt,
+          stalledCandidates: classicStalled ?? null,
+        };
         let boardComplete = true;
         for (let r = 0; r < 9 && boardComplete; r++)
           for (let c = 0; c < 9 && boardComplete; c++)
