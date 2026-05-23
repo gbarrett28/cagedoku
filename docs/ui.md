@@ -435,11 +435,20 @@ to inessential.
 **Auto-apply step delay** slider (0 – 2 000 ms, step 50 ms):
 - **0 (Off)**: default — all auto-placements are applied instantly after each
   user placement, exactly as before.
-- **> 0**: after the user places a digit, each auto-deduced placement is
-  applied one-at-a-time with the configured delay between steps and the grid
-  redrawn after each one. This creates a step-through "teaching" effect.
-  The delay applies between the user's placement and the first
-  auto-placement, and between each subsequent auto-placement.
+- **> 0**: after the user places a digit the auto-apply rules fire one rule
+  at a time, each with the configured delay. For each rule step:
+  1. The hint pill appears with the rule's display name (e.g. "Cage Candidate
+     Filter") and the affected cells are highlighted.
+  2. After the delay the rule's candidate eliminations are removed from the
+     grid and any forced digit placements are filled in.
+  3. The pill clears and the next rule step starts immediately.
+  Candidates narrow progressively — one rule's worth of eliminations at a
+  time — matching the manual hint→apply flow. `autoRemovedCandidates` in
+  `PuzzleState` accumulates each step's eliminations so subsequent
+  `buildEngine` calls see them pre-applied and do not re-fire the same rule.
+  The fast-forward button drains all remaining steps instantly. One undo
+  rolls back the entire animation sequence (all auto-placements and
+  candidate eliminations) to before the user's digit.
 
 **Rule list**: one row per hintable rule.
 - Dropdown: toggles the rule between `Auto-apply` and `Hint-only`.
