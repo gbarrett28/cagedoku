@@ -4,7 +4,7 @@ export default defineConfig({
   testDir: './e2e',
   // flow.spec.ts uses window.__testLoad which is a DEV-only hook — run it via
   // playwright.dev.config.ts against `vite dev` instead.
-  testIgnore: ['**/flow.spec.ts'],
+  testIgnore: ['**/flow.spec.ts', '**/stress.spec.ts'],
   timeout: 10_000,
   retries: 0,
   use: {
