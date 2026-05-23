@@ -1,5 +1,6 @@
 /guardian/
 /observer/
+/classic_guardian/
 __pycache__/
 *.pyc
 *.pyo
