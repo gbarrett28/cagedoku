@@ -52,7 +52,7 @@ import { GridNotFoundError } from './image/inpImage.js';
 import { UserFacingError } from './session/errors.js';
 import { applyAutoApplyLock } from './autoApplyLock.js';
 import { showHintPill, hideHintPill } from './hintPill.js';
-import { AssertionViolation, hasDuplicateDigits, validateSudokuSolution } from './session/assertions.js';
+import { AssertionViolation, classicDuplicateCells, hasDuplicateDigits } from './session/assertions.js';
 import { initTutorial, appendCallouts } from './tutorial.js';
 import { resolveDigitKey } from './resolveDigitKey.js';
 
@@ -182,7 +182,6 @@ function drawCageBorders(
   state: PuzzleState,
   draft: { borderX: boolean[][], borderY: boolean[][] } | undefined,
 ): void {
-  if (state.puzzleType === 'classic') return;
   ctx.strokeStyle = draft ? '#0055cc' : '#cc0000';
   ctx.lineWidth = 7.5;
   if (draft) {
@@ -242,7 +241,6 @@ function drawGridLines(ctx: CanvasRenderingContext2D): void {
 }
 
 function drawCageTotals(ctx: CanvasRenderingContext2D, state: PuzzleState): void {
-  if (state.puzzleType === 'classic') return;
   const TOTAL_FONT_PX = Math.round(CELL * 0.36); // ~18px at CELL=50
   ctx.font = `bold ${TOTAL_FONT_PX}px sans-serif`;
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
@@ -372,9 +370,9 @@ function drawGrid(
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, GRID_PX, GRID_PX);
   drawUnderlays(ctx, candidatesData, vcSelection, highlightKeys, selected, errorCells);
-  drawCageBorders(ctx, state, draft);
+  if (state.puzzleType !== 'classic') drawCageBorders(ctx, state, draft);
   drawGridLines(ctx);
-  drawCageTotals(ctx, state);
+  if (state.puzzleType !== 'classic') drawCageTotals(ctx, state);
   drawDigits(ctx, state);
   if (showCands && candidatesData !== null && state.userGrid !== null) {
     drawCandidates(ctx, state.userGrid, candidatesData, showEss);
@@ -959,22 +957,46 @@ async function handleProcess(): Promise<void> {
     }
 
     // Classic auto-confirm: if OCR is clean and given digits form a complete valid grid,
-    // skip review and go straight to playing mode.
+    // skip review and go straight to playing mode. When all 81 cells are filled we can give
+    // specific feedback (duplicate highlights or solver-incomplete message) rather than the
+    // generic review prompt — mirroring the Killer path's targeted error reporting.
     if (warning === null && state.puzzleType === 'classic' && state.givenDigits !== null) {
       const allFilled = state.givenDigits.every(row => row.every(d => d > 0));
-      if (allFilled && validateSudokuSolution(state.givenDigits) === null) {
-        lastOcrState = state;
-        lastWarpedUrl = warpedImageUrl;
+      if (allFilled) {
+        const dupCells = classicDuplicateCells(state.givenDigits);
+        if (dupCells.size > 0) {
+          applyUploadResult(state, warpedImageUrl, null);
+          appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
+          logAction('review_shown', 'classic duplicates');
+          reviewErrorCells = dupCells;
+          redrawGrid();
+          setStatus('Duplicate digits detected — correct the highlighted cells and press Confirm & Solve', true);
+          return;
+        }
+        // All 81 cells filled, no duplicates — run solver and verify completeness (mirrors Killer path).
         await new Promise<void>(resolve => setTimeout(resolve, 0));
         const { board: classicBoard } = solveCurrentSpec();
-        logAction('auto_confirmed', 'classic');
-        const classicPlaying = confirmPuzzle(classicBoard);
-        renderPlayingMode(classicPlaying);
-        appendCallouts(buildPlayingCallouts(false));
-        const classicViolation = checkSolutionAssertions(classicPlaying);
-        if (classicViolation !== null) showAssertionModal(classicViolation);
-        el<HTMLButtonElement>('edit-ocr-btn').hidden = false;
-        setStatus('');
+        let boardComplete = true;
+        for (let r = 0; r < 9 && boardComplete; r++)
+          for (let c = 0; c < 9 && boardComplete; c++)
+            if (classicBoard.cands(r, c).size !== 1) boardComplete = false;
+        if (boardComplete) {
+          lastOcrState = state;
+          lastWarpedUrl = warpedImageUrl;
+          logAction('auto_confirmed', 'classic');
+          const classicPlaying = confirmPuzzle(classicBoard);
+          renderPlayingMode(classicPlaying);
+          appendCallouts(buildPlayingCallouts(false));
+          const classicViolation = checkSolutionAssertions(classicPlaying);
+          if (classicViolation !== null) showAssertionModal(classicViolation);
+          el<HTMLButtonElement>('edit-ocr-btn').hidden = false;
+          setStatus('');
+          return;
+        }
+        applyUploadResult(state, warpedImageUrl, null);
+        appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
+        logAction('review_shown', 'classic solver incomplete');
+        setStatus('Solver could not process the detected digits — please review and confirm manually', true);
         return;
       }
     }
@@ -1174,6 +1196,7 @@ async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number)
   givenDigits[row1b - 1]![col1b - 1] = digit;
   currentState = { ...currentState, givenDigits };
   setState(currentState);
+  reviewErrorCells = classicDuplicateCells(givenDigits);
   redrawGrid();
 }
 

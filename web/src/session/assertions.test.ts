@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateSudokuSolution, AssertionViolation, hasDuplicateDigits } from './assertions.js';
+import { validateSudokuSolution, AssertionViolation, hasDuplicateDigits, classicDuplicateCells } from './assertions.js';
 
 // A minimal valid 9×9 sudoku solution for testing
 const VALID_SOLUTION: number[][] = [
@@ -116,6 +116,65 @@ describe('hasDuplicateDigits', () => {
     grid[0]![0] = 0;
     grid[0]![1] = 0;
     expect(hasDuplicateDigits(grid)).toBe(false);
+  });
+});
+
+describe('classicDuplicateCells', () => {
+  const empty: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+
+  it('returns an empty set when there are no duplicates', () => {
+    expect(classicDuplicateCells(VALID_SOLUTION)).toEqual(new Set());
+  });
+
+  it('returns an empty set for an all-zero grid', () => {
+    expect(classicDuplicateCells(empty)).toEqual(new Set());
+  });
+
+  it('returns both cells when a row has a repeated digit', () => {
+    const grid = empty.map(r => [...r]);
+    grid[2]![0] = 5;
+    grid[2]![7] = 5;
+    expect(classicDuplicateCells(grid)).toEqual(new Set(['2,0', '2,7']));
+  });
+
+  it('returns both cells when a column has a repeated digit', () => {
+    const grid = empty.map(r => [...r]);
+    grid[1]![3] = 9;
+    grid[6]![3] = 9;
+    expect(classicDuplicateCells(grid)).toEqual(new Set(['1,3', '6,3']));
+  });
+
+  it('returns both cells when a 3×3 box has a repeated digit', () => {
+    const grid = empty.map(r => [...r]);
+    grid[3]![3] = 4; // middle-centre box
+    grid[5]![5] = 4; // same box
+    expect(classicDuplicateCells(grid)).toEqual(new Set(['3,3', '5,5']));
+  });
+
+  it('includes all three cells when a digit appears three times in a row', () => {
+    const grid = empty.map(r => [...r]);
+    grid[0]![0] = 5;
+    grid[0]![4] = 5;
+    grid[0]![8] = 5;
+    const result = classicDuplicateCells(grid);
+    expect(result).toEqual(new Set(['0,0', '0,4', '0,8']));
+  });
+
+  it('a cell in multiple duplicate constraints appears only once in the set', () => {
+    const grid = empty.map(r => [...r]);
+    grid[0]![0] = 5;
+    grid[0]![4] = 5; // row duplicate with (0,0)
+    grid[4]![0] = 5; // col duplicate with (0,0)
+    const result = classicDuplicateCells(grid);
+    expect(result.has('0,0')).toBe(true);
+    expect(result.has('0,4')).toBe(true);
+    expect(result.has('4,0')).toBe(true);
+  });
+
+  it('ignores zeros — zeros are not duplicates', () => {
+    const grid = empty.map(r => [...r]);
+    grid[0]![0] = 1;
+    expect(classicDuplicateCells(grid)).toEqual(new Set());
   });
 });
 
