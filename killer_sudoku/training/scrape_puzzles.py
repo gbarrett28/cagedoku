@@ -7,20 +7,21 @@ last resort.
 
 The scraper iterates over the series index pages, collects article links,
 then for each article fetches the print-edition .jpg image. Images are named
-killer_sudoku_N.jpg and saved into the output directory.
+killer_sudoku_N.jpg and saved into the output directory (or a subdirectory
+named after the detected difficulty when --subdir-keywords is used).
 
 Usage:
     # Killer sudoku (default)
     python -m killer_sudoku.training.scrape_puzzles --output-dir <dir>
 
-    # Classic sudoku
+    # Classic sudoku, all difficulties
     python -m killer_sudoku.training.scrape_puzzles --output-dir <dir> \\
         --series-url "https://www.theguardian.com/lifeandstyle/series/sudoku?page={}"
 
-    # Classic sudoku, diabolical difficulty only
+    # Classic sudoku, sorted into subdirectories by difficulty keyword in URL
     python -m killer_sudoku.training.scrape_puzzles --output-dir <dir> \\
         --series-url "https://www.theguardian.com/lifeandstyle/series/sudoku?page={}" \\
-        --url-contains diabolical
+        --subdir-keywords easy medium hard diabolical
 
     # Observer killer sudoku only
     python -m killer_sudoku.training.scrape_puzzles --output-dir <dir> \\
@@ -40,33 +41,63 @@ _log = logging.getLogger(__name__)
 _DEFAULT_SERIES = "https://www.theguardian.com/lifeandstyle/series/killer-sudoku?page={}"
 
 
+def _detect_subdir(article_url: str, keywords: list[str]) -> str:
+    """Return the first keyword found in article_url, or 'other' if none match.
+
+    Keywords are checked in order; the first match wins.  Matching is
+    case-insensitive against the URL path.
+
+    Args:
+        article_url: Full article URL, e.g. '.../sudoku-diabolical-no-4212'.
+        keywords: Ordered list of difficulty keywords to detect.
+
+    Returns:
+        The matched keyword (lowercase), or 'other'.
+    """
+    lower = article_url.lower()
+    for kw in keywords:
+        if kw.lower() in lower:
+            return kw.lower()
+    return "other"
+
+
 def scrape_puzzles(
     output_dir: Path,
     series_url: str = _DEFAULT_SERIES,
     url_contains: str | None = None,
+    subdir_keywords: list[str] | None = None,
 ) -> None:
     """Download puzzle images into output_dir.
 
     Fetches the series index pages, collects article URLs, then downloads the
-    print .jpg from each article.  If url_contains is provided, only articles
-    whose URL contains that substring are collected (use this to restrict to a
-    specific puzzle series or difficulty level -- Guardian URLs often encode
-    difficulty, e.g. "diabolical").
+    print .jpg from each article.
 
-    Only runs if output_dir does not already exist. This is intentional:
-    the existing .jpg images are the primary source of training data and
-    should not be overwritten.
+    When subdir_keywords is provided, each image is saved into a subdirectory
+    of output_dir named after the first keyword found in the article URL
+    (e.g. 'diabolical', 'hard').  Articles whose URL matches none of the
+    keywords are saved into 'other/'.  The output_dir guard (skip if already
+    exists) applies per-subdirectory so re-runs only skip directories that
+    were already fully downloaded.
+
+    Without subdir_keywords, all images are saved directly into output_dir
+    and the directory guard applies to output_dir itself.
+
+    If url_contains is provided, only articles whose URL contains that
+    substring are collected.
 
     WARNING: The website structure may have changed since this was written.
     If downloads fail, inspect the page source and update the BeautifulSoup
     selectors accordingly.
 
     Args:
-        output_dir: Directory to create and populate with .jpg files.
+        output_dir: Root directory for downloaded images.
         series_url: Series index URL with ``{}`` as the page-number
             placeholder. Defaults to the Guardian killer-sudoku series.
         url_contains: Optional substring filter applied to article URLs.
             If None, all articles from the series index are collected.
+        subdir_keywords: If given, save each image into a subdirectory of
+            output_dir named after the first matching keyword in the article
+            URL (case-insensitive). Non-matching articles go into 'other/'.
     """
     html_idx = series_url
 
@@ -98,18 +129,32 @@ def scrape_puzzles(
 
     _log.info("Total article URLs: %d", len(article_urls))
 
-    if output_dir.exists():
-        _log.info(
-            "%s already exists -- skipping download to preserve existing images.",
-            output_dir,
-        )
-        return
+    # Without subdir_keywords: guard on output_dir itself.
+    if not subdir_keywords:
+        if output_dir.exists():
+            _log.info(
+                "%s already exists -- skipping download to preserve existing images.",
+                output_dir,
+            )
+            return
+        output_dir.mkdir(parents=True)
 
-    output_dir.mkdir(parents=True)
     print_link_pattern = re.compile(r"uploads\.guim\.co\.uk.*\.jpg$")
-    obs = 0
+
+    # Track per-subdir counts so numbering within each subdir is independent.
+    subdir_counts: dict[str, int] = {}
 
     for article_url in sorted(article_urls):
+        # Determine the target directory for this article.
+        if subdir_keywords:
+            subdir_name = _detect_subdir(article_url, subdir_keywords)
+            target_dir = output_dir / subdir_name
+            if not target_dir.exists():
+                target_dir.mkdir(parents=True)
+                _log.info("Created subdirectory %s", target_dir)
+        else:
+            target_dir = output_dir
+
         puzzle_req = requests.get(article_url, timeout=30)
         if puzzle_req.status_code != 200:
             _log.warning(
@@ -127,13 +172,16 @@ def scrape_puzzles(
             if not isinstance(raw_url, str):
                 continue
             jpg_url: str = raw_url
-            puzzle_jpg = output_dir / f"killer_sudoku_{obs}.jpg"
+            key = str(target_dir)
+            obs = subdir_counts.get(key, 0)
+            puzzle_jpg = target_dir / f"killer_sudoku_{obs}.jpg"
             _log.info("Scraping %s from %s", puzzle_jpg, jpg_url)
             jpg_resp = requests.get(jpg_url, timeout=30)
             puzzle_jpg.write_bytes(jpg_resp.content)
-            obs += 1
+            subdir_counts[key] = obs + 1
 
-    _log.info("Downloaded %d puzzle images to %s/", obs, output_dir)
+    for target, count in subdir_counts.items():
+        _log.info("Downloaded %d puzzle images to %s/", count, target)
 
 
 def main() -> None:
@@ -146,7 +194,7 @@ def main() -> None:
         "--output-dir",
         type=Path,
         required=True,
-        help="Directory to save images into",
+        help="Root directory to save images into",
     )
     parser.add_argument(
         "--series-url",
@@ -165,11 +213,24 @@ def main() -> None:
             "Use to restrict to a specific puzzle series or difficulty."
         ),
     )
+    parser.add_argument(
+        "--subdir-keywords",
+        nargs="+",
+        default=None,
+        metavar="KEYWORD",
+        help=(
+            "Save images into subdirectories named after the first matching "
+            "keyword found in each article URL (case-insensitive). Articles "
+            "matching none of the keywords go into 'other/'. "
+            "Example: --subdir-keywords easy medium hard diabolical"
+        ),
+    )
     args = parser.parse_args()
     scrape_puzzles(
         args.output_dir,
         series_url=args.series_url,
         url_contains=args.url_contains,
+        subdir_keywords=args.subdir_keywords,
     )
 
 
