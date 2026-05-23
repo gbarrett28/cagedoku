@@ -34,10 +34,8 @@ echo ""
 
 cd "${REPO_ROOT}/web"
 STRESS_PUZZLE_DIR="${PUZZLE_DIR_ABS}" \
-PLAYWRIGHT_PIPELINE_TESTS=1 \
   npx playwright test \
-    --config playwright.config.ts \
-    stress.spec.ts \
+    --config playwright.stress.config.ts \
     --workers="${WORKERS}"
 
 cd "${REPO_ROOT}"
