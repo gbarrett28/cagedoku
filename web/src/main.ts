@@ -1487,6 +1487,7 @@ function renderFixtureTable(fixtures: FixtureMeta[]): void {
           currentFixtureTotalCandidates = meta.totalCandidates;
           const { board } = solveCurrentSpec();
           const playing = confirmPuzzle(board);
+          el<HTMLElement>('fixture-panel').hidden = true;
           renderPlayingMode(playing);
           appendCallouts(buildPlayingCallouts(playing.puzzleType !== 'classic', true));
         } catch (err) {

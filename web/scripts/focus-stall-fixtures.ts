@@ -36,6 +36,12 @@ const today = new Date().toISOString().slice(0, 10);
  *  killer sudoku never has ≥ 50 cells unsolved after a full rule-engine pass. */
 const MAX_UNSOLVED_THRESHOLD = 50;
 
+/** Focused states with fewer than this many unsolved cells are discarded.
+ *  1 unsolved cell is impossible in valid killer sudoku (the last cell is
+ *  always forced by elimination), so any such state comes from a corrupted
+ *  source fixture and is not a useful rule-gap example. */
+const MIN_UNSOLVED_CELLS = 2;
+
 // ---------------------------------------------------------------------------
 // Load source fixtures.
 // A source fixture has no '-f' substring before '.stall.json'.
@@ -107,6 +113,7 @@ for (const fixture of sourceFixtures) {
 
       seen.add(key);
       const unsolvedCells = sc.flat().filter(cell => cell.length > 1).length;
+      if (unsolvedCells < MIN_UNSOLVED_CELLS) continue; // impossible in valid sudoku — OCR artifact
       const totalCandidates = sc
         .flat()
         .filter(cell => cell.length > 1)

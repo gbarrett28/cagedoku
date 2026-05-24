@@ -1272,6 +1272,11 @@ dialog::backdrop {
 }
 
 /* Fixture panel */
+#fixture-list-content {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
 .fixture-intro {
   font-size: 0.85rem;
   color: var(--text-muted);
