@@ -32,6 +32,21 @@ over subagent-driven execution — it uses fewer total tokens.
 
 Never offer the visual companion feature during brainstorming — use Playwright MCP directly.
 
+## Plan Sprint Size
+
+When writing an implementation plan, **strongly prefer** breaking it into sprints of at
+most ~3 hours of inline execution tokens. Sprints are separate plan files, each
+producing working, independently-testable software.
+
+- If a spec covers multiple independent subsystems, each subsystem is its own sprint.
+- If a single subsystem exceeds ~3 hours, break it at a natural integration point
+  (e.g., after the data layer is done and tested, before the UI layer).
+- Only combine into a single sprint when splitting would produce code that cannot be
+  meaningfully tested on its own (rare — usually a sign the design needs refinement).
+
+This is a strong preference, not an absolute rule: if a feature is genuinely simpler
+to implement atomically and the token cost is low, a single sprint is fine.
+
 ## UI Visual Verification
 
 The Playwright MCP plugin is available for visual testing of layout and CSS changes.
