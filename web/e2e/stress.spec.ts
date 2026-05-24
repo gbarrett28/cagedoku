@@ -28,9 +28,18 @@ const IMAGE_TIMEOUT_MS = 30_000;
 // Types
 // ---------------------------------------------------------------------------
 
+/** Mirrors PuzzleSpec from web/src/solver/puzzleSpec.ts — serialised over page.evaluate(). */
+interface PuzzleSpecData {
+  regions: number[][];
+  cageTotals: number[][];
+  borderX: boolean[][];
+  borderY: boolean[][];
+}
+
 interface SolverResult {
   usedBacktracking: boolean;
   stalledCandidates: number[][][] | null;
+  spec: PuzzleSpecData | null;
 }
 
 interface ImageResult {
@@ -103,7 +112,7 @@ async function processImage(page: Page, imagePath: string): Promise<ImageResult>
     // Read solver stats exposed by main.ts.
     const solverResult = await page.evaluate((): SolverResult => {
       const w = window as unknown as { __lastSolverResult?: SolverResult | null };
-      return w.__lastSolverResult ?? { usedBacktracking: false, stalledCandidates: null };
+      return w.__lastSolverResult ?? { usedBacktracking: false, stalledCandidates: null, spec: null };
     });
 
     const sc = solverResult.stalledCandidates;
@@ -111,6 +120,30 @@ async function processImage(page: Page, imagePath: string): Promise<ImageResult>
       : sc.flat().filter(c => c.length > 1).length;
     const totalCandidates = sc === null ? 0
       : sc.flat().filter(c => c.length > 1).reduce((sum, c) => sum + c.length, 0);
+
+    // Write a stall fixture alongside the source image when backtracking was required.
+    if (solverResult.usedBacktracking && solverResult.stalledCandidates !== null &&
+        solverResult.spec !== null && PUZZLE_DIR) {
+      const name = path.basename(imagePath, path.extname(imagePath));
+      const source = path.basename(PUZZLE_DIR);
+      // Repo-root-relative path using forward slashes (for cross-platform portability).
+      const relImagePath = path.relative(process.cwd(), imagePath).replace(/\\/g, '/');
+      const stallFixture = {
+        version: 1 as const,
+        source,
+        name,
+        addedAt: new Date().toISOString().slice(0, 10),
+        puzzleType: 'killer' as const,
+        imagePath: relImagePath,
+        spec: solverResult.spec,
+        stalledCandidates: solverResult.stalledCandidates,
+        unsolvedCells,
+        totalCandidates,
+      };
+      const stallPath = path.join(PUZZLE_DIR, `${name}.stall.json`);
+      fs.writeFileSync(stallPath, JSON.stringify(stallFixture, null, 2));
+      console.log(`[stress] Stall fixture written: ${stallPath}`);
+    }
 
     return {
       file,
