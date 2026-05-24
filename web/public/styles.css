@@ -751,6 +751,7 @@ body:has(#playing-actions:not([hidden])) #side-panel {
 
   /* canvas-col: full-height flex row — canvas left, side-panel right */
   body:has(#playing-actions:not([hidden])) #canvas-col {
+    position: relative;
     max-width: none;
     height: 100dvh;
     display: flex;
@@ -758,6 +759,18 @@ body:has(#playing-actions:not([hidden])) #side-panel {
     align-items: center;
     justify-content: center;
     overflow: hidden;
+  }
+
+  /* Landscape: pill is absolute-positioned at the bottom of the canvas area.
+     left: 0; right: 7.5rem subtracts the side-panel width so margin:auto
+     centres the pill on the canvas portion, not the full canvas-col. */
+  body:has(#playing-actions:not([hidden])) #hint-pill {
+    position: absolute;
+    bottom: 0.5rem;
+    left: 0;
+    right: 7.5rem;
+    margin: auto;
+    width: max-content;
   }
 
   /* canvas-wrapper: fill remaining width, bounded by container height.
@@ -1100,10 +1113,8 @@ dialog::backdrop {
 }
 
 #hint-pill {
-  position: fixed;
-  bottom: 5rem;
-  left: 50%;
-  transform: translateX(-50%);
+  align-self: center;
+  margin-top: 0.35rem;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 999px;

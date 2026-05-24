@@ -73,6 +73,11 @@
           <canvas id="grid-canvas"></canvas>
           <input id="cage-total-edit" type="number" min="1" max="45">
         </div>
+
+        <div id="hint-pill" hidden role="status" aria-live="polite">
+          <span id="hint-pill-label"></span>
+        </div>
+
         <div id="side-panel">
         <!-- Playing mode actions: digit pad in Classic review; full action bar in playing mode -->
         <div id="playing-actions" hidden>
@@ -341,9 +346,6 @@
   </div>
 </dialog>
 
-<div id="hint-pill" hidden role="status" aria-live="polite">
-  <span id="hint-pill-label"></span>
-</div>
 <div id="callout" hidden role="tooltip" aria-live="polite">
   <p id="callout-text"></p>
   <button id="callout-got-it">Got it</button>
