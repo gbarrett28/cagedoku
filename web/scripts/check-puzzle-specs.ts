@@ -81,8 +81,27 @@ if (jsonFiles.length === 0) {
   process.exit(0);
 }
 
+// Pre-load existing fixtures in the output directory for deduplication.
+// Key: JSON.stringify([regions, cageTotals]) — two specs with the same layout are the same puzzle.
+function specKey(spec: { regions: number[][]; cageTotals: number[][] }): string {
+  return JSON.stringify([spec.regions, spec.cageTotals]);
+}
+
+const existingKeys = new Set<string>();
+for (const f of fs.readdirSync(outputDir).filter(f => f.endsWith('.stall.json'))) {
+  try {
+    const existing = JSON.parse(
+      fs.readFileSync(path.join(outputDir, f), 'utf-8'),
+    ) as StallFixtureFile;
+    existingKeys.add(specKey(existing.spec));
+  } catch {
+    // Ignore malformed existing fixtures
+  }
+}
+
 let stalled = 0;
 let skipped = 0;
+let duplicate = 0;
 let invalid = 0;
 const today = new Date().toISOString().slice(0, 10);
 
@@ -116,6 +135,13 @@ for (const filename of jsonFiles) {
     continue;
   }
 
+  // Deduplicate: skip if a fixture with the same puzzle layout already exists.
+  if (existingKeys.has(specKey(spec))) {
+    console.log(`${name}: duplicate of an existing fixture — skipping`);
+    duplicate++;
+    continue;
+  }
+
   const sc = result.stalledCandidates ?? [];
   const unsolvedCells = sc.flat().filter(c => c.length > 1).length;
   const totalCandidates = sc.flat().filter(c => c.length > 1).reduce((sum, c) => sum + c.length, 0);
@@ -134,8 +160,11 @@ for (const filename of jsonFiles) {
 
   const outPath = path.join(outputDir, `${name}.stall.json`);
   fs.writeFileSync(outPath, JSON.stringify(fixture, null, 2));
+  existingKeys.add(specKey(spec)); // prevent same puzzle appearing twice in one run
   console.log(`${name}: stalled (${unsolvedCells} unsolved, ${totalCandidates} candidates) → ${outPath}`);
   stalled++;
 }
 
-console.log(`\nDone. ${stalled} stalled, ${skipped} already solved, ${invalid} invalid.`);
+console.log(
+  `\nDone. ${stalled} stalled, ${skipped} already solved, ${duplicate} duplicate, ${invalid} invalid.`,
+);
