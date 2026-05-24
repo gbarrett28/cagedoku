@@ -56,6 +56,7 @@ import { getNextAutoApplyStep, applyAutoApplyStep } from './session/engine.js';
 import { AssertionViolation, findDuplicateCells, hasDuplicateDigits, isCageSumCorrect } from './session/assertions.js';
 import { initTutorial, appendCallouts } from './tutorial.js';
 import { resolveDigitKey } from './resolveDigitKey.js';
+import type { StallFixtureFile } from './engine/rules/stallFixtureFile.js';
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -892,6 +893,7 @@ async function handleProcess(): Promise<void> {
         (window as unknown as Record<string, unknown>)['__lastSolverResult'] = {
           usedBacktracking,
           stalledCandidates: stalledCandidates ?? null,
+          spec: dataToSpec(state.specData),
         };
         let boardComplete = true;
         for (let r = 0; r < 9 && boardComplete; r++)
@@ -963,6 +965,7 @@ async function handleProcess(): Promise<void> {
         (window as unknown as Record<string, unknown>)['__lastSolverResult'] = {
           usedBacktracking: classicUsedBt,
           stalledCandidates: classicStalled ?? null,
+          spec: dataToSpec(state.specData),
         };
         let boardComplete = true;
         for (let r = 0; r < 9 && boardComplete; r++)
@@ -1962,5 +1965,131 @@ document.addEventListener('DOMContentLoaded', () => {
       };
       showTrainingConsentModal(() => uploadTrainingData(mockData));
     };
+
+    // Stall fixture dev panel — shown when ?dev=1 is in the URL.
+    // Fetches /dev/stall-fixtures (list) from the Vite dev middleware, renders a
+    // collapsible table, and loads any clicked fixture directly into playing mode.
+    // The entire block is tree-shaken in production builds.
+    if (new URLSearchParams(location.search).has('dev')) {
+      void (async () => {
+        type FixtureMeta = Omit<StallFixtureFile, 'spec' | 'stalledCandidates'>;
+        let fixtures: FixtureMeta[];
+        try {
+          const resp = await fetch('/dev/stall-fixtures');
+          if (!resp.ok) return; // middleware absent (production build) → silent no-op
+          fixtures = (await resp.json()) as FixtureMeta[];
+        } catch {
+          return;
+        }
+
+        // ── Panel shell ────────────────────────────────────────────────────────
+        const panel = document.createElement('div');
+        panel.style.cssText =
+          'background:#1e1e2e;color:#cdd6f4;font-family:monospace;font-size:13px;' +
+          'padding:8px 12px;border-bottom:2px solid #585b70;';
+
+        const headerDiv = document.createElement('div');
+        headerDiv.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;';
+
+        const titleEl = document.createElement('strong');
+        titleEl.textContent = 'Stall Fixtures';
+
+        const badge = document.createElement('span');
+        badge.style.cssText =
+          'background:#585b70;border-radius:10px;padding:1px 7px;font-size:11px;';
+        badge.textContent = String(fixtures.length);
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.textContent = '▼';
+        toggleBtn.style.cssText =
+          'background:none;border:none;color:#cdd6f4;cursor:pointer;font-size:13px;margin-left:auto;';
+
+        headerDiv.appendChild(titleEl);
+        headerDiv.appendChild(badge);
+        headerDiv.appendChild(toggleBtn);
+        panel.appendChild(headerDiv);
+
+        // ── Table ──────────────────────────────────────────────────────────────
+        const table = document.createElement('table');
+        table.style.cssText =
+          'width:100%;border-collapse:collapse;margin-top:6px;';
+
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        for (const col of ['Name', 'Source', 'Type', 'Unsolved', 'Candidates', 'Image']) {
+          const th = document.createElement('th');
+          th.textContent = col;
+          th.style.cssText =
+            'text-align:left;padding:3px 8px;border-bottom:1px solid #585b70;color:#a6adc8;font-weight:600;';
+          headRow.appendChild(th);
+        }
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        for (const meta of fixtures) {
+          const tr = document.createElement('tr');
+          tr.style.cursor = 'pointer';
+
+          const imageFilename = meta.imagePath
+            ? (meta.imagePath.split('/').pop() ?? '')
+            : '';
+
+          for (const val of [
+            meta.name,
+            meta.source,
+            meta.puzzleType,
+            String(meta.unsolvedCells),
+            String(meta.totalCandidates),
+            imageFilename,
+          ]) {
+            const td = document.createElement('td');
+            td.textContent = val;
+            td.style.cssText = 'padding:3px 8px;border-bottom:1px solid #313244;';
+            tr.appendChild(td);
+          }
+
+          tr.addEventListener('mouseenter', () => { tr.style.background = '#313244'; });
+          tr.addEventListener('mouseleave', () => { tr.style.background = ''; });
+
+          tr.addEventListener('click', () => {
+            void (async () => {
+              try {
+                const resp = await fetch(
+                  `/dev/stall-fixtures/${encodeURIComponent(meta.name)}`,
+                );
+                if (!resp.ok) return;
+                const fixture = (await resp.json()) as StallFixtureFile;
+                loadSpecDirect(fixture.spec);
+                draftBorderX = fixture.spec.borderX.map(col => [...col]);
+                draftBorderY = fixture.spec.borderY.map(row => [...row]);
+                const { board } = solveCurrentSpec();
+                const playing = confirmPuzzle(board);
+                renderPlayingMode(playing);
+                appendCallouts(buildPlayingCallouts(playing.puzzleType !== 'classic'));
+              } catch (err) {
+                console.error('[dev panel] Failed to load fixture:', err);
+              }
+            })();
+          });
+
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        panel.appendChild(table);
+
+        // ── Collapse toggle ────────────────────────────────────────────────────
+        let collapsed = false;
+        const onToggle = () => {
+          collapsed = !collapsed;
+          table.hidden = collapsed;
+          toggleBtn.textContent = collapsed ? '▶' : '▼';
+        };
+        toggleBtn.addEventListener('click', (e) => { e.stopPropagation(); onToggle(); });
+        headerDiv.addEventListener('click', onToggle);
+
+        document.body.insertBefore(panel, document.body.firstChild);
+      })();
+    }
   }
 });

@@ -1,0 +1,89 @@
+name: Review puzzle-spec uploads
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: pip install boto3
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Node dependencies
+        run: cd web && npm ci
+
+      - name: List puzzle-spec objects in R2
+        id: list
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          python3 scripts/_r2_list.py cagedoku-training puzzle-spec/ > /tmp/r2_keys.txt
+          COUNT=$(wc -l < /tmp/r2_keys.txt | tr -d ' ')
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Found $COUNT puzzle-spec object(s)."
+
+      - name: Download puzzle-spec objects
+        if: steps.list.outputs.count != '0'
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          mkdir -p /tmp/puzzle-specs
+          python3 scripts/_r2_download.py cagedoku-training /tmp/puzzle-specs/ < /tmp/r2_keys.txt
+
+      - name: Check puzzle specs
+        if: steps.list.outputs.count != '0'
+        run: |
+          mkdir -p /tmp/stall-out
+          cd web && npx vite-node scripts/check-puzzle-specs.ts /tmp/puzzle-specs/ /tmp/stall-out/
+
+      - name: Copy stall fixtures to repo
+        if: steps.list.outputs.count != '0'
+        run: |
+          STALL_FILES=( /tmp/stall-out/*.stall.json )
+          if [[ -e "${STALL_FILES[0]}" ]]; then
+            cp "${STALL_FILES[@]}" web/stall-fixtures/
+            echo "Copied ${#STALL_FILES[@]} fixture(s) to web/stall-fixtures/"
+          else
+            echo "No stall fixtures to copy."
+          fi
+
+      - name: Commit stall fixtures
+        if: steps.list.outputs.count != '0'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add web/stall-fixtures/
+          git diff --cached --quiet && echo "No new fixtures." || \
+            git commit -m "chore: add stall fixtures from R2 puzzle-spec uploads"
+
+      - name: Push commits
+        if: steps.list.outputs.count != '0'
+        run: git pull --rebase && git push
+
+      - name: Delete processed R2 objects
+        if: steps.list.outputs.count != '0'
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          python3 scripts/_r2_delete.py cagedoku-training < /tmp/r2_keys.txt
