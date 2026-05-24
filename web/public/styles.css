@@ -1270,3 +1270,39 @@ dialog::backdrop {
   color: var(--text-muted);
   white-space: pre;
 }
+
+/* Fixture panel */
+.fixture-intro {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+}
+
+.fixture-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.fixture-table th {
+  text-align: left;
+  padding: 0.3rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.fixture-table td {
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.fixture-table tbody tr {
+  cursor: pointer;
+}
+
+.fixture-table tbody tr:hover {
+  background: var(--surface-raised, var(--border));
+}

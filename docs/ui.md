@@ -651,6 +651,98 @@ Puzzle state is fully preserved — no page reload occurs. The `logo-k` callout 
 
 
 
+## Hard Puzzles Panel
+
+A 🔥 button in the header (`#hard-puzzles-btn`) gives users direct access to the stall fixture corpus — puzzles that defeat the rule engine and that may benefit from new rules.
+
+### Toggle Behaviour
+
+Clicking `#hard-puzzles-btn` swaps the home screen between two mutually exclusive panels:
+
+- **Upload view** (`#upload-panel`) — default; shown when the app loads.
+- **Fixture view** (`#fixture-panel`) — shown while the flame button is active.
+
+Pressing the button again while in fixture view returns to the upload view. Any action that starts a new puzzle via the normal image pipeline (`handleProcess()`) always returns to the upload view and clears the active fixture state (see below).
+
+The `#hard-puzzles-btn` tutorial callout ("Browse puzzles the rule engine cannot solve — try one and suggest a new rule.") is registered in `buildUploadCallouts()` alongside the other header buttons.
+
+### Fixture List
+
+On first open the panel fetches `./stall-fixtures/index.json` — a sorted metadata array emitted by the `stallFixturesPlugin` Vite plugin at build time and served by its dev middleware in development. The result is cached in memory for the session (`cachedFixtures`).
+
+The table has three columns: **Puzzle**, **Unsolved cells**, **Total candidates**. Rows are sorted by `(unsolvedCells ASC, totalCandidates ASC)`.
+
+Clicking a row:
+1. Fetches `./stall-fixtures/<name>.stall.json` (the full `StallFixtureFile`).
+2. Calls `loadSpecDirect(fixture.spec)` to load the puzzle.
+3. Sets `currentFixtureName`, `currentFixtureUnsolvedCells`, `currentFixtureTotalCandidates`.
+4. Runs the solver and transitions to playing mode (`solveCurrentSpec()` → `confirmPuzzle()` → `renderPlayingMode()`).
+
+### Active Fixture State
+
+Three module-level variables in `main.ts` track the currently-loaded fixture:
+
+```ts
+let currentFixtureName: string | null = null;
+let currentFixtureUnsolvedCells: number | null = null;
+let currentFixtureTotalCandidates: number | null = null;
+```
+
+`activeFixtureContext()` reads all three and returns a typed object (or `null` when no fixture is active). It is exposed on `window.__activeFixture` in dev builds for Playwright tests and browser-console inspection.
+
+All three variables are cleared to `null` at the top of `handleProcess()`.
+
+### Static Serving (Production)
+
+`stallFixturesPlugin` in `vite.config.ts` serves fixtures at two URLs:
+
+| URL | Content |
+|---|---|
+| `./stall-fixtures/index.json` | Sorted metadata array (all fields except `spec` and `stalledCandidates`) |
+| `./stall-fixtures/<name>.stall.json` | Full fixture JSON |
+
+In dev mode: Connect middleware at `/stall-fixtures`. In production: `generateBundle` Rollup hook emits both the individual fixture files and `stall-fixtures/index.json` into `dist/`.
+
+Relative URLs (`./stall-fixtures/…`) are used throughout so they resolve correctly at any GitHub Pages subpath.
+
+---
+
+## Rule Suggestion Feedback
+
+The feedback modal's **Type** radio group has a third option — **Rule suggestion** (`value="new-rule"`). It is shown in the same modal as Bug report and Enhancement request.
+
+When selected:
+- Bug-specific fields (`#feedback-bug-fields`) are hidden (same as Enhancement).
+- The description label changes to *"Describe the rule you think would unlock this puzzle"*.
+
+### Payload
+
+`FeedbackReport` (version 3) gains three optional fields populated from `activeFixtureContext()` when the type is `'new-rule'` and a fixture is loaded:
+
+```ts
+fixtureName?: string;
+unsolvedCells?: number;
+totalCandidates?: number;
+```
+
+### Worker / GitHub Issue
+
+In `worker/src/index.ts`, `createFeedbackIssue` handles the `'new-rule'` type:
+
+- **Labels:** `['feedback', 'new-rule']`
+- **Title:** `[Rule suggestion] <fixtureName>: <description snippet>` when a fixture is named; `[Rule suggestion] <snippet>` otherwise.
+- **Body:** When `fixtureName` is present, a fixture reference block is prepended before the standard metadata:
+
+  ```
+  **Fixture:** `<fixtureName>`
+  **Unsolved cells:** N
+  **Total candidates:** N
+  ```
+
+Bug-specific sections (`bugCategory` line, expected behaviour, exception) are omitted. Session trace and config sections are retained.
+
+---
+
 ## Offline Service Worker
 
 The app registers `sw.js` as a service worker (production builds only; skipped in dev mode). It uses a cache-first strategy, precaching all static assets at install time so the app works offline.
