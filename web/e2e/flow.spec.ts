@@ -305,6 +305,32 @@ test('digit-0 button clears a placed digit', async ({ page }) => {
 });
 
 // ---------------------------------------------------------------------------
+// Hard puzzles panel toggle
+// ---------------------------------------------------------------------------
+
+/** Navigate to the home screen without loading a spec. */
+async function goHome(page: Page): Promise<void> {
+  await page.addInitScript(() => localStorage.setItem('coach_tutorial_suppressed', 'true'));
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#upload-panel')).toBeVisible({ timeout: 5_000 });
+}
+
+test('hard-puzzles-btn toggles fixture panel and hides upload panel', async ({ page }) => {
+  await goHome(page);
+  await expect(page.locator('#fixture-panel')).toBeHidden();
+
+  // First click — show fixture panel
+  await page.locator('#hard-puzzles-btn').click();
+  await expect(page.locator('#fixture-panel')).toBeVisible();
+  await expect(page.locator('#upload-panel')).toBeHidden();
+
+  // Second click — return to upload panel
+  await page.locator('#hard-puzzles-btn').click();
+  await expect(page.locator('#upload-panel')).toBeVisible();
+  await expect(page.locator('#fixture-panel')).toBeHidden();
+});
+
+// ---------------------------------------------------------------------------
 // Header modals
 // ---------------------------------------------------------------------------
 

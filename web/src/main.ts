@@ -104,6 +104,21 @@ let fastForwardRequested = false;
 
 let draftBorderX: boolean[][] = [];   // [col][rowGap] — cage horizontal walls
 let draftBorderY: boolean[][] = [];   // [colGap][row] — cage vertical walls
+
+// Active stall fixture — set when loaded from the fixture panel, cleared on normal pipeline start.
+let currentFixtureName: string | null = null;
+let currentFixtureUnsolvedCells: number | null = null;
+let currentFixtureTotalCandidates: number | null = null;
+
+/** Returns the active fixture context for feedback submission, or null when no fixture is loaded. */
+function activeFixtureContext(): { name: string; unsolvedCells: number; totalCandidates: number } | null {
+  if (currentFixtureName === null) return null;
+  return {
+    name: currentFixtureName,
+    unsolvedCells: currentFixtureUnsolvedCells!,
+    totalCandidates: currentFixtureTotalCandidates!,
+  };
+}
 let draftEdited = false;              // true once the user changes any total or border
 let pendingCellThumbs = new Map<string, Uint8Array[]>(); // OCR thumbnails, held until Confirm
 let pendingMergedThumbs = new Map<string, Uint8Array>(); // pre-split merged thumbnails, held until Confirm
@@ -494,10 +509,11 @@ function renderState(state: PuzzleState): void {
 
 function buildUploadCallouts(): { id: string; text: string }[] {
   return [
-    { id: 'process-btn',  text: 'Tap here to analyse your photo and detect the grid and cages.' },
-    { id: 'help-btn',     text: 'Re-open this guide at any time.' },
-    { id: 'feedback-btn', text: 'Found a bug or have a suggestion? Tap the envelope to send feedback.' },
-    { id: 'config-btn',   text: 'Configure which logical rules run automatically.' },
+    { id: 'process-btn',      text: 'Tap here to analyse your photo and detect the grid and cages.' },
+    { id: 'hard-puzzles-btn', text: 'Browse puzzles the rule engine cannot solve — try one and suggest a new rule.' },
+    { id: 'help-btn',         text: 'Re-open this guide at any time.' },
+    { id: 'feedback-btn',     text: 'Found a bug or have a suggestion? Tap the envelope to send feedback.' },
+    { id: 'config-btn',       text: 'Configure which logical rules run automatically.' },
   ];
 }
 
@@ -852,6 +868,10 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
 async function handleProcess(): Promise<void> {
   const fileInput = el<HTMLInputElement>('file-input');
   if (!fileInput.files || fileInput.files.length === 0) { setStatus('Please select an image or PDF file.', true); return; }
+  // Clear any active fixture — the normal image pipeline takes over.
+  currentFixtureName = null;
+  currentFixtureUnsolvedCells = null;
+  currentFixtureTotalCandidates = null;
   clearActionLog();
   const f = fileInput.files[0]!;
   logAction('file_selected', `${f.name} (${(f.size / 1024).toFixed(0)} KB)`);
@@ -1384,6 +1404,89 @@ if (import.meta.env.DEV) {
     (sw: ServiceWorker | null) => { waitingSW = sw; };
 }
 
+// ---------------------------------------------------------------------------
+// Hard Puzzles fixture panel
+// ---------------------------------------------------------------------------
+
+type FixtureMeta = Omit<StallFixtureFile, 'spec' | 'stalledCandidates'>;
+let cachedFixtures: FixtureMeta[] | null = null;
+
+async function loadFixtureList(): Promise<void> {
+  if (cachedFixtures !== null) {
+    renderFixtureTable(cachedFixtures);
+    return;
+  }
+  try {
+    const resp = await fetch('./stall-fixtures/index.json');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    cachedFixtures = (await resp.json()) as FixtureMeta[];
+  } catch (err) {
+    el<HTMLElement>('fixture-loading').textContent = 'Failed to load puzzle list.';
+    console.error('[fixture-panel] fetch failed:', err);
+    return;
+  }
+  renderFixtureTable(cachedFixtures);
+}
+
+function renderFixtureTable(fixtures: FixtureMeta[]): void {
+  const container = el<HTMLElement>('fixture-list-content');
+  container.replaceChildren();
+
+  const table = document.createElement('table');
+  table.className = 'fixture-table';
+
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  for (const col of ['Puzzle', 'Unsolved', 'Candidates']) {
+    const th = document.createElement('th');
+    th.textContent = col;
+    headRow.appendChild(th);
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  for (const meta of fixtures) {
+    const tr = document.createElement('tr');
+
+    for (const val of [meta.name, String(meta.unsolvedCells), String(meta.totalCandidates)]) {
+      const td = document.createElement('td');
+      td.textContent = val;
+      tr.appendChild(td);
+    }
+
+    tr.addEventListener('click', () => {
+      void (async () => {
+        try {
+          const resp = await fetch(
+            `./stall-fixtures/${encodeURIComponent(meta.name)}.stall.json`,
+          );
+          if (!resp.ok) return;
+          const fixture = (await resp.json()) as StallFixtureFile;
+          loadSpecDirect(fixture.spec);
+          draftBorderX = fixture.spec.borderX.map((col) => [...col]);
+          draftBorderY = fixture.spec.borderY.map((row) => [...row]);
+          currentFixtureName = meta.name;
+          currentFixtureUnsolvedCells = meta.unsolvedCells;
+          currentFixtureTotalCandidates = meta.totalCandidates;
+          const { board } = solveCurrentSpec();
+          const playing = confirmPuzzle(board);
+          renderPlayingMode(playing);
+          appendCallouts(buildPlayingCallouts(playing.puzzleType !== 'classic'));
+        } catch (err) {
+          console.error('[fixture-panel] Failed to load fixture:', err);
+        }
+      })();
+    });
+
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  container.appendChild(table);
+}
+
+// ---------------------------------------------------------------------------
+
 document.addEventListener('DOMContentLoaded', () => {
 
   // Startup: load OpenCV (with download progress bar) and digit recogniser in parallel
@@ -1565,6 +1668,15 @@ document.addEventListener('DOMContentLoaded', () => {
     draftEdited = false;
     applyUploadResult(lastOcrState, lastWarpedUrl, null);
     appendCallouts([{ id: 'confirm-btn', text: 'Correct any OCR errors, then confirm to re-solve.' }]);
+  });
+
+  el<HTMLButtonElement>('hard-puzzles-btn').addEventListener('click', () => {
+    const uploadPanel = el<HTMLElement>('upload-panel');
+    const fixturePanel = el<HTMLElement>('fixture-panel');
+    const showingFixtures = !fixturePanel.hidden;
+    uploadPanel.hidden = showingFixtures;
+    fixturePanel.hidden = showingFixtures;
+    if (!showingFixtures) void loadFixtureList();
   });
 
   el<HTMLButtonElement>('help-btn').addEventListener('click', () => {
@@ -1966,130 +2078,10 @@ document.addEventListener('DOMContentLoaded', () => {
       showTrainingConsentModal(() => uploadTrainingData(mockData));
     };
 
-    // Stall fixture dev panel — shown when ?dev=1 is in the URL.
-    // Fetches /dev/stall-fixtures (list) from the Vite dev middleware, renders a
-    // collapsible table, and loads any clicked fixture directly into playing mode.
-    // The entire block is tree-shaken in production builds.
-    if (new URLSearchParams(location.search).has('dev')) {
-      void (async () => {
-        type FixtureMeta = Omit<StallFixtureFile, 'spec' | 'stalledCandidates'>;
-        let fixtures: FixtureMeta[];
-        try {
-          const resp = await fetch('./stall-fixtures/index.json');
-          if (!resp.ok) return; // not available → silent no-op
-          fixtures = (await resp.json()) as FixtureMeta[];
-        } catch {
-          return;
-        }
+    // Exposes window.__activeFixture() so Playwright tests (and the browser
+    // console) can inspect the active stall-fixture context — used by the
+    // Task 3 feedback handler test to verify the fixture reference is captured.
+    (window as unknown as Record<string, unknown>)['__activeFixture'] = activeFixtureContext;
 
-        // ── Panel shell ────────────────────────────────────────────────────────
-        const panel = document.createElement('div');
-        panel.style.cssText =
-          'background:#1e1e2e;color:#cdd6f4;font-family:monospace;font-size:13px;' +
-          'padding:8px 12px;border-bottom:2px solid #585b70;';
-
-        const headerDiv = document.createElement('div');
-        headerDiv.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;';
-
-        const titleEl = document.createElement('strong');
-        titleEl.textContent = 'Stall Fixtures';
-
-        const badge = document.createElement('span');
-        badge.style.cssText =
-          'background:#585b70;border-radius:10px;padding:1px 7px;font-size:11px;';
-        badge.textContent = String(fixtures.length);
-
-        const toggleBtn = document.createElement('button');
-        toggleBtn.textContent = '▼';
-        toggleBtn.style.cssText =
-          'background:none;border:none;color:#cdd6f4;cursor:pointer;font-size:13px;margin-left:auto;';
-
-        headerDiv.appendChild(titleEl);
-        headerDiv.appendChild(badge);
-        headerDiv.appendChild(toggleBtn);
-        panel.appendChild(headerDiv);
-
-        // ── Table ──────────────────────────────────────────────────────────────
-        const table = document.createElement('table');
-        table.style.cssText =
-          'width:100%;border-collapse:collapse;margin-top:6px;';
-
-        const thead = document.createElement('thead');
-        const headRow = document.createElement('tr');
-        for (const col of ['Name', 'Source', 'Type', 'Unsolved', 'Candidates', 'Image']) {
-          const th = document.createElement('th');
-          th.textContent = col;
-          th.style.cssText =
-            'text-align:left;padding:3px 8px;border-bottom:1px solid #585b70;color:#a6adc8;font-weight:600;';
-          headRow.appendChild(th);
-        }
-        thead.appendChild(headRow);
-        table.appendChild(thead);
-
-        const tbody = document.createElement('tbody');
-        for (const meta of fixtures) {
-          const tr = document.createElement('tr');
-          tr.style.cursor = 'pointer';
-
-          const imageFilename = meta.imagePath
-            ? (meta.imagePath.split('/').pop() ?? '')
-            : '';
-
-          for (const val of [
-            meta.name,
-            meta.source,
-            meta.puzzleType,
-            String(meta.unsolvedCells),
-            String(meta.totalCandidates),
-            imageFilename,
-          ]) {
-            const td = document.createElement('td');
-            td.textContent = val;
-            td.style.cssText = 'padding:3px 8px;border-bottom:1px solid #313244;';
-            tr.appendChild(td);
-          }
-
-          tr.addEventListener('mouseenter', () => { tr.style.background = '#313244'; });
-          tr.addEventListener('mouseleave', () => { tr.style.background = ''; });
-
-          tr.addEventListener('click', () => {
-            void (async () => {
-              try {
-                const resp = await fetch(
-                  `./stall-fixtures/${encodeURIComponent(meta.name)}.stall.json`,
-                );
-                if (!resp.ok) return;
-                const fixture = (await resp.json()) as StallFixtureFile;
-                loadSpecDirect(fixture.spec);
-                draftBorderX = fixture.spec.borderX.map(col => [...col]);
-                draftBorderY = fixture.spec.borderY.map(row => [...row]);
-                const { board } = solveCurrentSpec();
-                const playing = confirmPuzzle(board);
-                renderPlayingMode(playing);
-                appendCallouts(buildPlayingCallouts(playing.puzzleType !== 'classic'));
-              } catch (err) {
-                console.error('[dev panel] Failed to load fixture:', err);
-              }
-            })();
-          });
-
-          tbody.appendChild(tr);
-        }
-        table.appendChild(tbody);
-        panel.appendChild(table);
-
-        // ── Collapse toggle ────────────────────────────────────────────────────
-        let collapsed = false;
-        const onToggle = () => {
-          collapsed = !collapsed;
-          table.hidden = collapsed;
-          toggleBtn.textContent = collapsed ? '▶' : '▼';
-        };
-        toggleBtn.addEventListener('click', (e) => { e.stopPropagation(); onToggle(); });
-        headerDiv.addEventListener('click', onToggle);
-
-        document.body.insertBefore(panel, document.body.firstChild);
-      })();
-    }
   }
 });
