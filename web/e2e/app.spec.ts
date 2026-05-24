@@ -90,6 +90,21 @@ test('page loads with correct title and upload panel visible', async ({ page }) 
 });
 
 // ---------------------------------------------------------------------------
+// Test: hint-pill DOM placement  (fast — structural only)
+// ---------------------------------------------------------------------------
+
+test('hint-pill is a direct child of canvas-col', async ({ page }) => {
+  test.setTimeout(8_000);
+  await stubOpenCV(page);
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  const parentId = await page.evaluate(() => {
+    const pill = document.getElementById('hint-pill');
+    return pill?.parentElement?.id ?? null;
+  });
+  expect(parentId).toBe('canvas-col');
+});
+
+// ---------------------------------------------------------------------------
 // Test: no JS errors on load  (fast — waits 2 s then checks)
 // ---------------------------------------------------------------------------
 
