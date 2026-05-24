@@ -359,6 +359,25 @@ canvas (same `#side-panel` wrapper) rather than as separate columns in `#images-
 **N|C pill in landscape:** `transform: rotate(90deg)` applied so the pill reads
 vertically within the sidebar.
 
+**`#hint-pill`** sits inside `#canvas-col`, between `#canvas-wrapper` and
+`#side-panel`. This means it tracks the canvas area regardless of orientation
+rather than centering on the full viewport.
+
+- **Portrait:** in-flow flex child of `#canvas-col` (`align-self: center;
+  margin-top: 0.35rem`). Appears below the canvas, above the digit pad.
+- **Landscape (playing only):** `position: absolute; bottom: 0.5rem;
+  left: 0; right: 7.5rem; margin: auto; width: max-content` — centres the
+  pill on the canvas portion (subtracting the `#side-panel` width). Requires
+  `position: relative` on `#canvas-col` in the landscape playing rule.
+- **Landscape + classic OCR review (combined state):** when both
+  `#playing-actions` and `#review-actions` are visible, a combined-state
+  override inside `@media (orientation: landscape)` resets `#canvas-col` to
+  `position: static; height: auto; container-type: inline-size`. Without this,
+  `position: relative` + `container-type: size` promotes `#canvas-col` to a
+  positioned stacking context (paint layer 6) that covers the non-positioned
+  `#review-actions` (layer 3), blocking the Confirm button. The hint pill is
+  always `hidden` in this combined state so the absolute positioning is moot.
+
 ### Fast-Forward Button Overlay
 
 `#fast-forward-btn` is wrapped in the same `.hints-area` `<div>` as `#hints-btn`.
