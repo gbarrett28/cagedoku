@@ -52,8 +52,8 @@ self.addEventListener('install', (event) => {
           ),
         ),
       );
-      // Skip the waiting phase — the new SW takes control immediately.
-      await self.skipWaiting();
+      // New SW parks in 'waiting' — skipWaiting() is called later via
+      // a SKIP_WAITING message sent by the page on "New Puzzle" click.
     }),
   );
 });
@@ -77,6 +77,16 @@ self.addEventListener('activate', (event) => {
       await self.clients.claim();
     }),
   );
+});
+
+// ---------------------------------------------------------------------------
+// Message — apply a deferred update when the page says it is safe to do so.
+// The page posts { type: 'SKIP_WAITING' } from the new-puzzle-btn handler,
+// after all puzzle state has been cleared.
+// ---------------------------------------------------------------------------
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 // ---------------------------------------------------------------------------

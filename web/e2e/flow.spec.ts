@@ -132,6 +132,31 @@ test('new puzzle button returns to upload panel', async ({ page }) => {
   await expect(page.locator('#review-panel')).toBeHidden();
 });
 
+test('new puzzle with pending SW update posts SKIP_WAITING to waiting worker', async ({ page }) => {
+  await loadTrivialPuzzle(page);
+
+  // Inject a fake waiting SW via the dev-only hook exposed by main.ts.
+  await page.evaluate(() => {
+    const messages: unknown[] = [];
+    const fakeSW = {
+      postMessage: (msg: unknown) => { messages.push(msg); },
+    } as unknown as ServiceWorker;
+    (window as unknown as Record<string, unknown>)['__swPostedMessages'] = messages;
+    const hook = (window as unknown as Record<string, unknown>)['__setWaitingSW'] as
+      ((sw: ServiceWorker) => void) | undefined;
+    if (!hook) throw new Error('__setWaitingSW not found — dev hook missing in main.ts');
+    hook(fakeSW);
+  });
+
+  await page.locator('#new-puzzle-btn').click();
+  await expect(page.locator('#upload-panel')).toBeVisible();
+
+  const posted = await page.evaluate(
+    () => (window as unknown as Record<string, unknown>)['__swPostedMessages'] as unknown[],
+  );
+  expect(posted).toContainEqual({ type: 'SKIP_WAITING' });
+});
+
 // ---------------------------------------------------------------------------
 // Classic puzzle flow
 // ---------------------------------------------------------------------------
