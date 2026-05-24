@@ -1683,9 +1683,11 @@ document.addEventListener('DOMContentLoaded', () => {
   el<HTMLButtonElement>('hard-puzzles-btn').addEventListener('click', () => {
     const uploadPanel = el<HTMLElement>('upload-panel');
     const fixturePanel = el<HTMLElement>('fixture-panel');
+    // showingFixtures is true when the fixture panel is currently visible.
+    // Toggling: if currently showing fixtures → return to upload; else → show fixtures.
     const showingFixtures = !fixturePanel.hidden;
-    uploadPanel.hidden = showingFixtures;
-    fixturePanel.hidden = showingFixtures;
+    uploadPanel.hidden = !showingFixtures;  // hide upload when entering fixture view
+    fixturePanel.hidden = showingFixtures;  // hide fixture when returning to upload
     if (!showingFixtures) void loadFixtureList();
   });
 
