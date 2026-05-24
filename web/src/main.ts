@@ -1346,12 +1346,39 @@ async function handleFeedbackSubmit(): Promise<void> {
 // Event wiring
 // ---------------------------------------------------------------------------
 
+// Waiting service worker: set when a new SW installs but has not yet taken control.
+// Sent SKIP_WAITING via postMessage when the user clicks New Puzzle (state cleared).
+let waitingSW: ServiceWorker | null = null;
+
 // Register the offline service worker. Only runs in production builds — skipped
 // during Vite dev mode to prevent the SW from intercepting HMR/module requests.
 if ('serviceWorker' in navigator && !import.meta.env.DEV) {
-  void navigator.serviceWorker.register('./sw.js').catch(err => {
-    console.warn('[SW] Registration failed:', err);
-  });
+  navigator.serviceWorker.register('./sw.js')
+    .then((registration) => {
+      // Capture a SW that is already waiting (e.g. tab opened after a deploy
+      // landed but before the user interacted with the page).
+      if (registration.waiting) waitingSW = registration.waiting;
+
+      // Capture future updates: fires when a new SW begins installing.
+      registration.addEventListener('updatefound', () => {
+        const sw = registration.installing;
+        if (sw === null) return;
+        sw.addEventListener('statechange', () => {
+          // 'installed' means the SW finished installing and is now waiting.
+          if (sw.state === 'installed') waitingSW = sw;
+        });
+      });
+    })
+    .catch(err => {
+      console.warn('[SW] Registration failed:', err);
+    });
+}
+
+// Dev-only test hook: lets Playwright tests inject a fake waiting SW so the
+// SKIP_WAITING path can be exercised without a real service worker.
+if (import.meta.env.DEV) {
+  (window as unknown as Record<string, unknown>)['__setWaitingSW'] =
+    (sw: ServiceWorker | null) => { waitingSW = sw; };
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1511,6 +1538,18 @@ document.addEventListener('DOMContentLoaded', () => {
     el<HTMLButtonElement>('reveal-btn').hidden = true;
     el<HTMLInputElement>('file-input').value = '';
     setStatus('');
+
+    // Apply any pending SW update now that all puzzle state has been cleared.
+    // The page will reload once the new SW activates and fires controllerchange.
+    if (waitingSW !== null) {
+      navigator.serviceWorker.addEventListener(
+        'controllerchange',
+        () => location.reload(),
+        { once: true },
+      );
+      waitingSW.postMessage({ type: 'SKIP_WAITING' });
+      waitingSW = null;
+    }
   });
 
   el<HTMLButtonElement>('edit-ocr-btn').addEventListener('click', () => {
