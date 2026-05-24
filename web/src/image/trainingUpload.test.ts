@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { hasConsent, grantConsent, uploadTrainingData, uploadPuzzleSpec, initiateUpload } from './trainingUpload.js';
-import type { PuzzleSpecExport } from './trainingExport.js';
+import { hasConsent, grantConsent, uploadTrainingData, uploadPuzzleSpec, initiateUpload, uploadStallState, initiateStallUpload } from './trainingUpload.js';
+import type { PuzzleSpecExport, StallStateExport } from './trainingExport.js';
 
 function clearCookies(): void {
   document.cookie.split(';').forEach(c => {
@@ -137,6 +137,42 @@ describe('uploadPuzzleSpec', () => {
   });
 });
 
+const minimalStallExport: StallStateExport = {
+  version: 1,
+  exportedAt: '2026-05-24T00:00:00.000Z',
+  appVersion: 'test',
+  puzzleType: 'killer',
+  stalledCandidates: Array.from({ length: 9 }, () =>
+    Array.from({ length: 9 }, () => [1, 2, 3]),
+  ),
+};
+
+describe('uploadStallState', () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
+
+  it('POSTs stall state to worker when VITE_TRAINING_WORKER_URL is set', () => {
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://test-worker.example.com');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('OK'));
+
+    uploadStallState(minimalStallExport);
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://test-worker.example.com',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('does not call fetch when VITE_TRAINING_WORKER_URL is empty', () => {
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', '');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    uploadStallState(minimalStallExport);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe('initiateUpload', () => {
   beforeEach(clearCookies);
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); clearCookies(); });
@@ -162,6 +198,34 @@ describe('initiateUpload', () => {
 
     expect(showModal).toHaveBeenCalledOnce();
     expect(showModal).toHaveBeenCalledWith(minimalExport);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('initiateStallUpload', () => {
+  beforeEach(clearCookies);
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); clearCookies(); });
+
+  it('uploads directly when consent is granted', () => {
+    document.cookie = 'training_consent=granted';
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://worker.example.com');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('OK'));
+    const showModal = vi.fn();
+
+    initiateStallUpload(minimalStallExport, showModal);
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(showModal).not.toHaveBeenCalled();
+  });
+
+  it('calls showConsentModal when no consent cookie is set', () => {
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://worker.example.com');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const showModal = vi.fn();
+
+    initiateStallUpload(minimalStallExport, showModal);
+
+    expect(showModal).toHaveBeenCalledOnce();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

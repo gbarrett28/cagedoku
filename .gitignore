@@ -7,6 +7,9 @@ __pycache__/
 *.egg-info/
 .coverage
 .mypy_cache/
+
+# Vitest coverage reports — generated artifact
+web/coverage/
 .ruff_cache/
 dist/
 build/
