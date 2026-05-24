@@ -49,3 +49,4 @@ web/vitest.config.js
 web/playwright.config.js
 .silver-gate-ok
 .bronze-gate-ok
+classic_observer/
