@@ -893,6 +893,7 @@ async function handleProcess(): Promise<void> {
         (window as unknown as Record<string, unknown>)['__lastSolverResult'] = {
           usedBacktracking,
           stalledCandidates: stalledCandidates ?? null,
+          spec: dataToSpec(state.specData),
         };
         let boardComplete = true;
         for (let r = 0; r < 9 && boardComplete; r++)
@@ -964,6 +965,7 @@ async function handleProcess(): Promise<void> {
         (window as unknown as Record<string, unknown>)['__lastSolverResult'] = {
           usedBacktracking: classicUsedBt,
           stalledCandidates: classicStalled ?? null,
+          spec: dataToSpec(state.specData),
         };
         let boardComplete = true;
         for (let r = 0; r < 9 && boardComplete; r++)
