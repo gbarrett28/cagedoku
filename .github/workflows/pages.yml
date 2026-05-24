@@ -52,6 +52,10 @@ jobs:
         working-directory: web
         run: npm test
 
+      - name: Generate focused stall fixtures
+        working-directory: web
+        run: npx vite-node scripts/focus-stall-fixtures.ts
+
       - name: Build
         working-directory: web
         env:

@@ -692,6 +692,36 @@ let currentFixtureTotalCandidates: number | null = null;
 
 All three variables are cleared to `null` at the top of `handleProcess()`.
 
+### Focused Fixtures
+
+**Focused fixtures** (files named `<source>-f<NNN>.stall.json`) are generated
+automatically at deploy time by `web/scripts/focus-stall-fixtures.ts`. For each
+source fixture where `unsolvedCells < 50` (the threshold for likely OCR errors), the
+script pins each unsolved cell to its ground-truth solution value one at a time,
+re-runs the full killer engine via `solveFromCandidates`, and collects any new stall
+states that emerge. This is a single flat pass — no recursion into discovered states.
+
+Focused fixtures have fewer unsolved cells than their sources and sort to the top of
+the Hard Puzzles panel list, making them the most actionable starting points for rule
+development. They are gitignored (`*-f*.stall.json`) and regenerated on every CI
+deploy so they always reflect the current rule engine.
+
+The script is added as a step in `pages.yml` between "Run tests" and "Build":
+
+```yaml
+- name: Generate focused stall fixtures
+  working-directory: web
+  run: npx vite-node scripts/focus-stall-fixtures.ts
+```
+
+The existing `stallFixturesPlugin.generateBundle` Vite hook picks up all `*.stall.json`
+files from `web/stall-fixtures/` at build time — no plugin changes are needed.
+
+**Note:** As of 2026-05-24, roughly 80% of the committed source fixtures have
+`unsolvedCells ≥ 50`, indicating OCR errors in the cage totals from the image pipeline.
+These are skipped by the script. Focused generation becomes more valuable as
+correctly-validated R2-uploaded puzzles accumulate.
+
 ### Static Serving (Production)
 
 `stallFixturesPlugin` in `vite.config.ts` serves fixtures at two URLs:

@@ -50,3 +50,6 @@ web/playwright.config.js
 .silver-gate-ok
 .bronze-gate-ok
 classic_observer/
+
+# Focused stall fixtures — generated at deploy time, not committed
+web/stall-fixtures/*-f*.stall.json

@@ -517,7 +517,7 @@ function buildUploadCallouts(): { id: string; text: string }[] {
   ];
 }
 
-function buildPlayingCallouts(isKiller: boolean): { id: string; text: string }[] {
+function buildPlayingCallouts(isKiller: boolean, fromFixture = false): { id: string; text: string }[] {
   const callouts: { id: string; text: string }[] = [
     { id: 'undo-btn',       text: 'Undo your last move.' },
     { id: 'hints-btn',      text: 'Request a logical hint to guide your next step.' },
@@ -533,6 +533,12 @@ function buildPlayingCallouts(isKiller: boolean): { id: string; text: string }[]
       { id: 'inspect-cage-btn', text: 'Show remaining valid digit combinations for a cage.' },
       { id: 'virtual-cage-btn', text: 'Add a virtual cage constraint derived from the current board state.' },
     );
+  }
+  if (fromFixture) {
+    callouts.push({
+      id: 'feedback-btn',
+      text: 'This puzzle stalled the rule engine. If you spot a logical deduction it missed, tap the envelope and choose "Rule suggestion" to share your idea.',
+    });
   }
   return callouts;
 }
@@ -1482,7 +1488,7 @@ function renderFixtureTable(fixtures: FixtureMeta[]): void {
           const { board } = solveCurrentSpec();
           const playing = confirmPuzzle(board);
           renderPlayingMode(playing);
-          appendCallouts(buildPlayingCallouts(playing.puzzleType !== 'classic'));
+          appendCallouts(buildPlayingCallouts(playing.puzzleType !== 'classic', true));
         } catch (err) {
           console.error('[fixture-panel] Failed to load fixture:', err);
         }
