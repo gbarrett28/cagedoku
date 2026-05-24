@@ -102,10 +102,10 @@ jobs:
 
       - name: Push commits
         if: steps.list.outputs.count != '0'
-        run: git push
+        run: git pull --rebase && git push
 
       - name: Delete processed R2 objects
-        if: always() && steps.list.outputs.count != '0'
+        if: steps.list.outputs.count != '0'
         env:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
