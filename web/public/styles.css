@@ -810,6 +810,20 @@ body:has(#playing-actions:not([hidden])) #side-panel {
   body:has(#playing-actions:not([hidden])) #completion-msg {
     text-align: center;
   }
+
+  /* Classic OCR review on landscape: #playing-actions (digit pad) and #review-actions
+     (confirm button) are visible simultaneously.
+     - position:static demotes #canvas-col from the "positioned stacking contexts" paint
+       layer (step 6) to the normal-flow block layer (step 3), so the later-in-DOM
+       #review-actions paints on top and its buttons are clickable.
+     - height:auto + container-type:inline-size removes the 100dvh forced height and the
+       "size" containment that collapses the canvas to 0px when height is auto.
+       inline-size containment lets cqw units still work for #canvas-wrapper sizing. */
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #canvas-col {
+    position: static;
+    height: auto;
+    container-type: inline-size;
+  }
 }
 
 /* ── Responsive / Mobile ── */
@@ -920,6 +934,7 @@ body:has(#playing-actions:not([hidden])) #side-panel {
     flex-wrap: nowrap;
   }
   body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #canvas-col {
+    position: static; /* cancel position:relative from the landscape-playing rule — avoids stacking-context interference with #review-actions */
     flex: none;
     max-width: 100%;
     display: flex;
