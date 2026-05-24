@@ -29,6 +29,7 @@
     </div>
     <button id="new-puzzle-btn" class="btn-secondary btn-icon" hidden data-tooltip="New puzzle">🏠</button>
     <button id="edit-ocr-btn" class="btn-secondary btn-icon" hidden data-tooltip="Edit OCR">✏</button>
+    <button id="hard-puzzles-btn" class="btn-secondary btn-icon" data-tooltip="Hard puzzles">&#x1F525;</button>
     <button id="help-btn" class="btn-secondary btn-icon" data-tooltip="Help">?</button>
     <button id="config-btn" class="btn-secondary btn-icon" data-tooltip="Config">⚙</button>
     <button id="feedback-btn" class="btn-secondary btn-icon" data-tooltip="Feedback">✉</button>
@@ -52,6 +53,15 @@
     <div id="cv-loading-row" class="form-row" style="display:none;align-items:center;gap:0.5rem;">
       <span id="cv-loading-label" class="field-label" style="min-width:12rem">Loading image pipeline…</span>
       <progress id="cv-progress" max="100" value="0" style="flex:1"></progress>
+    </div>
+  </section>
+
+  <!-- Hard Puzzles panel -->
+  <section id="fixture-panel" class="card" hidden>
+    <h2>Hard Puzzles</h2>
+    <p class="fixture-intro">These puzzles defeat the rule engine &#x2014; backtracking is needed to solve them. Load one, try to spot the missing rule, and share your idea via the feedback button.</p>
+    <div id="fixture-list-content">
+      <p id="fixture-loading" class="status">Loading&#x2026;</p>
     </div>
   </section>
 
@@ -311,6 +321,7 @@
     <div class="feedback-type-row">
       <label><input type="radio" name="feedback-type" id="feedback-type-bug" value="bug"> Bug report</label>
       <label><input type="radio" name="feedback-type" id="feedback-type-enhancement" value="enhancement"> Enhancement request</label>
+      <label><input type="radio" name="feedback-type" id="feedback-type-new-rule" value="new-rule"> Rule suggestion</label>
     </div>
   </div>
 

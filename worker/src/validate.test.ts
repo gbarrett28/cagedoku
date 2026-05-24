@@ -233,4 +233,46 @@ describe('isFeedbackReport', () => {
     const { reportedAt: _r, ...noDate } = validFeedback;
     expect(isFeedbackReport(noDate)).toBe(false);
   });
+
+  // new-rule type
+  it('accepts a new-rule report without fixture fields', () => {
+    expect(isFeedbackReport({ ...validFeedback, feedbackType: 'new-rule' })).toBe(true);
+  });
+
+  it('accepts a new-rule report with all fixture fields', () => {
+    expect(isFeedbackReport({
+      ...validFeedback,
+      feedbackType: 'new-rule',
+      fixtureName: 'my-fixture',
+      unsolvedCells: 12,
+      totalCandidates: 84,
+    })).toBe(true);
+  });
+
+  it('rejects a new-rule report with non-string fixtureName', () => {
+    expect(isFeedbackReport({
+      ...validFeedback,
+      feedbackType: 'new-rule',
+      fixtureName: 99,
+    })).toBe(false);
+  });
+
+  it('rejects a new-rule report with non-number unsolvedCells', () => {
+    expect(isFeedbackReport({
+      ...validFeedback,
+      feedbackType: 'new-rule',
+      fixtureName: 'f',
+      unsolvedCells: 'twelve',
+    })).toBe(false);
+  });
+
+  it('rejects a new-rule report with non-number totalCandidates', () => {
+    expect(isFeedbackReport({
+      ...validFeedback,
+      feedbackType: 'new-rule',
+      fixtureName: 'f',
+      unsolvedCells: 12,
+      totalCandidates: null,
+    })).toBe(false);
+  });
 });

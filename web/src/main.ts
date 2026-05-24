@@ -1296,7 +1296,8 @@ async function handleFeedbackSubmit(): Promise<void> {
   }
 
   const isBug = el<HTMLInputElement>('feedback-type-bug').checked;
-  const feedbackType = isBug ? 'bug' : 'enhancement';
+  const isNewRule = el<HTMLInputElement>('feedback-type-new-rule').checked;
+  const feedbackType: 'bug' | 'enhancement' | 'new-rule' = isBug ? 'bug' : isNewRule ? 'new-rule' : 'enhancement';
   const bugCategory = isBug
     ? (el<HTMLInputElement>('bug-cat-wrong').checked ? 'wrong-behaviour' : 'inaccurate-description')
     : undefined;
@@ -1312,6 +1313,10 @@ async function handleFeedbackSubmit(): Promise<void> {
 
   const settings = loadSettings();
 
+  // When a fixture is active and the user is filing a rule suggestion, attach
+  // the fixture reference so it lands in the GitHub issue body.
+  const fixtureCtx = isNewRule ? activeFixtureContext() : null;
+
   const payload = {
     version: 3 as const,
     reportedAt: new Date().toISOString(),
@@ -1326,6 +1331,11 @@ async function handleFeedbackSubmit(): Promise<void> {
     viewport: `${window.innerWidth}×${window.innerHeight}`,
     config: { alwaysApplyRules: settings.alwaysApplyRules, autoPlacementDelay: settings.autoPlacementDelay },
     exception: exceptionForSubmission ?? undefined,
+    ...(fixtureCtx !== null && {
+      fixtureName: fixtureCtx.name,
+      unsolvedCells: fixtureCtx.unsolvedCells,
+      totalCandidates: fixtureCtx.totalCandidates,
+    }),
   };
 
   const statusEl = el<HTMLElement>('feedback-status');
@@ -1718,6 +1728,10 @@ document.addEventListener('DOMContentLoaded', () => {
   el<HTMLInputElement>('feedback-type-enhancement').addEventListener('change', () => {
     el<HTMLElement>('feedback-bug-fields').style.display = 'none';
     el<HTMLElement>('feedback-description-label').textContent = 'What would you like to see?';
+  });
+  el<HTMLInputElement>('feedback-type-new-rule').addEventListener('change', () => {
+    el<HTMLElement>('feedback-bug-fields').style.display = 'none';
+    el<HTMLElement>('feedback-description-label').textContent = 'Describe the rule you think would unlock this puzzle';
   });
 
   el<HTMLButtonElement>('feedback-cancel-btn').addEventListener('click', () => {

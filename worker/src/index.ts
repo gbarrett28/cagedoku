@@ -165,11 +165,20 @@ async function postStallComment(env: Env, data: StallStateExport, key: string): 
 }
 
 async function createFeedbackIssue(env: Env, data: FeedbackReport): Promise<void> {
-  const typeLabel = data.feedbackType === 'bug' ? 'Bug report' : 'Enhancement request';
-  const titleSnippet = data.description.slice(0, 72).replace(/[\r\n]+/g, ' ');
-  const title = `[${typeLabel}] ${titleSnippet}${data.description.length > 72 ? '…' : ''}`;
+  const isNewRule = data.feedbackType === 'new-rule';
+  const typeLabel = data.feedbackType === 'bug'
+    ? 'Bug report'
+    : isNewRule ? 'Rule suggestion' : 'Enhancement request';
 
-  const labels = ['feedback', data.feedbackType === 'bug' ? 'bug' : 'enhancement'];
+  const snippet = data.description.slice(0, 72).replace(/[\r\n]+/g, ' ');
+  const ellipsis = data.description.length > 72 ? '…' : '';
+  const title = isNewRule && data.fixtureName
+    ? `[${typeLabel}] ${data.fixtureName}: ${snippet}${ellipsis}`
+    : `[${typeLabel}] ${snippet}${ellipsis}`;
+
+  const labels = isNewRule
+    ? ['feedback', 'new-rule']
+    : ['feedback', data.feedbackType === 'bug' ? 'bug' : 'enhancement'];
   if (data.bugCategory === 'inaccurate-description') labels.push('documentation');
 
   const config = data.config as { alwaysApplyRules?: unknown; autoPlacementDelay?: unknown };
@@ -192,9 +201,16 @@ async function createFeedbackIssue(env: Env, data: FeedbackReport): Promise<void
     ? `\n<details>\n<summary>Puzzle spec</summary>\n\n\`\`\`json\n${JSON.stringify(data.puzzleSpec, null, 2)}\n\`\`\`\n\n</details>\n`
     : '';
 
+  // Fixture reference block — prepended for rule suggestions when a fixture is active.
+  const fixtureSection = isNewRule && data.fixtureName
+    ? `**Fixture:** \`${data.fixtureName}\`\n` +
+      `**Unsolved cells:** ${data.unsolvedCells ?? '?'}\n` +
+      `**Total candidates:** ${data.totalCandidates ?? '?'}\n\n`
+    : '';
+
   const body = `## ${typeLabel}
 
-**Reported:** ${data.reportedAt}
+${fixtureSection}**Reported:** ${data.reportedAt}
 **App version:** ${data.appVersion}
 **Browser:** ${data.userAgent}
 **Viewport:** ${data.viewport}

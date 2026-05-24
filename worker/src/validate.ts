@@ -142,7 +142,7 @@ export interface FeedbackReport {
   version: 3;
   reportedAt: string;
   appVersion: string;
-  feedbackType: 'bug' | 'enhancement';
+  feedbackType: 'bug' | 'enhancement' | 'new-rule';
   bugCategory?: 'wrong-behaviour' | 'inaccurate-description';
   description: string;
   expected?: string;
@@ -152,6 +152,10 @@ export interface FeedbackReport {
   viewport: string;
   config: { alwaysApplyRules: string[]; autoPlacementDelay: number };
   exception?: string;
+  /** Populated when feedbackType is 'new-rule' and a fixture is active. */
+  fixtureName?: string;
+  unsolvedCells?: number;
+  totalCandidates?: number;
 }
 
 export function isFeedbackReport(value: unknown): value is FeedbackReport {
@@ -160,7 +164,7 @@ export function isFeedbackReport(value: unknown): value is FeedbackReport {
   if (v['version'] !== 3) return false;
   if (typeof v['reportedAt'] !== 'string') return false;
   if (typeof v['appVersion'] !== 'string') return false;
-  if (v['feedbackType'] !== 'bug' && v['feedbackType'] !== 'enhancement') return false;
+  if (v['feedbackType'] !== 'bug' && v['feedbackType'] !== 'enhancement' && v['feedbackType'] !== 'new-rule') return false;
   if (v['feedbackType'] === 'bug' && v['bugCategory'] !== undefined &&
       v['bugCategory'] !== 'wrong-behaviour' && v['bugCategory'] !== 'inaccurate-description') return false;
   if (typeof v['description'] !== 'string') return false;
@@ -170,5 +174,8 @@ export function isFeedbackReport(value: unknown): value is FeedbackReport {
   if (typeof v['viewport'] !== 'string') return false;
   if (typeof v['config'] !== 'object' || v['config'] === null) return false;
   if ('exception' in v && typeof v['exception'] !== 'string') return false;
+  if (v['fixtureName'] !== undefined && typeof v['fixtureName'] !== 'string') return false;
+  if (v['unsolvedCells'] !== undefined && typeof v['unsolvedCells'] !== 'number') return false;
+  if (v['totalCandidates'] !== undefined && typeof v['totalCandidates'] !== 'number') return false;
   return true;
 }
