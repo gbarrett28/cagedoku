@@ -649,3 +649,20 @@ Clicking `#logo-k` (the K badge in the header) resets the tutorial in-place:
 
 Puzzle state is fully preserved — no page reload occurs. The `logo-k` callout step at the end of the playing-screen sequence ("Tap the K badge at any time to restart this tutorial.") teaches users about this mechanism.
 
+
+
+## Offline Service Worker
+
+The app registers `sw.js` as a service worker (production builds only; skipped in dev mode). It uses a cache-first strategy, precaching all static assets at install time so the app works offline.
+
+### Update Deferral
+
+The service worker no longer calls `skipWaiting()` on install. Instead it parks in the `waiting` state until the user explicitly starts a new puzzle:
+
+1. A new deploy lands → the new SW installs and enters `waiting`.
+2. The active SW (and the user's puzzle session) are undisturbed.
+3. When the user clicks **New Puzzle**, all puzzle state is cleared, then `main.ts` posts `{ type: 'SKIP_WAITING' }` to the waiting worker.
+4. The SW calls `self.skipWaiting()`, activates, and claims all clients.
+5. A one-shot `controllerchange` listener calls `location.reload()` — the page reloads to the upload screen with fresh code.
+
+If the user never clicks New Puzzle in a session, the old version continues serving from its cache (which remains valid). The update applies on the next New Puzzle click, or automatically when all tabs using the old SW are closed.
