@@ -134,6 +134,37 @@ export function solveFromStall(candidates: number[][][]): SolveResult {
 }
 
 /**
+ * Load a pre-computed candidate grid onto the actual puzzle spec board and
+ * run the full rule engine from that state.
+ *
+ * Unlike `solveFromStall`, this function uses the original puzzle spec so that
+ * cage-specific rules (sum constraints, cage intersections, etc.) fire in
+ * addition to standard row/column/box rules. Use this when the spec is known —
+ * for example, when generating focused fixtures from a committed stall fixture.
+ *
+ * `candidates` is a 9×9 array where each cell is a sorted array of remaining
+ * candidates. Single-element arrays represent solved cells.
+ */
+export function solveFromCandidates(spec: PuzzleSpec, candidates: number[][][]): SolveResult {
+  const board = new BoardState(spec, { includeVirtualCages: false });
+  const engine = new SolverEngine(board, defaultRules());
+
+  for (let r = 0; r < 9; r++)
+    for (let c = 0; c < 9; c++) {
+      const keep = new Set(candidates[r]![c]!);
+      const elims: Elimination[] = [];
+      for (let d = 1; d <= 9; d++)
+        if (!keep.has(d) && board.cands(r, c).has(d))
+          elims.push({ cell: [r, c] as Cell, digit: d });
+      if (elims.length) engine.applyEliminations(elims);
+    }
+
+  engine.solve();
+
+  return runWithBacktrack(board, checkStalled(board));
+}
+
+/**
  * Run a hint-mode pass on the board and return deduplicated hints.
  */
 export function getHints(
