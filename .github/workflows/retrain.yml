@@ -105,7 +105,7 @@ jobs:
         run: git push
 
       - name: Delete processed R2 objects
-        if: steps.list.outputs.count != '0'
+        if: always() && steps.list.outputs.count != '0'
         env:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
