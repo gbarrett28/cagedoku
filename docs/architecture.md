@@ -373,12 +373,13 @@ exists) means re-runs are safe — existing images are never overwritten.
 
 ### Stress-Test Runner
 
-`scripts/run-stress-test.sh <puzzle-dir> [workers]` processes every `.jpg`/`.png`
-in a directory through the production app via Playwright and writes
-`eval_report.json` alongside the images.
+`scripts/run-stress-test.sh <puzzle-dir> [workers] [--copy-stalls <dest>]` processes
+every `.jpg`/`.png` in a directory through the production app via Playwright and
+writes `eval_report.json` alongside the images.
 
 ```bash
 bash scripts/run-stress-test.sh classic_guardian/diabolical 4
+bash scripts/run-stress-test.sh classic_guardian 4 --copy-stalls web/stall-fixtures
 ```
 
 Each Playwright worker compiles OpenCV.js WASM once (~60 s); 4 workers on
@@ -419,9 +420,78 @@ candidates in harder puzzles.
 
 `window.__lastSolverResult` is exposed by `main.ts` immediately after every
 `solveCurrentSpec()` call in `handleProcess()`. It holds
-`{ usedBacktracking: boolean, stalledCandidates: number[][][] | null }` where
-`stalledCandidates` is the candidate grid captured just before backtracking
-(undefined when the rule engine solves the puzzle completely). The stress
-runner reads this via `page.evaluate()` after the review panel or playing mode
-appears.
+`{ usedBacktracking: boolean, stalledCandidates: number[][][] | null, spec: PuzzleSpecData | null }`
+where `stalledCandidates` is the candidate grid captured just before backtracking
+(undefined when the rule engine solves the puzzle completely) and `spec` is the
+full puzzle spec used for stall fixture capture. The stress runner reads this via
+`page.evaluate()` after the review panel or playing mode appears.
+
+When `usedBacktracking` is true, the stress test writes a `<name>.stall.json` file
+alongside the source image. The `--copy-stalls <dest>` flag then copies these into
+`web/stall-fixtures/` for regression testing.
+
+---
+
+## Stall Fixture Pipeline
+
+Puzzle states where the rule engine cannot solve without MRV backtracking are
+committed as **stall fixtures** in `web/stall-fixtures/`. They serve two purposes:
+(a) regression tests that auto-delete solved fixtures when a new rule is added, and
+(b) a dev-mode panel for loading fixtures directly into the solution screen.
+
+### StallFixtureFile format
+
+Each `<name>.stall.json` file contains:
+
+```ts
+interface StallFixtureFile {
+  version: 1;
+  source: string;            // corpus name: "guardian", "observer", "r2", …
+  name: string;              // image filename without extension
+  addedAt: string;           // ISO date (YYYY-MM-DD)
+  puzzleType: 'killer' | 'classic';
+  imagePath?: string;        // repo-root-relative; omitted for R2 uploads
+  spec: PuzzleSpec;          // full puzzle spec
+  stalledCandidates: number[][][];  // 9×9 candidate grid at stall time
+  unsolvedCells: number;     // cells with >1 candidate at stall time
+  totalCandidates: number;   // sum of candidate-list lengths for unsolved cells
+}
+```
+
+Defined in `web/src/engine/rules/stallFixtureFile.ts`. The `spec` field matches
+`web/src/solver/puzzleSpec.ts` and follows the project's row-major coordinate
+convention (`spec.borderX[col][rowGap]` and `spec.borderY[colGap][row]` remain
+col-first per the documented border exception).
+
+### Regression test
+
+`web/stall-fixtures/stall-fixtures-dir.test.ts` (Vitest) runs `solve(fixture.spec)`
+for every `*.stall.json`. If a fixture now solves without backtracking,
+the test **auto-deletes the file** and fails with a message naming the closed gap.
+The developer commits the deletion to record which fixtures a new rule resolved.
+If the directory is empty the test emits a single passing no-op.
+
+### Dev panel
+
+When the app runs under `vite dev` with `?dev=1` in the URL, a collapsible "Stall
+Fixtures" panel appears at the top of the page. It calls:
+
+- `GET /dev/stall-fixtures` — list endpoint (sorted by `unsolvedCells ASC,
+  totalCandidates ASC`); strips `spec` and `stalledCandidates` for fast load
+- `GET /dev/stall-fixtures/:name` — full fixture JSON
+
+Clicking a row calls `loadSpecDirect(spec)` and transitions straight to the
+solution screen, bypassing the image pipeline. The Vite middleware (`apply: 'serve'`)
+is absent from production builds; the fetch returns 404 and the panel renders nothing.
+
+### R2 review workflow
+
+`.github/workflows/puzzle-spec-review.yml` (manual `workflow_dispatch`) downloads
+`puzzle-spec/` objects from the `cagedoku-training` R2 bucket, runs
+`web/scripts/check-puzzle-specs.ts` via vite-node to check each spec, commits any
+stall fixtures to `web/stall-fixtures/`, and deletes all processed R2 objects.
+`check-puzzle-specs.ts` deduplicates specs by content
+(`JSON.stringify([spec.regions, spec.cageTotals])`) so identical puzzles uploaded
+from different sessions produce only one fixture. Uses `R2_ACCESS_KEY_ID` and
+`R2_SECRET_ACCESS_KEY` GitHub Actions secrets (same as the retrain workflow).
 
