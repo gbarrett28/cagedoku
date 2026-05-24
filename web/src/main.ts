@@ -1975,8 +1975,8 @@ document.addEventListener('DOMContentLoaded', () => {
         type FixtureMeta = Omit<StallFixtureFile, 'spec' | 'stalledCandidates'>;
         let fixtures: FixtureMeta[];
         try {
-          const resp = await fetch('/dev/stall-fixtures');
-          if (!resp.ok) return; // middleware absent (production build) → silent no-op
+          const resp = await fetch('./stall-fixtures/index.json');
+          if (!resp.ok) return; // not available → silent no-op
           fixtures = (await resp.json()) as FixtureMeta[];
         } catch {
           return;
@@ -2056,7 +2056,7 @@ document.addEventListener('DOMContentLoaded', () => {
             void (async () => {
               try {
                 const resp = await fetch(
-                  `/dev/stall-fixtures/${encodeURIComponent(meta.name)}`,
+                  `./stall-fixtures/${encodeURIComponent(meta.name)}.stall.json`,
                 );
                 if (!resp.ok) return;
                 const fixture = (await resp.json()) as StallFixtureFile;

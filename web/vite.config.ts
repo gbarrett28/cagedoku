@@ -37,25 +37,23 @@ const devSwPoisonPill: Plugin = {
   },
 };
 
-// In dev mode, serve stall fixture metadata and full fixture JSON for the dev panel.
-// Two endpoints:
-//   GET /dev/stall-fixtures        — sorted metadata list (all fields except spec + stalledCandidates)
-//   GET /dev/stall-fixtures/:name  — full fixture JSON for one fixture
-// Both endpoints are absent in production builds (apply: 'serve').
+// Serve stall fixture metadata and full fixture JSON.
+// In dev mode: connect middleware at /stall-fixtures/{index.json,<name>.stall.json}
+// In production build: generateBundle emits the same files into dist/stall-fixtures/.
+// URL scheme is identical in both modes so main.ts fetch calls are unconditional.
 const stallFixturesPlugin: Plugin = {
   name: 'stall-fixtures',
-  apply: 'serve',
+  // No apply: 'serve' — configureServer fires only in serve mode anyway;
+  // generateBundle fires only in build mode. Both hooks are needed.
   configureServer(server) {
     const fixturesDir = path.resolve(import.meta.dirname, 'stall-fixtures');
 
-    server.middlewares.use('/dev/stall-fixtures', (req, res) => {
+    server.middlewares.use('/stall-fixtures', (req, res) => {
       const url = req.url ?? '/';
+      const segment = url.replace(/^\//, '').split('?')[0] ?? '';
 
-      // Strip leading slash to get the fixture name (empty string = list endpoint)
-      const name = url.replace(/^\//, '').split('?')[0] ?? '';
-
-      if (name === '') {
-        // List endpoint — return sorted metadata (omit spec and stalledCandidates)
+      if (segment === 'index.json') {
+        // Metadata list — omit spec and stalledCandidates
         try {
           const files = fs
             .readdirSync(fixturesDir)
@@ -84,14 +82,18 @@ const stallFixturesPlugin: Plugin = {
         return;
       }
 
-      // Individual fixture endpoint — path traversal protection
-      if (name.includes('/') || name.includes('..')) {
-        res.statusCode = 400;
-        res.end('{"error":"Invalid fixture name"}');
+      // Individual fixture — must end with .stall.json, no path traversal
+      if (
+        !segment.endsWith('.stall.json') ||
+        segment.includes('/') ||
+        segment.includes('..')
+      ) {
+        res.statusCode = 404;
+        res.end('{"error":"Not found"}');
         return;
       }
 
-      const fixturePath = path.join(fixturesDir, `${name}.stall.json`);
+      const fixturePath = path.join(fixturesDir, segment);
       if (!fs.existsSync(fixturePath)) {
         res.statusCode = 404;
         res.end('{"error":"Fixture not found"}');
@@ -105,6 +107,34 @@ const stallFixturesPlugin: Plugin = {
         res.statusCode = 500;
         res.end('{"error":"Failed to read fixture"}');
       }
+    });
+  },
+
+  generateBundle() {
+    // Emit each fixture file and a sorted index into dist/stall-fixtures/.
+    const fixturesDir = path.resolve(import.meta.dirname, 'stall-fixtures');
+    const files = fs
+      .readdirSync(fixturesDir)
+      .filter((f) => f.endsWith('.stall.json'));
+
+    const metadata: Array<Omit<StallFixtureFile, 'spec' | 'stalledCandidates'>> = [];
+
+    for (const filename of files) {
+      const content = fs.readFileSync(path.join(fixturesDir, filename), 'utf-8');
+      const fixture = JSON.parse(content) as StallFixtureFile;
+      this.emitFile({ type: 'asset', fileName: `stall-fixtures/${filename}`, source: content });
+      const { spec: _spec, stalledCandidates: _sc, ...meta } = fixture;
+      metadata.push(meta);
+    }
+
+    metadata.sort(
+      (a, b) => a.unsolvedCells - b.unsolvedCells || a.totalCandidates - b.totalCandidates,
+    );
+
+    this.emitFile({
+      type: 'asset',
+      fileName: 'stall-fixtures/index.json',
+      source: JSON.stringify(metadata),
     });
   },
 };
