@@ -18,6 +18,6 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/**/*", "*.ts"],
+  "include": ["src/**/*", "stall-fixtures/**/*", "*.ts"],
   "exclude": ["node_modules", "dist", "src/image/numberRecognition.test.ts"]
 }
