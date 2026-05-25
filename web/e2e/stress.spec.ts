@@ -109,6 +109,21 @@ async function processImage(page: Page, imagePath: string): Promise<ImageResult>
       };
     }
 
+    // If the assertion checker fired, the solver produced an invalid solution
+    // (e.g. duplicate digit in a unit — typically caused by corrupted cage totals).
+    // Record as a pipeline error so the eval_report reflects the real failure mode.
+    const assertionOpen = await page.evaluate(
+      () => (document.getElementById('assertion-modal') as HTMLDialogElement | null)?.open ?? false,
+    );
+    if (assertionOpen) {
+      const desc = (await page.locator('#assertion-desc').textContent() ?? '').trim();
+      return {
+        file, pipeline_ok: false, solution_found: false, backtracker_required: false,
+        unsolved_cells: 0, total_candidates: 0, duration_ms: Date.now() - t0,
+        error: `Assertion violation: ${desc}`,
+      };
+    }
+
     // Read solver stats exposed by main.ts.
     const solverResult = await page.evaluate((): SolverResult => {
       const w = window as unknown as { __lastSolverResult?: SolverResult | null };
@@ -162,6 +177,16 @@ async function processImage(page: Page, imagePath: string): Promise<ImageResult>
       error: String(e),
     };
   } finally {
+    // Dismiss assertion modal if it is still open — it intercepts all pointer
+    // events and would block the #new-puzzle-btn click below.
+    const assertionStillOpen = await page.evaluate(
+      () => (document.getElementById('assertion-modal') as HTMLDialogElement | null)?.open ?? false,
+    ).catch(() => false);
+    if (assertionStillOpen) {
+      await page.locator('#assertion-dismiss-btn').click().catch(() => {});
+      await page.locator('#assertion-modal').waitFor({ state: 'hidden', timeout: 2_000 }).catch(() => {});
+    }
+
     // Reset to the upload screen without a full page reload.
     const newPuzzleBtn = page.locator('#new-puzzle-btn');
     const btnVisible = await newPuzzleBtn.isVisible({ timeout: 2_000 }).catch(() => false);
