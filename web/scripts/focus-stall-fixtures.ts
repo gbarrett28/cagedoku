@@ -13,8 +13,13 @@
  * where NNN is a zero-padded index assigned after sorting focused states by
  * (unsolvedCells ASC, totalCandidates ASC).
  *
- * Source fixtures with unsolvedCells >= MAX_UNSOLVED_THRESHOLD are skipped —
- * they are almost certainly corrupted by OCR misreads in the cage totals.
+ * Source fixtures are skipped when:
+ *  - unsolvedCells >= MAX_UNSOLVED_THRESHOLD (almost certainly corrupted cage totals), or
+ *  - stalledCandidates have a unit conflict — two solved cells in the same row, column,
+ *    or box share a digit, meaning cage rules double-placed it due to an OCR error.
+ *    Such boards are ambiguous: after pinning all but one cell, the last cell retains
+ *    two "valid" candidates that CellSolutionElimination cannot eliminate, because the
+ *    duplicated digit was never absent from the unit. These are not genuine rule gaps.
  *
  * Focused files are gitignored and regenerated on every CI deploy so they
  * always reflect the current rule engine.
@@ -36,11 +41,57 @@ const today = new Date().toISOString().slice(0, 10);
  *  killer sudoku never has ≥ 50 cells unsolved after a full rule-engine pass. */
 const MAX_UNSOLVED_THRESHOLD = 50;
 
-/** Focused states with fewer than this many unsolved cells are discarded.
- *  1 unsolved cell is impossible in valid killer sudoku (the last cell is
- *  always forced by elimination), so any such state comes from a corrupted
- *  source fixture and is not a useful rule-gap example. */
-const MIN_UNSOLVED_CELLS = 2;
+/**
+ * Returns true if any row, column, or box contains two solved cells (length === 1)
+ * with the same digit. This indicates a corrupted source fixture: OCR-wrong cage
+ * totals caused cage rules to place the same digit twice in a unit.
+ *
+ * Why this matters for focused generation: when a unit has a duplicated solved digit,
+ * the missing digit is never confirmed in that unit. After pinning all but one cell,
+ * the last unsolved cell retains two valid candidates (neither the duplicated digit
+ * nor the missing one can be eliminated by CellSolutionElimination). The rule engine
+ * stalls with 1 unsolved cell — not a real rule gap, just an ambiguous corrupted state.
+ */
+function hasUnitConflict(candidates: number[][][]): boolean {
+  // Rows
+  for (let r = 0; r < 9; r++) {
+    const seen = new Set<number>();
+    for (let c = 0; c < 9; c++) {
+      const cell = candidates[r]![c]!;
+      if (cell.length !== 1) continue;
+      const d = cell[0]!;
+      if (seen.has(d)) return true;
+      seen.add(d);
+    }
+  }
+  // Columns
+  for (let c = 0; c < 9; c++) {
+    const seen = new Set<number>();
+    for (let r = 0; r < 9; r++) {
+      const cell = candidates[r]![c]!;
+      if (cell.length !== 1) continue;
+      const d = cell[0]!;
+      if (seen.has(d)) return true;
+      seen.add(d);
+    }
+  }
+  // Boxes
+  for (let b = 0; b < 9; b++) {
+    const seen = new Set<number>();
+    const rOff = Math.floor(b / 3) * 3;
+    const cOff = (b % 3) * 3;
+    for (let dr = 0; dr < 3; dr++) {
+      for (let dc = 0; dc < 3; dc++) {
+        const cell = candidates[rOff + dr]![cOff + dc]!;
+        if (cell.length !== 1) continue;
+        const d = cell[0]!;
+        if (seen.has(d)) return true;
+        seen.add(d);
+      }
+    }
+  }
+  return false;
+}
 
 // ---------------------------------------------------------------------------
 // Load source fixtures.
@@ -63,7 +114,7 @@ sourceFixtures.sort(
   (a, b) => a.unsolvedCells - b.unsolvedCells || a.totalCandidates - b.totalCandidates,
 );
 
-console.log(`Processing ${sourceFixtures.length} source fixtures (skip if ≥${MAX_UNSOLVED_THRESHOLD} unsolved)...`);
+console.log(`Processing ${sourceFixtures.length} source fixtures (skip if ≥${MAX_UNSOLVED_THRESHOLD} unsolved or unit conflict)...`);
 
 let totalWritten = 0;
 
@@ -71,6 +122,16 @@ for (const fixture of sourceFixtures) {
   // Skip fixtures with suspiciously many unsolved cells — OCR error in cage totals.
   if (fixture.unsolvedCells >= MAX_UNSOLVED_THRESHOLD) {
     console.log(`  ${fixture.name}: SKIPPED (${fixture.unsolvedCells} unsolved — likely OCR error)`);
+    continue;
+  }
+
+  // Skip fixtures whose stalledCandidates have a unit conflict (same digit confirmed
+  // twice in one row, column, or box). This indicates OCR-corrupted cage totals caused
+  // cage rules to double-place a digit, leaving the board in an invalid state. Focused
+  // fixtures generated from such sources are not genuine rule gaps — the puzzle is
+  // ambiguous and the rule engine correctly cannot resolve the remaining cells.
+  if (hasUnitConflict(fixture.stalledCandidates)) {
+    console.log(`  ${fixture.name}: SKIPPED (unit conflict in stalledCandidates — corrupted source)`);
     continue;
   }
 
@@ -113,7 +174,6 @@ for (const fixture of sourceFixtures) {
 
       seen.add(key);
       const unsolvedCells = sc.flat().filter(cell => cell.length > 1).length;
-      if (unsolvedCells < MIN_UNSOLVED_CELLS) continue; // impossible in valid sudoku — OCR artifact
       const totalCandidates = sc
         .flat()
         .filter(cell => cell.length > 1)
