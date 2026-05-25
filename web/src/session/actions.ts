@@ -276,6 +276,42 @@ async function fileToDisplayUrl(file: File): Promise<string | null> {
   }
 }
 
+/**
+ * Runs the full solver on spec and validates the result.
+ *
+ * Returns null if the solution is valid (all 81 cells filled, no duplicate
+ * digits in any row, column, or box). Returns a human-readable description of
+ * the first problem found if the solution is invalid — e.g. unsolved cells
+ * (wrong cage totals preventing the solver from placing a digit) or duplicate
+ * digits (cage rules double-placing a digit due to an OCR error).
+ *
+ * Used to detect corrupted cage totals at OCR-time.
+ */
+export function solveAndValidateSpec(spec: PuzzleSpec): string | null {
+  const { board } = solve(spec);
+  return extractAndValidateSolution(board);
+}
+
+/**
+ * Extracts a tentative 9×9 solution grid from a BoardState and validates it.
+ *
+ * Cells with more than one candidate are recorded as 0 (unsolved).
+ * Returns null if valid, or a human-readable error string if the solution
+ * has unsolved cells or duplicate digits in any unit.
+ *
+ * Used as the confirm-time guard to block corrupted puzzles before they reach
+ * the playing screen.
+ */
+export function extractAndValidateSolution(board: BoardState): string | null {
+  const grid: number[][] = Array.from({ length: 9 }, (_, r) =>
+    Array.from({ length: 9 }, (__, c) => {
+      const cands = board.cands(r, c);
+      return cands.size === 1 ? [...cands][0]! : 0;
+    }),
+  );
+  return validateSudokuSolution(grid);
+}
+
 async function buildStateFromParseResult(
   result: ParseResult,
   originalImageUrl: string | null,
@@ -300,6 +336,20 @@ async function buildStateFromParseResult(
     blankTotals[0]![0] = 1; // placeholder cage head at row=0, col=0
     const blankRegions = Array.from({ length: 9 }, () => new Array<number>(9).fill(1));
     spec = { regions: blankRegions, cageTotals: blankTotals, borderX: blankBorderX, borderY: blankBorderY };
+  }
+
+  // Validate the solved puzzle when OCR produced a spec (not the blank fallback).
+  // Corrupted cage totals cause the solver to either stall (unsolved cells remain)
+  // or produce duplicate digits — both are caught by validateSudokuSolution.
+  // A non-null warning also prevents auto-confirm, which requires warning === null.
+  if (result.spec !== null) {
+    const validityError = solveAndValidateSpec(spec);
+    if (validityError !== null) {
+      const msg =
+        `Puzzle appears to have invalid cage totals — an OCR digit may be wrong ` +
+        `(${validityError}). Check the totals carefully before confirming.`;
+      warning = warning ? msg + ' ' + warning : msg;
+    }
   }
 
   const state: PuzzleState = {

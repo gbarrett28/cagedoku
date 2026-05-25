@@ -40,6 +40,7 @@ import {
   saveSettingsData,
   checkSolutionAssertions,
   revertToOcr,
+  extractAndValidateSolution,
 } from './session/actions.js';
 import type {
   CandidatesResponse,
@@ -1102,6 +1103,19 @@ async function handleConfirm(): Promise<void> {
     // Yield so the loading indicator renders before the solve blocks the main thread.
     await new Promise<void>(resolve => setTimeout(resolve, 0));
     const { board: confirmedBoard, usedBacktracking: confirmUsedBacktracking, stalledCandidates: confirmStalledCandidates } = solveCurrentSpec();
+
+    // Guard: validate the solver's output before confirming. Corrupted cage totals
+    // can cause the rule engine to fill all cells with duplicate digits (invalid but
+    // appearing complete). Returning early prevents the playing screen and stall upload.
+    const solutionError = extractAndValidateSolution(confirmedBoard);
+    if (solutionError !== null) {
+      setStatus(
+        `Invalid puzzle — cage totals appear to have OCR errors (${solutionError}). Correct the totals and try again.`,
+        true,
+      );
+      return;
+    }
+
     const playing = confirmPuzzle(confirmedBoard);
     logAction('confirmed', currentState.puzzleType);
     renderPlayingMode(playing);
