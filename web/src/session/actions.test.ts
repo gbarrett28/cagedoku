@@ -29,6 +29,7 @@ import { setState, getState } from './store.js';
 import {
   confirmPuzzle,
   solveCurrentSpec,
+  loadSpecDirect,
   enterCell,
   enterCellStep,
   stepAutoPlacement,
@@ -41,16 +42,22 @@ import {
   getAutoPlacementDelay,
   applyHint,
   getHints,
+  solveAndValidateSpec,
+  extractAndValidateSolution,
 } from './actions.js';
 import { findLastConsistentTurnIdx } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
 import {
   makeBoxCageSpec,
+  makeTrivialSpec,
+  makeTwoCellCageSpec,
   makeClassicGivenDigits,
   KNOWN_SOLUTION,
 } from '../engine/fixtures.js';
 import { specToData, specToCageStates } from './specUtils.js';
 import type { PuzzleState, Turn, UserAction } from './types.js';
+import type { PuzzleSpec } from '../solver/puzzleSpec.js';
+import { hasMultipleCageTotals } from '../image/validation.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -753,5 +760,65 @@ describe('getHints — Rewind on wrong candidate elimination', () => {
     // Must detect the wrong digit even though no placeDigit turn exists for it
     const rewindHint = hints.find(h => h.rewindToTurnIdx !== null);
     expect(rewindHint).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// solveAndValidateSpec / extractAndValidateSolution
+// ---------------------------------------------------------------------------
+
+describe('solveAndValidateSpec', () => {
+  it('returns null for a valid spec', () => {
+    expect(solveAndValidateSpec(makeTrivialSpec())).toBeNull();
+  });
+
+  it('returns a non-null string for a spec with a corrupted cage total', () => {
+    const spec = makeTrivialSpec();
+    // Corrupt cageTotals[0][0]: the trivial spec has every cell as its own
+    // single-cell cage, so incrementing any cage total creates a contradiction.
+    const corrupted: PuzzleSpec = {
+      ...spec,
+      cageTotals: spec.cageTotals.map((row, r) =>
+        r === 0 ? row.map((t, c) => (c === 0 ? t + 1 : t)) : row,
+      ),
+    };
+    expect(solveAndValidateSpec(corrupted)).not.toBeNull();
+  });
+});
+
+describe('extractAndValidateSolution', () => {
+  beforeEach(() => { loadSpecDirect(makeTrivialSpec()); });
+
+  it('returns null for a fully-solved valid board', () => {
+    const { board } = solveCurrentSpec();
+    expect(extractAndValidateSolution(board)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// hasMultipleCageTotals
+// ---------------------------------------------------------------------------
+
+describe('hasMultipleCageTotals', () => {
+  it('returns null for a spec where every cage has exactly one total', () => {
+    expect(hasMultipleCageTotals(makeTrivialSpec())).toBeNull();
+  });
+
+  it('returns null for a multi-cell cage spec with one total per cage', () => {
+    expect(hasMultipleCageTotals(makeTwoCellCageSpec())).toBeNull();
+  });
+
+  it('returns a non-null string when two cells in the same region both have non-zero totals', () => {
+    const spec = makeTwoCellCageSpec();
+    // makeTwoCellCageSpec puts cells (0,0) and (1,0) in the same region.
+    // cageTotals[0][0] = 11 (the head). cageTotals[1][0] = 0 (member, no head).
+    // Inject a second total at (1,0) to simulate the OCR error.
+    const corrupted: PuzzleSpec = {
+      ...spec,
+      cageTotals: spec.cageTotals.map((row, r) =>
+        r === 1 ? row.map((t, c) => (c === 0 ? 3 : t)) : row,
+      ),
+    };
+    expect(hasMultipleCageTotals(corrupted)).not.toBeNull();
   });
 });

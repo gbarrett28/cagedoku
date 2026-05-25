@@ -20,7 +20,7 @@ import { formatActionLog } from './actionLog.js';
 
 import type { ParseResult } from '../image/inpImage.js';
 import { defaultImagePipelineConfig } from '../image/config.js';
-import { validateCageLayout } from '../image/validation.js';
+import { validateCageLayout, hasMultipleCageTotals } from '../image/validation.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import {
   buildEngine,
@@ -338,12 +338,13 @@ async function buildStateFromParseResult(
     spec = { regions: blankRegions, cageTotals: blankTotals, borderX: blankBorderX, borderY: blankBorderY };
   }
 
-  // Validate the solved puzzle when OCR produced a spec (not the blank fallback).
-  // Corrupted cage totals cause the solver to either stall (unsolved cells remain)
-  // or produce duplicate digits — both are caught by validateSudokuSolution.
-  // A non-null warning also prevents auto-confirm, which requires warning === null.
+  // Structural check (O(81), no solver) before the expensive solver validation.
+  // hasMultipleCageTotals detects two cage-head cells in the same region — a
+  // specific OCR error where a digit was read from an adjacent cage. When it fires,
+  // the solver is skipped and a more specific message is shown.
   if (result.spec !== null) {
-    const validityError = solveAndValidateSpec(spec);
+    const structuralError = hasMultipleCageTotals(spec);
+    const validityError = structuralError ?? solveAndValidateSpec(spec);
     if (validityError !== null) {
       const msg =
         `Puzzle appears to have invalid cage totals — an OCR digit may be wrong ` +

@@ -10,6 +10,7 @@ import { ProcessingError } from '../solver/errors.js';
 import { buildBrdrs } from '../solver/puzzleSpec.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import { cageSumRange, cellKey, keyToCell } from '../engine/types.js';
+import { cellLabel } from '../engine/rules/_labels.js';
 
 
 
@@ -74,6 +75,43 @@ function buildUnionFind(
   }
 
   return { find, members };
+}
+
+/**
+ * Returns a human-readable error string if any cage region contains more than
+ * one cell with a non-zero cageTotals value (i.e. two declared cage-head cells
+ * in the same connected region). Returns null if every cage has exactly one total.
+ *
+ * This is a fast O(81) structural check that catches a specific OCR error
+ * pattern: the digit scanner read a total from an adjacent cage and placed it
+ * inside an existing cage's connected region.
+ *
+ * Unlike validateCageLayout (which builds a union-find from border arrays),
+ * this function operates directly on the already-validated spec's regions array,
+ * making it suitable for checking committed stall fixtures and pre-solve upload
+ * validation.
+ */
+export function hasMultipleCageTotals(spec: PuzzleSpec): string | null {
+  // Map from region ID to the coordinates of its first seen cage-head cell.
+  const regionHead = new Map<number, [number, number]>();
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const total = spec.cageTotals[r]![c]!;
+      if (total === 0) continue;
+      const regionId = spec.regions[r]![c]!;
+      const existing = regionHead.get(regionId);
+      if (existing !== undefined) {
+        const [r0, c0] = existing;
+        return (
+          `cage region ${regionId} has two declared totals: ` +
+          `${spec.cageTotals[r0]![c0]!} at ${cellLabel([r0, c0])} and ` +
+          `${total} at ${cellLabel([r, c])}`
+        );
+      }
+      regionHead.set(regionId, [r, c]);
+    }
+  }
+  return null;
 }
 
 /**

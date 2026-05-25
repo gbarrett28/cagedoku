@@ -20,6 +20,10 @@
  *    Such boards are ambiguous: after pinning all but one cell, the last cell retains
  *    two "valid" candidates that CellSolutionElimination cannot eliminate, because the
  *    duplicated digit was never absent from the unit. These are not genuine rule gaps.
+ *  - spec has two non-zero cage-head cells in the same region (hasMultipleCageTotals).
+ *    This indicates an OCR error where a digit was read from an adjacent cage and placed
+ *    inside an existing cage's region. The cage rules operate on structurally invalid
+ *    totals, so any stall state is not a genuine rule gap.
  *
  * Focused files are gitignored and regenerated on every CI deploy so they
  * always reflect the current rule engine.
@@ -32,6 +36,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { solve, solveFromCandidates } from '../src/engine/index.js';
 import type { StallFixtureFile } from '../src/engine/rules/stallFixtureFile.js';
+import { hasMultipleCageTotals } from '../src/image/validation.js';
 
 const fixturesDir = path.resolve(import.meta.dirname, '..', 'stall-fixtures');
 const today = new Date().toISOString().slice(0, 10);
@@ -114,7 +119,7 @@ sourceFixtures.sort(
   (a, b) => a.unsolvedCells - b.unsolvedCells || a.totalCandidates - b.totalCandidates,
 );
 
-console.log(`Processing ${sourceFixtures.length} source fixtures (skip if ≥${MAX_UNSOLVED_THRESHOLD} unsolved or unit conflict)...`);
+console.log(`Processing ${sourceFixtures.length} source fixtures (skip if ≥${MAX_UNSOLVED_THRESHOLD} unsolved, unit conflict, or multiple cage totals)...`);
 
 let totalWritten = 0;
 
@@ -132,6 +137,16 @@ for (const fixture of sourceFixtures) {
   // ambiguous and the rule engine correctly cannot resolve the remaining cells.
   if (hasUnitConflict(fixture.stalledCandidates)) {
     console.log(`  ${fixture.name}: SKIPPED (unit conflict in stalledCandidates — corrupted source)`);
+    continue;
+  }
+
+  // Skip fixtures whose spec has two non-zero cage totals in the same region.
+  // This is a structural OCR error: the digit scanner read a total from an adjacent
+  // cage and placed it inside an existing cage's region. These puzzles are not
+  // genuine rule gaps — the cage rules operate on wrong totals from the start.
+  const multiTotalError = hasMultipleCageTotals(fixture.spec);
+  if (multiTotalError !== null) {
+    console.log(`  ${fixture.name}: SKIPPED (multiple cage totals — ${multiTotalError})`);
     continue;
   }
 
