@@ -72,7 +72,21 @@ async function getSharedPage(browser: Browser): Promise<Page> {
     });
     await sharedPage.goto('/', { waitUntil: 'domcontentloaded' });
     await waitForPipelineReady(sharedPage, 90_000);
+    return sharedPage;
   }
+
+  // Verify the page is in upload state before returning it. If a previous
+  // test's cleanup failed silently, the page may still be in review/playing
+  // mode — force a reload so the next test starts clean.
+  const uploadVisible = await sharedPage
+    .locator('#upload-panel')
+    .isVisible({ timeout: 1_000 })
+    .catch(() => false);
+  if (!uploadVisible) {
+    await sharedPage.goto('/', { waitUntil: 'domcontentloaded' });
+    await waitForPipelineReady(sharedPage, 90_000);
+  }
+
   return sharedPage;
 }
 
@@ -85,11 +99,25 @@ async function processImage(page: Page, imagePath: string): Promise<ImageResult>
   const t0 = Date.now();
 
   try {
+    // Clear any stale solver result from a previous test so we never read the
+    // wrong puzzle's backtracking state if the pipeline errors before solving.
+    await page.evaluate(() => {
+      const w = window as unknown as { __lastSolverResult?: unknown };
+      w.__lastSolverResult = null;
+    });
+
     await page.locator('#file-input').setInputFiles(imagePath);
 
-    // Wait for the review panel OR playing mode (auto-confirm may skip the review screen).
-    // '#action-group:not([hidden])' uniquely identifies playing mode — it is hidden in
-    // review mode and shown only after the user (or auto-confirm) transitions to playing.
+    // Wait for the result panel to appear. We first wait for both candidate
+    // panels to be hidden (the pipeline is running) then for one to become
+    // visible — this prevents a stale visible panel from a previous test
+    // satisfying the selector before the new pipeline result arrives.
+    // '#action-group:not([hidden])' uniquely identifies playing mode — it is
+    // hidden in review mode and shown only after auto-confirm transitions to playing.
+    await page.waitForSelector(
+      '#review-panel[hidden], #action-group[hidden]',
+      { timeout: 5_000 },
+    ).catch(() => { /* already hidden — pipeline started immediately */ });
     await page.waitForSelector(
       '#review-panel:not([hidden]), #action-group:not([hidden])',
       { timeout: IMAGE_TIMEOUT_MS },
