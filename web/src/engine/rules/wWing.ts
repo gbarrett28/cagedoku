@@ -118,11 +118,13 @@ export class WWing {
 
         const A = [ar, ac] as Cell; const B = [br, bc] as Cell;
         const X = [xr, xc] as Cell; const Y = [yr, yc] as Cell;
+        // Chain A→X→Y→B: A=blue, X=green, Y=blue, B=green
         hints.push({
           ruleName: this.name, displayName: 'W-Wing',
           explanation: `W-Wing: ${cellLabel(A)} and ${cellLabel(B)} both {${p},${q}} are connected via strong link on ${p} in ${unitLabel(ctx.unit)} (${cellLabel(X)}–${cellLabel(Y)}). Digit ${q} eliminated from cells seeing both.`,
-          highlightCells: [A, B, X, Y, ...elims.map(e => e.cell)],
+          highlightCells: elims.map(e => e.cell),
           eliminations: elims, placement: null, virtualCageSuggestion: null,
+          colourGroups: [{ cells: [A, Y], colour: 'blue' }, { cells: [X, B], colour: 'green' }],
         });
       }
     }

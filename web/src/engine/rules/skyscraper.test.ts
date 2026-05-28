@@ -74,6 +74,36 @@ describe('Skyscraper', () => {
     expect(hints[0]!.placement).toBeNull();
   });
 
+  it('asHints: colourGroups contains the 4 pattern cells, highlightCells has only elimination targets', () => {
+    // Board: r1=0 roof=(0,1) base=(0,0); r2=1 roof=(1,2) base=(1,0); shared col=0
+    // BFS chain: roof1=(0,1) → base1=(0,0) → base2=(1,0) → roof2=(1,2)
+    // Blue (colour 0): [roof1=(0,1), base2=(1,0)]
+    // Green (colour 1): [base1=(0,0), roof2=(1,2)]
+    //
+    // Note: in this compact board the base cells share box 0 with the roofs so
+    // they see both roofs and ARE also elimination targets — they appear in both
+    // colourGroups and highlightCells (yellow overrides on render).  Only the
+    // explicit-skip roof cells are guaranteed to be absent from highlightCells.
+    const board = makeSkyscraperBoard();
+    const ctx = GLOBAL_CTX(board);
+    const elims = rule.apply(ctx).eliminations;
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBeGreaterThan(0);
+    const hint = hints[0]!;
+
+    // colourGroups: exactly 2 groups covering all 4 pattern cells
+    expect(hint.colourGroups?.length).toBe(2);
+    const allGroupCells = hint.colourGroups!.flatMap(g => g.cells);
+    for (const [r, c] of [[0, 0], [0, 1], [1, 0], [1, 2]] as [number, number][]) {
+      expect(allGroupCells.some(([gr, gc]) => gr === r && gc === c)).toBe(true);
+    }
+
+    // Roof cells are explicitly skipped by the rule — they must NOT be in highlightCells
+    expect(hint.highlightCells.some(([r, c]) => r === 0 && c === 1)).toBe(false); // roof1
+    expect(hint.highlightCells.some(([r, c]) => r === 1 && c === 2)).toBe(false); // roof2
+    expect(hint.highlightCells.length).toBeGreaterThan(0);
+  });
+
   it('returns empty on a fresh unconstrained board', () => {
     const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
     const ctx = GLOBAL_CTX(board);

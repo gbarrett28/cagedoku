@@ -86,6 +86,31 @@ describe('WWing', () => {
     expect(hints[0]!.placement).toBeNull();
   });
 
+  it('asHints: colourGroups contains the 4 chain cells, highlightCells has only elimination targets', () => {
+    // Strong link X=(0,0)–Y=(4,0); wings A=(0,5), B=(4,7)
+    // Chain A→X→Y→B: A=blue, X=green, Y=blue, B=green
+    // Blue: [A=(0,5), Y=(4,0)]   Green: [X=(0,0), B=(4,7)]
+    const { board, unit } = makeWWingBoard();
+    const ctx = unitCtx(board, unit, 5);
+    const elims = rule.apply(ctx).eliminations;
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBeGreaterThan(0);
+    const hint = hints[0]!;
+
+    // colourGroups: 2 groups covering A, X, Y, B
+    expect(hint.colourGroups?.length).toBe(2);
+    const allGroupCells = hint.colourGroups!.flatMap(g => g.cells);
+    for (const [r, c] of [[0, 5], [0, 0], [4, 0], [4, 7]] as [number, number][]) {
+      expect(allGroupCells.some(([gr, gc]) => gr === r && gc === c)).toBe(true);
+    }
+
+    // highlightCells: only elimination targets, NOT the 4 chain cells
+    for (const [r, c] of [[0, 5], [0, 0], [4, 0], [4, 7]] as [number, number][]) {
+      expect(hint.highlightCells.some(([hr, hc]) => hr === r && hc === c)).toBe(false);
+    }
+    expect(hint.highlightCells.length).toBeGreaterThan(0);
+  });
+
   it('returns empty when unit context is missing', () => {
     const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
     const ctx = { board, unit: null, cell: null, hint: Trigger.COUNT_HIT_TWO, hintDigit: 5 } as const;
