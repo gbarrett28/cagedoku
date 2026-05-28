@@ -98,8 +98,17 @@ let candidateEditMode = false;
 let virtualCageMode = false;
 let virtualCageSelection = new Set<string>();   // "r,c" keys, 0-based
 let hintHighlightCells = new Set<string>();     // "r,c" keys, 0-based
+let hintColourGroups: readonly { cells: readonly [number, number][]; colour: 'blue' | 'green' }[] = [];
 let activeHintItem: HintItem | null = null;
 let inspectCageMode = false;
+
+// ── User colouring tool ──────────────────────────────────────────────────────
+type ColourMode = 'off' | 'blue-next' | 'green-next';
+let colourMode: ColourMode = 'off';
+/** "r,c" 0-based keys → colour applied by the user colouring tool. */
+const cellColours = new Map<string, 'blue' | 'green'>();
+/** True when the last colouring-mode action was a button press (not a cell click). */
+let colourBtnLastWasButton = false;
 
 let fastForwardRequested = false;
 
@@ -168,6 +177,20 @@ function drawUnderlays(
       const r = parts[0]!, c = parts[1]!;
       ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
     }
+  }
+  // Chain-colouring: hint colour groups (blue/green for the two chain groups)
+  for (const group of hintColourGroups) {
+    ctx.fillStyle = group.colour === 'blue' ? 'rgba(59, 130, 246, 0.45)' : 'rgba(34, 197, 94, 0.45)';
+    for (const [r, c] of group.cells) {
+      ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
+    }
+  }
+  // User colouring tool: manually coloured cells (blue/green)
+  for (const [key, colour] of cellColours) {
+    const parts = key.split(',').map(Number);
+    const r = parts[0]!, c = parts[1]!;
+    ctx.fillStyle = colour === 'blue' ? 'rgba(59, 130, 246, 0.45)' : 'rgba(34, 197, 94, 0.45)';
+    ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
   }
   if (highlightKeys !== null && highlightKeys.size > 0) {
     ctx.fillStyle = 'rgba(251, 191, 36, 0.45)';
@@ -428,7 +451,7 @@ function checkCompletion(state: PuzzleState): void {
   if (solved) closeSidePanels();
   const actionIds = [
     'hints-btn', 'mode-toggle',
-    'inspect-cage-btn', 'virtual-cage-btn', 'reveal-btn',
+    'inspect-cage-btn', 'virtual-cage-btn', 'colour-btn', 'reveal-btn',
   ];
   for (const id of actionIds) {
     const btn = document.getElementById(id) as HTMLButtonElement | null;
@@ -523,6 +546,7 @@ function buildPlayingCallouts(isKiller: boolean, fromFixture = false): { id: str
     { id: 'undo-btn',       text: 'Undo your last move.' },
     { id: 'hints-btn',      text: 'Request a logical hint to guide your next step.' },
     { id: 'mode-toggle',    text: 'Switch between Normal mode (place digits) and Candidate mode (edit pencil marks). The digit buttons work the same way in both modes.' },
+    { id: 'colour-btn',     text: 'Colour cells blue/green to trace conjugate-pair chains. Each tap colours the selected cell and switches to the other colour. Tap the button again (without colouring) to flip; tap twice to stop and clear.' },
     { id: 'reveal-btn',     text: 'Reveal the correct digit for the selected cell.' },
     { id: 'digit-1',        text: 'Use these buttons to enter digits. In Candidate mode, they toggle pencil marks instead. On a keyboard, Ctrl+digit works in the opposite mode.' },
     { id: 'new-puzzle-btn', text: 'Start a fresh puzzle.' },
@@ -566,6 +590,7 @@ function renderPlayingMode(state: PuzzleState): void {
   const isKiller = state.puzzleType !== 'classic';
   el<HTMLButtonElement>('inspect-cage-btn').hidden = !isKiller;
   el<HTMLButtonElement>('virtual-cage-btn').hidden = !isKiller;
+  el<HTMLButtonElement>('colour-btn').hidden = false;
   el<HTMLButtonElement>('mode-toggle').hidden = !showCandidates;
   el<HTMLButtonElement>('mode-toggle').classList.remove('active');
 }
@@ -756,6 +781,7 @@ function setLoading(on: boolean): void {
 function showHintModal(hint: HintItem): void {
   activeHintItem = hint;
   hintHighlightCells = new Set(hint.highlightCells.map(([r, c]) => `${r},${c}`));
+  hintColourGroups = hint.colourGroups ?? [];
   redrawGrid();
   el<HTMLElement>('hint-modal-title').textContent = hint.displayName;
   el<HTMLElement>('hint-modal-explanation').textContent = hint.explanation;
@@ -779,6 +805,7 @@ function showHintModal(hint: HintItem): void {
 
 function clearHintHighlight(): void {
   hintHighlightCells = new Set();
+  hintColourGroups = [];
   activeHintItem = null;
   hideHintPill(el('hint-pill'));
   redrawGrid();
@@ -1652,7 +1679,8 @@ document.addEventListener('DOMContentLoaded', () => {
     currentState = null; currentCandidates = null; selectedCell = null;
     showCandidates = false; candidateEditMode = false;
     virtualCageMode = false; virtualCageSelection = new Set();
-    hintHighlightCells = new Set(); activeHintItem = null;
+    hintHighlightCells = new Set(); hintColourGroups = []; activeHintItem = null;
+    colourMode = 'off'; cellColours.clear(); colourBtnLastWasButton = false;
     inspectCageMode = false;
     el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');
     el<HTMLElement>('inspector-col').hidden = true;
@@ -1672,6 +1700,8 @@ document.addEventListener('DOMContentLoaded', () => {
     el<HTMLButtonElement>('hints-btn').disabled = true;
     el<HTMLButtonElement>('inspect-cage-btn').hidden = true;
     el<HTMLButtonElement>('virtual-cage-btn').hidden = true;
+    el<HTMLButtonElement>('colour-btn').hidden = true;
+    el<HTMLButtonElement>('colour-btn').classList.remove('active');
     el<HTMLButtonElement>('reveal-btn').hidden = true;
     el<HTMLInputElement>('file-input').value = '';
     setStatus('');
@@ -1789,6 +1819,29 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   el<HTMLButtonElement>('close-help-btn').addEventListener('click', () => { el<HTMLDialogElement>('help-candidates-modal').close(); });
+
+  // Colouring tool
+  el<HTMLButtonElement>('colour-btn').addEventListener('click', () => {
+    const btn = el<HTMLButtonElement>('colour-btn');
+    if (colourMode === 'off') {
+      colourMode = 'blue-next';
+      colourBtnLastWasButton = true;
+      btn.classList.add('active');
+      btn.dataset['tooltip'] = 'Colouring (press again to flip colour; press twice to stop)';
+    } else if (colourBtnLastWasButton) {
+      // Second consecutive button press → exit and clear all colours
+      colourMode = 'off';
+      cellColours.clear();
+      colourBtnLastWasButton = false;
+      btn.classList.remove('active');
+      btn.dataset['tooltip'] = 'Colour cells';
+    } else {
+      // Flip next colour
+      colourMode = colourMode === 'blue-next' ? 'green-next' : 'blue-next';
+      colourBtnLastWasButton = true;
+    }
+    redrawGrid();
+  });
 
   // Virtual cage
   el<HTMLButtonElement>('virtual-cage-btn').addEventListener('click', () => {
@@ -1999,6 +2052,15 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     // ─────────────────────────────────────────────────────────────────────────────────────
+
+    if (colourMode !== 'off') {
+      const key = `${r0},${c0}`;
+      const colour = colourMode === 'blue-next' ? 'blue' : 'green';
+      cellColours.set(key, colour);
+      colourMode = colourMode === 'blue-next' ? 'green-next' : 'blue-next';
+      colourBtnLastWasButton = false;
+      // Fall through so the cell is also selected and keypad remains usable
+    }
 
     if (virtualCageMode) {
       const key = `${r0},${c0}`;

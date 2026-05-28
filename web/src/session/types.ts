@@ -192,7 +192,7 @@ export interface HintItem {
   readonly ruleName: string;
   readonly displayName: string;
   readonly explanation: string;
-  /** 0-based `[row, col]` pairs to highlight in the UI. */
+  /** 0-based `[row, col]` pairs — yellow highlight (elimination targets). */
   readonly highlightCells: readonly [number, number][];
   readonly eliminations: readonly { cell: [number, number]; digit: number }[];
   readonly eliminationCount: number;
@@ -200,6 +200,8 @@ export interface HintItem {
   readonly placement: [number, number, number] | null;
   readonly rewindToTurnIdx: number | null;
   readonly virtualCageSuggestion: VirtualCageSuggestion | null;
+  /** Two colour groups for bipartite-chain hints; absent for all other hints. */
+  readonly colourGroups?: readonly { cells: readonly [number, number][]; colour: 'blue' | 'green' }[];
 }
 
 export interface HintsResponse {

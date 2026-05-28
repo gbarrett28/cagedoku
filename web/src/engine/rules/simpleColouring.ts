@@ -188,7 +188,7 @@ export class SimpleColouring {
         const hasConflict = (cells: Cell[]) =>
           cells.some(([r1, c1], i) => cells.slice(i + 1).some(([r2, c2]) => sees(r1, c1, r2, c2)));
 
-        const tryWrap = (bad: Cell[], _good: Cell[]) => {
+        const tryWrap = (bad: Cell[], good: Cell[]) => {
           if (!hasConflict(bad)) return;
           const elims = bad.filter(([r, c]) => board.cands(r, c).has(d))
             .map(([r, c]) => ({ cell: [r, c] as Cell, digit: d }));
@@ -196,8 +196,9 @@ export class SimpleColouring {
           hints.push({
             ruleName: this.name, displayName: 'Simple Colouring',
             explanation: `Simple Colouring: two same-colour cells for ${d} see each other — that colour must be false. Remove ${d} from ${elims.map(e => cellLabel(e.cell)).join(', ')}.`,
-            highlightCells: [...c0, ...c1, ...elims.map(e => e.cell)],
+            highlightCells: elims.map(e => e.cell),
             eliminations: elims, placement: null, virtualCageSuggestion: null,
+            colourGroups: [{ cells: bad, colour: 'blue' }, { cells: good, colour: 'green' }],
           });
         };
         tryWrap(c0, c1); tryWrap(c1, c0);
@@ -214,8 +215,9 @@ export class SimpleColouring {
           hints.push({
             ruleName: this.name, displayName: 'Simple Colouring',
             explanation: `Simple Colouring: ${trapElims.map(e => cellLabel(e.cell)).join(', ')} see both colours in a ${d}-chain — remove ${d} from those cells.`,
-            highlightCells: [...c0, ...c1, ...trapElims.map(e => e.cell)],
+            highlightCells: trapElims.map(e => e.cell),
             eliminations: trapElims, placement: null, virtualCageSuggestion: null,
+            colourGroups: [{ cells: c0, colour: 'blue' }, { cells: c1, colour: 'green' }],
           });
         }
       }
