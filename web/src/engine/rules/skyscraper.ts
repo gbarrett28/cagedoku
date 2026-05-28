@@ -127,11 +127,13 @@ export class Skyscraper {
           const roof2 = [r2, roofC2] as Cell;
           const base1 = [r1, baseC] as Cell;
           const base2 = [r2, baseC] as Cell;
+          // BFS chain: roof1→base1→base2→roof2 → blue:[roof1,base2] green:[base1,roof2]
           hints.push({
             ruleName: this.name, displayName: 'Skyscraper',
             explanation: `Skyscraper on ${d}: rows r${r1+1} and r${r2+1} share base column c${baseC+1}. Roof cells ${cellLabel(roof1)} and ${cellLabel(roof2)} — ${d} eliminated from cells seeing both.`,
-            highlightCells: [base1, base2, roof1, roof2, ...elims.map(e => e.cell)],
+            highlightCells: elims.map(e => e.cell),
             eliminations: elims, placement: null, virtualCageSuggestion: null,
+            colourGroups: [{ cells: [roof1, base2], colour: 'blue' }, { cells: [base1, roof2], colour: 'green' }],
           });
         }
       }
@@ -168,11 +170,13 @@ export class Skyscraper {
           const roof2 = [roofR2, c2] as Cell;
           const base1 = [baseR, c1] as Cell;
           const base2 = [baseR, c2] as Cell;
+          // BFS chain: roof1→base1→base2→roof2 → blue:[roof1,base2] green:[base1,roof2]
           hints.push({
             ruleName: this.name, displayName: 'Skyscraper',
             explanation: `Skyscraper on ${d}: cols c${c1+1} and c${c2+1} share base row r${baseR+1}. Roof cells ${cellLabel(roof1)} and ${cellLabel(roof2)} — ${d} eliminated from cells seeing both.`,
-            highlightCells: [base1, base2, roof1, roof2, ...elims.map(e => e.cell)],
+            highlightCells: elims.map(e => e.cell),
             eliminations: elims, placement: null, virtualCageSuggestion: null,
+            colourGroups: [{ cells: [roof1, base2], colour: 'blue' }, { cells: [base1, roof2], colour: 'green' }],
           });
         }
       }

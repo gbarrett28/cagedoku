@@ -234,16 +234,18 @@ Renders the 9×9 sudoku grid with the following layers (back → front):
 2. Virtual cage underlays (teal/violet/pink/orange tints, one per cage)
 3. Virtual cage selection underlay (indigo, while drawing a new cage)
 4. Selected cell highlight (light blue)
-5. Hint highlight cells (yellow)
-6. Thin dashed lines for internal cell boundaries
-7. Medium solid lines for 3×3 box boundaries
-8. Thick outer border
-9. Red cage boundary lines
-10. Cage total numbers (top-left of first cell in cage)
-11. Placed digits (large, centred) — coloured by state:
+5. Hint chain colour groups (blue / green — from `HintResult.colourGroups`, see below)
+6. User colouring tool cells (blue / green — manually coloured cells)
+7. Hint highlight cells (yellow — elimination targets)
+8. Thin dashed lines for internal cell boundaries
+9. Medium solid lines for 3×3 box boundaries
+10. Thick outer border
+11. Red cage boundary lines
+12. Cage total numbers (top-left of first cell in cage)
+13. Placed digits (large, centred) — coloured by state:
     - **Blue**: user-placed
     - **Red text + red background tint**: row/col/box duplicate (structurally impossible)
-12. Candidate sub-grid (3×3 keypad layout per cell, when candidates shown)
+14. Candidate sub-grid (3×3 keypad layout per cell, when candidates shown)
     - Grey: possible but not essential
     - Salmon: essential (must appear in every valid cage solution) — toggleable via config
     - Struck-through: user-removed
@@ -275,6 +277,7 @@ pseudo-element. Tooltips are suppressed on touch-sized viewports.
 | `#mode-toggle` | N\|C pill | Visible when `showCandidates = true` | Toggle between Normal entry and Candidates editing mode. Active side is highlighted. |
 | `#inspect-cage-btn` | 🔍 | **Killer** playing mode only | Enter cage inspection mode. Gets `.active` class while active; tooltip changes to "Done inspecting". |
 | `#virtual-cage-btn` | ➕ | **Killer** playing mode only | Enter virtual cage drawing mode. Gets `.active` class while active; tooltip changes to "Cancel virtual cage". |
+| `#colour-btn` | ◑ | Always (playing mode) | Enter cell-colouring mode — see **Cell Colouring Tool** below |
 | `#reveal-btn` | 👁 | Only while a cell is selected | Reveal the solution digit for the selected cell after a confirmation popup |
 | `#new-puzzle-btn` | 🏠 | Review or Playing screen | Return to the upload screen |
 | `#help-btn` | ? | Always | Open general help modal |
@@ -457,6 +460,40 @@ cages have been added.
 User-eliminated solutions in the virtual cage panel appear and behave identically
 to user-eliminated solutions in the Cage Inspector (struck through, restorable by
 clicking).
+
+### Cell Colouring Tool (`#colour-btn`)
+
+Lets the user manually colour cells blue or green to trace conjugate-pair chains —
+the same visual notation used by SimpleColouring, Skyscraper, TwoStringKite, and
+W-Wing hints.
+
+**State machine** (`colourMode`):
+
+| State | Meaning |
+|---|---|
+| `'off'` | Default — button inactive, no colouring |
+| `'blue-next'` | Next cell click colours blue; button shows `.active` |
+| `'green-next'` | Next cell click colours green; button shows `.active` |
+
+**Button press behaviour** (`colourBtnLastWasButton` flag):
+- `off → blue-next`: enters colouring mode; tooltip changes to "Colouring (press again to flip colour; press twice to stop)"
+- Active + last action was a cell click → flips next colour (`blue-next ↔ green-next`)
+- Active + last action was a button press (double press) → exits and clears all colours
+
+**Cell click in colouring mode**: colours the cell in the current colour, flips
+`colourMode`, clears `colourBtnLastWasButton`. The cell is also selected normally
+so the digit pad remains usable.
+
+Cell colours are stored in `cellColours: Map<string, 'blue' | 'green'>` keyed by
+`"r,c"` (0-based). They are rendered as semi-transparent overlays (layer 6 in
+`drawUnderlays`) and cleared on puzzle reset, solve completion, or double button press.
+
+**Hint chain colouring**: rules that reason about bipartite conjugate-pair chains
+(SimpleColouring, Skyscraper, TwoStringKite, WWing) populate `HintResult.colourGroups`
+with two groups — blue and green — identifying the two sides of the chain. These are
+rendered as layer 5 in `drawUnderlays`, beneath both user colours (layer 6) and
+yellow elimination highlights (layer 7). Colours: blue = `rgba(59,130,246,0.45)`,
+green = `rgba(34,197,94,0.45)`.
 
 ---
 

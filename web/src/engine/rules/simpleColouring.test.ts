@@ -72,6 +72,66 @@ describe('SimpleColouring', () => {
     expect(hints[0]!.placement).toBeNull();
   });
 
+  it('asHints trap: colourGroups contains the two chain groups, highlightCells has only elimination targets', () => {
+    // Chain: (0,0) -[col0]- (5,0) -[row5]- (5,3) -[col3]- (0,3)
+    // BFS colours: (0,0)=0, (5,0)=1, (5,3)=0, (0,3)=1
+    // Trap target: (0,6) sees (0,0)=colour 0 and (0,3)=colour 1 via row 0
+    const bs = new BoardState(makeTrivialSpec());
+    const d = 3;
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.cands(r, c).delete(d);
+    bs.cands(0, 0).add(d); bs.cands(5, 0).add(d);
+    bs.cands(5, 3).add(d); bs.cands(0, 3).add(d);
+    bs.cands(0, 6).add(d);
+    const ctx = globalCtx(bs);
+    const rule = new SimpleColouring();
+    const elims = rule.apply(ctx).eliminations.filter(e => e.digit === d);
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBeGreaterThan(0);
+    const hint = hints[0]!;
+
+    // colourGroups: exactly 2 groups covering all 4 chain cells
+    expect(hint.colourGroups?.length).toBe(2);
+    const allGroupCells = hint.colourGroups!.flatMap(g => g.cells);
+    for (const [r, c] of [[0, 0], [5, 0], [5, 3], [0, 3]] as [number, number][]) {
+      expect(allGroupCells.some(([gr, gc]) => gr === r && gc === c)).toBe(true);
+    }
+
+    // highlightCells: only the elimination target (0,6), NOT the chain cells
+    expect(hint.highlightCells.some(([r, c]) => r === 0 && c === 6)).toBe(true);
+    for (const [r, c] of [[0, 0], [5, 0], [5, 3], [0, 3]] as [number, number][]) {
+      expect(hint.highlightCells.some(([hr, hc]) => hr === r && hc === c)).toBe(false);
+    }
+  });
+
+  it('asHints wrap: colourGroups contains the two chain groups, highlightCells has only the bad colour cells', () => {
+    // Chain: (0,0) -[row0]- (0,1) -[col1]- (1,1)
+    // BFS: (0,0)=0, (0,1)=1, (1,1)=0
+    // Wrap: (0,0) and (1,1) both colour 0 and share box 0 → colour 0 is eliminated
+    const bs = new BoardState(makeTrivialSpec());
+    const d = 5;
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.cands(r, c).delete(d);
+    bs.cands(0, 0).add(d); bs.cands(0, 1).add(d); bs.cands(1, 1).add(d);
+    const ctx = globalCtx(bs);
+    const rule = new SimpleColouring();
+    const elims = rule.apply(ctx).eliminations.filter(e => e.digit === d);
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBeGreaterThan(0);
+    const hint = hints[0]!;
+
+    // colourGroups: exactly 2 groups covering all 3 chain cells
+    expect(hint.colourGroups?.length).toBe(2);
+    const allGroupCells = hint.colourGroups!.flatMap(g => g.cells);
+    for (const [r, c] of [[0, 0], [0, 1], [1, 1]] as [number, number][]) {
+      expect(allGroupCells.some(([gr, gc]) => gr === r && gc === c)).toBe(true);
+    }
+
+    // The good colour cell (0,1) should NOT be in highlightCells
+    expect(hint.highlightCells.some(([r, c]) => r === 0 && c === 1)).toBe(false);
+    // The bad colour cells (0,0) and (1,1) SHOULD be in highlightCells (they are the elim targets)
+    expect(hint.highlightCells.some(([r, c]) => r === 0 && c === 0)).toBe(true);
+    expect(hint.highlightCells.some(([r, c]) => r === 1 && c === 1)).toBe(true);
+  });
+
   it('wrap: eliminates digit from a colour group when two same-colour cells see each other', () => {
     const bs = new BoardState(makeTrivialSpec());
     const d = 5;

@@ -110,14 +110,16 @@ export class TwoStringKite {
           const corner = [r, cornerC] as Cell;
           const rowEnd = [r, endC] as Cell;
           const colEnd = [colEndR, cornerC] as Cell;
+          // corner = blue; rowEnd + colEnd = green (both forced when corner is false)
           hints.push({
             ruleName: this.name,
             displayName: '2-String Kite',
             explanation: `2-String Kite on ${d}: row r${r + 1} (${cellLabel(corner)}–${cellLabel(rowEnd)}) and col c${cornerC + 1} (${cellLabel(corner)}–${cellLabel(colEnd)}) share corner ${cellLabel(corner)}. Digit ${d} eliminated from cells seeing both ${cellLabel(rowEnd)} and ${cellLabel(colEnd)}.`,
-            highlightCells: [corner, rowEnd, colEnd, ...hintElims.map(e => e.cell)],
+            highlightCells: hintElims.map(e => e.cell),
             eliminations: hintElims,
             placement: null,
             virtualCageSuggestion: null,
+            colourGroups: [{ cells: [corner], colour: 'blue' }, { cells: [rowEnd, colEnd], colour: 'green' }],
           });
         }
       }

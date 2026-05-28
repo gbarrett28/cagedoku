@@ -82,11 +82,30 @@ describe('TwoStringKite', () => {
     expect(hints[0]!.explanation).toMatch(/[Kk]ite/);
     expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
     expect(hints[0]!.placement).toBeNull();
-    // highlightCells must include corner, row-end, col-end, and the target
-    const highlighted = hints[0]!.highlightCells.map(([r, c]) => `${r},${c}`);
-    expect(highlighted).toContain('0,0'); // corner
-    expect(highlighted).toContain('0,5'); // row-end
-    expect(highlighted).toContain('6,0'); // col-end
+  });
+
+  it('asHints: colourGroups contains the 3 pattern cells, highlightCells has only elimination targets', () => {
+    // corner=(0,0), rowEnd=(0,5), colEnd=(6,0), target=(6,5)
+    // Blue: [corner=(0,0)]   Green: [rowEnd=(0,5), colEnd=(6,0)]
+    const board = makeKiteBoard();
+    const ctx = GLOBAL_CTX(board);
+    const elims = rule.apply(ctx).eliminations;
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBeGreaterThan(0);
+    const hint = hints[0]!;
+
+    // colourGroups: 2 groups covering corner, rowEnd, colEnd
+    expect(hint.colourGroups?.length).toBe(2);
+    const allGroupCells = hint.colourGroups!.flatMap(g => g.cells);
+    for (const [r, c] of [[0, 0], [0, 5], [6, 0]] as [number, number][]) {
+      expect(allGroupCells.some(([gr, gc]) => gr === r && gc === c)).toBe(true);
+    }
+
+    // highlightCells: only elimination targets, NOT corner/rowEnd/colEnd
+    for (const [r, c] of [[0, 0], [0, 5], [6, 0]] as [number, number][]) {
+      expect(hint.highlightCells.some(([hr, hc]) => hr === r && hc === c)).toBe(false);
+    }
+    expect(hint.highlightCells.some(([r, c]) => r === 6 && c === 5)).toBe(true);
   });
 
   it('returns empty on a fresh unconstrained board', () => {
