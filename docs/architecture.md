@@ -329,12 +329,19 @@ interface HintResult {
   ruleName:     string;
   displayName:  string;
   explanation:  string;                              // plain English; use cellLabel()
-  highlightCells: readonly Cell[];                   // 0-based [row, col]
+  highlightCells: readonly Cell[];                   // elimination targets only (0-based [row, col])
   eliminations: readonly Elimination[];
   placement:    readonly [number, number, number] | null;  // [row, col, digit] or null
   virtualCageSuggestion: readonly [readonly Cell[], number] | null;
+  colourGroups?: readonly ColourGroup[];             // optional — bipartite chain colouring
 }
 ```
+
+**`colourGroups`** is populated by rules that use bipartite conjugate-pair reasoning
+(SimpleColouring, Skyscraper, TwoStringKite, WWing). Each group specifies which chain
+cells belong to the blue side and which to the green side. Chain cells are placed here
+rather than in `highlightCells`; `highlightCells` contains only the elimination
+targets (rendered yellow). See `CellColour` and `ColourGroup` in `web/src/engine/hint.ts`.
 
 **Adding a new rule:**
 
