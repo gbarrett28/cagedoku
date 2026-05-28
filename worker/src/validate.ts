@@ -158,6 +158,39 @@ export interface FeedbackReport {
   totalCandidates?: number;
 }
 
+export interface RuleBugReport {
+  version: 4;
+  feedbackType: 'rule-bug';
+  reportedAt: string;
+  appVersion: string;
+  ruleName: string;
+  offendingEliminations: Array<{ cell: [number, number]; digit: number }>;
+  goldenSolution: number[][];
+  stalledCandidates: number[][][];
+  puzzleType: 'killer' | 'classic';
+  regions: number[][];
+  cageTotals: number[][];
+  userAgent: string;
+}
+
+export function isRuleBugReport(value: unknown): value is RuleBugReport {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (v['version'] !== 4) return false;
+  if (v['feedbackType'] !== 'rule-bug') return false;
+  if (typeof v['reportedAt'] !== 'string') return false;
+  if (typeof v['appVersion'] !== 'string') return false;
+  if (typeof v['ruleName'] !== 'string' || v['ruleName'].length === 0) return false;
+  if (!Array.isArray(v['offendingEliminations'])) return false;
+  if (!is9x9NumberGrid(v['goldenSolution'])) return false;
+  if (!isStallCandidates(v['stalledCandidates'])) return false;
+  if (v['puzzleType'] !== 'killer' && v['puzzleType'] !== 'classic') return false;
+  if (!is9x9NumberGrid(v['regions'])) return false;
+  if (!is9x9NumberGrid(v['cageTotals'])) return false;
+  if (typeof v['userAgent'] !== 'string') return false;
+  return true;
+}
+
 export function isFeedbackReport(value: unknown): value is FeedbackReport {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;

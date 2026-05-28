@@ -16,11 +16,13 @@ import { SolverEngine } from './solverEngine.js';
 import type { HintResult } from './hint.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import { defaultRules } from './rules/index.js';
+import { DISABLED_RULES } from './rules/disabled-rules.js';
 import { Cell, Elimination } from './types.js';
 
 export { BoardState } from './boardState.js';
 export { SolverEngine } from './solverEngine.js';
 export { defaultRules } from './rules/index.js';
+export { mrvBacktrack } from './backtracker.js';
 export type { HintResult } from './hint.js';
 
 function seedGivenDigits(engine: SolverEngine, board: BoardState, givenDigits: number[][]): void {
@@ -172,8 +174,9 @@ export function getHints(
   givenDigits: number[][] | undefined,
   hintRuleNames: ReadonlySet<string>,
 ): HintResult[] {
+  const _disabled = new Set(DISABLED_RULES);
   const board = new BoardState(spec, { includeVirtualCages: false });
-  const engine = new SolverEngine(board, defaultRules(), { hintRules: hintRuleNames });
+  const engine = new SolverEngine(board, defaultRules().filter(r => !_disabled.has(r.name)), { hintRules: hintRuleNames });
 
   if (givenDigits) seedGivenDigits(engine, board, givenDigits);
 

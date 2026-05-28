@@ -19,9 +19,12 @@
 import { BoardState } from '../engine/boardState.js';
 import { SolverEngine } from '../engine/solverEngine.js';
 import { defaultRules } from '../engine/rules/index.js';
+import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
 import type { Cell, Elimination, Placement, RuleStep } from '../engine/types.js';
 import { NoSolnError } from '../solver/errors.js';
 import { dataToSpec, virtualCageKeyFromCage, solutionKey } from './specUtils.js';
+import { disableRuleForSession, isRuleDisabledForSession } from './store.js';
+import { submitRuleBugReport } from '../image/trainingUpload.js';
 import type { AutoMutation, BoardSnapshot, PuzzleState, Turn, UserAction, VirtualCage } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -137,7 +140,8 @@ export function buildEngine(
     board.addVirtualCage(vc.cells, vc.total, vc.eliminatedSolns);
   }
 
-  const rules = defaultRules();
+  const _disabled = new Set(DISABLED_RULES);
+  const rules = defaultRules().filter(r => !_disabled.has(r.name));
   const alwaysApplySet = new Set(state.alwaysApplyRules);
   // Always include CellSolutionElimination for Classic mode so row/col/box peer
   // eliminations fire regardless of user settings.
@@ -150,9 +154,31 @@ export function buildEngine(
     ? new Set(rules.filter(r => !alwaysApplySet.has(r.name)).map(r => r.name))
     : new Set<string>();
 
+  const onViolation = state.goldenSolution !== null
+    ? (ruleName: string, offending: readonly Elimination[]) => {
+        if (isRuleDisabledForSession(ruleName)) return;
+        disableRuleForSession(ruleName);
+        const spec = dataToSpec(state.specData);
+        const stalledCandidates = Array.from({ length: 9 }, (_, r) =>
+          Array.from({ length: 9 }, (_, c) => [...board.cands(r, c)].sort((a, b) => a - b))
+        );
+        submitRuleBugReport({
+          ruleName,
+          offendingEliminations: offending.map(e => ({ cell: [e.cell[0], e.cell[1]] as [number, number], digit: e.digit })),
+          goldenSolution: state.goldenSolution!,
+          stalledCandidates,
+          puzzleType: state.puzzleType,
+          regions: spec.regions as number[][],
+          cageTotals: spec.cageTotals as number[][],
+        });
+      }
+    : null;
+
   const engine = new SolverEngine(board, activeRules, {
     linearSystemActive: true,
     hintRules,
+    goldenSolution: state.goldenSolution,
+    onViolation,
   });
 
   // Apply user placements and explicit candidate removals, then solve.

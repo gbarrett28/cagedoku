@@ -87,9 +87,25 @@ describe('Worker fetch handler', () => {
 
   // --- Method -----------------------------------------------------------------
 
-  it('returns 405 for non-POST/OPTIONS requests', async () => {
+  it('returns 404 for GET requests to an unknown path', async () => {
     const res = await worker.fetch(makeRequest({ method: 'GET' }), makeEnv());
-    expect(res.status).toBe(405);
+    expect(res.status).toBe(404);
+  });
+
+  it('GET /rule-fixtures/:ruleName returns 200 with JSON array', async () => {
+    const mockGet = vi.fn().mockResolvedValue({ json: vi.fn().mockResolvedValue({ name: 'fix-1' }) });
+    const env = makeEnv({
+      TRAINING_BUCKET: {
+        list: vi.fn().mockResolvedValue({ objects: [{ key: 'rule-fixtures/TwoStringKite/fix-1.json' }] }),
+        get: mockGet,
+        put: vi.fn(),
+      } as unknown as R2Bucket,
+    });
+    const req = new Request('https://worker.example.com/rule-fixtures/TwoStringKite', { method: 'GET' });
+    const res = await worker.fetch(req, env);
+    expect(res.status).toBe(200);
+    const body = await res.json() as unknown[];
+    expect(body).toHaveLength(1);
   });
 
   // --- CORS -------------------------------------------------------------------

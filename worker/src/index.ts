@@ -1,5 +1,5 @@
-import { isTrainingExport, isPuzzleSpecExport, isStallStateExport, isFeedbackReport } from './validate.js';
-import type { TrainingExport, PuzzleSpecExport, StallStateExport, FeedbackReport } from './validate.js';
+import { isTrainingExport, isPuzzleSpecExport, isStallStateExport, isFeedbackReport, isRuleBugReport } from './validate.js';
+import type { TrainingExport, PuzzleSpecExport, StallStateExport, FeedbackReport, RuleBugReport } from './validate.js';
 
 export interface Env {
   TRAINING_BUCKET: R2Bucket;
@@ -28,6 +28,25 @@ export default {
       return new Response(null, {
         status: 204,
         headers: corsHeaders(allowed),
+      });
+    }
+
+    // GET /rule-fixtures/:ruleName — list R2 fixtures for the named rule.
+    // Used by the rule-regression GitHub Action (server-to-server, no browser origin).
+    if (request.method === 'GET') {
+      const url = new URL(request.url);
+      const match = url.pathname.match(/^\/rule-fixtures\/([A-Za-z0-9_-]+)$/);
+      if (!match) return new Response('Not found', { status: 404 });
+      const ruleName = match[1]!;
+      const listed = await env.TRAINING_BUCKET.list({ prefix: `rule-fixtures/${ruleName}/` });
+      const fixtures: unknown[] = [];
+      for (const obj of listed.objects) {
+        const r2obj = await env.TRAINING_BUCKET.get(obj.key);
+        if (r2obj) fixtures.push(await r2obj.json());
+      }
+      return new Response(JSON.stringify(fixtures), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
       });
     }
 
@@ -102,6 +121,39 @@ export default {
     if (isFeedbackReport(body)) {
       const data: FeedbackReport = body;
       try { await createFeedbackIssue(env, data); } catch (err) { console.error('[training-worker] GitHub issue creation failed:', err); }
+      return new Response('OK', { status: 200, headers: corsHeaders(allowed) });
+    }
+
+    if (isRuleBugReport(body)) {
+      const data: RuleBugReport = body;
+      const timestamp = new Date(data.reportedAt).toISOString().replace(/[:.]/g, '-');
+      const rawKey = `rule-bugs/${data.ruleName}/${timestamp}-${crypto.randomUUID()}.json`;
+      await env.TRAINING_BUCKET.put(rawKey, JSON.stringify(data), {
+        httpMetadata: { contentType: 'application/json' },
+        customMetadata: { appVersion: data.appVersion, ruleName: data.ruleName },
+      });
+      const unsolvedCells = data.stalledCandidates.flat().filter(cell => cell.length > 1).length;
+      const totalCandidates = data.stalledCandidates.flat().reduce((s, cell) => s + cell.length, 0);
+      const fixtureName = `${data.ruleName}-r2-${timestamp}`;
+      const fixture = {
+        version: 1,
+        source: 'r2',
+        name: fixtureName,
+        addedAt: data.reportedAt.slice(0, 10),
+        puzzleType: data.puzzleType,
+        ruleName: data.ruleName,
+        regions: data.regions,
+        cageTotals: data.cageTotals,
+        stalledCandidates: data.stalledCandidates,
+        goldenSolution: data.goldenSolution,
+        unsolvedCells,
+        totalCandidates,
+      };
+      const fixtureKey = `rule-fixtures/${data.ruleName}/${timestamp}-${crypto.randomUUID()}.json`;
+      await env.TRAINING_BUCKET.put(fixtureKey, JSON.stringify(fixture), {
+        httpMetadata: { contentType: 'application/json' },
+        customMetadata: { ruleName: data.ruleName },
+      });
       return new Response('OK', { status: 200, headers: corsHeaders(allowed) });
     }
 
