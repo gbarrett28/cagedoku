@@ -349,6 +349,51 @@ interface HintResult {
 The priority order and trigger assignments for all active rules are listed in the
 comment block at the top of `web/src/engine/rules/index.ts`.
 
+### Disabled rules
+
+When a rule produces an elimination that contradicts the known golden solution, it
+is automatically detected and suppressed.  The lifecycle is:
+
+1. **Runtime detection** — `SolverEngine` (with `goldenSolution` + `onViolation`
+   options set by `buildEngine()`) detects the bad elimination, calls `onViolation`,
+   and skips applying the rule result.  The session-level callback:
+   - Adds the rule name to the in-memory `_sessionDisabledRules` set in
+     `web/src/session/store.ts` (fast-path: the rule won't be passed to any future
+     `SolverEngine` constructed in this tab).
+   - POSTs a `RuleBugReport` (version 4) to the Cloudflare Worker.
+
+2. **Worker ingestion** — `POST /` with a `RuleBugReport` body stores the raw report
+   under `rule-bugs/<ruleName>/` and a `RuleBugFixture`-shaped JSON under
+   `rule-fixtures/<ruleName>/` in R2.
+
+3. **Nightly Action** — `.github/workflows/rule-regression.yml` runs
+   `node web/scripts/sync-rule-fixtures.js`, which fetches all `GET /rule-fixtures/<ruleName>`
+   responses, appends new fixtures to `web/src/engine/rules/__fixtures__/index.ts`,
+   and adds the rule name to `web/src/engine/rules/disabled-rules.ts`.  The Action
+   then commits and pushes; the next `pages.yml` deployment picks up the change.
+
+4. **Build-time exclusion** — `buildEngine()` in `web/src/session/engine.ts` and
+   `getHints()` in `web/src/engine/index.ts` both filter `defaultRules()` by
+   `DISABLED_RULES` before constructing a `SolverEngine`.  The spec validator
+   (`solve()`) is intentionally **not** filtered so corrupted-spec detection still
+   uses all rules.
+
+5. **Regression tests** — each rule's test file has a describe block that runs
+   fixture-based tests.  While the rule is in `DISABLED_RULES` the tests run as
+   `it.skip` (visible but not counted as failures).  Once the rule is fixed and
+   removed from `DISABLED_RULES`, the tests activate and must pass.
+
+**To re-enable a rule after fixing it:**
+
+1. Fix the rule implementation so it no longer produces eliminations that contradict
+   the golden digit on any of its fixture boards.
+2. Remove the rule name from `web/src/engine/rules/disabled-rules.ts`.
+3. Change the `it.skip` → `it` guard in the rule's `*.test.ts` if it isn't driven
+   automatically by `DISABLED_RULES`.  (The existing fixture tests read
+   `DISABLED_RULES` directly, so removing the name is sufficient.)
+4. Run the bronze gate — all fixture tests must now be green.
+5. Commit on a feature branch, open a PR, verify CI passes, then merge.
+
 ---
 
 ## Stress-Test Tooling

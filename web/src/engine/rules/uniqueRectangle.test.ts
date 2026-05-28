@@ -7,7 +7,11 @@ import { BoardState } from '../boardState.js';
 import { UniqueRectangle } from './uniqueRectangle.js';
 import type { RuleContext } from '../rule.js';
 import { Trigger } from '../types.js';
+import type { Cell } from '../types.js';
 import { makeTrivialSpec } from '../fixtures.js';
+import { SolverEngine } from '../solverEngine.js';
+import { DISABLED_RULES } from './disabled-rules.js';
+import { ruleBugFixtures } from './__fixtures__/index.js';
 
 function globalCtx(bs: BoardState): RuleContext {
   return { unit: null, cell: null, board: bs, hint: Trigger.GLOBAL, hintDigit: null };
@@ -93,4 +97,50 @@ describe('UniqueRectangle', () => {
     // (5,0) does not see both extra corners
     expect(elims.every(e => !(e.cell[0] === 5 && e.cell[1] === 0))).toBe(true);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Regression tests against rule-bug fixtures
+// Skipped while UniqueRectangle is in DISABLED_RULES; active once the rule is fixed.
+// ---------------------------------------------------------------------------
+
+function boardFromStallCandidates(stalledCandidates: number[][][]): BoardState {
+  const spec = {
+    regions: Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, () => r + 1)),
+    cageTotals: Array.from({ length: 9 }, () =>
+      Array.from({ length: 9 }, (_, c) => (c === 0 ? 45 : 0))),
+    borderX: Array.from({ length: 9 }, () => Array.from({ length: 8 }, () => true)),
+    borderY: Array.from({ length: 8 }, () => Array.from({ length: 9 }, () => false)),
+  };
+  const board = new BoardState(spec, { includeVirtualCages: false });
+  const engine = new SolverEngine(board, []);
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const keep = new Set(stalledCandidates[r]![c]!);
+      const elims: Array<{ cell: Cell; digit: number }> = [];
+      for (let d = 1; d <= 9; d++) {
+        if (!keep.has(d) && board.cands(r, c).has(d))
+          elims.push({ cell: [r, c] as Cell, digit: d });
+      }
+      if (elims.length) engine.applyEliminations(elims);
+    }
+  }
+  return board;
+}
+
+const urFixtures = ruleBugFixtures.filter(f => f.ruleName === 'UniqueRectangle');
+const itUR = DISABLED_RULES.includes('UniqueRectangle') ? it.skip : it;
+
+describe('UniqueRectangle — rule-bug regression fixtures', () => {
+  for (const fixture of urFixtures) {
+    itUR(`${fixture.name}: no elimination contradicts golden solution`, () => {
+      const board = boardFromStallCandidates(fixture.stalledCandidates);
+      const ctx: RuleContext = { board, unit: null, cell: null, hint: Trigger.GLOBAL, hintDigit: null };
+      const result = new UniqueRectangle().apply(ctx);
+      for (const e of result.eliminations) {
+        const [r, c] = e.cell;
+        expect(fixture.goldenSolution[r]![c]).not.toBe(e.digit);
+      }
+    });
+  }
 });
