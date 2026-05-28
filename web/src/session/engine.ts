@@ -158,7 +158,6 @@ export function buildEngine(
     ? (ruleName: string, offending: readonly Elimination[]) => {
         if (isRuleDisabledForSession(ruleName)) return;
         disableRuleForSession(ruleName);
-        const spec = dataToSpec(state.specData);
         const stalledCandidates = Array.from({ length: 9 }, (_, r) =>
           Array.from({ length: 9 }, (_, c) => [...board.cands(r, c)].sort((a, b) => a - b))
         );
