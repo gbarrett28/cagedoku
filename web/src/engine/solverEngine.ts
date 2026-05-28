@@ -173,17 +173,24 @@ export class SolverEngine {
   private readonly _hintRules: ReadonlySet<string>;
   private readonly _linearSystemActive: boolean;
   private readonly _goldenSolution: readonly (readonly number[])[] | null;
+  private readonly _onViolation: ((ruleName: string, offending: readonly Elimination[]) => void) | null;
 
   constructor(
     board: BoardState,
     rules: SolverRule[],
-    { linearSystemActive = true, hintRules = new Set<string>(), goldenSolution = null }: {
+    { linearSystemActive = true, hintRules = new Set<string>(), goldenSolution = null, onViolation = null }: {
       linearSystemActive?: boolean;
       hintRules?: ReadonlySet<string>;
       /** When provided, each rule application is checked: no rule may eliminate
        *  the correct solution digit from a cell where it is still a candidate.
-       *  Violations throw NoSolnError so the engine is marked contradictory. */
+       *  When `onViolation` is also provided, violations call it and suppress the
+       *  rule result instead of throwing. When `onViolation` is null, violations
+       *  throw NoSolnError (backward-compatible). */
       goldenSolution?: readonly (readonly number[])[] | null;
+      /** Called when a rule produces an elimination that contradicts the golden
+       *  solution. The engine suppresses the entire rule result (no board mutation)
+       *  and continues. Only has effect when `goldenSolution` is also set. */
+      onViolation?: ((ruleName: string, offending: readonly Elimination[]) => void) | null;
     } = {},
   ) {
     this.board = board;
@@ -193,6 +200,7 @@ export class SolverEngine {
     this._hintRules = hintRules;
     this._linearSystemActive = linearSystemActive;
     this._goldenSolution = goldenSolution;
+    this._onViolation = onViolation;
 
     this._triggerMap = new Map(Object.values(Trigger)
       .filter((v): v is Trigger => typeof v === 'number')
@@ -343,13 +351,23 @@ export class SolverEngine {
       } else {
         if (result.eliminations.length > 0) {
           if (this._goldenSolution !== null) {
-            for (const e of result.eliminations) {
+            const offending = result.eliminations.filter(e => {
               const [r, c] = e.cell;
-              const gold = this._goldenSolution[r]?.[c];
-              if (gold && e.digit === gold && this.board.cands(r, c).has(gold))
+              const gold = this._goldenSolution![r]?.[c];
+              return gold !== undefined && e.digit === gold && this.board.cands(r, c).has(gold);
+            });
+            if (offending.length > 0) {
+              if (this._onViolation !== null) {
+                this._onViolation(item.rule.name, offending);
+                // Suppress entire rule result — do not mutate the board.
+                continue;
+              } else {
+                const [r, c] = offending[0]!.cell;
+                const gold = offending[0]!.digit;
                 throw new NoSolnError(
                   `${item.rule.name}: would eliminate correct digit ${gold} from r${r + 1}c${c + 1}`,
                 );
+              }
             }
           }
           for (const e of result.eliminations)

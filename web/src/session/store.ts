@@ -21,6 +21,7 @@ type Cv = OpenCVModule;
 
 let _state: PuzzleState | null = null;
 let _candidatesCache: CandidatesResponse | null = null;
+const _sessionDisabledRules = new Set<string>();
 
 export function getState(): PuzzleState | null { return _state; }
 
@@ -37,6 +38,22 @@ export function setCandidatesCache(c: CandidatesResponse): void { _candidatesCac
 export function clearSession(): void {
   _state = null;
   _candidatesCache = null;
+  _sessionDisabledRules.clear();
+}
+
+/** Disable a rule for the rest of this browser session (in-memory only). */
+export function disableRuleForSession(ruleName: string): void {
+  _sessionDisabledRules.add(ruleName);
+}
+
+/** True if the named rule has been disabled at runtime during this session. */
+export function isRuleDisabledForSession(ruleName: string): boolean {
+  return _sessionDisabledRules.has(ruleName);
+}
+
+/** Snapshot of all rules disabled at runtime during this session. */
+export function getSessionDisabledRules(): ReadonlySet<string> {
+  return _sessionDisabledRules;
 }
 
 // ---------------------------------------------------------------------------
