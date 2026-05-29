@@ -107,8 +107,6 @@ type ColourMode = 'off' | 'blue-next' | 'green-next';
 let colourMode: ColourMode = 'off';
 /** "r,c" 0-based keys → colour applied by the user colouring tool. */
 const cellColours = new Map<string, 'blue' | 'green'>();
-/** True when the last colouring-mode action was a button press (not a cell click). */
-let colourBtnLastWasButton = false;
 
 let fastForwardRequested = false;
 
@@ -201,7 +199,11 @@ function drawUnderlays(
     }
   }
   if (selected !== null) {
-    ctx.fillStyle = '#dbeafe';
+    if (colourMode !== 'off') {
+      ctx.fillStyle = colourMode === 'blue-next' ? 'rgba(59, 130, 246, 0.45)' : 'rgba(34, 197, 94, 0.45)';
+    } else {
+      ctx.fillStyle = '#dbeafe';
+    }
     ctx.fillRect(
       MARGIN + (selected.col - 1) * CELL,
       MARGIN + (selected.row - 1) * CELL,
@@ -546,7 +548,7 @@ function buildPlayingCallouts(isKiller: boolean, fromFixture = false): { id: str
     { id: 'undo-btn',       text: 'Undo your last move.' },
     { id: 'hints-btn',      text: 'Request a logical hint to guide your next step.' },
     { id: 'mode-toggle',    text: 'Switch between Normal mode (place digits) and Candidate mode (edit pencil marks). The digit buttons work the same way in both modes.' },
-    { id: 'colour-btn',     text: 'Colour cells blue/green to trace conjugate-pair chains. Each tap colours the selected cell and switches to the other colour. Tap the button again (without colouring) to flip; tap twice to stop and clear.' },
+    { id: 'colour-btn',     text: 'Colour cells blue/green to trace conjugate-pair chains. Tap a cell to colour it and auto-switch to the other colour. Tap a coloured cell to toggle it. Tap the button again to stop and clear.' },
     { id: 'reveal-btn',     text: 'Reveal the correct digit for the selected cell.' },
     { id: 'digit-1',        text: 'Use these buttons to enter digits. In Candidate mode, they toggle pencil marks instead. On a keyboard, Ctrl+digit works in the opposite mode.' },
     { id: 'new-puzzle-btn', text: 'Start a fresh puzzle.' },
@@ -1680,7 +1682,7 @@ document.addEventListener('DOMContentLoaded', () => {
     showCandidates = false; candidateEditMode = false;
     virtualCageMode = false; virtualCageSelection = new Set();
     hintHighlightCells = new Set(); hintColourGroups = []; activeHintItem = null;
-    colourMode = 'off'; cellColours.clear(); colourBtnLastWasButton = false;
+    colourMode = 'off'; cellColours.clear();
     inspectCageMode = false;
     el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');
     el<HTMLElement>('inspector-col').hidden = true;
@@ -1825,20 +1827,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const btn = el<HTMLButtonElement>('colour-btn');
     if (colourMode === 'off') {
       colourMode = 'blue-next';
-      colourBtnLastWasButton = true;
       btn.classList.add('active');
-      btn.dataset['tooltip'] = 'Colouring (press again to flip colour; press twice to stop)';
-    } else if (colourBtnLastWasButton) {
-      // Second consecutive button press → exit and clear all colours
+      btn.dataset['tooltip'] = 'Colouring active (press to stop and clear)';
+    } else {
       colourMode = 'off';
       cellColours.clear();
-      colourBtnLastWasButton = false;
       btn.classList.remove('active');
       btn.dataset['tooltip'] = 'Colour cells';
-    } else {
-      // Flip next colour
-      colourMode = colourMode === 'blue-next' ? 'green-next' : 'blue-next';
-      colourBtnLastWasButton = true;
     }
     redrawGrid();
   });
@@ -2055,10 +2050,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (colourMode !== 'off') {
       const key = `${r0},${c0}`;
-      const colour = colourMode === 'blue-next' ? 'blue' : 'green';
+      const existing = cellColours.get(key);
+      const colour = existing !== undefined
+        ? (existing === 'blue' ? 'green' : 'blue')  // toggle existing colour
+        : (colourMode === 'blue-next' ? 'blue' : 'green');
       cellColours.set(key, colour);
-      colourMode = colourMode === 'blue-next' ? 'green-next' : 'blue-next';
-      colourBtnLastWasButton = false;
+      colourMode = colour === 'blue' ? 'green-next' : 'blue-next';
       // Fall through so the cell is also selected and keypad remains usable
     }
 

@@ -475,18 +475,19 @@ W-Wing hints.
 | `'blue-next'` | Next cell click colours blue; button shows `.active` |
 | `'green-next'` | Next cell click colours green; button shows `.active` |
 
-**Button press behaviour** (`colourBtnLastWasButton` flag):
-- `off → blue-next`: enters colouring mode; tooltip changes to "Colouring (press again to flip colour; press twice to stop)"
-- Active + last action was a cell click → flips next colour (`blue-next ↔ green-next`)
-- Active + last action was a button press (double press) → exits and clears all colours
+**Button press behaviour**:
+- `off → blue-next`: enters colouring mode; button gets `.active`; tooltip changes to "Colouring active (press to stop and clear)"
+- Active → exits and clears all colours; single press is sufficient
 
-**Cell click in colouring mode**: colours the cell in the current colour, flips
-`colourMode`, clears `colourBtnLastWasButton`. The cell is also selected normally
-so the digit pad remains usable.
+**Cell click in colouring mode**:
+- Uncoloured cell: coloured in the current next-colour; `colourMode` flips to the opposite colour
+- Already-coloured cell: colour is toggled (blue↔green); `colourMode` set to the opposite of the new colour
+- The cell is also selected normally so the digit pad remains usable
+- The **selection highlight** shows the next colour (blue/green at 0.45 opacity) rather than the usual pale blue `#dbeafe`, so the colour preview is clear
 
 Cell colours are stored in `cellColours: Map<string, 'blue' | 'green'>` keyed by
 `"r,c"` (0-based). They are rendered as semi-transparent overlays (layer 6 in
-`drawUnderlays`) and cleared on puzzle reset, solve completion, or double button press.
+`drawUnderlays`) and cleared on puzzle reset, solve completion, or button press.
 
 **Hint chain colouring**: rules that reason about bipartite conjugate-pair chains
 (SimpleColouring, Skyscraper, TwoStringKite, WWing) populate `HintResult.colourGroups`
