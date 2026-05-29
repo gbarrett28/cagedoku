@@ -199,7 +199,7 @@ function drawUnderlays(
     }
   }
   if (selected !== null) {
-    if (colourMode !== 'off') {
+    if (colourMode !== 'off' && !candidateEditMode) {
       ctx.fillStyle = colourMode === 'blue-next' ? 'rgba(59, 130, 246, 0.45)' : 'rgba(34, 197, 94, 0.45)';
     } else {
       ctx.fillStyle = '#dbeafe';
@@ -2048,7 +2048,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // ─────────────────────────────────────────────────────────────────────────────────────
 
-    if (colourMode !== 'off') {
+    if (colourMode !== 'off' && !candidateEditMode) {
       const key = `${r0},${c0}`;
       const existing = cellColours.get(key);
       const colour = existing !== undefined
