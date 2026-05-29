@@ -198,12 +198,8 @@ function drawUnderlays(
       ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
     }
   }
-  if (selected !== null) {
-    if (colourMode !== 'off' && !candidateEditMode) {
-      ctx.fillStyle = colourMode === 'blue-next' ? 'rgba(59, 130, 246, 0.45)' : 'rgba(34, 197, 94, 0.45)';
-    } else {
-      ctx.fillStyle = '#dbeafe';
-    }
+  if (selected !== null && colourMode === 'off') {
+    ctx.fillStyle = '#dbeafe';
     ctx.fillRect(
       MARGIN + (selected.col - 1) * CELL,
       MARGIN + (selected.row - 1) * CELL,
