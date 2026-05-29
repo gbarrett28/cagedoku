@@ -31,6 +31,8 @@ export class UniqueRectangle {
       for (const cPair of combinations(cols, 2)) {
         const [c1, c2] = cPair as [number, number];
         const corners: [number, number][] = [[r1, c1], [r1, c2], [r2, c1], [r2, c2]];
+        const boxes = new Set(corners.map(([r, c]) => Math.floor(r / 3) * 3 + Math.floor(c / 3)));
+        if (boxes.size !== 2) continue;
         const cands = corners.map(([r, c]) => board.cands(r, c));
 
         // Union of all candidates across all four corners
@@ -97,6 +99,8 @@ export class UniqueRectangle {
     for (const [r1, r2] of combinations(rows, 2) as [number, number][]) {
       for (const [c1, c2] of combinations(cols, 2) as [number, number][]) {
         const corners: Cell[] = [[r1, c1], [r1, c2], [r2, c1], [r2, c2]];
+        const boxes = new Set(corners.map(([r, c]) => Math.floor(r / 3) * 3 + Math.floor(c / 3)));
+        if (boxes.size !== 2) continue;
         const cands = corners.map(([r, c]) => board.cands(r, c));
         const allCands = new Set<number>();
         for (const s of cands) for (const d of s) allCands.add(d);
