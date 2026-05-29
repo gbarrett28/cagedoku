@@ -1,15 +1,20 @@
 /**
- * 2-String Kite — one row strong link and one column strong link sharing a corner.
+ * 2-String Kite — one row string and one column string sharing a 3×3 box.
  *
- * Row R has digit d in exactly 2 cells: corner (R, cornerC) and row-end (R, endC).
- * Col cornerC has digit d in exactly 2 cells: corner (R, cornerC) and col-end (colEndR, cornerC).
- * row-end and col-end must not see each other.
+ * Row R has digit d in exactly 2 cells: rowEnd (R, rEndCol) and rowKnot (R, rBoxCol).
+ * Col C has digit d in exactly 2 cells: colEnd (cEndRow, C) and colKnot (cBoxRow, C).
+ * rowKnot and colKnot are in the **same 3×3 box** but are different cells (the "knot").
+ * rowEnd and colEnd must not see each other.
  *
- * Logic: if d is NOT in corner, the row strong link forces d = row-end AND the col
- * strong link forces d = col-end simultaneously. Any cell that sees both row-end and
- * col-end therefore cannot hold d in any valid solution.
+ * Proof (valid in both cases):
+ *   Case A — d at rowKnot: box weak link → colKnot ≠ d → col strong link → d = colEnd.
+ *   Case B — d not at rowKnot: row strong link → d = rowEnd.
+ * Either way, at least one of {rowEnd, colEnd} has d.
+ * Any cell seeing both rowEnd and colEnd cannot hold d.
  *
- * The Skyscraper rule handles row+row and col+col; this rule handles the mixed case.
+ * This is distinct from Skyscraper (row+row or col+col). The previous implementation
+ * used a shared-cell variant (rowKnot == colKnot), which is unsound because d at
+ * that shared cell leaves neither endpoint holding d.
  */
 
 import type { HintResult } from '../hint.js';
@@ -21,9 +26,9 @@ import { cellLabel } from './_labels.js';
 export class TwoStringKite {
   readonly name = 'TwoStringKite';
   readonly description =
-    'When a digit appears in exactly two cells in a row and exactly two cells in a ' +
-    'column that share one of those cells (the corner), the digit can be eliminated ' +
-    'from any cell that sees both of the non-corner cells.';
+    'When a row and a column each have exactly two candidates for a digit, and one ' +
+    'cell from each string shares a 3×3 box (forming the knot), the digit can be ' +
+    'eliminated from any cell that sees both of the non-knot endpoints.';
   readonly priority = 22;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
@@ -33,33 +38,38 @@ export class TwoStringKite {
     const elims: Elimination[] = [];
 
     for (let d = 1; d <= 9; d++) {
-      // Row strong links: rows where d appears in exactly 2 cells
       for (let r = 0; r < 9; r++) {
         const rowCols: number[] = [];
         for (let c = 0; c < 9; c++) if (board.cands(r, c).has(d)) rowCols.push(c);
         if (rowCols.length !== 2) continue;
+        const [rc1, rc2] = rowCols as [number, number];
 
-        for (const [cornerC, endC] of [[rowCols[0]!, rowCols[1]!], [rowCols[1]!, rowCols[0]!]] as [number,number][]) {
-          // Col strong link through (r, cornerC)
+        for (let col = 0; col < 9; col++) {
           const colRows: number[] = [];
-          for (let rr = 0; rr < 9; rr++) if (board.cands(rr, cornerC).has(d)) colRows.push(rr);
+          for (let rr = 0; rr < 9; rr++) if (board.cands(rr, col).has(d)) colRows.push(rr);
           if (colRows.length !== 2) continue;
+          const [cr1, cr2] = colRows as [number, number];
 
-          const colEndR = colRows.find(rr => rr !== r);
-          if (colEndR === undefined) continue;
+          for (const [rBoxCol, rEndCol] of [[rc1, rc2], [rc2, rc1]] as [number, number][]) {
+            for (const [cBoxRow, cEndRow] of [[cr1, cr2], [cr2, cr1]] as [number, number][]) {
+              // rowKnot = (r, rBoxCol), colKnot = (cBoxRow, col) — must share a box, differ
+              if (r === cBoxRow && rBoxCol === col) continue;
+              const rKnotBox = Math.floor(r / 3) * 3 + Math.floor(rBoxCol / 3);
+              const cKnotBox = Math.floor(cBoxRow / 3) * 3 + Math.floor(col / 3);
+              if (rKnotBox !== cKnotBox) continue;
 
-          // row-end and col-end must not see each other
-          if (sees(r, endC, colEndR, cornerC)) continue;
+              // Endpoints must not see each other (else a simpler rule already covers this)
+              if (sees(r, rEndCol, cEndRow, col)) continue;
 
-          // Eliminate d from cells seeing BOTH (r, endC) and (colEndR, cornerC)
-          for (let rr = 0; rr < 9; rr++) {
-            for (let cc = 0; cc < 9; cc++) {
-              if (rr === r && cc === cornerC) continue;
-              if (rr === r && cc === endC) continue;
-              if (rr === colEndR && cc === cornerC) continue;
-              if (!board.cands(rr, cc).has(d)) continue;
-              if (sees(rr, cc, r, endC) && sees(rr, cc, colEndR, cornerC))
-                elims.push({ cell: [rr, cc] as Cell, digit: d });
+              for (let tr = 0; tr < 9; tr++) {
+                for (let tc = 0; tc < 9; tc++) {
+                  if (tr === r && tc === rEndCol) continue;
+                  if (tr === cEndRow && tc === col) continue;
+                  if (!board.cands(tr, tc).has(d)) continue;
+                  if (sees(tr, tc, r, rEndCol) && sees(tr, tc, cEndRow, col))
+                    elims.push({ cell: [tr, tc] as Cell, digit: d });
+                }
+              }
             }
           }
         }
@@ -80,47 +90,57 @@ export class TwoStringKite {
         const rowCols: number[] = [];
         for (let c = 0; c < 9; c++) if (board.cands(r, c).has(d)) rowCols.push(c);
         if (rowCols.length !== 2) continue;
+        const [rc1, rc2] = rowCols as [number, number];
 
-        for (const [cornerC, endC] of [[rowCols[0]!, rowCols[1]!], [rowCols[1]!, rowCols[0]!]] as [number,number][]) {
+        for (let col = 0; col < 9; col++) {
           const colRows: number[] = [];
-          for (let rr = 0; rr < 9; rr++) if (board.cands(rr, cornerC).has(d)) colRows.push(rr);
+          for (let rr = 0; rr < 9; rr++) if (board.cands(rr, col).has(d)) colRows.push(rr);
           if (colRows.length !== 2) continue;
+          const [cr1, cr2] = colRows as [number, number];
 
-          const colEndR = colRows.find(rr => rr !== r);
-          if (colEndR === undefined) continue;
-          if (sees(r, endC, colEndR, cornerC)) continue;
+          for (const [rBoxCol, rEndCol] of [[rc1, rc2], [rc2, rc1]] as [number, number][]) {
+            for (const [cBoxRow, cEndRow] of [[cr1, cr2], [cr2, cr1]] as [number, number][]) {
+              if (r === cBoxRow && rBoxCol === col) continue;
+              const rKnotBox = Math.floor(r / 3) * 3 + Math.floor(rBoxCol / 3);
+              const cKnotBox = Math.floor(cBoxRow / 3) * 3 + Math.floor(col / 3);
+              if (rKnotBox !== cKnotBox) continue;
+              if (sees(r, rEndCol, cEndRow, col)) continue;
 
-          const hintElims: Elimination[] = [];
-          for (let rr = 0; rr < 9; rr++) {
-            for (let cc = 0; cc < 9; cc++) {
-              if (rr === r && cc === cornerC) continue;
-              if (rr === r && cc === endC) continue;
-              if (rr === colEndR && cc === cornerC) continue;
-              if (!board.cands(rr, cc).has(d)) continue;
-              if (sees(rr, cc, r, endC) && sees(rr, cc, colEndR, cornerC))
-                hintElims.push({ cell: [rr, cc] as Cell, digit: d });
+              const hintElims: Elimination[] = [];
+              for (let tr = 0; tr < 9; tr++) {
+                for (let tc = 0; tc < 9; tc++) {
+                  if (tr === r && tc === rEndCol) continue;
+                  if (tr === cEndRow && tc === col) continue;
+                  if (!board.cands(tr, tc).has(d)) continue;
+                  if (sees(tr, tc, r, rEndCol) && sees(tr, tc, cEndRow, col))
+                    hintElims.push({ cell: [tr, tc] as Cell, digit: d });
+                }
+              }
+              if (!hintElims.length) continue;
+
+              const key = `${d}|${r},${rEndCol}|${cEndRow},${col}|${r},${rBoxCol}|${cBoxRow},${col}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+
+              const rowEnd: Cell = [r, rEndCol];
+              const colEnd: Cell = [cEndRow, col];
+              const rowKnot: Cell = [r, rBoxCol];
+              const colKnot: Cell = [cBoxRow, col];
+              hints.push({
+                ruleName: this.name,
+                displayName: '2-String Kite',
+                explanation: `2-String Kite on ${d}: row ${r + 1} (${cellLabel(rowEnd)}–${cellLabel(rowKnot)}) and col ${col + 1} (${cellLabel(colKnot)}–${cellLabel(colEnd)}) share a box via ${cellLabel(rowKnot)} and ${cellLabel(colKnot)}. Digit ${d} eliminated from cells seeing both ${cellLabel(rowEnd)} and ${cellLabel(colEnd)}.`,
+                highlightCells: hintElims.map(e => e.cell),
+                eliminations: hintElims,
+                placement: null,
+                virtualCageSuggestion: null,
+                colourGroups: [
+                  { cells: [rowKnot, colKnot], colour: 'blue' },
+                  { cells: [rowEnd, colEnd], colour: 'green' },
+                ],
+              });
             }
           }
-          if (!hintElims.length) continue;
-
-          const key = `${d}|${r},${endC}|${colEndR},${cornerC}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-
-          const corner = [r, cornerC] as Cell;
-          const rowEnd = [r, endC] as Cell;
-          const colEnd = [colEndR, cornerC] as Cell;
-          // corner = blue; rowEnd + colEnd = green (both forced when corner is false)
-          hints.push({
-            ruleName: this.name,
-            displayName: '2-String Kite',
-            explanation: `2-String Kite on ${d}: row r${r + 1} (${cellLabel(corner)}–${cellLabel(rowEnd)}) and col c${cornerC + 1} (${cellLabel(corner)}–${cellLabel(colEnd)}) share corner ${cellLabel(corner)}. Digit ${d} eliminated from cells seeing both ${cellLabel(rowEnd)} and ${cellLabel(colEnd)}.`,
-            highlightCells: hintElims.map(e => e.cell),
-            eliminations: hintElims,
-            placement: null,
-            virtualCageSuggestion: null,
-            colourGroups: [{ cells: [corner], colour: 'blue' }, { cells: [rowEnd, colEnd], colour: 'green' }],
-          });
         }
       }
     }

@@ -12,4 +12,4 @@
  *  3. Run the bronze gate — all fixture tests must be green.
  *  4. Commit on a feature branch and open a PR.
  */
-export const DISABLED_RULES: readonly string[] = ['TwoStringKite'];
+export const DISABLED_RULES: readonly string[] = [];
