@@ -117,4 +117,42 @@ describe('WWing', () => {
     const result = rule.apply(ctx);
     expect(result.eliminations).toHaveLength(0);
   });
+
+  it('near-miss: wings see each other — no elimination', () => {
+    // W-Wing requires A and B to NOT see each other. If they do, the pattern collapses:
+    // A seeing B means A and B share a unit, so when one has q the other cannot — this
+    // is covered by a simpler naked-pair or pointing rule, not W-Wing. More importantly,
+    // if A sees B and both are {p,q}, a common peer could be covered by that simpler rule
+    // already, and the W-Wing proof requires A and B to be independent witnesses. The
+    // implementation guards this with `if (sees(ar,ac,br,bc)) continue`.
+    //
+    // Strong link on 5 in col 0: X=(0,0), Y=(4,0).
+    // A=(0,1)={5,7} sees X via row 0.
+    // B=(4,1)={5,7} sees Y via row 4.
+    // A and B see each other via col 1 — so the guard fires and no W-Wing is generated.
+    // Any cell that would see both A and B (e.g. (2,1) via col 1) must NOT have 7 eliminated.
+    const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+    const engine = new SolverEngine(board, [], {});
+
+    // Strong link on 5 in col 0: keep only (0,0) and (4,0)
+    for (const r of [1,2,3,5,6,7,8]) engine.applyEliminations([{ cell: [r,0], digit: 5 }]);
+    // Bivalue A=(0,1) = {5,7}
+    for (const d of [1,2,3,4,6,8,9]) engine.applyEliminations([{ cell: [0,1], digit: d }]);
+    // Bivalue B=(4,1) = {5,7}
+    for (const d of [1,2,3,4,6,8,9]) engine.applyEliminations([{ cell: [4,1], digit: d }]);
+    // Remove 5 from row 0 and row 4 (except the strong-link ends and the wings)
+    for (let c = 2; c < 9; c++) engine.applyEliminations([{ cell: [0,c], digit: 5 }]);
+    for (let c = 2; c < 9; c++) engine.applyEliminations([{ cell: [4,c], digit: 5 }]);
+
+    // Find col 0 unit for the strong link
+    const colUnit = board.units.find(
+      u => u.kind === UnitKind.COL && u.cells.some(([, c]) => c === 0)
+    )!;
+    const ctx = unitCtx(board, colUnit, 5);
+    const result = rule.apply(ctx);
+
+    // (2,1) is in col 1 — sees A=(0,1) and B=(4,1). If the guard were missing, 7 might
+    // be incorrectly eliminated there. The guard must prevent any such elimination.
+    expect(result.eliminations.every(e => !(e.digit === 7))).toBe(true);
+  });
 });

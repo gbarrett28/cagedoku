@@ -70,4 +70,23 @@ describe('XYWing', () => {
 
     expect(new XYWing().apply(globalCtx(bs)).eliminations).toHaveLength(0);
   });
+
+  it('near-miss: trivalue pivot {x,y,z} is not used — no elimination even though pincers match', () => {
+    // XY-Wing requires a bivalue pivot. A trivalue pivot {1,2,3} with pincers {1,3}
+    // and {2,3} looks like the pattern but changing the pivot to trivalue means the
+    // standard XY-Wing proof breaks: if P=3, target T not seeing P could still have 3.
+    // The rule must not fire.
+    const bs = new BoardState(makeTrivialSpec());
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
+
+    bs.candidates[0]![0]! = new Set([1, 2, 3]); // trivalue "pivot" — must NOT be used
+    bs.candidates[0]![6]! = new Set([1, 3]);     // would-be pincer A (sees [0,0] via row)
+    bs.candidates[6]![0]! = new Set([2, 3]);     // would-be pincer B (sees [0,0] via col)
+    // Target sees A via col 6 and B via row 6, but does NOT see [0,0] (different box/row/col)
+    bs.candidates[6]![6]! = new Set([3, 5]);
+
+    const elims = new XYWing().apply(globalCtx(bs)).eliminations;
+    // No bivalue pivot exists, so no XY-Wing can fire
+    expect(elims.every(e => !(e.cell[0] === 6 && e.cell[1] === 6 && e.digit === 3))).toBe(true);
+  });
 });
