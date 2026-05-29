@@ -1,16 +1,27 @@
 /**
  * W-Wing — two bivalue cells {p,q} connected through a strong link on p.
  *
- * A strong link on p exists in unit U when p has exactly 2 candidate cells
- * X and Y in U. If bivalue cell A={p,q} sees X and bivalue cell B={p,q} sees Y
- * (or A sees Y and B sees X), and A does not see B, then q can be eliminated
- * from any cell that sees both A and B.
+ * Strong link on p: unit U has exactly two cells X and Y that can hold p.
+ * Wing A = {p,q} sees X (or Y). Wing B = {p,q} sees the other end. A ≠ B.
+ * Digit q is eliminated from any cell T that sees both A and B.
  *
- * Logic: p must land in X or Y. If p lands in X, A≠p so A=q; if p lands in Y,
- * B≠p so B=q. In either case q lives in A or B, so no cell seeing both can hold q.
+ * Proof (two cases, exhaustive because the strong link is binary):
+ *   Case p at X: A sees X → A ≠ p → A = q.  T sees A → T ≠ q.
+ *   Case p at Y: B sees Y → B ≠ p → B = q.  T sees B → T ≠ q.
  *
- * Uses COUNT_HIT_TWO trigger — fires only when a new strong link is created
- * (a digit's count in a ROW/COL/BOX drops to 2), more targeted than GLOBAL.
+ * Guards verified against proof:
+ *   linkCells.length === 2                       strong link exists (exactly two p-cells)
+ *   wing.size === 2 ∧ wing.has(p)               wings are bivalue on {p,q} (forcing is tight)
+ *   (aSeesX ∧ bSeesY) ∨ (aSeesY ∧ bSeesX)      complementary connection — soundness guard:
+ *       each wing is tied to a different end; if both see the same end the far-end
+ *       case leaves both wings uncommitted and the proof fails
+ *   sees(T, A) ∧ sees(T, B)                     T blocked by whichever wing holds q
+ *
+ * Anti-redundancy guard: `sees(A, B)` → skip. If A and B see each other they form
+ * a naked pair on {p,q}; the same eliminations are already covered by that rule.
+ *
+ * Uses COUNT_HIT_TWO trigger — fires only when a digit's count in a unit drops to 2,
+ * creating a new strong link, rather than scanning the whole board on every change.
  */
 
 import type { HintResult } from '../hint.js';

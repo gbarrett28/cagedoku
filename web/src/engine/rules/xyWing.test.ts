@@ -54,8 +54,16 @@ describe('XYWing', () => {
     expect(hints[0]!.displayName).toBe('XY-Wing');
     expect(hints[0]!.explanation).toContain('XY-Wing');
     expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
-    expect(hints[0]!.highlightCells.length).toBeGreaterThanOrEqual(3);
     expect(hints[0]!.placement).toBeNull();
+    // colourGroups: pivot (1 cell, blue) + pincers (2 cells, green)
+    expect(hints[0]!.colourGroups?.length).toBe(2);
+    const allGroupCells = hints[0]!.colourGroups!.flatMap(g => g.cells);
+    expect(allGroupCells.length).toBe(3);
+    // highlightCells: only elimination targets — pivot and pincers must NOT appear here
+    for (const [r, c] of [[0, 0], [0, 1], [1, 0]] as [number, number][]) {
+      expect(hints[0]!.highlightCells.some(([hr, hc]) => hr === r && hc === c)).toBe(false);
+    }
+    expect(hints[0]!.highlightCells.length).toBeGreaterThan(0);
   });
 
   it('returns empty when no bivalue cells form a valid chain', () => {
