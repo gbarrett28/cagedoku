@@ -89,6 +89,7 @@ Guards:
       eliminations,
       placement: null,
       virtualCageSuggestion: null,
+      patternDigits: [d],
     }];
   }
 }

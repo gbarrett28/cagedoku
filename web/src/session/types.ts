@@ -202,6 +202,8 @@ export interface HintItem {
   readonly virtualCageSuggestion: VirtualCageSuggestion | null;
   /** Two colour groups for bipartite-chain hints; absent for all other hints. */
   readonly colourGroups?: readonly { cells: readonly [number, number][]; colour: 'blue' | 'green' }[];
+  /** Digits key to the rule — marked with squares in highlightCells. See HintResult.patternDigits. */
+  readonly patternDigits?: readonly number[];
 }
 
 export interface HintsResponse {

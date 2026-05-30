@@ -386,31 +386,65 @@ function drawCandidates(
   }
 }
 
-/** Draws small circles around candidate digits slated for elimination by the active hint. */
+/**
+ * Draws per-digit markers for the active hint:
+ *   circles (red)  — eliminated digits in elimination cells
+ *   squares (blue) — pattern digits in pattern (highlight) cells
+ */
 function drawHintDigitMarkers(
   ctx: CanvasRenderingContext2D,
   userGrid: number[][],
   candidatesData: CandidatesResponse,
 ): void {
-  if (activeHintItem === null || activeHintItem.eliminations.length === 0) return;
+  if (activeHintItem === null) return;
+  const hint = activeHintItem;
   const CAND_TOP = 13;
   const SUB_W = CELL / 3;
   const SUB_H = (CELL - CAND_TOP) / 3;
   const R = Math.min(SUB_W, SUB_H) * 0.38;
-  ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
-  ctx.lineWidth = 1.5;
-  for (const { cell: [r, c], digit: d } of activeHintItem.eliminations) {
-    if ((userGrid[r]?.[c] ?? 0) !== 0) continue;
-    const cellInfo = candidatesData.cells[r]?.[c];
-    if (!cellInfo) continue;
-    if (!cellInfo.candidates.includes(d) && !cellInfo.userRemoved.includes(d)) continue;
-    const subRow = Math.floor((d - 1) / 3);
-    const subCol = (d - 1) % 3;
-    const cx = MARGIN + c * CELL + (subCol + 0.5) * SUB_W;
-    const cy = MARGIN + r * CELL + CAND_TOP + (subRow + 0.5) * SUB_H;
-    ctx.beginPath();
-    ctx.arc(cx, cy, R, 0, Math.PI * 2);
-    ctx.stroke();
+
+  // Red circles around eliminated (cell, digit) pairs
+  if (hint.eliminations.length > 0) {
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
+    ctx.lineWidth = 1.5;
+    for (const { cell: [r, c], digit: d } of hint.eliminations) {
+      if ((userGrid[r]?.[c] ?? 0) !== 0) continue;
+      const cellInfo = candidatesData.cells[r]?.[c];
+      if (!cellInfo) continue;
+      if (!cellInfo.candidates.includes(d) && !cellInfo.userRemoved.includes(d)) continue;
+      const subRow = Math.floor((d - 1) / 3);
+      const subCol = (d - 1) % 3;
+      const cx = MARGIN + c * CELL + (subCol + 0.5) * SUB_W;
+      const cy = MARGIN + r * CELL + CAND_TOP + (subRow + 0.5) * SUB_H;
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  // Blue squares around pattern digits in highlight (pattern) cells
+  const patternDigits: readonly number[] =
+    hint.patternDigits ??
+    (hint.placement !== null ? [hint.placement[2]] : [...new Set(hint.eliminations.map(e => e.digit))]);
+  if (patternDigits.length > 0 && hint.highlightCells.length > 0) {
+    ctx.strokeStyle = 'rgba(59, 130, 246, 0.85)';
+    ctx.lineWidth = 1.5;
+    const hw = SUB_W * 0.38;
+    const hh = SUB_H * 0.38;
+    for (const [r, c] of hint.highlightCells) {
+      if ((userGrid[r]?.[c] ?? 0) !== 0) continue;
+      const cellInfo = candidatesData.cells[r]?.[c];
+      if (!cellInfo) continue;
+      const candSet = new Set(cellInfo.candidates);
+      for (const d of patternDigits) {
+        if (!candSet.has(d)) continue;
+        const subRow = Math.floor((d - 1) / 3);
+        const subCol = (d - 1) % 3;
+        const cx = MARGIN + c * CELL + (subCol + 0.5) * SUB_W;
+        const cy = MARGIN + r * CELL + CAND_TOP + (subRow + 0.5) * SUB_H;
+        ctx.strokeRect(cx - hw, cy - hh, 2 * hw, 2 * hh);
+      }
+    }
   }
 }
 

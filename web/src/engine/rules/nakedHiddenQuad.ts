@@ -131,6 +131,7 @@ Guards:
         explanation: `Hidden Quad: {${digits.join(',')}} are confined to ${quadCells.map(c => cellLabel(c)).join(', ')} within ${unitLabel(ctx.unit)}. Remove all other candidates from these cells.`,
         highlightCells: [...quadCells, ...elims.map(e => e.cell)],
         eliminations: elims, placement: null, virtualCageSuggestion: null,
+        patternDigits: digits,
       }];
     }
     return [];

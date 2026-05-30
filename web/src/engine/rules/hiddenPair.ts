@@ -81,6 +81,7 @@ Guards:
       explanation: `Hidden Pair: only {${digits.join(',')}} can go in ${cellLabel(c1)} and ${cellLabel(c2)} within ${unitLabel(ctx.unit)}. Remove all other candidates from these two cells.`,
       highlightCells: [...pairCells, ...eliminations.map(e => e.cell)],
       eliminations: [...eliminations], placement: null, virtualCageSuggestion: null,
+      patternDigits: digits,
     }];
   }
 }

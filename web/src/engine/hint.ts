@@ -33,6 +33,13 @@ export interface HintResult {
   readonly virtualCageSuggestion: readonly [readonly Cell[], number] | null;
   /** Two colour groups for bipartite-chain rules; absent for all other rules. */
   readonly colourGroups?: readonly ColourGroup[];
+  /**
+   * Digits key to the rule's reasoning — marked with squares in `highlightCells`.
+   * Absent for most rules; the renderer then derives them from `eliminations`
+   * (or `placement[2]` for placement hints). Set explicitly only when pattern
+   * digits differ from elimination digits (Hidden Single/Pair/Triple/Quad).
+   */
+  readonly patternDigits?: readonly number[];
 }
 
 export function eliminationCount(h: HintResult): number {

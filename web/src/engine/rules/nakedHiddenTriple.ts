@@ -131,6 +131,7 @@ Guards:
         explanation: `Hidden Triple: {${digits.join(',')}} are confined to ${tripleCells.map(c => cellLabel(c)).join(', ')} within ${unitLabel(ctx.unit)}. Remove all other candidates from these cells.`,
         highlightCells: [...tripleCells, ...elims.map(e => e.cell)],
         eliminations: elims, placement: null, virtualCageSuggestion: null,
+        patternDigits: digits,
       }];
     }
     return [];

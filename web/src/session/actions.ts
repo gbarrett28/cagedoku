@@ -1162,6 +1162,7 @@ export function getHints(): HintsResponse {
           cells: [...g.cells].map(([r, c]) => [r, c] as [number, number]),
         })),
       } : {}),
+      ...(h.patternDigits ? { patternDigits: [...h.patternDigits] } : {}),
     };
   });
 
