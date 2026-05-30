@@ -13,9 +13,21 @@ import { cellLabel } from './_labels.js';
 export class SimpleColouring {
   readonly name = 'SimpleColouring';
   readonly displayName = 'Simple Colouring';
-  readonly description =
-    'Uses chains of cells where a digit can only go in one of two places to ' +
-    'eliminate that digit from cells that see both ends of the chain.';
+  readonly description = `
+Simple Colouring — single-digit chain colouring using conjugate pairs.
+
+Setup: build a graph where nodes are cells holding d and edges connect cells that form a conjugate pair (the only two d-candidates in a shared unit). 2-colour each connected component (colour 0 and colour 1). Exactly one colour is true in any valid solution.
+
+Wrap elimination: if two same-colour nodes see each other, both cannot simultaneously hold d — a contradiction. The entire colour group is therefore false; d is eliminated from all its cells.
+
+Trap elimination: if an uncoloured cell T sees at least one colour-0 node and at least one colour-1 node, then regardless of which colour is true, T sees a placed d and cannot hold d.
+
+Guards:
+  cols.length === 2 / rows.length === 2 / boxCells.length === 2   edge added only for genuine conjugate pairs
+  hasConflict(cells)   wrap fires only when two same-colour cells see each other
+  seesC0 && seesC1   trap fires only when T sees both colours
+  !allColoured.has(...)   trap targets must be outside the chain
+`.trim();
   readonly priority = 18;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();

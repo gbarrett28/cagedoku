@@ -13,9 +13,21 @@ import { cellLabel } from './_labels.js';
 export class UniqueRectangle {
   readonly name = 'UniqueRectangle';
   readonly displayName = 'Unique Rectangle';
-  readonly description =
-    'When four cells forming a rectangle would create two identical solutions, ' +
-    'eliminates candidates that would cause the ambiguity.';
+  readonly description = `
+Unique Rectangle — assumes the puzzle has a unique solution; eliminates candidates that would create a deadly pattern.
+
+Setup: four cells forming a rectangle across exactly 2 boxes (rows R1,R2 × cols C1,C2). Digit pair {a,b} is the UR pair.
+
+Type 1 proof: if three corners each hold exactly {a,b}, the floor corner cannot also hold only {a,b} — because then swapping a and b across all four corners would yield a second valid solution, contradicting uniqueness. Therefore a and b are eliminated from the floor.
+
+Type 2 proof: if two corners (bases) hold {a,b} and two corners (extras) hold {a,b,x} for the same extra digit x, then x must be placed in exactly one of the two extra corners (the UR pair is locked in the other positions). Any cell seeing both extra corners cannot hold x.
+
+Guards:
+  boxes.size === 2   rectangle must span exactly 2 boxes
+  roofIndices.length === 3   Type 1 requires exactly 3 corners with {a,b}
+  baseIndices.length === 2 && extraIndices.length === 2   Type 2 requires exactly 2 base + 2 extra corners
+  extra0.size === 1 && extra0[0] === extra1[0]   extra corners must share the same single extra digit
+`.trim();
   readonly priority = 17;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();

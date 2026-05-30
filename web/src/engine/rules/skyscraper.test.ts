@@ -111,4 +111,17 @@ describe('Skyscraper', () => {
     expect(rule.apply(ctx).eliminations).toHaveLength(0);
     expect(rule.asHints(ctx, [])).toHaveLength(0);
   });
+
+  it('near-miss: two rows with d in 2 cells each but no shared column → no Skyscraper', () => {
+    // Row 0: d in cols 1 and 3; Row 1: d in cols 5 and 7.
+    // No column is shared between the two rows → the "else continue" guard fires for every pair.
+    const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+    const engine = new SolverEngine(board, [], {});
+    for (const c of [0, 2, 4, 5, 6, 7, 8]) engine.applyEliminations([{ cell: [0, c], digit: 2 }]);
+    for (const c of [0, 1, 2, 3, 4, 6, 8]) engine.applyEliminations([{ cell: [1, c], digit: 2 }]);
+    for (let r = 2; r < 9; r++)
+      for (let c = 0; c < 9; c++) engine.applyEliminations([{ cell: [r, c], digit: 2 }]);
+    const ctx = GLOBAL_CTX(board);
+    expect(rule.apply(ctx).eliminations.filter(e => e.digit === 2)).toHaveLength(0);
+  });
 });

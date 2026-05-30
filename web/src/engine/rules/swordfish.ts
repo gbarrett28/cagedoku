@@ -12,7 +12,19 @@ import { combinations, dedupElims } from './_helpers.js';
 export class Swordfish {
   readonly name = 'Swordfish';
   readonly displayName = 'Swordfish';
-  readonly description = 'Generalisation of X-Wing across three rows and three columns.';
+  readonly description = `
+Swordfish — generalisation of X-Wing to three base rows and three cover columns.
+
+Setup: select 3 rows R1, R2, R3. In each row, d appears in 2 or 3 columns. The union of those columns spans exactly 3 columns Ca, Cb, Cc.
+
+Proof: d must occupy exactly one cell per base row, and each such cell is in one of {Ca, Cb, Cc}. By pigeonhole across the three cover columns, each column holds at most one of these d-placements. Any non-base cell in Ca, Cb, or Cc therefore sees a placed d and cannot hold d.
+
+Column variant is identical with rows and columns transposed.
+
+Guards:
+  cols.size >= 2 && cols.size <= 3   row qualifies only when d spans 2 or 3 columns
+  coverCols.size === 3   the union of columns must be exactly 3 (not fewer, not more)
+`.trim();
   readonly priority = 14;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();

@@ -132,6 +132,40 @@ describe('SimpleColouring', () => {
     expect(hint.highlightCells.some(([r, c]) => r === 1 && c === 1)).toBe(true);
   });
 
+  it('near-miss: same-colour cells in different units (no conflict) → no wrap', () => {
+    // Chain: (0,0) -[row0]- (0,5) -[col5]- (8,5) -[row8]- (8,2)
+    // BFS: (0,0)=0, (0,5)=1, (8,5)=0, (8,2)=1
+    // Colour-0 cells are (0,0) and (8,5): different row, col, and box → hasConflict is false.
+    // Colour-1 cells are (0,5) and (8,2): different row, col, and box → hasConflict is false.
+    // No trap target either. Rule should return no eliminations.
+    const bs = new BoardState(makeTrivialSpec());
+    const d = 6;
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.cands(r, c).delete(d);
+    bs.cands(0, 0).add(d); // colour 0
+    bs.cands(0, 5).add(d); // colour 1
+    bs.cands(8, 5).add(d); // colour 0
+    bs.cands(8, 2).add(d); // colour 1
+    // Verify no two same-colour cells share a unit:
+    // (0,0) vs (8,5): different row/col/box ✓; (0,5) vs (8,2): different row/col/box ✓
+    const elims = new SimpleColouring().apply(globalCtx(bs)).eliminations.filter(e => e.digit === d);
+    expect(elims).toHaveLength(0);
+  });
+
+  it('near-miss: uncoloured cell sees only one colour → no trap', () => {
+    // Chain: (0,0) -[row0]- (0,3) — only 2 nodes, colours 0 and 1.
+    // Colour-0: (0,0). Colour-1: (0,3).
+    // Candidate (3,0): sees (0,0) via col 0 (colour 0) but does NOT see (0,3) (different row, col, box).
+    // seesC1 is false → trap guard fails → NOT eliminated.
+    const bs = new BoardState(makeTrivialSpec());
+    const d = 9;
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.cands(r, c).delete(d);
+    bs.cands(0, 0).add(d); // colour 0
+    bs.cands(0, 3).add(d); // colour 1
+    bs.cands(3, 0).add(d); // sees colour 0 only (via col 0)
+    const elims = new SimpleColouring().apply(globalCtx(bs)).eliminations.filter(e => e.digit === d);
+    expect(elims.some(e => e.cell[0] === 3 && e.cell[1] === 0)).toBe(false);
+  });
+
   it('wrap: eliminates digit from a colour group when two same-colour cells see each other', () => {
     const bs = new BoardState(makeTrivialSpec());
     const d = 5;

@@ -51,6 +51,14 @@ describe('XWing', () => {
     setDigitCells(bs, 3, [[0, 2], [0, 7], [4, 3], [4, 8]]);
     expect(new XWing().apply(globalCtx(bs)).eliminations).toHaveLength(0);
   });
+
+  it('near-miss: only row has d in 3 cols → size=3 fails cols.size===2 guard → no X-Wing', () => {
+    // Only row 0 has d (in cols 1, 4, 7 — size=3 > 2). Row-variant guard cols.size===2 fails.
+    // Each col has d in exactly 1 row → column-variant also finds nothing.
+    const bs = new BoardState(makeTrivialSpec());
+    setDigitCells(bs, 4, [[0, 1], [0, 4], [0, 7]]);
+    expect(new XWing().apply(globalCtx(bs)).eliminations.filter(e => e.digit === 4)).toHaveLength(0);
+  });
 });
 
 describe('Swordfish', () => {
@@ -69,6 +77,19 @@ describe('Swordfish', () => {
     expect(elims.some(e => e.cell[0] === 5 && e.cell[1] === 7)).toBe(true);
     // Base rows not targeted
     expect(elims.every(e => e.cell[0] !== 0 && e.cell[0] !== 3 && e.cell[0] !== 6)).toBe(true);
+  });
+
+  it('near-miss: 3 qualifying rows but union spans 5 cols → coverCols.size !== 3 → no Swordfish', () => {
+    // Rows 0,3,6 each qualify (sizes 2,2,3) but their union is {1,2,3,4,5} — size=5 > 3.
+    // Row-variant guard coverCols.size===3 fails for the only possible triple.
+    // Only 2 cols (1 and 3) appear in 2 rows each; the rest appear in 1 row → no qualifying col-triple.
+    const bs = new BoardState(makeTrivialSpec());
+    setDigitCells(bs, 6, [
+      [0, 1], [0, 2],
+      [3, 3], [3, 4],
+      [6, 1], [6, 3], [6, 5],
+    ]);
+    expect(new Swordfish().apply(globalCtx(bs)).eliminations.filter(e => e.digit === 6)).toHaveLength(0);
   });
 });
 
@@ -113,6 +134,20 @@ describe('Jellyfish', () => {
     // Base rows not targeted
     const baseRows = new Set([0, 2, 5, 7]);
     expect(elims.every(e => !baseRows.has(e.cell[0]))).toBe(true);
+  });
+
+  it('near-miss: 4 qualifying rows but union spans 6 cols → coverCols.size !== 4 → no Jellyfish', () => {
+    // Rows 0,2,5,7 each qualify (size=2) but their union is {1,2,3,4,5,6} — size=6 > 4.
+    // Row-variant guard coverCols.size===4 fails for the only possible quad.
+    // Only 2 cols (1 and 5) appear in 2 rows each → column-variant cannot form a qualifying quad.
+    const bs = new BoardState(makeTrivialSpec());
+    setDigitCells(bs, 8, [
+      [0, 1], [0, 2],
+      [2, 3], [2, 4],
+      [5, 5], [5, 1],
+      [7, 5], [7, 6],
+    ]);
+    expect(new Jellyfish().apply(globalCtx(bs)).eliminations.filter(e => e.digit === 8)).toHaveLength(0);
   });
 
   it('asHints: returns a hint with correct shape when jellyfish pattern exists', () => {

@@ -80,6 +80,33 @@ describe('UniqueRectangle', () => {
     expect(hints[0]!.placement).toBeNull();
   });
 
+  it('near-miss: only 2 corners have {a,b} (not 3) → Type 1 does not fire', () => {
+    // roofIndices.length must be 3 for Type 1.
+    // Here only (0,0) and (0,3) have exactly {4,7}; the other two corners have extra digits.
+    const bs = new BoardState(makeTrivialSpec());
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
+    bs.candidates[0]![0]! = new Set([4, 7]);
+    bs.candidates[0]![3]! = new Set([4, 7]);
+    bs.candidates[1]![0]! = new Set([4, 6, 7]);  // 3 candidates — not a roof corner
+    bs.candidates[1]![3]! = new Set([3, 4, 7]);  // 3 candidates — not a roof corner
+    const elims = new UniqueRectangle().apply(globalCtx(bs)).eliminations;
+    // Type 1 requires 3 exact-{a,b} corners; with only 2, no Type 1 elimination
+    const type1Elims = elims.filter(e => e.digit === 4 || e.digit === 7);
+    expect(type1Elims.some(e => e.cell[0] === 1)).toBe(false);
+  });
+
+  it('near-miss: all 4 corners in the same box → boxes.size === 1 → no UR', () => {
+    // Corners rows 0,1 × cols 0,1 are all in box 0 → boxes.size === 1, guard fails.
+    const bs = new BoardState(makeTrivialSpec());
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
+    bs.candidates[0]![0]! = new Set([4, 7]);
+    bs.candidates[0]![1]! = new Set([4, 7]);
+    bs.candidates[1]![0]! = new Set([4, 7]);
+    bs.candidates[1]![1]! = new Set([3, 4, 7]);
+    const elims = new UniqueRectangle().apply(globalCtx(bs)).eliminations;
+    expect(elims).toHaveLength(0);
+  });
+
   it('type 2: eliminates extra digit from cells seeing both extra corners', () => {
     const bs = new BoardState(makeTrivialSpec());
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
