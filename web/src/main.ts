@@ -422,7 +422,8 @@ function drawHintDigitMarkers(
     }
   }
 
-  // Blue squares around pattern digits in highlight (pattern) cells
+  // Blue squares around pattern digits in highlight (pattern) cells.
+  // Skip any cell that is also an elimination cell — it gets a circle, not a square.
   const patternDigits: readonly number[] =
     hint.patternDigits ??
     (hint.placement !== null ? [hint.placement[2]] : [...new Set(hint.eliminations.map(e => e.digit))]);
@@ -432,6 +433,7 @@ function drawHintDigitMarkers(
     const hw = SUB_W * 0.38;
     const hh = SUB_H * 0.38;
     for (const [r, c] of hint.highlightCells) {
+      if (hintElimCells.has(`${r},${c}`)) continue;   // elim cells get circles, not squares
       if ((userGrid[r]?.[c] ?? 0) !== 0) continue;
       const cellInfo = candidatesData.cells[r]?.[c];
       if (!cellInfo) continue;
