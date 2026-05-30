@@ -22,6 +22,7 @@ import { cellLabel } from './_labels.js';
 
 export class NakedSingle {
   readonly name = 'NakedSingle';
+  readonly displayName = 'Naked Single';
   readonly description =
     'When a cell has only one remaining candidate, that digit must go there.';
   readonly priority = 0;

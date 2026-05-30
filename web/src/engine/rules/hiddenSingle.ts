@@ -15,6 +15,7 @@ import { cellLabel, unitLabel } from './_labels.js';
 
 export class HiddenSingle {
   readonly name = 'HiddenSingle';
+  readonly displayName = 'Hidden Single';
   readonly description = 'When a digit can go in only one cell in a row, column, box, or cage, it must go there.';
   readonly priority = 1;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_HIT_ONE]);

@@ -24,6 +24,7 @@ import { cellLabel } from './_labels.js';
 
 export class CellSolutionElimination {
   readonly name = 'CellSolutionElimination';
+  readonly displayName = 'Cell Solution Elimination';
   readonly description =
     'When a cell is solved, removes that digit from all other cells in the same row, column, and box.';
   readonly priority = 0;

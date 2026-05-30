@@ -11,6 +11,7 @@ import { combinations, dedupElims } from './_helpers.js';
 
 export class XWing {
   readonly name = 'XWing';
+  readonly displayName = 'X-Wing';
   readonly description =
     'When a digit appears in only two cells in each of two rows, and those cells ' +
     'share the same two columns, the digit can be removed from all other cells in those columns.';

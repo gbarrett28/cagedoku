@@ -12,6 +12,7 @@ import { cellLabel, unitLabel } from './_labels.js';
 
 export class NakedHiddenTriple {
   readonly name = 'NakedHiddenTriple';
+  readonly displayName = 'Naked/Hidden Triple';
   readonly description =
     'When three digits are confined to the same three cells in a unit, ' +
     'those cells can only contain those three digits.';

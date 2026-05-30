@@ -12,6 +12,7 @@ import { cellLabel, unitLabel } from './_labels.js';
 
 export class NakedHiddenQuad {
   readonly name = 'NakedHiddenQuad';
+  readonly displayName = 'Naked/Hidden Quad';
   readonly description =
     'When four digits are confined to the same four cells in a unit, ' +
     'those cells can only contain those four digits.';

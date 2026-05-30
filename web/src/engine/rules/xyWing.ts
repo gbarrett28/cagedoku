@@ -29,6 +29,7 @@ import { cellLabel } from './_labels.js';
 
 export class XYWing {
   readonly name = 'XYWing';
+  readonly displayName = 'XY-Wing';
   readonly description =
     'When three cells form a chain where each shares a candidate with the others, ' +
     'a digit that sees both end cells of the chain can be eliminated.';

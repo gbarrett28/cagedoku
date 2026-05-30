@@ -12,6 +12,7 @@ import { cellLabel } from './_labels.js';
 
 export class UniqueRectangle {
   readonly name = 'UniqueRectangle';
+  readonly displayName = 'Unique Rectangle';
   readonly description =
     'When four cells forming a rectangle would create two identical solutions, ' +
     'eliminates candidates that would cause the ambiguity.';

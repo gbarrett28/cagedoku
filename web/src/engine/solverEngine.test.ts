@@ -85,7 +85,7 @@ describe('SolverEngine rule routing', () => {
   it('routes COUNT_DECREASED events to subscribed rules', () => {
     const calls: number[] = [];
     const countRule: SolverRule = {
-      name: 'counter',
+      name: 'counter', displayName: 'counter',
       description: '',
       priority: 5,
       triggers: new Set([Trigger.COUNT_DECREASED]),
@@ -102,7 +102,7 @@ describe('SolverEngine rule routing', () => {
 
   it('records calls in stats map', () => {
     const noopRule: SolverRule = {
-      name: 'noop',
+      name: 'noop', displayName: 'noop',
       description: '',
       priority: 5,
       triggers: new Set([Trigger.COUNT_DECREASED]),
@@ -130,7 +130,7 @@ describe('SolverEngine solution eliminations', () => {
     const se: SolutionElimination = { cageIdx, solution: targetSoln };
     const prunedCalls: number[] = [];
     const seRule: SolverRule = {
-      name: 'seStub', description: '', priority: 5,
+      name: 'seStub', displayName: 'seStub', description: '', priority: 5,
       triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
       apply(_ctx: RuleContext): RuleResult {
         if (fired) return emptyResult();
@@ -141,7 +141,7 @@ describe('SolverEngine solution eliminations', () => {
     };
     // SOLUTION_PRUNED subscriber — exercises line 282 (_applyGlobalRuleDefault enqueue path)
     const pruneRule: SolverRule = {
-      name: 'pruneWatcher', description: '', priority: 5,
+      name: 'pruneWatcher', displayName: 'pruneWatcher', description: '', priority: 5,
       triggers: new Set([Trigger.SOLUTION_PRUNED]), unitKinds: new Set([UnitKind.CAGE]),
       apply(_ctx: RuleContext): RuleResult { prunedCalls.push(1); return emptyResult(); },
       asHints() { return []; },
@@ -165,7 +165,7 @@ describe('SolverEngine virtual cage additions', () => {
     };
     let fired = false;
     const rule: SolverRule = {
-      name: 'vcaStub', description: '', priority: 5,
+      name: 'vcaStub', displayName: 'vcaStub', description: '', priority: 5,
       triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
       apply(_ctx: RuleContext): RuleResult {
         if (fired) return emptyResult();
@@ -189,7 +189,7 @@ describe('SolverEngine candidate soundness assertion', () => {
     // KNOWN_SOLUTION[0][0] = 5; cell (0,0) starts with candidates {1..9}
     let fired = false;
     const badRule: SolverRule = {
-      name: 'badRule', description: '', priority: 5,
+      name: 'badRule', displayName: 'badRule', description: '', priority: 5,
       triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
       apply(_ctx: RuleContext): RuleResult {
         if (fired) return emptyResult();
@@ -208,7 +208,7 @@ describe('SolverEngine candidate soundness assertion', () => {
     const safe = gold === 1 ? 2 : 1;
     let fired = false;
     const safeRule: SolverRule = {
-      name: 'safeRule', description: '', priority: 5,
+      name: 'safeRule', displayName: 'safeRule', description: '', priority: 5,
       triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
       apply(_ctx: RuleContext): RuleResult {
         if (fired) return emptyResult();
@@ -225,7 +225,7 @@ describe('SolverEngine candidate soundness assertion', () => {
     const bs = new BoardState(makeTrivialSpec());
     let fired = false;
     const badRule: SolverRule = {
-      name: 'badRule', description: '', priority: 5,
+      name: 'badRule', displayName: 'badRule', description: '', priority: 5,
       triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
       apply(_ctx: RuleContext): RuleResult {
         if (fired) return emptyResult();

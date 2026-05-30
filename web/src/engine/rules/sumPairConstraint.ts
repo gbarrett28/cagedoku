@@ -19,6 +19,7 @@ import { cellLabel } from './_labels.js';
 
 export class SumPairConstraint {
   readonly name = 'SumPairConstraint';
+  readonly displayName = 'Sum Pair Constraint';
   readonly description =
     'When two cells sum to a known constant, restricts both to valid complementary pairs.';
   readonly priority = 5;

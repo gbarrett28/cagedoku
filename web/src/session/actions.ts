@@ -1230,7 +1230,7 @@ export function getSettingsData(): SettingsResponse {
   const settings = loadSettings();
   const hintableRules: RuleInfo[] = defaultRules().map(r => ({
     name: r.name,
-    displayName: r.name.replace(/([A-Z])/g, ' $1').trim(),
+    displayName: r.displayName,
     description: r.description,
   }));
   return {

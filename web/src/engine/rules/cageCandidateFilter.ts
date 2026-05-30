@@ -22,6 +22,7 @@ import {
 
 export class CageCandidateFilter {
   readonly name = 'CageCandidateFilter';
+  readonly displayName = 'Cage Candidate Filter';
   readonly description =
     'Removes cage solutions that are now impossible because a required digit has been eliminated.';
   readonly priority = 1;

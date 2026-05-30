@@ -32,6 +32,7 @@ import { cellLabel, unitLabel } from './_labels.js';
 
 export class WWing {
   readonly name = 'WWing';
+  readonly displayName = 'W-Wing';
   readonly description =
     'When two cells with the same two candidates are each connected to one end ' +
     'of a strong link on one of those candidates, the other candidate can be ' +

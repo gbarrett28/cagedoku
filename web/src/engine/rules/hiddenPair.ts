@@ -12,6 +12,7 @@ import { cellLabel, unitLabel } from './_labels.js';
 
 export class HiddenPair {
   readonly name = 'HiddenPair';
+  readonly displayName = 'Hidden Pair';
   readonly description =
     'When two digits each appear in only the same two cells in a unit, ' +
     'those cells must contain those two digits and no others.';

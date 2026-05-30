@@ -38,6 +38,7 @@ function perCellPossible(
 
 export class SolutionMapFilter {
   readonly name = 'SolutionMapFilter';
+  readonly displayName = 'Solution Map Filter';
   readonly description =
     'Removes cage solutions that are now impossible because one of their digits has been eliminated from the relevant cell.';
   readonly priority = 3;

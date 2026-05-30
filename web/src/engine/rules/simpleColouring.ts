@@ -12,6 +12,7 @@ import { cellLabel } from './_labels.js';
 
 export class SimpleColouring {
   readonly name = 'SimpleColouring';
+  readonly displayName = 'Simple Colouring';
   readonly description =
     'Uses chains of cells where a digit can only go in one of two places to ' +
     'eliminate that digit from cells that see both ends of the chain.';

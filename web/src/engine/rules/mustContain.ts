@@ -16,6 +16,7 @@ import { cellLabel, unitLabel } from './_labels.js';
 
 export class MustContain {
   readonly name = 'MustContain';
+  readonly displayName = 'Must Contain';
   readonly description =
     'When a digit must appear in a cage and is confined to cells that overlap another unit, it can be eliminated from that unit\'s other cells.';
   readonly priority = 4;

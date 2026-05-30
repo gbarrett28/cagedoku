@@ -19,6 +19,7 @@ import { cellLabel } from './_labels.js';
 
 export class Skyscraper {
   readonly name = 'Skyscraper';
+  readonly displayName = 'Skyscraper';
   readonly description =
     'When a digit appears in exactly two cells in each of two rows (or columns) ' +
     'and those rows share exactly one of those columns (or rows), the digit can ' +

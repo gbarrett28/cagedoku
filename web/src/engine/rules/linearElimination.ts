@@ -16,6 +16,7 @@ import { cellLabel } from './_labels.js';
 
 export class LinearElimination {
   readonly name = 'LinearElimination';
+  readonly displayName = 'Linear Elimination';
   readonly description = 'Uses linear equations derived from cage sums to eliminate impossible digit values from cells.';
   readonly priority = 1;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);

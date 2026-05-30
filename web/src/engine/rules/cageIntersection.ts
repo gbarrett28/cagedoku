@@ -22,6 +22,7 @@ interface _Match {
 
 export class CageIntersection {
   readonly name = 'CageIntersection';
+  readonly displayName = 'Cage Intersection';
   readonly description =
     "When a cage's required digit is confined to cells that all lie in one row, column, or box, that digit can be removed from other cells in that unit.";
   readonly priority = 2;

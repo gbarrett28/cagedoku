@@ -57,6 +57,7 @@ function findMatch(
 
 export class MustContainOutie {
   readonly name = 'MustContainOutie';
+  readonly displayName = 'Must Contain Outie';
   readonly description =
     'Extension of must-contain: when a digit required by a cage can only be placed in cells shared with an adjacent cage, constrains the adjacent cage.';
   readonly priority = 4;

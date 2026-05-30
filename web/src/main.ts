@@ -849,7 +849,13 @@ function openConfigModal(): void {
     const infoBtn = document.createElement('button'); infoBtn.className = 'btn-rule-info'; infoBtn.textContent = 'ⓘ'; infoBtn.title = 'About this rule';
     infoBtn.addEventListener('click', () => {
       el<HTMLHeadingElement>('rule-info-title').textContent = rule.displayName;
-      el<HTMLParagraphElement>('rule-info-description').textContent = rule.description;
+      const descEl = el<HTMLElement>('rule-info-description');
+      descEl.innerHTML = '';
+      for (const para of rule.description.split('\n\n')) {
+        const p = document.createElement('p');
+        p.textContent = para;
+        descEl.appendChild(p);
+      }
       (el<HTMLDialogElement>('rule-info-modal') as HTMLDialogElement).showModal();
     });
     const select = document.createElement('select'); select.className = 'config-rule-select'; select.dataset['ruleName'] = rule.name;

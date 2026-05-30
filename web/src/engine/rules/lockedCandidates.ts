@@ -24,6 +24,7 @@ interface _Match {
 
 export class LockedCandidates {
   readonly name = 'LockedCandidates';
+  readonly displayName = 'Locked Candidates';
   readonly description =
     'When a digit in a row or column is confined to one box, it can be removed from other cells in that box.';
   readonly priority = 11;

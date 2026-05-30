@@ -25,6 +25,7 @@ import { cellLabel } from './_labels.js';
 
 export class TwoStringKite {
   readonly name = 'TwoStringKite';
+  readonly displayName = '2-String Kite';
   readonly description =
     'When a row and a column each have exactly two candidates for a digit, and one ' +
     'cell from each string shares a 3×3 box (forming the knot), the digit can be ' +

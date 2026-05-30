@@ -15,6 +15,7 @@ import { cellLabel } from './_labels.js';
 
 export class DeltaConstraint {
   readonly name = 'DeltaConstraint';
+  readonly displayName = 'Delta Constraint';
   readonly description =
     'When two cells differ by a known constant (derived from overlapping row/column sums), restricts both cells\' candidates to valid pairs.';
   readonly priority = 5;

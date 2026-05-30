@@ -132,6 +132,7 @@ function expandCellLevel(
 
 export class UnitPartitionFilter {
   readonly name = 'UnitPartitionFilter';
+  readonly displayName = 'Unit Partition Filter';
   readonly description =
     'When cages partition a row, column, or box into known-sum groups, eliminates cage solutions inconsistent with those groups.';
   readonly priority = 12;

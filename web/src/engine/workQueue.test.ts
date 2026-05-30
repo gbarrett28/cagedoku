@@ -18,6 +18,7 @@ import type { Elimination, Cell } from './types.js';
 function fakeRule(name = 'fake'): SolverRule {
   return {
     name,
+    displayName: name,
     description: '',
     priority: 0,
     triggers: new Set([Trigger.COUNT_DECREASED]),

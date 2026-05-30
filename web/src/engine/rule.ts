@@ -39,6 +39,7 @@ export function makeRuleStats(): RuleStats {
 /** Structural interface for solver rules. */
 export interface SolverRule {
   readonly name: string;
+  readonly displayName: string;
   readonly description: string;
   readonly priority: number;
   readonly triggers: ReadonlySet<Trigger>;

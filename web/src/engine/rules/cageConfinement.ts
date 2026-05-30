@@ -32,6 +32,7 @@ function combinations<T>(arr: T[], k: number): T[][] {
 
 export class CageConfinement {
   readonly name = 'CageConfinement';
+  readonly displayName = 'Cage Confinement';
   readonly description =
     'Checks all groups of cages that together cover complete rows, columns, or boxes, and eliminates digits inconsistent with the resulting sum constraints.';
   readonly priority = 12;

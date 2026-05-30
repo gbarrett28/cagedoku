@@ -14,6 +14,7 @@ import { cellLabel, unitLabel } from './_labels.js';
 
 export class NakedPair {
   readonly name = 'NakedPair';
+  readonly displayName = 'Naked Pair';
   readonly description =
     'When exactly two cells in a unit share the same two candidates and no others, those digits can be removed from all other cells in that unit.';
   readonly priority = 6;

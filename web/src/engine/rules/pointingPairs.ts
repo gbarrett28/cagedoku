@@ -21,6 +21,7 @@ interface _Match {
 
 export class PointingPairs {
   readonly name = 'PointingPairs';
+  readonly displayName = 'Pointing Pairs';
   readonly description =
     'When a digit in a box is confined to one row or column, it can be removed from other cells in that row or column outside the box.';
   readonly priority = 9;

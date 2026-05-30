@@ -11,6 +11,7 @@ import { combinations, dedupElims } from './_helpers.js';
 
 export class Jellyfish {
   readonly name = 'Jellyfish';
+  readonly displayName = 'Jellyfish';
   readonly description = 'Generalisation of X-Wing across four rows and four columns.';
   readonly priority = 15;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
