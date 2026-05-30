@@ -439,6 +439,7 @@ function closeSidePanels(): void {
   inspectCageMode = false;
   el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');
   el<HTMLElement>('inspector-col').hidden = true;
+  el<HTMLElement>('playing-actions').hidden = false;
   el<HTMLElement>('side-panel').classList.remove('inspector-open');
   el<HTMLElement>('side-panel').classList.remove('virtual-cage-open');
 }
@@ -724,6 +725,7 @@ function renderCageInspector(label: string): void {
     clearChildren(inspector);
     el<HTMLElement>('inspector-heading').textContent = `Cage ${label}`;
     el<HTMLElement>('inspector-col').hidden = false;
+    el<HTMLElement>('playing-actions').hidden = true;
     el<HTMLElement>('side-panel').classList.add('inspector-open');
     renderSolutionList(
       inspector,
@@ -1875,6 +1877,7 @@ document.addEventListener('DOMContentLoaded', () => {
     inspBtn.dataset['tooltip'] = inspectCageMode ? 'Done inspecting' : 'Inspect cage';
     if (!inspectCageMode) {
       el<HTMLElement>('inspector-col').hidden = true;
+      el<HTMLElement>('playing-actions').hidden = false;
       el<HTMLElement>('side-panel').classList.remove('inspector-open');
     }
   });
@@ -1931,7 +1934,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const { cells, total } = hint.virtualCageSuggestion;
       try { currentState = addVirtualCage([...cells], total); void fetchCandidates(); } catch (e) { setStatus(String(e), true); }
     } else {
-      try { currentState = applyHint(hint.eliminations); refreshDisplay(); } catch (e) { setStatus(String(e), true); }
+      try { currentState = applyHint(hint.eliminations); refreshDisplay(); updateUndoButton(currentState); } catch (e) { setStatus(String(e), true); }
     }
   });
 
