@@ -21,9 +21,9 @@ export interface HintResult {
   readonly displayName: string;
   readonly explanation: string;
   /**
-   * Elimination-target cells — used for the standard yellow canvas highlight.
-   * For colouring rules this contains only the eliminated cells; chain cells
-   * live in colourGroups instead.
+   * Pattern cells — rendered orange on the canvas. Cells that are also in
+   * `eliminations` will be overwritten yellow. For colouring rules, chain cells
+   * live in `colourGroups` and should not appear here.
    */
   readonly highlightCells: readonly Cell[];
   readonly eliminations: readonly Elimination[];

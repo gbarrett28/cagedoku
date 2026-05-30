@@ -97,7 +97,8 @@ let showEssential = true;
 let candidateEditMode = false;
 let virtualCageMode = false;
 let virtualCageSelection = new Set<string>();   // "r,c" keys, 0-based
-let hintHighlightCells = new Set<string>();     // "r,c" keys, 0-based
+let hintHighlightCells = new Set<string>();     // "r,c" keys, 0-based — pattern cells (orange)
+let hintElimCells = new Set<string>();          // "r,c" keys, 0-based — elimination cells (yellow)
 let hintColourGroups: readonly { cells: readonly [number, number][]; colour: 'blue' | 'green' }[] = [];
 let activeHintItem: HintItem | null = null;
 let inspectCageMode = false;
@@ -191,8 +192,16 @@ function drawUnderlays(
     ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
   }
   if (highlightKeys !== null && highlightKeys.size > 0) {
-    ctx.fillStyle = 'rgba(251, 191, 36, 0.45)';
+    ctx.fillStyle = 'rgba(249, 115, 22, 0.35)';
     for (const key of highlightKeys) {
+      const parts = key.split(',').map(Number);
+      const r = parts[0]!, c = parts[1]!;
+      ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
+    }
+  }
+  if (hintElimCells.size > 0) {
+    ctx.fillStyle = 'rgba(251, 191, 36, 0.45)';
+    for (const key of hintElimCells) {
       const parts = key.split(',').map(Number);
       const r = parts[0]!, c = parts[1]!;
       ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
@@ -377,6 +386,34 @@ function drawCandidates(
   }
 }
 
+/** Draws small circles around candidate digits slated for elimination by the active hint. */
+function drawHintDigitMarkers(
+  ctx: CanvasRenderingContext2D,
+  userGrid: number[][],
+  candidatesData: CandidatesResponse,
+): void {
+  if (activeHintItem === null || activeHintItem.eliminations.length === 0) return;
+  const CAND_TOP = 13;
+  const SUB_W = CELL / 3;
+  const SUB_H = (CELL - CAND_TOP) / 3;
+  const R = Math.min(SUB_W, SUB_H) * 0.38;
+  ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
+  ctx.lineWidth = 1.5;
+  for (const { cell: [r, c], digit: d } of activeHintItem.eliminations) {
+    if ((userGrid[r]?.[c] ?? 0) !== 0) continue;
+    const cellInfo = candidatesData.cells[r]?.[c];
+    if (!cellInfo) continue;
+    if (!cellInfo.candidates.includes(d) && !cellInfo.userRemoved.includes(d)) continue;
+    const subRow = Math.floor((d - 1) / 3);
+    const subCol = (d - 1) % 3;
+    const cx = MARGIN + c * CELL + (subCol + 0.5) * SUB_W;
+    const cy = MARGIN + r * CELL + CAND_TOP + (subRow + 0.5) * SUB_H;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
 function drawGrid(
   canvas: HTMLCanvasElement,
   state: PuzzleState,
@@ -402,6 +439,7 @@ function drawGrid(
   drawDigits(ctx, state);
   if (showCands && candidatesData !== null && state.userGrid !== null) {
     drawCandidates(ctx, state.userGrid, candidatesData, showEss);
+    drawHintDigitMarkers(ctx, state.userGrid, candidatesData);
   }
 }
 
@@ -793,6 +831,7 @@ function openRuleInfoModal(displayName: string, description: string): void {
 function showHintModal(hint: HintItem): void {
   activeHintItem = hint;
   hintHighlightCells = new Set(hint.highlightCells.map(([r, c]) => `${r},${c}`));
+  hintElimCells = new Set(hint.eliminations.map(({ cell: [r, c] }) => `${r},${c}`));
   hintColourGroups = hint.colourGroups ?? [];
   redrawGrid();
   el<HTMLElement>('hint-modal-title').textContent = hint.displayName;
@@ -826,6 +865,7 @@ function showHintModal(hint: HintItem): void {
 
 function clearHintHighlight(): void {
   hintHighlightCells = new Set();
+  hintElimCells = new Set();
   hintColourGroups = [];
   activeHintItem = null;
   hideHintPill(el('hint-pill'));
@@ -1258,6 +1298,7 @@ async function handleCellEntry(digit: number): Promise<void> {
 
           // Show hint pill + highlight for this rule, then wait.
           hintHighlightCells = new Set(step.highlightCells.map(([r, c]) => `${r},${c}`));
+          hintElimCells = new Set(step.eliminations.map(({ cell: [r, c] }) => `${r},${c}`));
           showHintPill(el('hint-pill'), el('hint-pill-label'), step.displayName);
           animRefresh(currentState);
           await new Promise<void>(resolve => { setTimeout(resolve, delay); });
@@ -1265,6 +1306,7 @@ async function handleCellEntry(digit: number): Promise<void> {
           // Apply the rule's changes and immediately show the result before next step.
           currentState = applyAutoApplyStep(currentState, step);
           hintHighlightCells = new Set();
+          hintElimCells = new Set();
           hideHintPill(el('hint-pill'));
           animRefresh(currentState);
         }
@@ -1273,6 +1315,7 @@ async function handleCellEntry(digit: number): Promise<void> {
         // and clear the transient autoRemovedCandidates before the final full-solve refresh.
         hideHintPill(el('hint-pill'));
         hintHighlightCells = new Set();
+        hintElimCells = new Set();
         const finalState: PuzzleState = { ...currentState, autoRemovedCandidates: [] };
         setState(finalState);
         currentState = finalState;
@@ -1696,7 +1739,7 @@ document.addEventListener('DOMContentLoaded', () => {
     currentState = null; currentCandidates = null; selectedCell = null;
     showCandidates = false; candidateEditMode = false;
     virtualCageMode = false; virtualCageSelection = new Set();
-    hintHighlightCells = new Set(); hintColourGroups = []; activeHintItem = null;
+    hintHighlightCells = new Set(); hintElimCells = new Set(); hintColourGroups = []; activeHintItem = null;
     colourMode = 'off'; cellColours.clear();
     inspectCageMode = false;
     el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');

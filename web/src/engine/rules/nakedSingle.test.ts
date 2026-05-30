@@ -53,7 +53,7 @@ describe('NakedSingle', () => {
     expect(new NakedSingle().apply(ctx).placements).toEqual([]);
   });
 
-  it('asHints includes peer cells in highlightCells and mentions them in explanation', () => {
+  it('asHints includes peer cells in eliminations (not highlightCells) and mentions them in explanation', () => {
     const bs = new BoardState(makeTrivialSpec());
     const d = 5;
     bs.candidates[0]![0]! = new Set([d]); // naked single at (0,0)
@@ -68,9 +68,12 @@ describe('NakedSingle', () => {
     const hints = new NakedSingle().asHints(ctx, []);
     expect(hints).toHaveLength(1);
     const hint = hints[0]!;
+    // Only the placement cell appears in highlightCells (orange)
+    expect(hint.highlightCells).toHaveLength(1);
     expect(hint.highlightCells.some(([r, c]) => r === 0 && c === 0)).toBe(true);
-    // At least one row-0 peer should appear (all row-0 peers start with d)
-    expect(hint.highlightCells.some(([r, c]) => r === 0 && c !== 0)).toBe(true);
+    // Peer cells appear as eliminations (yellow), not in highlightCells
+    expect(hint.highlightCells.some(([r, c]) => r === 0 && c !== 0)).toBe(false);
+    expect(hint.eliminations.some(e => e.cell[0] === 0 && e.cell[1] !== 0 && e.digit === d)).toBe(true);
     expect(hint.explanation).toContain(`removes ${d} from`);
   });
 

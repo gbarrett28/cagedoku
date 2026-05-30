@@ -47,7 +47,7 @@ Guards:
     const [r, c] = ctx.cell;
     const d = ctx.hintDigit;
     const seen = new Set<string>();
-    const peerCells: Cell[] = [];
+    const peerElims: Elimination[] = [];
     for (const uid of ctx.board.cellUnitIds(r, c)) {
       const unit = ctx.board.units[uid]!;
       if (unit.kind === UnitKind.CAGE && !unit.distinctDigits) continue;
@@ -55,18 +55,18 @@ Guards:
         if (pr === r && pc === c) continue;
         const key = `${pr},${pc}`;
         if (seen.has(key)) continue;
-        if (ctx.board.cands(pr, pc).has(d)) { peerCells.push([pr, pc] as Cell); seen.add(key); }
+        if (ctx.board.cands(pr, pc).has(d)) { peerElims.push({ cell: [pr, pc] as Cell, digit: d }); seen.add(key); }
       }
     }
-    const peerNote = peerCells.length > 0
-      ? ` This also removes ${d} from ${peerCells.length === 1 ? '1 peer' : `${peerCells.length} peers`}: ${peerCells.map(p => cellLabel(p)).join(', ')}.`
+    const peerNote = peerElims.length > 0
+      ? ` This also removes ${d} from ${peerElims.length === 1 ? '1 peer' : `${peerElims.length} peers`}: ${peerElims.map(e => cellLabel(e.cell)).join(', ')}.`
       : '';
     return [{
       ruleName: this.name,
       displayName: 'Naked Single',
       explanation: `Cell ${cellLabel([r, c] as Cell)} has only one remaining candidate: ${d}. Place ${d} there.${peerNote}`,
-      highlightCells: [[r, c] as Cell, ...peerCells],
-      eliminations: [],
+      highlightCells: [[r, c] as Cell],
+      eliminations: peerElims,
       placement: [r, c, d],
       virtualCageSuggestion: null,
     }];

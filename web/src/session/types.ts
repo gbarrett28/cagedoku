@@ -192,7 +192,7 @@ export interface HintItem {
   readonly ruleName: string;
   readonly displayName: string;
   readonly explanation: string;
-  /** 0-based `[row, col]` pairs — yellow highlight (elimination targets). */
+  /** 0-based `[row, col]` pairs — orange pattern-cell highlight. Cells also present in `eliminations` are overwritten yellow. */
   readonly highlightCells: readonly [number, number][];
   readonly eliminations: readonly { cell: [number, number]; digit: number }[];
   readonly eliminationCount: number;
