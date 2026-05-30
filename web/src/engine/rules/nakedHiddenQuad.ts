@@ -22,6 +22,7 @@ Hidden Quad: if four digits each appear only in cells that form a set of exactly
 
 Guards:
   union.size === 4   naked: union of candidates across the 4 cells must be exactly 4 digits
+  each(cell).size ≥ 2   naked: every cell in the quad must have ≥ 2 candidates (singletons indicate an unresolved NakedSingle)
   cellsWith.size === 4   hidden: the four digits must be confined to exactly 4 cells
   ctx.unit !== null   rule requires a unit context
 `.trim();
@@ -42,6 +43,8 @@ Guards:
       const union = new Set<number>();
       for (const [r, c] of quad) for (const d of board.cands(r, c)) union.add(d);
       if (union.size !== 4) continue;
+      // Skip combos where any cell is a naked single — NakedSingle (priority 1) fires first
+      if (quad.some(([r, c]) => board.cands(r, c).size < 2)) continue;
       const quadSet = new Set(quad.map(([r, c]) => `${r},${c}`));
       for (const [r, c] of cells) {
         if (quadSet.has(`${r},${c}`)) continue;
@@ -91,6 +94,7 @@ Guards:
       const union = new Set<number>();
       for (const [r, c] of quad) for (const d of board.cands(r, c)) union.add(d);
       if (union.size !== 4) continue;
+      if (quad.some(([r, c]) => board.cands(r, c).size < 2)) continue;
       const quadSet = new Set(quad.map(([r, c]) => `${r},${c}`));
       const elims = cells.flatMap(([r, c]) =>
         quadSet.has(`${r},${c}`) ? [] :

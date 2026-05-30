@@ -132,6 +132,32 @@ describe('SimpleColouring', () => {
     expect(hint.highlightCells.some(([r, c]) => r === 1 && c === 1)).toBe(true);
   });
 
+  it('asHints wrap: does not generate additional trap hint for same component', () => {
+    // Chain: (0,0) -[row0]- (0,1) -[col1]- (1,1)
+    // c0={(0,0),(1,1)}, c1={(0,1)}. Wrap: (0,0) and (1,1) share box 0 → wrap fires.
+    // (2,2) is uncoloured, in box 0: sees c0 via box AND c1 via box → phantom trap target.
+    // apply() skips the trap via `continue`. asHints() must also skip it.
+    // Note: (2,2) is in box 0 but not in row 0 or col 1, so the conjugate pairs are preserved.
+    const bs = new BoardState(makeTrivialSpec());
+    const d = 5;
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.cands(r, c).delete(d);
+    bs.cands(0, 0).add(d); // colour 0 (row-0 conjugate pair with (0,1))
+    bs.cands(0, 1).add(d); // colour 1 (row-0 edge; col-1 conjugate pair with (1,1))
+    bs.cands(1, 1).add(d); // colour 0 (col-1 edge; shares box 0 with (0,0) → wrap)
+    bs.cands(2, 2).add(d); // uncoloured: in box 0 → sees c0=(0,0),(1,1) and c1=(0,1) via box 0
+    const ctx = globalCtx(bs);
+    const rule = new SimpleColouring();
+    const elims = rule.apply(ctx).eliminations.filter(e => e.digit === d);
+    // apply() returns only wrap eliminations: (0,0) and (1,1)
+    expect(elims.some(e => e.cell[0] === 0 && e.cell[1] === 0)).toBe(true);
+    expect(elims.some(e => e.cell[0] === 1 && e.cell[1] === 1)).toBe(true);
+    // apply() does NOT return the trap elimination for (2,2)
+    expect(elims.some(e => e.cell[0] === 2 && e.cell[1] === 2)).toBe(false);
+    // asHints() must not generate a hint eliminating (2,2)
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.every(h => !h.eliminations.some(e => e.cell[0] === 2 && e.cell[1] === 2))).toBe(true);
+  });
+
   it('near-miss: same-colour cells in different units (no conflict) → no wrap', () => {
     // Chain: (0,0) -[row0]- (0,5) -[col5]- (8,5) -[row8]- (8,2)
     // BFS: (0,0)=0, (0,5)=1, (8,5)=0, (8,2)=1

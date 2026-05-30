@@ -85,6 +85,22 @@ describe('NakedHiddenTriple', () => {
     expect(hints[0]!.placement).toBeNull();
   });
 
+  it('near-miss naked triple: one cell has 1 candidate (naked single included) → no naked triple fires', () => {
+    // Cell (0,0) has {1} — a naked single. Cells (0,1) and (0,2) together with (0,0) have union {1,2,3},
+    // which satisfies union.size===3. But including a naked single is degenerate (NakedSingle fires first).
+    // The fix: guard size<2 prevents this from being treated as a naked triple.
+    const bs = new BoardState(makeTrivialSpec());
+    bs.candidates[0]![0]! = new Set([1]);       // singleton — naked single
+    bs.candidates[0]![1]! = new Set([1, 2]);
+    bs.candidates[0]![2]! = new Set([2, 3]);
+    for (let c = 3; c < 9; c++) bs.candidates[0]![c]! = new Set([1, 2, 3, 4, 5]);
+
+    const elims = new NakedHiddenTriple().apply(makeCtx(bs, 0)).eliminations;
+    // naked triple must NOT fire when a singleton is included
+    const nakedTripleElims = elims.filter(e => e.cell[1] >= 3 && [1, 2, 3].includes(e.digit));
+    expect(nakedTripleElims).toHaveLength(0);
+  });
+
   it('near-miss naked triple: one cell has 4 candidates (union.size=4) → no naked triple', () => {
     const bs = new BoardState(makeTrivialSpec());
     // Cells 0-2 have union {1,2,3,4} — size 4, not 3 → cannot be a naked triple

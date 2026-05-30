@@ -87,6 +87,23 @@ describe('NakedHiddenQuad', () => {
     expect(hints[0]!.placement).toBeNull();
   });
 
+  it('near-miss naked quad: one cell has 1 candidate (naked single included) → no naked quad fires', () => {
+    // Cell (0,0) has {1} — a naked single. Cells (0,0),(0,1),(0,2),(0,3) have union {1,2,3,4} (size 4),
+    // satisfying union.size===4. But including a naked single is degenerate.
+    // The fix: size<2 guard prevents this from being treated as a naked quad.
+    const bs = new BoardState(makeTrivialSpec());
+    bs.candidates[0]![0]! = new Set([1]);       // singleton — naked single
+    bs.candidates[0]![1]! = new Set([1, 2]);
+    bs.candidates[0]![2]! = new Set([2, 3]);
+    bs.candidates[0]![3]! = new Set([3, 4]);
+    for (let c = 4; c < 9; c++) bs.candidates[0]![c]! = new Set([1, 2, 3, 4, 5]);
+
+    const elims = new NakedHiddenQuad().apply(makeCtx(bs, 0)).eliminations;
+    // naked quad must NOT fire when a singleton is included
+    const nakedQuadElims = elims.filter(e => e.cell[1] >= 4 && [1, 2, 3, 4].includes(e.digit));
+    expect(nakedQuadElims).toHaveLength(0);
+  });
+
   it('near-miss naked quad: one cell has 5th candidate (union.size=5) → no naked quad', () => {
     const bs = new BoardState(makeTrivialSpec());
     // Union across 4 cells = {1,2,3,4,5} — size 5, not 4 → naked-quad branch skipped
