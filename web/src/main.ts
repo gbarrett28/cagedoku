@@ -778,6 +778,18 @@ function setLoading(on: boolean): void {
 // Hint modal
 // ---------------------------------------------------------------------------
 
+function openRuleInfoModal(displayName: string, description: string): void {
+  el<HTMLHeadingElement>('rule-info-title').textContent = displayName;
+  const descEl = el<HTMLElement>('rule-info-description');
+  descEl.innerHTML = '';
+  for (const para of description.split('\n\n')) {
+    const p = document.createElement('p');
+    p.textContent = para;
+    descEl.appendChild(p);
+  }
+  (el<HTMLDialogElement>('rule-info-modal') as HTMLDialogElement).showModal();
+}
+
 function showHintModal(hint: HintItem): void {
   activeHintItem = hint;
   hintHighlightCells = new Set(hint.highlightCells.map(([r, c]) => `${r},${c}`));
@@ -785,6 +797,15 @@ function showHintModal(hint: HintItem): void {
   redrawGrid();
   el<HTMLElement>('hint-modal-title').textContent = hint.displayName;
   el<HTMLElement>('hint-modal-explanation').textContent = hint.explanation;
+  const ruleInfo = getSettingsData().hintableRules.find(r => r.name === hint.ruleName);
+  const infoBtn = el<HTMLButtonElement>('hint-info-btn');
+  if (ruleInfo) {
+    infoBtn.hidden = false;
+    infoBtn.onclick = () => openRuleInfoModal(ruleInfo.displayName, ruleInfo.description);
+  } else {
+    infoBtn.hidden = true;
+    infoBtn.onclick = null;
+  }
   const applyBtn = el<HTMLButtonElement>('hint-apply-btn');
   if (hint.rewindToTurnIdx !== null) {
     el<HTMLElement>('hint-modal-summary').textContent = 'Rewinding will undo all moves back to the last correct state.';
@@ -849,17 +870,7 @@ function openConfigModal(): void {
     const row = document.createElement('div'); row.className = 'config-rule-row';
     const nameSpan = document.createElement('span'); nameSpan.className = 'config-rule-name'; nameSpan.textContent = rule.displayName;
     const infoBtn = document.createElement('button'); infoBtn.className = 'btn-rule-info'; infoBtn.textContent = 'ⓘ'; infoBtn.title = 'About this rule';
-    infoBtn.addEventListener('click', () => {
-      el<HTMLHeadingElement>('rule-info-title').textContent = rule.displayName;
-      const descEl = el<HTMLElement>('rule-info-description');
-      descEl.innerHTML = '';
-      for (const para of rule.description.split('\n\n')) {
-        const p = document.createElement('p');
-        p.textContent = para;
-        descEl.appendChild(p);
-      }
-      (el<HTMLDialogElement>('rule-info-modal') as HTMLDialogElement).showModal();
-    });
+    infoBtn.addEventListener('click', () => { openRuleInfoModal(rule.displayName, rule.description); });
     const select = document.createElement('select'); select.className = 'config-rule-select'; select.dataset['ruleName'] = rule.name;
     const optAuto = document.createElement('option'); optAuto.value = 'auto'; optAuto.textContent = 'Auto-apply';
     const optHint = document.createElement('option'); optHint.value = 'hint'; optHint.textContent = 'Hint-only';
@@ -1900,10 +1911,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const p = document.createElement('p'); p.className = 'hints-empty'; p.textContent = 'No hint found — this position may require a technique not yet supported. Try Reveal for the selected cell.';
         content.appendChild(p);
       } else {
+        const rulesMap = new Map(getSettingsData().hintableRules.map(r => [r.name, r]));
         for (const hint of hints) {
+          const row = document.createElement('div'); row.className = 'hint-list-row';
           const btn = document.createElement('button'); btn.className = 'hint-item'; btn.textContent = hint.displayName;
           btn.addEventListener('click', () => { hintsListModal.close(); showHintModal(hint); });
-          content.appendChild(btn);
+          row.appendChild(btn);
+          const ruleInfo = rulesMap.get(hint.ruleName);
+          if (ruleInfo) {
+            const infoBtn = document.createElement('button'); infoBtn.className = 'btn-rule-info'; infoBtn.textContent = 'ⓘ'; infoBtn.title = 'About this rule';
+            infoBtn.addEventListener('click', () => { openRuleInfoModal(ruleInfo.displayName, ruleInfo.description); });
+            row.appendChild(infoBtn);
+          }
+          content.appendChild(row);
         }
       }
     } catch (e) {

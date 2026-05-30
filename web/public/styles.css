@@ -1034,6 +1034,10 @@ dialog::backdrop {
   opacity: 1;
 }
 
+.hint-list-row { display: flex; align-items: center; }
+.hint-list-row .hint-item { flex: 1; width: auto; }
+.hint-list-row .btn-rule-info { flex-shrink: 0; padding: 0 0.5rem; }
+
 .hints-empty {
   padding: 0.6rem 1rem;
   color: var(--text-muted);
@@ -1119,6 +1123,13 @@ dialog::backdrop {
 }
 
 .hint-modal-header h2 { margin: 0; }
+
+.hint-modal-header-btns {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
 
 #hint-minimize-btn {
   flex-shrink: 0;
