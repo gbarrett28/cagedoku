@@ -16,7 +16,24 @@ import { cellLabel, unitLabel } from './_labels.js';
 export class HiddenSingle {
   readonly name = 'HiddenSingle';
   readonly displayName = 'Hidden Single';
-  readonly description = 'When a digit can go in only one cell in a row, column, box, or cage, it must go there.';
+  readonly description = `\
+Hidden Single — a digit with only one candidate cell in a unit must go there.
+
+If digit d has only one remaining cell C in a row, column, or box, then d must be placed in C (the unit must contain d exactly once). All other candidates can be removed from C.
+
+For a cage, one additional condition applies: d must appear in every remaining cage solution. If any feasible solution omits d, d may not be needed in that cage position, so no placement is forced.
+
+Proof for row/column/box (one case, exhaustive because count = 1):
+  d appears in exactly one cell C in the unit → the unit constraint forces C = d → all other candidates of C are eliminated.
+
+Proof for cage (same logic plus cage-solution check):
+  count(d, cage) = 1 AND every cage solution includes d → both the unit constraint and the cage constraint force C = d.
+
+Guards:
+  ctx.unit !== null           unit context required
+  ctx.hintDigit !== null      digit whose count just hit 1
+  ctx.unit.distinctDigits     cage variant only: non-distinct cages allow repeats, unit argument fails
+  solns.every(s => s.includes(d))  cage variant only: d absent from some solution → placement not forced`.trim();
   readonly priority = 1;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_HIT_ONE]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX, UnitKind.CAGE]);

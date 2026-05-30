@@ -23,8 +23,16 @@ import { cellLabel } from './_labels.js';
 export class NakedSingle {
   readonly name = 'NakedSingle';
   readonly displayName = 'Naked Single';
-  readonly description =
-    'When a cell has only one remaining candidate, that digit must go there.';
+  readonly description = `\
+Naked Single — a cell reduced to one candidate must hold that digit.
+
+When all other digits have been eliminated from a cell, the remaining candidate is the cell's value by exhaustion: every digit from 1–9 must appear exactly once in the cell's row, column, and box, so the last possible digit is forced.
+
+Proof: Let C have candidates = {d}. Every other digit d' ≠ d has already been eliminated from C (by row, column, box, or cage constraints). Therefore C = d.
+
+Guards:
+  ctx.cell !== null      engine sets this only when CELL_DETERMINED fires
+  ctx.hintDigit !== null engine sets this to the sole remaining candidate`.trim();
   readonly priority = 0;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.CELL_DETERMINED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();

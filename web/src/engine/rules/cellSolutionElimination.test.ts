@@ -98,6 +98,34 @@ describe('CellSolutionElimination', () => {
     expect(eliminates1FromCagePeer).toBe(true);
   });
 
+  it('near-miss: does NOT eliminate from non-distinct virtual cage peer sharing no row/col/box', () => {
+    // A non-distinct cage allows repeated digits, so the cage constraint does not
+    // apply. Cells (2,5) and (3,6) share no row/col/box. Adding them as a
+    // non-distinct virtual cage and placing digit 1 at (3,6) must NOT eliminate
+    // 1 from (2,5) via that cage (only row/col/box constraints apply).
+    const bs = new BoardState(makeTrivialSpec());
+    // Add (2,5) and (3,6) as a non-distinct virtual cage (total doesn't matter)
+    bs.addVirtualCage([[2, 5] as Cell, [3, 6] as Cell], 10, [], { distinct: false });
+
+    // Verify the virtual cage is non-distinct
+    const vCageUid = bs.units.length - 1;
+    expect(bs.units[vCageUid]!.distinctDigits).toBe(false);
+
+    bs.candidates[3]![6]! = new Set([1]);
+    const ctx: import('../rule.js').RuleContext = {
+      unit: null,
+      cell: [3, 6] as Cell,
+      board: bs,
+      hint: Trigger.CELL_SOLVED,
+      hintDigit: 1,
+    };
+    const elims = new CellSolutionElimination().apply(ctx).eliminations;
+    // (2,5) and (3,6) share NO row/col/box; their only common unit is the non-distinct
+    // virtual cage. The guard skips non-distinct cages, so (2,5) must NOT be a target.
+    const eliminatesViaCage = elims.some(e => e.cell[0] === 2 && e.cell[1] === 5 && e.digit === 1);
+    expect(eliminatesViaCage).toBe(false);
+  });
+
   it('declares CELL_SOLVED as trigger, not CELL_DETERMINED', () => {
     const rule = new CellSolutionElimination();
     expect(rule.triggers.has(Trigger.CELL_SOLVED)).toBe(true);

@@ -88,6 +88,29 @@ describe('NakedPair', () => {
     expect(elims.every(e => e.cell[1] !== 0 && e.cell[1] !== 6)).toBe(true);
   });
 
+  it('near-miss: cell with 3 candidates is not a naked pair even if counts match', () => {
+    // Cell (0,0) has {4,6,9} (3 candidates) and cell (0,1) has {4,6} (2 candidates).
+    // count(4) = 2, so COUNT_HIT_TWO fires for digit 4.
+    // But (0,0).size !== 2, so the naked-pair condition fails — no elimination.
+    // This verifies the guard: cands(c1).size === 2.
+    const bs = new BoardState(makeTrivialSpec());
+    const rowUid = bs.rowUnitId(0);
+    bs.candidates[0]![0]! = new Set([4, 6, 9]); // 3 candidates — NOT a naked pair
+    bs.candidates[0]![1]! = new Set([4, 6]);
+    for (let c = 2; c < 9; c++) bs.candidates[0]![c]! = new Set([1, 2, 3, 5, 7, 8]);
+    for (let d = 1; d <= 9; d++)
+      bs.counts[rowUid]![d] = [...Array(9).keys()].filter(c => bs.cands(0, c).has(d)).length;
+
+    const ctx: RuleContext = {
+      unit: bs.units[rowUid] ?? null,
+      cell: null,
+      board: bs,
+      hint: Trigger.COUNT_HIT_TWO,
+      hintDigit: 4,
+    };
+    expect(new NakedPair().apply(ctx).eliminations).toEqual([]);
+  });
+
   it('returns empty when two cells do not share the same pair', () => {
     const bs = new BoardState(makeTrivialSpec());
     const rowUid = bs.rowUnitId(0);

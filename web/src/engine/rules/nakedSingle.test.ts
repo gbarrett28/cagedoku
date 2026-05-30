@@ -29,6 +29,30 @@ describe('NakedSingle', () => {
     expect(new NakedSingle().triggers.has(Trigger.CELL_DETERMINED)).toBe(true);
   });
 
+  it('returns empty placement when ctx.cell is null', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    const ctx: RuleContext = {
+      unit: null,
+      cell: null,
+      board: bs,
+      hint: Trigger.CELL_DETERMINED,
+      hintDigit: 5,
+    };
+    expect(new NakedSingle().apply(ctx).placements).toEqual([]);
+  });
+
+  it('returns empty placement when ctx.hintDigit is null', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    const ctx: RuleContext = {
+      unit: null,
+      cell: [0, 0] as unknown as import('../types.js').Cell,
+      board: bs,
+      hint: Trigger.CELL_DETERMINED,
+      hintDigit: null,
+    };
+    expect(new NakedSingle().apply(ctx).placements).toEqual([]);
+  });
+
   it('asHints produces placement hints when running hint-only against trivial spec', () => {
     const spec = makeTrivialSpec();
     const bs = new BoardState(spec);
