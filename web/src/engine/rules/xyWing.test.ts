@@ -54,8 +54,16 @@ describe('XYWing', () => {
     expect(hints[0]!.displayName).toBe('XY-Wing');
     expect(hints[0]!.explanation).toContain('XY-Wing');
     expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
-    expect(hints[0]!.highlightCells.length).toBeGreaterThanOrEqual(3);
     expect(hints[0]!.placement).toBeNull();
+    // colourGroups: pivot (1 cell, blue) + pincers (2 cells, green)
+    expect(hints[0]!.colourGroups?.length).toBe(2);
+    const allGroupCells = hints[0]!.colourGroups!.flatMap(g => g.cells);
+    expect(allGroupCells.length).toBe(3);
+    // highlightCells: only elimination targets — pivot and pincers must NOT appear here
+    for (const [r, c] of [[0, 0], [0, 1], [1, 0]] as [number, number][]) {
+      expect(hints[0]!.highlightCells.some(([hr, hc]) => hr === r && hc === c)).toBe(false);
+    }
+    expect(hints[0]!.highlightCells.length).toBeGreaterThan(0);
   });
 
   it('returns empty when no bivalue cells form a valid chain', () => {
@@ -69,5 +77,24 @@ describe('XYWing', () => {
     bs.candidates[1]![1]! = new Set([3, 4]);
 
     expect(new XYWing().apply(globalCtx(bs)).eliminations).toHaveLength(0);
+  });
+
+  it('near-miss: trivalue pivot {x,y,z} is not used — no elimination even though pincers match', () => {
+    // XY-Wing requires a bivalue pivot. A trivalue pivot {1,2,3} with pincers {1,3}
+    // and {2,3} looks like the pattern but changing the pivot to trivalue means the
+    // standard XY-Wing proof breaks: if P=3, target T not seeing P could still have 3.
+    // The rule must not fire.
+    const bs = new BoardState(makeTrivialSpec());
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
+
+    bs.candidates[0]![0]! = new Set([1, 2, 3]); // trivalue "pivot" — must NOT be used
+    bs.candidates[0]![6]! = new Set([1, 3]);     // would-be pincer A (sees [0,0] via row)
+    bs.candidates[6]![0]! = new Set([2, 3]);     // would-be pincer B (sees [0,0] via col)
+    // Target sees A via col 6 and B via row 6, but does NOT see [0,0] (different box/row/col)
+    bs.candidates[6]![6]! = new Set([3, 5]);
+
+    const elims = new XYWing().apply(globalCtx(bs)).eliminations;
+    // No bivalue pivot exists, so no XY-Wing can fire
+    expect(elims.every(e => !(e.cell[0] === 6 && e.cell[1] === 6 && e.digit === 3))).toBe(true);
   });
 });

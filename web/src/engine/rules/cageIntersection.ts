@@ -22,8 +22,20 @@ interface _Match {
 
 export class CageIntersection {
   readonly name = 'CageIntersection';
-  readonly description =
-    "When a cage's required digit is confined to cells that all lie in one row, column, or box, that digit can be removed from other cells in that unit.";
+  readonly displayName = 'Cage Intersection';
+  readonly description = `
+Cage Intersection — cage must-contain digit confined to one unit.
+
+Setup: d must appear in every remaining cage solution (d ∈ must-contain). Every cage cell that currently holds d as a candidate lies within a single shared unit U (row, col, or box).
+
+Proof: the cage must place d somewhere; all valid placements for d within the cage are inside U. Therefore d is placed in U. By unit uniqueness, d cannot also appear in any non-cage cell of U.
+
+Guards:
+  ctx.unit?.distinctDigits   cage must enforce distinct digits
+  solns.length > 0   cage must have at least one solution
+  d ∈ must-contain   d must appear in every solution
+  shared.size > 0   all d-carriers in the cage must share at least one non-cage unit
+`.trim();
   readonly priority = 2;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED, Trigger.SOLUTION_PRUNED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.CAGE]);

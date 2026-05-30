@@ -24,8 +24,23 @@ interface _Match {
 
 export class LockedCandidates {
   readonly name = 'LockedCandidates';
-  readonly description =
-    'When a digit in a row or column is confined to one box, it can be removed from other cells in that box.';
+  readonly displayName = 'Locked Candidates';
+  readonly description = `\
+Locked Candidates — a digit confined to the intersection of two units can be eliminated from the remainder of each unit.
+
+Two patterns:
+
+Cage-line (unit → cage): If all candidates for d in a row, column, or box lie within one cage, then d must be placed inside that cage's intersection with the unit. The cage cannot place d outside the intersection, so d is eliminated from cage cells outside the unit.
+
+Box-line (row/col → box): If all candidates for d in a row or column lie within one 3×3 box, then d is locked to that row/col-box intersection. The box cannot place d outside the intersection, so d is eliminated from box cells outside the row or column.
+
+Proof (box-line, one case, exhaustive because all candidates are inside the box):
+  All d-candidates in row R lie in box B → d goes in B∩R → box already has d covered → d ≠ any cell in B outside R.
+
+Guards:
+  carriers.length >= 2        at least two candidates needed (one would be a Hidden Single)
+  commonCageIds?.size > 0     cage-line: all carriers share a common cage
+  boxRows.size === 1 && boxCols.size === 1   box-line: all carriers share one box`.trim();
   readonly priority = 11;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX]);

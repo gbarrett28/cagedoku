@@ -77,4 +77,23 @@ describe('XYZWing', () => {
     expect(result.eliminations).toHaveLength(0);
     expect(rule.asHints(ctx, [])).toHaveLength(0);
   });
+
+  it('near-miss: target sees both pincers but NOT pivot — no elimination', () => {
+    // XYZ-Wing requires the target to see ALL THREE of pivot, pincer A, and pincer B.
+    // When the target misses the pivot, the case P=z is unresolved: P could hold z and
+    // T can't see it, so the elimination is unsound. The rule must not fire.
+    //
+    // P=(0,0)={1,2,3}, A=(0,6)={1,3} sees P via row 0,
+    // B=(6,0)={2,3} sees P via col 0.
+    // T=(6,6)={3,5} sees A via col 6 and B via row 6, but does NOT see P=(0,0).
+    const bs = new BoardState(makeTrivialSpec());
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
+    bs.candidates[0]![0]! = new Set([1, 2, 3]); // pivot P
+    bs.candidates[0]![6]! = new Set([1, 3]);     // pincer A — sees P via row 0
+    bs.candidates[6]![0]! = new Set([2, 3]);     // pincer B — sees P via col 0
+    bs.candidates[6]![6]! = new Set([3, 5]);     // T sees A (col 6) + B (row 6), NOT P
+
+    const elims = new XYZWing().apply(GLOBAL_CTX(bs)).eliminations;
+    expect(elims.every(e => !(e.cell[0] === 6 && e.cell[1] === 6 && e.digit === 3))).toBe(true);
+  });
 });

@@ -19,8 +19,20 @@ import { cellLabel } from './_labels.js';
 
 export class SumPairConstraint {
   readonly name = 'SumPairConstraint';
-  readonly description =
-    'When two cells sum to a known constant, restricts both to valid complementary pairs.';
+  readonly displayName = 'Sum Pair Constraint';
+  readonly description = `
+Sum Pair Constraint — candidate restriction from a + b = T.
+
+Setup: cells a and b satisfy a + b = T for a constant T derived from complementary RREF rows. Digit distinctness is NOT required (cells may be non-peers).
+
+Proof: if a = x then b must equal T − x. Any candidate x for a where (T − x) is not a current candidate of b, or T − x ∉ [1,9], is infeasible. Symmetrically for b.
+
+Guards:
+  ctx.hint !== CELL_DETERMINED   CELL_DETERMINED is handled by LinearSystem.substituteCell
+  ctx.unit !== null   rule requires a unit context for cell iteration
+  ctx.board.linearSystem.sumPairsForCell   only system-reported pairs are processed
+  d >= 1 && d <= 9   computed partner value must be in digit range
+`.trim();
   readonly priority = 5;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED, Trigger.CELL_DETERMINED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX, UnitKind.CAGE]);

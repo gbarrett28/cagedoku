@@ -14,8 +14,21 @@ import { cellLabel, unitLabel } from './_labels.js';
 
 export class NakedPair {
   readonly name = 'NakedPair';
-  readonly description =
-    'When exactly two cells in a unit share the same two candidates and no others, those digits can be removed from all other cells in that unit.';
+  readonly displayName = 'Naked Pair';
+  readonly description = `\
+Naked Pair — two cells in a unit locked to the same two candidates exclude those digits from all other cells.
+
+If cells A and B in a unit each have exactly two candidates {d1, d2} and nothing else, then d1 and d2 must go in A and B (one each, in some order). No other cell in the unit can hold either digit.
+
+Proof (two cases, exhaustive because A must hold one of {d1, d2}):
+  Case A = d1: B must be d2 (only remaining candidate). Neither d1 nor d2 is available elsewhere.
+  Case A = d2: B must be d1. Same conclusion.
+Either way, d1 and d2 are consumed by A and B, so every other cell in the unit can eliminate both.
+
+Guards:
+  cands(A).size === 2        A must be a bivalue cell
+  cands(A).size === cands(B).size  B must also be bivalue
+  cands(A) ⊆ cands(B)       both cells share the same pair (set equality follows from equal-size subset)`.trim();
   readonly priority = 6;
   // COUNT_HIT_TWO: catches pairs where a digit's unit-count reaches 2 (fast path).
   // GLOBAL: catches pairs where both digits have unit-count > 2 but two cells have

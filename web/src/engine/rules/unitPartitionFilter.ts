@@ -132,8 +132,19 @@ function expandCellLevel(
 
 export class UnitPartitionFilter {
   readonly name = 'UnitPartitionFilter';
-  readonly description =
-    'When cages partition a row, column, or box into known-sum groups, eliminates cage solutions inconsistent with those groups.';
+  readonly displayName = 'Unit Partition Filter';
+  readonly description = `
+Unit Partition Filter — cross-cage compatibility filter when cages tile a unit.
+
+Setup: cages C₁…Cₙ partition all cells of unit U (every cell belongs to exactly one Cᵢ, n ≥ 2). Each cage has known-sum solutions. The cages must collectively assign each digit 1–9 exactly once across U.
+
+Proof: a solution assignment (one multiset per cage) is valid only if it uses each of 1–9 exactly once across U. A DFS checks all such combinations. Any (cell, digit) pair absent from every valid complete assignment is infeasible and can be eliminated.
+
+Guards:
+  partition.length > 1   at least two cages must cover all cells of U
+  cells.length <= MAX_PARTITION_CAGE_SIZE (4)   large sub-cages skipped to bound DFS
+  nodes <= MAX_NODES (200)   DFS budget; surviving candidates preserved on cap hit
+`.trim();
   readonly priority = 12;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();

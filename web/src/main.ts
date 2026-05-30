@@ -97,7 +97,8 @@ let showEssential = true;
 let candidateEditMode = false;
 let virtualCageMode = false;
 let virtualCageSelection = new Set<string>();   // "r,c" keys, 0-based
-let hintHighlightCells = new Set<string>();     // "r,c" keys, 0-based
+let hintHighlightCells = new Set<string>();     // "r,c" keys, 0-based — pattern cells (orange)
+let hintElimCells = new Set<string>();          // "r,c" keys, 0-based — elimination cells (yellow)
 let hintColourGroups: readonly { cells: readonly [number, number][]; colour: 'blue' | 'green' }[] = [];
 let activeHintItem: HintItem | null = null;
 let inspectCageMode = false;
@@ -191,8 +192,16 @@ function drawUnderlays(
     ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
   }
   if (highlightKeys !== null && highlightKeys.size > 0) {
-    ctx.fillStyle = 'rgba(251, 191, 36, 0.45)';
+    ctx.fillStyle = 'rgba(249, 115, 22, 0.35)';
     for (const key of highlightKeys) {
+      const parts = key.split(',').map(Number);
+      const r = parts[0]!, c = parts[1]!;
+      ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
+    }
+  }
+  if (hintElimCells.size > 0) {
+    ctx.fillStyle = 'rgba(251, 191, 36, 0.45)';
+    for (const key of hintElimCells) {
       const parts = key.split(',').map(Number);
       const r = parts[0]!, c = parts[1]!;
       ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
@@ -377,6 +386,70 @@ function drawCandidates(
   }
 }
 
+/**
+ * Draws per-digit markers for the active hint:
+ *   circles (red)  — eliminated digits in elimination cells
+ *   squares (blue) — pattern digits in pattern (highlight) cells
+ */
+function drawHintDigitMarkers(
+  ctx: CanvasRenderingContext2D,
+  userGrid: number[][],
+  candidatesData: CandidatesResponse,
+): void {
+  if (activeHintItem === null) return;
+  const hint = activeHintItem;
+  const CAND_TOP = 13;
+  const SUB_W = CELL / 3;
+  const SUB_H = (CELL - CAND_TOP) / 3;
+  const R = Math.min(SUB_W, SUB_H) * 0.38;
+
+  // Red circles around eliminated (cell, digit) pairs
+  if (hint.eliminations.length > 0) {
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
+    ctx.lineWidth = 1.5;
+    for (const { cell: [r, c], digit: d } of hint.eliminations) {
+      if ((userGrid[r]?.[c] ?? 0) !== 0) continue;
+      const cellInfo = candidatesData.cells[r]?.[c];
+      if (!cellInfo) continue;
+      if (!cellInfo.candidates.includes(d) && !cellInfo.userRemoved.includes(d)) continue;
+      const subRow = Math.floor((d - 1) / 3);
+      const subCol = (d - 1) % 3;
+      const cx = MARGIN + c * CELL + (subCol + 0.5) * SUB_W;
+      const cy = MARGIN + r * CELL + CAND_TOP + (subRow + 0.5) * SUB_H;
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  // Blue squares around pattern digits in highlight (pattern) cells.
+  // Skip any cell that is also an elimination cell — it gets a circle, not a square.
+  const patternDigits: readonly number[] =
+    hint.patternDigits ??
+    (hint.placement !== null ? [hint.placement[2]] : [...new Set(hint.eliminations.map(e => e.digit))]);
+  if (patternDigits.length > 0 && hint.highlightCells.length > 0) {
+    ctx.strokeStyle = 'rgba(59, 130, 246, 0.85)';
+    ctx.lineWidth = 1.5;
+    const hw = SUB_W * 0.38;
+    const hh = SUB_H * 0.38;
+    for (const [r, c] of hint.highlightCells) {
+      if (hintElimCells.has(`${r},${c}`)) continue;   // elim cells get circles, not squares
+      if ((userGrid[r]?.[c] ?? 0) !== 0) continue;
+      const cellInfo = candidatesData.cells[r]?.[c];
+      if (!cellInfo) continue;
+      const candSet = new Set(cellInfo.candidates);
+      for (const d of patternDigits) {
+        if (!candSet.has(d)) continue;
+        const subRow = Math.floor((d - 1) / 3);
+        const subCol = (d - 1) % 3;
+        const cx = MARGIN + c * CELL + (subCol + 0.5) * SUB_W;
+        const cy = MARGIN + r * CELL + CAND_TOP + (subRow + 0.5) * SUB_H;
+        ctx.strokeRect(cx - hw, cy - hh, 2 * hw, 2 * hh);
+      }
+    }
+  }
+}
+
 function drawGrid(
   canvas: HTMLCanvasElement,
   state: PuzzleState,
@@ -402,6 +475,7 @@ function drawGrid(
   drawDigits(ctx, state);
   if (showCands && candidatesData !== null && state.userGrid !== null) {
     drawCandidates(ctx, state.userGrid, candidatesData, showEss);
+    drawHintDigitMarkers(ctx, state.userGrid, candidatesData);
   }
 }
 
@@ -439,6 +513,7 @@ function closeSidePanels(): void {
   inspectCageMode = false;
   el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');
   el<HTMLElement>('inspector-col').hidden = true;
+  el<HTMLElement>('playing-actions').hidden = false;
   el<HTMLElement>('side-panel').classList.remove('inspector-open');
   el<HTMLElement>('side-panel').classList.remove('virtual-cage-open');
 }
@@ -724,6 +799,7 @@ function renderCageInspector(label: string): void {
     clearChildren(inspector);
     el<HTMLElement>('inspector-heading').textContent = `Cage ${label}`;
     el<HTMLElement>('inspector-col').hidden = false;
+    el<HTMLElement>('playing-actions').hidden = true;
     el<HTMLElement>('side-panel').classList.add('inspector-open');
     renderSolutionList(
       inspector,
@@ -776,13 +852,35 @@ function setLoading(on: boolean): void {
 // Hint modal
 // ---------------------------------------------------------------------------
 
+function openRuleInfoModal(displayName: string, description: string): void {
+  el<HTMLHeadingElement>('rule-info-title').textContent = displayName;
+  const descEl = el<HTMLElement>('rule-info-description');
+  descEl.innerHTML = '';
+  for (const para of description.split('\n\n')) {
+    const p = document.createElement('p');
+    p.textContent = para;
+    descEl.appendChild(p);
+  }
+  (el<HTMLDialogElement>('rule-info-modal') as HTMLDialogElement).showModal();
+}
+
 function showHintModal(hint: HintItem): void {
   activeHintItem = hint;
   hintHighlightCells = new Set(hint.highlightCells.map(([r, c]) => `${r},${c}`));
+  hintElimCells = new Set(hint.eliminations.map(({ cell: [r, c] }) => `${r},${c}`));
   hintColourGroups = hint.colourGroups ?? [];
   redrawGrid();
   el<HTMLElement>('hint-modal-title').textContent = hint.displayName;
   el<HTMLElement>('hint-modal-explanation').textContent = hint.explanation;
+  const ruleInfo = getSettingsData().hintableRules.find(r => r.name === hint.ruleName);
+  const infoBtn = el<HTMLButtonElement>('hint-info-btn');
+  if (ruleInfo) {
+    infoBtn.hidden = false;
+    infoBtn.onclick = () => openRuleInfoModal(ruleInfo.displayName, ruleInfo.description);
+  } else {
+    infoBtn.hidden = true;
+    infoBtn.onclick = null;
+  }
   const applyBtn = el<HTMLButtonElement>('hint-apply-btn');
   if (hint.rewindToTurnIdx !== null) {
     el<HTMLElement>('hint-modal-summary').textContent = 'Rewinding will undo all moves back to the last correct state.';
@@ -803,6 +901,7 @@ function showHintModal(hint: HintItem): void {
 
 function clearHintHighlight(): void {
   hintHighlightCells = new Set();
+  hintElimCells = new Set();
   hintColourGroups = [];
   activeHintItem = null;
   hideHintPill(el('hint-pill'));
@@ -847,11 +946,7 @@ function openConfigModal(): void {
     const row = document.createElement('div'); row.className = 'config-rule-row';
     const nameSpan = document.createElement('span'); nameSpan.className = 'config-rule-name'; nameSpan.textContent = rule.displayName;
     const infoBtn = document.createElement('button'); infoBtn.className = 'btn-rule-info'; infoBtn.textContent = 'ⓘ'; infoBtn.title = 'About this rule';
-    infoBtn.addEventListener('click', () => {
-      el<HTMLHeadingElement>('rule-info-title').textContent = rule.displayName;
-      el<HTMLParagraphElement>('rule-info-description').textContent = rule.description;
-      (el<HTMLDialogElement>('rule-info-modal') as HTMLDialogElement).showModal();
-    });
+    infoBtn.addEventListener('click', () => { openRuleInfoModal(rule.displayName, rule.description); });
     const select = document.createElement('select'); select.className = 'config-rule-select'; select.dataset['ruleName'] = rule.name;
     const optAuto = document.createElement('option'); optAuto.value = 'auto'; optAuto.textContent = 'Auto-apply';
     const optHint = document.createElement('option'); optHint.value = 'hint'; optHint.textContent = 'Hint-only';
@@ -1239,6 +1334,7 @@ async function handleCellEntry(digit: number): Promise<void> {
 
           // Show hint pill + highlight for this rule, then wait.
           hintHighlightCells = new Set(step.highlightCells.map(([r, c]) => `${r},${c}`));
+          hintElimCells = new Set(step.eliminations.map(({ cell: [r, c] }) => `${r},${c}`));
           showHintPill(el('hint-pill'), el('hint-pill-label'), step.displayName);
           animRefresh(currentState);
           await new Promise<void>(resolve => { setTimeout(resolve, delay); });
@@ -1246,6 +1342,7 @@ async function handleCellEntry(digit: number): Promise<void> {
           // Apply the rule's changes and immediately show the result before next step.
           currentState = applyAutoApplyStep(currentState, step);
           hintHighlightCells = new Set();
+          hintElimCells = new Set();
           hideHintPill(el('hint-pill'));
           animRefresh(currentState);
         }
@@ -1254,6 +1351,7 @@ async function handleCellEntry(digit: number): Promise<void> {
         // and clear the transient autoRemovedCandidates before the final full-solve refresh.
         hideHintPill(el('hint-pill'));
         hintHighlightCells = new Set();
+        hintElimCells = new Set();
         const finalState: PuzzleState = { ...currentState, autoRemovedCandidates: [] };
         setState(finalState);
         currentState = finalState;
@@ -1677,7 +1775,7 @@ document.addEventListener('DOMContentLoaded', () => {
     currentState = null; currentCandidates = null; selectedCell = null;
     showCandidates = false; candidateEditMode = false;
     virtualCageMode = false; virtualCageSelection = new Set();
-    hintHighlightCells = new Set(); hintColourGroups = []; activeHintItem = null;
+    hintHighlightCells = new Set(); hintElimCells = new Set(); hintColourGroups = []; activeHintItem = null;
     colourMode = 'off'; cellColours.clear();
     inspectCageMode = false;
     el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');
@@ -1869,6 +1967,7 @@ document.addEventListener('DOMContentLoaded', () => {
     inspBtn.dataset['tooltip'] = inspectCageMode ? 'Done inspecting' : 'Inspect cage';
     if (!inspectCageMode) {
       el<HTMLElement>('inspector-col').hidden = true;
+      el<HTMLElement>('playing-actions').hidden = false;
       el<HTMLElement>('side-panel').classList.remove('inspector-open');
     }
   });
@@ -1891,10 +1990,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const p = document.createElement('p'); p.className = 'hints-empty'; p.textContent = 'No hint found — this position may require a technique not yet supported. Try Reveal for the selected cell.';
         content.appendChild(p);
       } else {
+        const rulesMap = new Map(getSettingsData().hintableRules.map(r => [r.name, r]));
         for (const hint of hints) {
+          const row = document.createElement('div'); row.className = 'hint-list-row';
           const btn = document.createElement('button'); btn.className = 'hint-item'; btn.textContent = hint.displayName;
           btn.addEventListener('click', () => { hintsListModal.close(); showHintModal(hint); });
-          content.appendChild(btn);
+          row.appendChild(btn);
+          const ruleInfo = rulesMap.get(hint.ruleName);
+          if (ruleInfo) {
+            const infoBtn = document.createElement('button'); infoBtn.className = 'btn-rule-info'; infoBtn.textContent = 'ⓘ'; infoBtn.title = 'About this rule';
+            infoBtn.addEventListener('click', () => { openRuleInfoModal(ruleInfo.displayName, ruleInfo.description); });
+            row.appendChild(infoBtn);
+          }
+          content.appendChild(row);
         }
       }
     } catch (e) {
@@ -1925,7 +2033,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const { cells, total } = hint.virtualCageSuggestion;
       try { currentState = addVirtualCage([...cells], total); void fetchCandidates(); } catch (e) { setStatus(String(e), true); }
     } else {
-      try { currentState = applyHint(hint.eliminations); refreshDisplay(); } catch (e) { setStatus(String(e), true); }
+      try { currentState = applyHint(hint.eliminations); refreshDisplay(); updateUndoButton(currentState); } catch (e) { setStatus(String(e), true); }
     }
   });
 

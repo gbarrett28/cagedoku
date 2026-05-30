@@ -57,8 +57,20 @@ function findMatch(
 
 export class MustContainOutie {
   readonly name = 'MustContainOutie';
-  readonly description =
-    'Extension of must-contain: when a digit required by a cage can only be placed in cells shared with an adjacent cage, constrains the adjacent cage.';
+  readonly displayName = 'Must Contain Outie';
+  readonly description = `
+Must Contain Outie — single external cell with candidates ⊆ must-contain constrains the outie.
+
+Setup: a cage has exactly one cell outside unit U (the outie). The cage's must-contain set M = intersection of all cage solutions. Exactly one cell X in U (outside the cage) has candidates ⊆ M.
+
+Proof: X must hold some digit from M. That digit is blocked from all cage cells inside U (they share U with X). Since M must be placed somewhere in the cage, and the inside cells can no longer hold any digit that X holds, the outie must hold whatever X holds. Therefore the outie's candidates are restricted to X's candidates.
+
+Guards:
+  outside.length === 1   exactly one cage cell must be outside U (the outie)
+  qualifying.length === 1   exactly one external unit cell must have candidates ⊆ M
+  ctx.unit?.distinctDigits   non-distinct cages skipped
+  must.size > 0   cage must have a non-empty must-contain set
+`.trim();
   readonly priority = 4;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED, Trigger.SOLUTION_PRUNED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX, UnitKind.CAGE]);

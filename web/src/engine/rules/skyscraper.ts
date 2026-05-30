@@ -19,10 +19,24 @@ import { cellLabel } from './_labels.js';
 
 export class Skyscraper {
   readonly name = 'Skyscraper';
-  readonly description =
-    'When a digit appears in exactly two cells in each of two rows (or columns) ' +
-    'and those rows share exactly one of those columns (or rows), the digit can ' +
-    'be eliminated from any cell that sees both of the non-shared cells.';
+  readonly displayName = 'Skyscraper';
+  readonly description = `
+Skyscraper — asymmetric two-row (or two-column) chain elimination.
+
+Setup (row variant): rows R1 and R2 each have d in exactly 2 cells. They share one column B (the base). The non-shared cells are the roof: (R1,A) and (R2,C) where A ≠ C.
+
+Proof (2 cases, exhaustive because d must go in one of the two base cells):
+  Case d in (R1,B): d is not in (R2,B); since R2 holds d in exactly {(R2,B),(R2,C)}, d goes in (R2,C). Any cell T ≠ (R2,C) seeing (R2,C) cannot hold d.
+  Case d in (R2,B): symmetric; d goes in (R1,A). Any cell T ≠ (R1,A) seeing (R1,A) cannot hold d.
+Either way, any cell T that sees both roof cells cannot hold d.
+
+Column variant is identical with rows and columns transposed.
+
+Guards:
+  cols.length === 2   row must have d in exactly 2 cells
+  shared column detection   rows must share at least one column (else continue skips the pair)
+  explicit roof-cell skip   roof cells themselves are not elimination targets
+`.trim();
   readonly priority = 21;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();

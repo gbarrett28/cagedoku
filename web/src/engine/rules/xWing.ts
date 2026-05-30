@@ -11,9 +11,23 @@ import { combinations, dedupElims } from './_helpers.js';
 
 export class XWing {
   readonly name = 'XWing';
-  readonly description =
-    'When a digit appears in only two cells in each of two rows, and those cells ' +
-    'share the same two columns, the digit can be removed from all other cells in those columns.';
+  readonly displayName = 'X-Wing';
+  readonly description = `
+X-Wing — when digit d appears in exactly two cells in each of two rows and those cells share the same two columns, d can be removed from all other cells in those columns.
+
+Setup: base rows R1, R2; cover columns Ca, Cb. In R1, d is a candidate only at (R1,Ca) and (R1,Cb); similarly for R2.
+
+Proof (2 cases, exhaustive because exactly one cell per base row holds d):
+  Case d in (R1,Ca): d cannot also be in (R2,Ca) (same column); so d goes in (R2,Cb). Any non-base cell in Ca or Cb sees a placed d and cannot hold d.
+  Case d in (R1,Cb): symmetric; d goes in (R2,Ca). Same conclusion.
+Either way, every non-base cell in columns Ca and Cb cannot hold d.
+
+Column variant is identical with rows and columns transposed.
+
+Guards:
+  cols.size === 2   row qualifies only when d appears in exactly 2 columns
+  [...cols1].every(c => cols2.has(c))   both rows must cover the same 2 columns
+`.trim();
   readonly priority = 13;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();

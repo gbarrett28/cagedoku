@@ -12,9 +12,20 @@ import { cellLabel, unitLabel } from './_labels.js';
 
 export class HiddenPair {
   readonly name = 'HiddenPair';
-  readonly description =
-    'When two digits each appear in only the same two cells in a unit, ' +
-    'those cells must contain those two digits and no others.';
+  readonly displayName = 'Hidden Pair';
+  readonly description = `\
+Hidden Pair — two digits each confined to the same two cells restrict those cells to only those digits.
+
+If digits d1 and d2 each appear in exactly the same two cells A and B within a unit, then A and B together must account for both d1 and d2 (the unit constraint requires each digit exactly once). No other digit can fit in A or B because adding a third digit there would leave d1 or d2 with nowhere to go.
+
+Proof: d1 can only go in {A, B}; d2 can only go in {A, B}. The two cells must each hold one of {d1, d2}. Therefore:
+  - A holds d1 or d2 — all other candidates of A are impossible.
+  - B holds the remaining one — all other candidates of B are impossible.
+
+Guards:
+  count(d1, unit) === 2          d1 has exactly 2 candidate cells in the unit
+  count(d2, unit) === 2          d2 also has exactly 2 candidate cells
+  sameCellSet(d2Cells, pairCells)  both digits land in the same two cells`.trim();
   readonly priority = 7;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_HIT_TWO]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([
@@ -70,6 +81,7 @@ export class HiddenPair {
       explanation: `Hidden Pair: only {${digits.join(',')}} can go in ${cellLabel(c1)} and ${cellLabel(c2)} within ${unitLabel(ctx.unit)}. Remove all other candidates from these two cells.`,
       highlightCells: [...pairCells, ...eliminations.map(e => e.cell)],
       eliminations: [...eliminations], placement: null, virtualCageSuggestion: null,
+      patternDigits: digits,
     }];
   }
 }

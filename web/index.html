@@ -210,7 +210,10 @@
 <dialog id="hint-modal">
   <div class="hint-modal-header">
     <h2 id="hint-modal-title"></h2>
-    <button id="hint-minimize-btn" class="btn-icon btn-secondary" aria-label="Minimise hint" data-tooltip="Minimise">&#x2013;</button>
+    <div class="hint-modal-header-btns">
+      <button id="hint-info-btn" class="btn-rule-info" aria-label="About this rule" data-tooltip="About this rule">ⓘ</button>
+      <button id="hint-minimize-btn" class="btn-icon btn-secondary" aria-label="Minimise hint" data-tooltip="Minimise">&#x2013;</button>
+    </div>
   </div>
   <p id="hint-modal-explanation" class="hint-modal-explanation"></p>
   <p id="hint-modal-summary" class="hint-modal-summary"></p>
@@ -239,7 +242,7 @@
 
 <dialog id="rule-info-modal">
   <h2 id="rule-info-title"></h2>
-  <p id="rule-info-description"></p>
+  <div id="rule-info-description"></div>
   <div class="form-actions">
     <button id="rule-info-close-btn" class="btn-secondary">Close</button>
   </div>

@@ -12,9 +12,22 @@ import { cellLabel } from './_labels.js';
 
 export class SimpleColouring {
   readonly name = 'SimpleColouring';
-  readonly description =
-    'Uses chains of cells where a digit can only go in one of two places to ' +
-    'eliminate that digit from cells that see both ends of the chain.';
+  readonly displayName = 'Simple Colouring';
+  readonly description = `
+Simple Colouring — single-digit chain colouring using conjugate pairs.
+
+Setup: build a graph where nodes are cells holding d and edges connect cells that form a conjugate pair (the only two d-candidates in a shared unit). 2-colour each connected component (colour 0 and colour 1). Exactly one colour is true in any valid solution.
+
+Wrap elimination: if two same-colour nodes see each other, both cannot simultaneously hold d — a contradiction. The entire colour group is therefore false; d is eliminated from all its cells.
+
+Trap elimination: if an uncoloured cell T sees at least one colour-0 node and at least one colour-1 node, then regardless of which colour is true, T sees a placed d and cannot hold d.
+
+Guards:
+  cols.length === 2 / rows.length === 2 / boxCells.length === 2   edge added only for genuine conjugate pairs
+  hasConflict(cells)   wrap fires only when two same-colour cells see each other
+  seesC0 && seesC1   trap fires only when T sees both colours
+  !allColoured.has(...)   trap targets must be outside the chain
+`.trim();
   readonly priority = 18;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
@@ -188,20 +201,24 @@ export class SimpleColouring {
         const hasConflict = (cells: Cell[]) =>
           cells.some(([r1, c1], i) => cells.slice(i + 1).some(([r2, c2]) => sees(r1, c1, r2, c2)));
 
+        let wrapFired = false;
         const tryWrap = (bad: Cell[], good: Cell[]) => {
           if (!hasConflict(bad)) return;
           const elims = bad.filter(([r, c]) => board.cands(r, c).has(d))
             .map(([r, c]) => ({ cell: [r, c] as Cell, digit: d }));
           if (!elims.length) return;
+          wrapFired = true;
           hints.push({
             ruleName: this.name, displayName: 'Simple Colouring',
-            explanation: `Simple Colouring: two same-colour cells for ${d} see each other — that colour must be false. Remove ${d} from ${elims.map(e => cellLabel(e.cell)).join(', ')}.`,
+            explanation: `Simple Colouring (digit ${d}): two same-colour cells see each other — that colour cannot hold ${d}. Remove ${d} from ${elims.map(e => cellLabel(e.cell)).join(', ')}.`,
             highlightCells: elims.map(e => e.cell),
             eliminations: elims, placement: null, virtualCageSuggestion: null,
             colourGroups: [{ cells: bad, colour: 'blue' }, { cells: good, colour: 'green' }],
           });
         };
         tryWrap(c0, c1); tryWrap(c1, c0);
+        // Mirrors apply(): skip trap for any component where wrap already fired
+        if (wrapFired) continue;
 
         // Trap: cell outside chain seeing both colours
         const allColoured = new Set([...c0, ...c1].map(([r, c]) => ck(r, c)));
@@ -214,7 +231,7 @@ export class SimpleColouring {
         if (trapElims.length) {
           hints.push({
             ruleName: this.name, displayName: 'Simple Colouring',
-            explanation: `Simple Colouring: ${trapElims.map(e => cellLabel(e.cell)).join(', ')} see both colours in a ${d}-chain — remove ${d} from those cells.`,
+            explanation: `Simple Colouring (digit ${d}): ${trapElims.map(e => cellLabel(e.cell)).join(', ')} each see a cell from both colour groups. One group must hold ${d} in any valid solution, so these cells are excluded. Remove ${d} from ${trapElims.map(e => cellLabel(e.cell)).join(', ')}.`,
             highlightCells: trapElims.map(e => e.cell),
             eliminations: trapElims, placement: null, virtualCageSuggestion: null,
             colourGroups: [{ cells: c0, colour: 'blue' }, { cells: c1, colour: 'green' }],

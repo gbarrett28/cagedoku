@@ -24,8 +24,20 @@ import { cellLabel } from './_labels.js';
 
 export class CellSolutionElimination {
   readonly name = 'CellSolutionElimination';
-  readonly description =
-    'When a cell is solved, removes that digit from all other cells in the same row, column, and box.';
+  readonly displayName = 'Cell Solution Elimination';
+  readonly description = `\
+Cell Solution Elimination — a placed digit is removed from all peer cells in shared units.
+
+When cell C is assigned digit d, every other cell in C's row, column, box, and distinct-digit cage cannot hold d (each unit must contain each digit at most once, and for distinct-digit cages no digit may repeat within the cage).
+
+Proof: C = d. For any peer P ≠ C sharing a unit U with C: if d ∈ candidates(P), the unit constraint would require two occurrences of d in U — contradiction. Therefore d can be eliminated from every such P.
+
+Non-distinct cage peers are excluded: those cages permit repeated digits, so the cage constraint does not apply.
+
+Guards:
+  ctx.cell !== null                engine sets this on CELL_SOLVED
+  ctx.hintDigit !== null           the digit being placed
+  unit.kind === UnitKind.CAGE → unit.distinctDigits   skip cages that allow repeated digits`.trim();
   readonly priority = 0;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.CELL_SOLVED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();

@@ -21,9 +21,9 @@ export interface HintResult {
   readonly displayName: string;
   readonly explanation: string;
   /**
-   * Elimination-target cells — used for the standard yellow canvas highlight.
-   * For colouring rules this contains only the eliminated cells; chain cells
-   * live in colourGroups instead.
+   * Pattern cells — rendered orange on the canvas. Cells that are also in
+   * `eliminations` will be overwritten yellow. For colouring rules, chain cells
+   * live in `colourGroups` and should not appear here.
    */
   readonly highlightCells: readonly Cell[];
   readonly eliminations: readonly Elimination[];
@@ -33,6 +33,13 @@ export interface HintResult {
   readonly virtualCageSuggestion: readonly [readonly Cell[], number] | null;
   /** Two colour groups for bipartite-chain rules; absent for all other rules. */
   readonly colourGroups?: readonly ColourGroup[];
+  /**
+   * Digits key to the rule's reasoning — marked with squares in `highlightCells`.
+   * Absent for most rules; the renderer then derives them from `eliminations`
+   * (or `placement[2]` for placement hints). Set explicitly only when pattern
+   * digits differ from elimination digits (Hidden Single/Pair/Triple/Quad).
+   */
+  readonly patternDigits?: readonly number[];
 }
 
 export function eliminationCount(h: HintResult): number {

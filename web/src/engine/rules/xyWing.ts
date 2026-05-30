@@ -1,7 +1,24 @@
 /**
- * XYWing — R15: Three bivalue cells forming a chain.
+ * XY-Wing — bivalue pivot links two bivalue pincers to eliminate a shared digit.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.incomplete.xy_wing`.
+ * Pivot P = {x, y}. Pincer A = {x, z} sees P. Pincer B = {y, z} sees P.
+ *
+ * Proof (two cases, exhaustive because P is bivalue):
+ *   Case P = x: P sees A → A ≠ x → A = z.
+ *   Case P = y: P sees B → B ≠ y → B = z.
+ * Either way at least one of {A, B} holds z.
+ * Any cell T seeing both A and B cannot hold z.
+ *
+ * Why P must be bivalue: a trivalue pivot {x, y, z} introduces a third case P = z
+ * where neither A nor B is forced to z. T would also need to see P to be blocked —
+ * that is XYZ-Wing. XY-Wing must never treat trivalue cells as pivots.
+ *
+ * Guards verified against proof:
+ *   P.size === 2            bivalue pivot (no third P = z case)
+ *   sees(P, A/B)            pincers witness pivot (enables forcing in each case)
+ *   zA === zB               both pincers carry the same elimination digit z
+ *   T ≠ A, T ≠ B           pincers are not targets (they hold z by proof)
+ *   sees(T, A) ∧ sees(T, B) T is blocked by whichever pincer holds z
  */
 
 import type { HintResult } from '../hint.js';
@@ -12,6 +29,7 @@ import { cellLabel } from './_labels.js';
 
 export class XYWing {
   readonly name = 'XYWing';
+  readonly displayName = 'XY-Wing';
   readonly description =
     'When three cells form a chain where each shares a candidate with the others, ' +
     'a digit that sees both end cells of the chain can be eliminated.';
@@ -111,11 +129,16 @@ export class XYWing {
           const key = `${pr},${pc}|${pinA}|${pinB}|${z}`;
           if (seen.has(key)) continue;
           seen.add(key);
+          const pivot = [pr, pc] as Cell;
           hints.push({
             ruleName: this.name, displayName: 'XY-Wing',
-            explanation: `XY-Wing: pivot ${cellLabel([pr, pc] as Cell)} links pincers ${cellLabel(pinA)} and ${cellLabel(pinB)} — ${z} can be removed from cells seeing both pincers.`,
-            highlightCells: [[pr, pc] as Cell, pinA, pinB, ...elims.map(e => e.cell)],
+            explanation: `XY-Wing: pivot ${cellLabel(pivot)} links pincers ${cellLabel(pinA)} and ${cellLabel(pinB)} — ${z} can be removed from cells seeing both pincers.`,
+            highlightCells: elims.map(e => e.cell),
             eliminations: elims, placement: null, virtualCageSuggestion: null,
+            colourGroups: [
+              { cells: [pivot], colour: 'blue' },
+              { cells: [pinA, pinB], colour: 'green' },
+            ],
           });
         }
       }

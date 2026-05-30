@@ -16,7 +16,22 @@ import { cellLabel } from './_labels.js';
 
 export class LinearElimination {
   readonly name = 'LinearElimination';
-  readonly description = 'Uses linear equations derived from cage sums to eliminate impossible digit values from cells.';
+  readonly displayName = 'Linear Elimination';
+  readonly description = `
+Linear Elimination — placements and eliminations from the cage-sum linear system.
+
+Setup: cage-sum and unit-total equations form a linear system. RREF is computed once at puzzle-load and yields initial_eliminations (values inconsistent with uniquely-determined cells) and virtual cages (derived sub-group sum constraints).
+
+Proof: RREF produces an equivalent system — every valid solution of the original equations satisfies the RREF system and vice versa. If RREF uniquely determines a cell's value, all other candidate values are inconsistent with every valid solution and are safely eliminated. Virtual cages are sound because they are linear combinations of original constraints that every valid solution must satisfy.
+
+Hint types:
+  T1 (placement)   cell uniquely determined by the system
+  T3 (virtual cage)   derived sub-group sum not yet acknowledged by the user
+
+Guards:
+  initialEliminations   only eliminations produced at system-solve time
+  requiresVirtualCages = true   board must be built with includeVirtualCages=true
+`.trim();
   readonly priority = 1;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();

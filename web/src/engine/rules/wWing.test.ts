@@ -117,4 +117,63 @@ describe('WWing', () => {
     const result = rule.apply(ctx);
     expect(result.eliminations).toHaveLength(0);
   });
+
+  it('near-miss: wings see each other — anti-redundancy guard fires, no elimination', () => {
+    // The `sees(A,B)` guard is an anti-redundancy guard, not a soundness guard.
+    // When A and B see each other they form a naked pair on {p,q}, and the same
+    // eliminations would be produced by that rule. The proof is still valid, but
+    // W-Wing skips these cases to avoid duplicate work.
+    //
+    // Strong link X=(0,0), Y=(4,0) in col 0.
+    // A=(0,1)={5,7} sees X via row 0. B=(4,1)={5,7} sees Y via row 4.
+    // A and B see each other via col 1 → `sees(A,B)` guard fires → no W-Wing.
+    const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+    const engine = new SolverEngine(board, [], {});
+
+    for (const r of [1,2,3,5,6,7,8]) engine.applyEliminations([{ cell: [r,0], digit: 5 }]);
+    for (const d of [1,2,3,4,6,8,9]) engine.applyEliminations([{ cell: [0,1], digit: d }]);
+    for (const d of [1,2,3,4,6,8,9]) engine.applyEliminations([{ cell: [4,1], digit: d }]);
+    for (let c = 2; c < 9; c++) engine.applyEliminations([{ cell: [0,c], digit: 5 }]);
+    for (let c = 2; c < 9; c++) engine.applyEliminations([{ cell: [4,c], digit: 5 }]);
+
+    const colUnit = board.units.find(
+      u => u.kind === UnitKind.COL && u.cells.some(([, c]) => c === 0)
+    )!;
+    expect(rule.apply(unitCtx(board, colUnit, 5)).eliminations).toHaveLength(0);
+  });
+
+  it('near-miss: both wings see the same end — complementary-connection soundness guard fires', () => {
+    // Soundness guard: `(aSeesX && bSeesY) || (aSeesY && bSeesX)`.
+    // If both wings connect to the same strong-link end, the proof breaks:
+    //   Case p at Y: neither A nor B sees Y, so neither is forced off p,
+    //   neither is forced to q, and the target could legitimately hold q.
+    //
+    // Strong link X=(0,0), Y=(6,0) in col 0.
+    // A=(0,5)={5,7} sees X=(0,0) via row 0. Does NOT see Y=(6,0).
+    // B=(2,2)={5,7} sees X=(0,0) via box 0. Does NOT see Y=(6,0).
+    // A and B do NOT see each other (different row, col, box).
+    // `sees(A,B)` guard passes; complementary-connection guard fails → no W-Wing.
+    // T=(0,2) sees A via row 0 and B via box 0 — must NOT have 7 eliminated.
+    const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+    const engine = new SolverEngine(board, [], {});
+
+    // Strong link in col 0: keep 5 only at (0,0) and (6,0)
+    for (const r of [1,2,3,4,5,7,8]) engine.applyEliminations([{ cell: [r,0], digit: 5 }]);
+    // Wing A=(0,5)={5,7}
+    for (const d of [1,2,3,4,6,8,9]) engine.applyEliminations([{ cell: [0,5], digit: d }]);
+    // Wing B=(2,2)={5,7}
+    for (const d of [1,2,3,4,6,8,9]) engine.applyEliminations([{ cell: [2,2], digit: d }]);
+    // Remove 5 from rest of row 0 and box 0 to avoid spurious bivalue cells
+    for (const c of [1,2,3,4,6,7,8]) engine.applyEliminations([{ cell: [0,c], digit: 5 }]);
+    for (const [r,c] of [[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1]] as [number,number][])
+      engine.applyEliminations([{ cell: [r,c], digit: 5 }]);
+
+    const colUnit = board.units.find(
+      u => u.kind === UnitKind.COL && u.cells.some(([, c]) => c === 0)
+    )!;
+    const result = rule.apply(unitCtx(board, colUnit, 5));
+
+    // Without the complementary-connection guard, (0,2) would have 7 incorrectly eliminated.
+    expect(result.eliminations.every(e => !(e.digit === 7))).toBe(true);
+  });
 });

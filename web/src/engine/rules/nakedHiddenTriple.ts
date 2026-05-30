@@ -12,9 +12,20 @@ import { cellLabel, unitLabel } from './_labels.js';
 
 export class NakedHiddenTriple {
   readonly name = 'NakedHiddenTriple';
-  readonly description =
-    'When three digits are confined to the same three cells in a unit, ' +
-    'those cells can only contain those three digits.';
+  readonly displayName = 'Naked/Hidden Triple';
+  readonly description = `
+Naked/Hidden Triple — pigeonhole elimination at N=3 in a unit.
+
+Naked Triple: if three cells in a unit have a candidate union of exactly {d1, d2, d3}, those three cells must collectively hold d1, d2, d3. By pigeonhole, no other cell in the unit can hold any of these three digits → eliminate {d1,d2,d3} from all other unit cells.
+
+Hidden Triple: if three digits d1, d2, d3 each appear in 2 or 3 cells within a unit, and all such cells form a set of exactly three cells C1, C2, C3, then those three cells must collectively hold d1, d2, d3. Any other candidate in C1, C2, or C3 is impossible.
+
+Guards:
+  union.size === 3   naked: union of candidates across the 3 cells must be exactly 3 digits
+  each(cell).size ≥ 2   naked: every cell in the triple must have ≥ 2 candidates (singletons indicate an unresolved NakedSingle)
+  cellsWith.size === 3   hidden: the three digits must be confined to exactly 3 cells
+  ctx.unit !== null   rule requires a unit context
+`.trim();
   readonly priority = 8;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([
@@ -32,6 +43,8 @@ export class NakedHiddenTriple {
       const union = new Set<number>();
       for (const [r, c] of triple) for (const d of board.cands(r, c)) union.add(d);
       if (union.size !== 3) continue;
+      // Skip combos where any cell is a naked single — NakedSingle (priority 1) fires first
+      if (triple.some(([r, c]) => board.cands(r, c).size < 2)) continue;
       const tripleSet = new Set(triple.map(([r, c]) => `${r},${c}`));
       for (const [r, c] of cells) {
         if (tripleSet.has(`${r},${c}`)) continue;
@@ -81,6 +94,7 @@ export class NakedHiddenTriple {
       const union = new Set<number>();
       for (const [r, c] of triple) for (const d of board.cands(r, c)) union.add(d);
       if (union.size !== 3) continue;
+      if (triple.some(([r, c]) => board.cands(r, c).size < 2)) continue;
       const tripleSet = new Set(triple.map(([r, c]) => `${r},${c}`));
       const elims = cells.flatMap(([r, c]) =>
         tripleSet.has(`${r},${c}`) ? [] :
@@ -117,6 +131,7 @@ export class NakedHiddenTriple {
         explanation: `Hidden Triple: {${digits.join(',')}} are confined to ${tripleCells.map(c => cellLabel(c)).join(', ')} within ${unitLabel(ctx.unit)}. Remove all other candidates from these cells.`,
         highlightCells: [...tripleCells, ...elims.map(e => e.cell)],
         eliminations: elims, placement: null, virtualCageSuggestion: null,
+        patternDigits: digits,
       }];
     }
     return [];

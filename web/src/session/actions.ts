@@ -1162,6 +1162,7 @@ export function getHints(): HintsResponse {
           cells: [...g.cells].map(([r, c]) => [r, c] as [number, number]),
         })),
       } : {}),
+      ...(h.patternDigits ? { patternDigits: [...h.patternDigits] } : {}),
     };
   });
 
@@ -1230,7 +1231,7 @@ export function getSettingsData(): SettingsResponse {
   const settings = loadSettings();
   const hintableRules: RuleInfo[] = defaultRules().map(r => ({
     name: r.name,
-    displayName: r.name.replace(/([A-Z])/g, ' $1').trim(),
+    displayName: r.displayName,
     description: r.description,
   }));
   return {

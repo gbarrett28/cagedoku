@@ -87,6 +87,54 @@ describe('NakedHiddenQuad', () => {
     expect(hints[0]!.placement).toBeNull();
   });
 
+  it('near-miss naked quad: one cell has 1 candidate (naked single included) → no naked quad fires', () => {
+    // Cell (0,0) has {1} — a naked single. Cells (0,0),(0,1),(0,2),(0,3) have union {1,2,3,4} (size 4),
+    // satisfying union.size===4. But including a naked single is degenerate.
+    // The fix: size<2 guard prevents this from being treated as a naked quad.
+    const bs = new BoardState(makeTrivialSpec());
+    bs.candidates[0]![0]! = new Set([1]);       // singleton — naked single
+    bs.candidates[0]![1]! = new Set([1, 2]);
+    bs.candidates[0]![2]! = new Set([2, 3]);
+    bs.candidates[0]![3]! = new Set([3, 4]);
+    for (let c = 4; c < 9; c++) bs.candidates[0]![c]! = new Set([1, 2, 3, 4, 5]);
+
+    const elims = new NakedHiddenQuad().apply(makeCtx(bs, 0)).eliminations;
+    // naked quad must NOT fire when a singleton is included
+    const nakedQuadElims = elims.filter(e => e.cell[1] >= 4 && [1, 2, 3, 4].includes(e.digit));
+    expect(nakedQuadElims).toHaveLength(0);
+  });
+
+  it('near-miss naked quad: one cell has 5th candidate (union.size=5) → no naked quad', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    // Union across 4 cells = {1,2,3,4,5} — size 5, not 4 → naked-quad branch skipped
+    bs.candidates[0]![0]! = new Set([1, 2]);
+    bs.candidates[0]![1]! = new Set([2, 3]);
+    bs.candidates[0]![2]! = new Set([3, 4]);
+    bs.candidates[0]![3]! = new Set([1, 4, 5]); // 5th digit breaks the quad
+    for (let c = 4; c < 9; c++) bs.candidates[0]![c]! = new Set([1, 2, 3, 4, 5, 6]);
+
+    const elims = new NakedHiddenQuad().apply(makeCtx(bs, 0)).eliminations;
+    // Naked quad does not fire → cells 4-8 must not have 1,2,3,4 eliminated by that pattern
+    const nakedQuadElims = elims.filter(e => e.cell[1] >= 4 && [1, 2, 3, 4].includes(e.digit));
+    expect(nakedQuadElims).toHaveLength(0);
+  });
+
+  it('near-miss hidden quad: one digit appears in a 5th cell → no hidden quad', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    // Digits 1,2,3,4 should form a hidden quad in cells 0-3.
+    // But digit 1 also appears in cell 4 → cellsWith.size===5, not 4 → guard fails.
+    bs.candidates[0]![0]! = new Set([1, 2, 5]);
+    bs.candidates[0]![1]! = new Set([2, 3, 6]);
+    bs.candidates[0]![2]! = new Set([3, 4, 7]);
+    bs.candidates[0]![3]! = new Set([1, 4, 8]);
+    bs.candidates[0]![4]! = new Set([1, 5, 6, 7]); // digit 1 leaks into cell 4
+    for (let c = 5; c < 9; c++) bs.candidates[0]![c]! = new Set([5, 6, 7, 8, 9]);
+
+    const elims = new NakedHiddenQuad().apply(makeCtx(bs, 0)).eliminations;
+    // Hidden quad does not fire → extras 5 from cell 0 must not be eliminated
+    expect(elims.some(e => e.cell[1] === 0 && e.digit === 5)).toBe(false);
+  });
+
   it('hidden quad: restricts four cells to only the quad digits', () => {
     const bs = new BoardState(makeTrivialSpec());
 
