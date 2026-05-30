@@ -55,14 +55,15 @@ describe('XYWing', () => {
     expect(hints[0]!.explanation).toContain('XY-Wing');
     expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
     expect(hints[0]!.placement).toBeNull();
-    // colourGroups: pivot (1 cell, blue) + pincers (2 cells, green)
+    // colourGroups: pinA=blue (1 cell), pinB=green (1 cell); pivot → highlightCells (orange)
     expect(hints[0]!.colourGroups?.length).toBe(2);
     const allGroupCells = hints[0]!.colourGroups!.flatMap(g => g.cells);
-    expect(allGroupCells.length).toBe(3);
-    // highlightCells: only elimination targets — pivot and pincers must NOT appear here
-    for (const [r, c] of [[0, 0], [0, 1], [1, 0]] as [number, number][]) {
+    expect(allGroupCells.length).toBe(2); // only the two pincers
+    // Pincers must NOT be in highlightCells; pivot (0,0) and elim target MUST be
+    for (const [r, c] of [[0, 1], [1, 0]] as [number, number][]) {
       expect(hints[0]!.highlightCells.some(([hr, hc]) => hr === r && hc === c)).toBe(false);
     }
+    expect(hints[0]!.highlightCells.some(([hr, hc]) => hr === 0 && hc === 0)).toBe(true); // pivot is orange
     expect(hints[0]!.highlightCells.length).toBeGreaterThan(0);
   });
 

@@ -131,13 +131,14 @@ export class TwoStringKite {
                 ruleName: this.name,
                 displayName: '2-String Kite',
                 explanation: `2-String Kite on ${d}: row ${r + 1} (${cellLabel(rowEnd)}–${cellLabel(rowKnot)}) and col ${col + 1} (${cellLabel(colKnot)}–${cellLabel(colEnd)}) share a box via ${cellLabel(rowKnot)} and ${cellLabel(colKnot)}. Digit ${d} eliminated from cells seeing both ${cellLabel(rowEnd)} and ${cellLabel(colEnd)}.`,
-                highlightCells: hintElims.map(e => e.cell),
+                // knots are connectors (orange); rowEnd=blue, colEnd=green so elims see blue∧green
+                highlightCells: [rowKnot, colKnot, ...hintElims.map(e => e.cell)],
                 eliminations: hintElims,
                 placement: null,
                 virtualCageSuggestion: null,
                 colourGroups: [
-                  { cells: [rowKnot, colKnot], colour: 'blue' },
-                  { cells: [rowEnd, colEnd], colour: 'green' },
+                  { cells: [rowEnd], colour: 'blue' },
+                  { cells: [colEnd], colour: 'green' },
                 ],
               });
             }

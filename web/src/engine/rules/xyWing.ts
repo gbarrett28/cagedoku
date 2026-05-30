@@ -133,11 +133,12 @@ export class XYWing {
           hints.push({
             ruleName: this.name, displayName: 'XY-Wing',
             explanation: `XY-Wing: pivot ${cellLabel(pivot)} links pincers ${cellLabel(pinA)} and ${cellLabel(pinB)} — ${z} can be removed from cells seeing both pincers.`,
-            highlightCells: elims.map(e => e.cell),
+            // pivot → highlightCells (orange); pinA=blue, pinB=green so elims see blue∧green
+            highlightCells: [pivot, ...elims.map(e => e.cell)],
             eliminations: elims, placement: null, virtualCageSuggestion: null,
             colourGroups: [
-              { cells: [pivot], colour: 'blue' },
-              { cells: [pinA, pinB], colour: 'green' },
+              { cells: [pinA], colour: 'blue' },
+              { cells: [pinB], colour: 'green' },
             ],
           });
         }

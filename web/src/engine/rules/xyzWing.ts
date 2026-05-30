@@ -142,8 +142,10 @@ export class XYZWing {
             hints.push({
               ruleName: this.name, displayName: 'XYZ-Wing',
               explanation: `XYZ-Wing: pivot ${cellLabel(P)} {${allCands.join(',')}} links pincers ${cellLabel(A)} and ${cellLabel(B)} — ${pz} can be removed from cells seeing all three.`,
-              highlightCells: [P, A, B, ...elims.map(e => e.cell)],
+              // pivot P → highlightCells (orange); A=blue, B=green so elims see blue∧green
+              highlightCells: [P, ...elims.map(e => e.cell)],
               eliminations: elims, placement: null, virtualCageSuggestion: null,
+              colourGroups: [{ cells: [A], colour: 'blue' }, { cells: [B], colour: 'green' }],
             });
           }
         }

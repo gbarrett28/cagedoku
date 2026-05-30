@@ -96,8 +96,8 @@ describe('TwoStringKite', () => {
     expect(hints[0]!.placement).toBeNull();
   });
 
-  it('asHints: colourGroups contains all 4 pattern cells, highlightCells has only targets', () => {
-    // Blue (knot): (7,8) and (8,6). Green (endpoints): (7,3) and (1,6). Target: (1,3).
+  it('asHints: endpoints in colourGroups (blue/green), knots in highlightCells (orange)', () => {
+    // Endpoints: rowEnd (7,3)=blue, colEnd (1,6)=green. Knots: (7,8) and (8,6) → orange.
     const board = makeKiteBoard();
     const ctx = GLOBAL_CTX(board);
     const elims = rule.apply(ctx).eliminations;
@@ -107,13 +107,20 @@ describe('TwoStringKite', () => {
 
     expect(hint.colourGroups?.length).toBe(2);
     const allGroupCells = hint.colourGroups!.flatMap(g => g.cells);
-    for (const [r, c] of [[7, 3], [7, 8], [1, 6], [8, 6]] as [number, number][]) {
+    // Endpoints are in colourGroups; knots are NOT (they go to highlightCells)
+    for (const [r, c] of [[7, 3], [1, 6]] as [number, number][]) {
       expect(allGroupCells.some(([gr, gc]) => gr === r && gc === c)).toBe(true);
     }
+    for (const [r, c] of [[7, 8], [8, 6]] as [number, number][]) {
+      expect(allGroupCells.some(([gr, gc]) => gr === r && gc === c)).toBe(false);
+    }
 
-    // Pattern cells must NOT be in highlightCells
-    for (const [r, c] of [[7, 3], [7, 8], [1, 6], [8, 6]] as [number, number][]) {
+    // Endpoint cells must NOT be in highlightCells; knot cells and target MUST be
+    for (const [r, c] of [[7, 3], [1, 6]] as [number, number][]) {
       expect(hint.highlightCells.some(([hr, hc]) => hr === r && hc === c)).toBe(false);
+    }
+    for (const [r, c] of [[7, 8], [8, 6]] as [number, number][]) {
+      expect(hint.highlightCells.some(([hr, hc]) => hr === r && hc === c)).toBe(true);
     }
     expect(hint.highlightCells.some(([r, c]) => r === 1 && c === 3)).toBe(true);
   });
