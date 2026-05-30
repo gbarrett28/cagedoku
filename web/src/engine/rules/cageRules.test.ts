@@ -83,6 +83,40 @@ describe('CageIntersection', () => {
     const result = new CageIntersection().apply(cageCtx(bs, 27 + cageIdx));
     expect(Array.isArray(result.eliminations)).toBe(true);
   });
+
+  it('golden path: must-contain digit confined to col 0 → eliminated from col outside cage', () => {
+    // Three-cell cage at (0,0),(1,0),(2,0) — all in col 0.
+    // Digit 5 in every solution → must-contain; all carriers lie in col 0.
+    // Should eliminate 5 from non-cage cells in col 0 (rows 3-8).
+    const spec = makeThreeCellCageSpec();
+    const bs = new BoardState(spec);
+    const cageUid = bs.cageUnitId(0, 0);
+    const cageIdx = cageUid - 27;
+    bs.cageSolns[cageIdx] = [[5, 3, 4], [5, 1, 6]];
+    for (let r = 3; r < 9; r++) bs.candidates[r]![0]!.add(5);
+
+    const elims = new CageIntersection().apply(cageCtx(bs, cageUid)).eliminations;
+
+    for (let r = 3; r < 9; r++) {
+      expect(elims.some(e => e.cell[0] === r && e.cell[1] === 0 && e.digit === 5)).toBe(true);
+    }
+    // Cage cells (0,0),(1,0),(2,0) are not targeted
+    expect(elims.every(e => !(e.cell[1] === 0 && e.cell[0] < 3))).toBe(true);
+  });
+
+  it('near-miss: digit not in every solution → must-contain is empty → no elimination', () => {
+    // Digit 5 appears only in the first solution, not the second → not must-contain.
+    // CageIntersection should not eliminate 5 from anywhere.
+    const spec = makeThreeCellCageSpec();
+    const bs = new BoardState(spec);
+    const cageUid = bs.cageUnitId(0, 0);
+    const cageIdx = cageUid - 27;
+    bs.cageSolns[cageIdx] = [[5, 3, 4], [1, 2, 9]]; // 5 only in first solution
+    for (let r = 3; r < 9; r++) bs.candidates[r]![0]!.add(5);
+
+    const elims = new CageIntersection().apply(cageCtx(bs, cageUid)).eliminations;
+    expect(elims.filter(e => e.digit === 5)).toHaveLength(0);
+  });
 });
 
 describe('CageCandidateFilter', () => {

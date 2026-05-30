@@ -33,8 +33,19 @@ function combinations<T>(arr: T[], k: number): T[][] {
 export class CageConfinement {
   readonly name = 'CageConfinement';
   readonly displayName = 'Cage Confinement';
-  readonly description =
-    'Checks all groups of cages that together cover complete rows, columns, or boxes, and eliminates digits inconsistent with the resulting sum constraints.';
+  readonly description = `
+Cage Confinement — pigeonhole across cages covering N same-type units.
+
+Setup: select N cages C1…CN and N distinct same-type units U1…UN. Digit d is essential to every cage (every solution of Ci includes d). Every d-candidate in every cage lies within ⋃Uj.
+
+Proof: each cage must place d somewhere, all within ⋃Uj. The N units contain exactly N copies of d (one per unit by sudoku). The N cages collectively must use all N of those copies. By pigeonhole, no non-cage cell in ⋃Uj can hold d.
+
+Guards:
+  unit.distinctDigits   cage must enforce distinct digits
+  solns.every(s => s.includes(d))   d must be essential to the cage (present in every solution)
+  combinedUids.size === n   the cages' d-candidates must collectively span exactly N units
+  disjoint cage cells   cages in the combination must not overlap
+`.trim();
   readonly priority = 12;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();

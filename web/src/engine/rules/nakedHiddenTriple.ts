@@ -13,9 +13,18 @@ import { cellLabel, unitLabel } from './_labels.js';
 export class NakedHiddenTriple {
   readonly name = 'NakedHiddenTriple';
   readonly displayName = 'Naked/Hidden Triple';
-  readonly description =
-    'When three digits are confined to the same three cells in a unit, ' +
-    'those cells can only contain those three digits.';
+  readonly description = `
+Naked/Hidden Triple — pigeonhole elimination at N=3 in a unit.
+
+Naked Triple: if three cells in a unit have a candidate union of exactly {d1, d2, d3}, those three cells must collectively hold d1, d2, d3. By pigeonhole, no other cell in the unit can hold any of these three digits → eliminate {d1,d2,d3} from all other unit cells.
+
+Hidden Triple: if three digits d1, d2, d3 each appear in 2 or 3 cells within a unit, and all such cells form a set of exactly three cells C1, C2, C3, then those three cells must collectively hold d1, d2, d3. Any other candidate in C1, C2, or C3 is impossible.
+
+Guards:
+  union.size === 3   naked: union of candidates across the 3 cells must be exactly 3 digits
+  cellsWith.size === 3   hidden: the three digits must be confined to exactly 3 cells
+  ctx.unit !== null   rule requires a unit context
+`.trim();
   readonly priority = 8;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([

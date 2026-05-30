@@ -16,8 +16,18 @@ import { cellLabel } from './_labels.js';
 export class DeltaConstraint {
   readonly name = 'DeltaConstraint';
   readonly displayName = 'Delta Constraint';
-  readonly description =
-    'When two cells differ by a known constant (derived from overlapping row/column sums), restricts both cells\' candidates to valid pairs.';
+  readonly description = `
+Delta Constraint — candidate restriction from p − q = δ.
+
+Setup: cells p and q satisfy p − q = δ for a constant δ derived from overlapping row/column/cage-sum equations by the linear system.
+
+Proof: if p = x then q must equal x − δ. Any candidate x for p where (x − δ) is not a current candidate of q, or where x − δ ∉ [1,9], is infeasible for p. Symmetrically, any candidate y for q where (y + δ) is not a current candidate of p, or y + δ ∉ [1,9], is infeasible for q.
+
+Guards:
+  ctx.unit !== null   rule requires a unit context for cell iteration
+  ctx.board.linearSystem.pairsForCell   only system-reported pairs are processed
+  d >= 1 && d <= 9   computed partner value must be in digit range
+`.trim();
   readonly priority = 5;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX, UnitKind.CAGE]);

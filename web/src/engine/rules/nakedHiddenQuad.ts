@@ -13,9 +13,18 @@ import { cellLabel, unitLabel } from './_labels.js';
 export class NakedHiddenQuad {
   readonly name = 'NakedHiddenQuad';
   readonly displayName = 'Naked/Hidden Quad';
-  readonly description =
-    'When four digits are confined to the same four cells in a unit, ' +
-    'those cells can only contain those four digits.';
+  readonly description = `
+Naked/Hidden Quad — pigeonhole elimination at N=4 in a unit.
+
+Naked Quad: if four cells in a unit have a candidate union of exactly {d1, d2, d3, d4}, those four cells must collectively hold all four digits. By pigeonhole, no other cell in the unit can hold any of these four digits.
+
+Hidden Quad: if four digits each appear only in cells that form a set of exactly four cells, those four cells must collectively hold all four digits. Any other candidate in those four cells is impossible.
+
+Guards:
+  union.size === 4   naked: union of candidates across the 4 cells must be exactly 4 digits
+  cellsWith.size === 4   hidden: the four digits must be confined to exactly 4 cells
+  ctx.unit !== null   rule requires a unit context
+`.trim();
   readonly priority = 9;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([
