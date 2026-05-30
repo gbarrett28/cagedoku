@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { BoardState } from '../boardState.js';
 import { HiddenSingle } from './hiddenSingle.js';
 import type { RuleContext } from '../rule.js';
-import { Trigger } from '../types.js';
+import { Cell, Trigger } from '../types.js';
 import { makeTrivialSpec, makeTwoCellCageSpec } from '../fixtures.js';
 
 function makeCtx(bs: BoardState, rowUid: number, hintDigit: number): RuleContext {
@@ -51,6 +51,30 @@ describe('HiddenSingle', () => {
     expect(hints).toHaveLength(1);
     expect(hints[0]!.displayName).toBe('Hidden Single');
     expect(hints[0]!.eliminations).toStrictEqual(elims);
+  });
+
+  it('asHints includes peer cells holding d in highlightCells', () => {
+    // d=7 confined to (0,4) in row 0; col-4 and box-1 peers still hold 7
+    const bs = new BoardState(makeTrivialSpec());
+    const rowUid = bs.rowUnitId(0);
+    for (let c = 0; c < 9; c++) {
+      if (c !== 4) bs.cands(0, c).delete(7);
+    }
+    bs.counts[rowUid]![7] = 1;
+    const ctx = makeCtx(bs, rowUid, 7);
+    const elims = new HiddenSingle().apply(ctx).eliminations;
+    const hints = new HiddenSingle().asHints(ctx, [...elims]);
+    expect(hints).toHaveLength(1);
+    const hint = hints[0]!;
+    // Sole cell (0,4) in highlightCells
+    expect(hint.highlightCells.some(([r, c]) => r === 0 && c === 4)).toBe(true);
+    // At least one col-4 peer (rows 1–8 still have 7) in highlightCells
+    expect(hint.highlightCells.some(([r, c]: Cell) => r !== 0 && c === 4)).toBe(true);
+    // eliminations are unchanged: non-7 candidates of (0,4) only
+    expect(hint.eliminations.every(e => e.cell[0] === 0 && e.cell[1] === 4)).toBe(true);
+    expect(hint.eliminations.every(e => e.digit !== 7)).toBe(true);
+    // explanation mentions peer removal
+    expect(hint.explanation).toContain('also removes 7 from');
   });
 
   it('returns empty eliminations when digit is absent from all cells', () => {

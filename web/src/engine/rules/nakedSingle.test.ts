@@ -8,7 +8,7 @@ import { SolverEngine } from '../solverEngine.js';
 import { defaultRules } from './index.js';
 import { NakedSingle } from './nakedSingle.js';
 import type { RuleContext } from '../rule.js';
-import { Trigger } from '../types.js';
+import { Cell, Trigger } from '../types.js';
 import { KNOWN_SOLUTION, makeTrivialSpec } from '../fixtures.js';
 
 describe('NakedSingle', () => {
@@ -51,6 +51,27 @@ describe('NakedSingle', () => {
       hintDigit: null,
     };
     expect(new NakedSingle().apply(ctx).placements).toEqual([]);
+  });
+
+  it('asHints includes peer cells in highlightCells and mentions them in explanation', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    const d = 5;
+    bs.candidates[0]![0]! = new Set([d]); // naked single at (0,0)
+    // Row 0, col 0, and box 0 peers all start with d in their candidates (trivialSpec)
+    const ctx: RuleContext = {
+      unit: null,
+      cell: [0, 0] as Cell,
+      board: bs,
+      hint: Trigger.CELL_DETERMINED,
+      hintDigit: d,
+    };
+    const hints = new NakedSingle().asHints(ctx, []);
+    expect(hints).toHaveLength(1);
+    const hint = hints[0]!;
+    expect(hint.highlightCells.some(([r, c]) => r === 0 && c === 0)).toBe(true);
+    // At least one row-0 peer should appear (all row-0 peers start with d)
+    expect(hint.highlightCells.some(([r, c]) => r === 0 && c !== 0)).toBe(true);
+    expect(hint.explanation).toContain(`removes ${d} from`);
   });
 
   it('asHints produces placement hints when running hint-only against trivial spec', () => {

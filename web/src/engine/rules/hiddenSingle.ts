@@ -63,14 +63,29 @@ Guards:
     const d = ctx.hintDigit;
     const sole = eliminations[0]!.cell;
     const [r, c] = sole;
+    const seen = new Set<string>();
+    const peerCells: Cell[] = [];
+    for (const uid of ctx.board.cellUnitIds(r, c)) {
+      const unit = ctx.board.units[uid]!;
+      if (unit.kind === UnitKind.CAGE && !unit.distinctDigits) continue;
+      for (const [pr, pc] of unit.cells as Cell[]) {
+        if (pr === r && pc === c) continue;
+        const key = `${pr},${pc}`;
+        if (seen.has(key)) continue;
+        if (ctx.board.cands(pr, pc).has(d)) { peerCells.push([pr, pc] as Cell); seen.add(key); }
+      }
+    }
+    const peerNote = peerCells.length > 0
+      ? ` Placing ${d} at ${cellLabel([r, c] as Cell)} also removes ${d} from ${peerCells.length === 1 ? '1 peer' : `${peerCells.length} peers`}: ${peerCells.map(p => cellLabel(p)).join(', ')}.`
+      : '';
     const explanation = ctx.unit.kind === UnitKind.CAGE
-      ? `${d} is the only candidate for ${cellLabel([r, c] as Cell)} in this cage, and ${d} is essential to every remaining cage solution. Place ${d} there by eliminating all other candidates.`
-      : `${d} can only go in ${cellLabel([r, c] as Cell)} within ${unitLabel(ctx.unit)}. Eliminate all other candidates from that cell to place ${d}.`;
+      ? `${d} is the only candidate for ${cellLabel([r, c] as Cell)} in this cage, and ${d} is essential to every remaining cage solution. Place ${d} there by eliminating all other candidates.${peerNote}`
+      : `${d} can only go in ${cellLabel([r, c] as Cell)} within ${unitLabel(ctx.unit)}. Eliminate all other candidates from that cell to place ${d}.${peerNote}`;
     return [{
       ruleName: this.name,
       displayName: 'Hidden Single',
       explanation,
-      highlightCells: [sole],
+      highlightCells: [sole, ...peerCells],
       eliminations,
       placement: null,
       virtualCageSuggestion: null,

@@ -46,11 +46,26 @@ Guards:
     if (ctx.cell === null || ctx.hintDigit === null) return [];
     const [r, c] = ctx.cell;
     const d = ctx.hintDigit;
+    const seen = new Set<string>();
+    const peerCells: Cell[] = [];
+    for (const uid of ctx.board.cellUnitIds(r, c)) {
+      const unit = ctx.board.units[uid]!;
+      if (unit.kind === UnitKind.CAGE && !unit.distinctDigits) continue;
+      for (const [pr, pc] of unit.cells as Cell[]) {
+        if (pr === r && pc === c) continue;
+        const key = `${pr},${pc}`;
+        if (seen.has(key)) continue;
+        if (ctx.board.cands(pr, pc).has(d)) { peerCells.push([pr, pc] as Cell); seen.add(key); }
+      }
+    }
+    const peerNote = peerCells.length > 0
+      ? ` This also removes ${d} from ${peerCells.length === 1 ? '1 peer' : `${peerCells.length} peers`}: ${peerCells.map(p => cellLabel(p)).join(', ')}.`
+      : '';
     return [{
       ruleName: this.name,
       displayName: 'Naked Single',
-      explanation: `Cell ${cellLabel([r, c] as Cell)} has only one remaining candidate: ${d}. Place ${d} there.`,
-      highlightCells: [ctx.cell],
+      explanation: `Cell ${cellLabel([r, c] as Cell)} has only one remaining candidate: ${d}. Place ${d} there.${peerNote}`,
+      highlightCells: [[r, c] as Cell, ...peerCells],
       eliminations: [],
       placement: [r, c, d],
       virtualCageSuggestion: null,
