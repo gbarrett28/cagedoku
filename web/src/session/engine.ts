@@ -206,7 +206,7 @@ export function buildEngine(
           reason: 'rule-bug',
           ruleName,
           offendingEliminations: offending.map(e => ({ cell: [e.cell[0], e.cell[1]] as [number, number], digit: e.digit })),
-          goldenSolution: state.goldenSolution!,
+          goldenSolution: activeGolden,
           stalledCandidates,
           puzzleType: state.puzzleType,
           regions: spec.regions as number[][],
