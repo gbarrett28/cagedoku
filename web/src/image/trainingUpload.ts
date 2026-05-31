@@ -1,7 +1,8 @@
 import type { PuzzleSpecExport, StallStateExport, TrainingExport } from './trainingExport.js';
+import type { UserAction } from '../session/types.js';
 
 export interface RuleBugReport {
-  version: 4;
+  version: 5;
   feedbackType: 'rule-bug';
   reportedAt: string;
   appVersion: string;
@@ -12,6 +13,10 @@ export interface RuleBugReport {
   puzzleType: 'killer' | 'classic';
   regions: number[][];
   cageTotals: number[][];
+  /** Full action history — replay these in order to reproduce the board state. */
+  actions: readonly UserAction[];
+  /** Pre-filled digits for classic puzzles; null for killer. */
+  givenDigits: number[][] | null;
   userAgent: string;
 }
 
@@ -58,7 +63,7 @@ export function submitRuleBugReport(report: Omit<RuleBugReport, 'version' | 'fee
   const workerUrl = import.meta.env['VITE_TRAINING_WORKER_URL'] as string | undefined;
   if (!workerUrl) return;
   const payload: RuleBugReport = {
-    version: 4,
+    version: 5,
     feedbackType: 'rule-bug',
     reportedAt: new Date().toISOString(),
     appVersion: __BUILD_TIME__,

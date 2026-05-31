@@ -239,6 +239,82 @@ describe('SolverEngine candidate soundness assertion', () => {
   });
 });
 
+describe('SolverEngine violation reporting — _violationFired', () => {
+  function makeBadRule(name: string, cell: Cell, digit: number): SolverRule {
+    let fired = false;
+    return {
+      name, displayName: name, description: '', priority: 5,
+      triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
+      apply(): RuleResult {
+        if (fired) return emptyResult();
+        fired = true;
+        return { ...emptyResult(), eliminations: [{ cell, digit }] };
+      },
+      asHints() { return []; },
+    };
+  }
+
+  it('calls onViolation for the first violating rule and suppresses its result', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    const violations: string[] = [];
+    const gold = KNOWN_SOLUTION[0]![0]!;
+    const badRule = makeBadRule('badRule', [0, 0] as Cell, gold);
+    const engine = new SolverEngine(bs, [badRule], {
+      goldenSolution: KNOWN_SOLUTION,
+      onViolation: (name) => violations.push(name),
+    });
+    engine.solve();
+    expect(violations).toEqual(['badRule']);
+    // Elimination was suppressed — candidate still present
+    expect(bs.cands(0, 0).has(gold)).toBe(true);
+  });
+
+  it('only reports the first violating rule when two rules both violate in the same solve pass', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    const violations: string[] = [];
+    const gold0 = KNOWN_SOLUTION[0]![0]!;
+    const gold1 = KNOWN_SOLUTION[0]![1]!;
+    const badRule1 = makeBadRule('badRule1', [0, 0] as Cell, gold0);
+    const badRule2 = makeBadRule('badRule2', [0, 1] as Cell, gold1);
+    const engine = new SolverEngine(bs, [badRule1, badRule2], {
+      goldenSolution: KNOWN_SOLUTION,
+      onViolation: (name) => violations.push(name),
+    });
+    engine.solve();
+    expect(violations).toEqual(['badRule1']);
+    // Both rules' results suppressed
+    expect(bs.cands(0, 0).has(gold0)).toBe(true);
+    expect(bs.cands(0, 1).has(gold1)).toBe(true);
+  });
+
+  it('resets _violationFired between successive solve() calls', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    const violations: string[] = [];
+    let callCount = 0;
+    const badRule: SolverRule = {
+      name: 'badRule', displayName: 'badRule', description: '', priority: 5,
+      triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
+      apply(): RuleResult {
+        callCount++;
+        const gold = KNOWN_SOLUTION[0]![0]!;
+        // Fire on calls 1 and 2 (each solve() sees a fresh board clone, but here
+        // we test that the flag is reset so onViolation is called again on the 2nd solve)
+        if (callCount <= 2)
+          return { ...emptyResult(), eliminations: [{ cell: [0, 0] as Cell, digit: gold }] };
+        return emptyResult();
+      },
+      asHints() { return []; },
+    };
+    const engine = new SolverEngine(bs, [badRule], {
+      goldenSolution: KNOWN_SOLUTION,
+      onViolation: (name) => violations.push(name),
+    });
+    engine.solve();
+    engine.solve(); // second call — _violationFired should be reset
+    expect(violations).toEqual(['badRule', 'badRule']);
+  });
+});
+
 describe('SolverEngine hint mode', () => {
   it('rules in hintRules populate pendingHints rather than applying eliminations', () => {
     const spec = makeTrivialSpec();

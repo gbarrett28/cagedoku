@@ -174,6 +174,11 @@ export class SolverEngine {
   private readonly _linearSystemActive: boolean;
   private readonly _goldenSolution: readonly (readonly number[])[] | null;
   private readonly _onViolation: ((ruleName: string, offending: readonly Elimination[]) => void) | null;
+  /** True once a violation has been reported in the current solve() pass. Only the
+   *  first violating rule is reported; subsequent violations are still suppressed
+   *  but not reported (they may be cascades of the first bug). Reset at the start
+   *  of each solve() call. */
+  private _violationFired = false;
 
   constructor(
     board: BoardState,
@@ -319,6 +324,7 @@ export class SolverEngine {
     this.appliedPlacements = [];
     this.appliedVirtualCages = [];
     this.pendingHints = [];
+    this._violationFired = false;
 
     this._seedInitialState();
     for (const rule of this._triggerMap.get(Trigger.GLOBAL) ?? [])
@@ -358,8 +364,14 @@ export class SolverEngine {
             });
             if (offending.length > 0) {
               if (this._onViolation !== null) {
-                this._onViolation(item.rule.name, offending);
-                // Suppress entire rule result — do not mutate the board.
+                // Report only the first violation per solve() pass — subsequent
+                // violations may be cascades of the first bug.
+                if (!this._violationFired) {
+                  this._onViolation(item.rule.name, offending);
+                  this._violationFired = true;
+                }
+                // Always suppress the entire rule result regardless of whether
+                // the violation was reported.
                 continue;
               } else {
                 const [r, c] = offending[0]!.cell;
