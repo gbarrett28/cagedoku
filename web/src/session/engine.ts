@@ -24,7 +24,7 @@ import type { Cell, Elimination, Placement, RuleStep } from '../engine/types.js'
 import { NoSolnError } from '../solver/errors.js';
 import { dataToSpec, virtualCageKeyFromCage, solutionKey } from './specUtils.js';
 import { disableRuleForSession, isRuleDisabledForSession } from './store.js';
-import { submitRuleBugReport } from '../image/trainingUpload.js';
+import { submitPuzzleReport } from '../image/trainingUpload.js';
 import type { AutoMutation, BoardSnapshot, PuzzleState, Turn, UserAction, VirtualCage } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -202,7 +202,8 @@ export function buildEngine(
         const stalledCandidates = Array.from({ length: 9 }, (_, r) =>
           Array.from({ length: 9 }, (_, c) => [...board.cands(r, c)].sort((a, b) => a - b))
         );
-        submitRuleBugReport({
+        submitPuzzleReport({
+          reason: 'rule-bug',
           ruleName,
           offendingEliminations: offending.map(e => ({ cell: [e.cell[0], e.cell[1]] as [number, number], digit: e.digit })),
           goldenSolution: state.goldenSolution!,

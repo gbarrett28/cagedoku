@@ -10,10 +10,10 @@ import { loadCV, loadRec, loadSplitRec, setCandidatesCache, setState } from './s
 import { logAction, clearActionLog, formatActionLog, getActionLog } from './session/actionLog.js';
 import { loadSettings } from './session/settings.js';
 import { cellLabel } from './engine/rules/_labels.js';
-import { extractTrainingData, buildStallStateExport } from './image/trainingExport.js';
+import { extractTrainingData } from './image/trainingExport.js';
 import type { TrainingExport } from './image/trainingExport.js';
 import { defaultImagePipelineConfig } from './image/config.js';
-import { initiateUpload, grantConsent, uploadTrainingData, uploadStallState, initiateStallUpload } from './image/trainingUpload.js';
+import { initiateUpload, grantConsent, uploadTrainingData, submitPuzzleReport } from './image/trainingUpload.js';
 import { dataToSpec } from './session/specUtils.js';
 import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec, makeClassicGivenDigits } from './engine/fixtures.js';
 import {
@@ -1060,10 +1060,16 @@ async function handleProcess(): Promise<void> {
           pendingMergedThumbs = new Map();
           setStatus('');
           if (usedBacktracking && stalledCandidates && state.originalImageUrl !== null) {
-            const stallExport = buildStallStateExport(layoutResult.state.puzzleType, stalledCandidates);
-            initiateStallUpload(
-              stallExport,
-              () => showTrainingConsentModal(() => uploadStallState(stallExport)),
+            const stallReport = {
+              reason: 'stall' as const,
+              puzzleType: layoutResult.state.puzzleType,
+              regions: layoutResult.state.specData.regions as number[][],
+              cageTotals: layoutResult.state.specData.cageTotals as number[][],
+              stalledCandidates,
+            };
+            submitPuzzleReport(
+              stallReport,
+              () => showTrainingConsentModal(() => submitPuzzleReport(stallReport)),
             );
           }
           return;
@@ -1135,10 +1141,16 @@ async function handleProcess(): Promise<void> {
           // 81/81-digit OCR result); coverage comes from the manual-confirm path
           // tests and the underlying upload-function unit tests.
           if (classicUsedBt && classicStalled && state.originalImageUrl !== null) {
-            const classicStallExport = buildStallStateExport('classic', classicStalled);
-            initiateStallUpload(
-              classicStallExport,
-              () => showTrainingConsentModal(() => uploadStallState(classicStallExport)),
+            const classicStallReport = {
+              reason: 'stall' as const,
+              puzzleType: 'classic' as const,
+              regions: state.specData.regions as number[][],
+              cageTotals: state.specData.cageTotals as number[][],
+              stalledCandidates: classicStalled,
+            };
+            submitPuzzleReport(
+              classicStallReport,
+              () => showTrainingConsentModal(() => submitPuzzleReport(classicStallReport)),
             );
           }
           clearAndUploadTrainingData(extractTrainingData(
@@ -1246,10 +1258,16 @@ async function handleConfirm(): Promise<void> {
 
     // Upload puzzle spec when backtracking was needed (rules alone couldn't solve it).
     if (confirmUsedBacktracking && confirmStalledCandidates && currentState.originalImageUrl !== null) {
-      const stallExport = buildStallStateExport(currentState.puzzleType, confirmStalledCandidates);
-      initiateStallUpload(
-        stallExport,
-        () => showTrainingConsentModal(() => uploadStallState(stallExport)),
+      const stallReport = {
+        reason: 'stall' as const,
+        puzzleType: currentState.puzzleType,
+        regions: currentState.specData.regions as number[][],
+        cageTotals: currentState.specData.cageTotals as number[][],
+        stalledCandidates: confirmStalledCandidates,
+      };
+      submitPuzzleReport(
+        stallReport,
+        () => showTrainingConsentModal(() => submitPuzzleReport(stallReport)),
       );
     }
 
