@@ -547,3 +547,27 @@ stall fixtures to `web/stall-fixtures/`, and deletes all processed R2 objects.
 from different sessions produce only one fixture. Uses `R2_ACCESS_KEY_ID` and
 `R2_SECRET_ACCESS_KEY` GitHub Actions secrets (same as the retrain workflow).
 
+---
+
+## E2E Test Environment
+
+Playwright tests (`web/e2e/`) require a Chromium binary. The project pins
+`@playwright/test` to a specific version that matches the browser revision
+pre-installed in the Claude Code cloud execution environment.
+
+| Playwright version | Chromium revision | Binary location (cloud) |
+|---|---|---|
+| `1.56.1` (current pin) | `1194` | `/opt/pw-browsers/chromium_headless_shell-1194/` |
+
+Both `playwright.config.ts` and `playwright.dev.config.ts` set
+`PLAYWRIGHT_BROWSERS_PATH ??= '/opt/pw-browsers'` so the correct binary is
+found automatically without downloading anything. The `??=` guard is a no-op
+when the variable is already set (developer machines, CI with its own cache).
+
+**Upgrading Playwright:** when the cloud environment is updated to provide a
+newer revision, bump the pin in `web/package.json` to the matching
+`@playwright/test` version (revision→version mapping: check
+`node_modules/playwright-core/browsers.json` after install), then remove or
+update the `PLAYWRIGHT_BROWSERS_PATH` override if the path changes. Tracked
+in issue #134.
+
