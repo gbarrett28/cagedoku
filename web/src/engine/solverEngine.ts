@@ -353,6 +353,23 @@ export class SolverEngine {
       stats.elapsedNs += elapsed;
 
       if (this._hintRules.has(item.rule.name)) {
+        // Golden check for hint rules: a hint whose eliminations contradict the
+        // golden solution is unsound. Suppress it and report the violation so the
+        // rule is disabled for the session.
+        // Unlike always-apply rules, hint rules cannot cascade eliminations into
+        // other rules, so _violationFired is not set here — every bad hint rule
+        // is reported independently.
+        if (this._goldenSolution !== null && result.eliminations.length > 0) {
+          const offending = result.eliminations.filter(e => {
+            const [r, c] = e.cell;
+            const gold = this._goldenSolution![r]?.[c];
+            return gold !== undefined && e.digit === gold && this.board.cands(r, c).has(gold);
+          });
+          if (offending.length > 0) {
+            if (this._onViolation !== null) this._onViolation(item.rule.name, offending);
+            continue; // suppress the bad hint
+          }
+        }
         this.pendingHints.push(...item.rule.asHints(ctx, result.eliminations));
       } else {
         if (result.eliminations.length > 0) {
