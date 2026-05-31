@@ -18,6 +18,7 @@ import { LinearElimination } from './rules/linearElimination.js';
 import type { RuleContext, SolverRule } from './rule.js';
 import { Cell, emptyResult, Elimination, RuleResult, SolutionElimination, Trigger, UnitKind, VirtualCageAddition } from './types.js';
 import { KNOWN_SOLUTION, makeTrivialSpec } from './fixtures.js';
+import type { HintResult } from './hint.js';
 
 describe('SolverEngine init', () => {
   it('constructs without crash', () => {
@@ -332,5 +333,91 @@ describe('SolverEngine hint mode', () => {
     const engine = new SolverEngine(board, defaultRules(), { hintRules: new Set() });
     engine.solve();
     expect(engine.pendingHints).toEqual([]);
+  });
+});
+
+describe('SolverEngine golden check — hint-rule violations', () => {
+  function makeHintRule(name: string, cell: Cell, digit: number): SolverRule {
+    let fired = false;
+    return {
+      name, displayName: name, description: '', priority: 5,
+      triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
+      apply(): RuleResult {
+        if (fired) return emptyResult();
+        fired = true;
+        return { ...emptyResult(), eliminations: [{ cell, digit }] };
+      },
+      asHints(_ctx: RuleContext, eliminations: readonly Elimination[]): HintResult[] {
+        return eliminations.map(e => ({
+          ruleName: name, displayName: name, explanation: 'test hint',
+          highlightCells: [e.cell], eliminations: [e], placement: null, virtualCageSuggestion: null,
+        }));
+      },
+    };
+  }
+
+  it('suppresses the hint and calls onViolation when a hint rule eliminates a golden candidate', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    const violations: string[] = [];
+    const gold = KNOWN_SOLUTION[0]![0]!;
+    const badHintRule = makeHintRule('badHintRule', [0, 0] as Cell, gold);
+    const engine = new SolverEngine(bs, [badHintRule], {
+      goldenSolution: KNOWN_SOLUTION,
+      onViolation: (name) => violations.push(name),
+      hintRules: new Set(['badHintRule']),
+    });
+    engine.solve();
+    expect(engine.pendingHints).toHaveLength(0);
+    expect(violations).toEqual(['badHintRule']);
+  });
+
+  it('does not call onViolation and the hint appears when a hint rule produces only safe eliminations', () => {
+    const bs = new BoardState(makeTrivialSpec());
+    const violations: string[] = [];
+    const gold = KNOWN_SOLUTION[0]![0]!;
+    const safe = gold === 1 ? 2 : 1;
+    const safeHintRule = makeHintRule('safeHintRule', [0, 0] as Cell, safe);
+    const engine = new SolverEngine(bs, [safeHintRule], {
+      goldenSolution: KNOWN_SOLUTION,
+      onViolation: (name) => violations.push(name),
+      hintRules: new Set(['safeHintRule']),
+    });
+    engine.solve();
+    expect(engine.pendingHints).toHaveLength(1);
+    expect(violations).toHaveLength(0);
+  });
+
+  it('suppresses and reports hint violation even when a prior always-apply rule already set _violationFired', () => {
+    // Hint rules must always be reported so they are disabled for the session —
+    // they cannot cascade like always-apply rules, so sharing _violationFired
+    // would leave a bad hint rule enabled.
+    const bs = new BoardState(makeTrivialSpec());
+    const violations: string[] = [];
+    const gold0 = KNOWN_SOLUTION[0]![0]!;
+    const gold1 = KNOWN_SOLUTION[0]![1]!;
+
+    let alwaysFired = false;
+    const badAlwaysRule: SolverRule = {
+      name: 'badAlways', displayName: 'badAlways', description: '', priority: 1,
+      triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
+      apply(): RuleResult {
+        if (alwaysFired) return emptyResult();
+        alwaysFired = true;
+        return { ...emptyResult(), eliminations: [{ cell: [0, 0] as Cell, digit: gold0 }] };
+      },
+      asHints() { return []; },
+    };
+    const badHintRule = makeHintRule('badHintRule', [0, 1] as Cell, gold1);
+    // Priority 1 < 5 so always-apply fires first, setting _violationFired.
+    const engine = new SolverEngine(bs, [badAlwaysRule, badHintRule], {
+      goldenSolution: KNOWN_SOLUTION,
+      onViolation: (name) => violations.push(name),
+      hintRules: new Set(['badHintRule']),
+    });
+    engine.solve();
+    expect(engine.pendingHints).toHaveLength(0);
+    // Both the always-apply rule and the hint rule must be reported independently.
+    expect(violations).toContain('badAlways');
+    expect(violations).toContain('badHintRule');
   });
 });

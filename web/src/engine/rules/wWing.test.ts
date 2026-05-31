@@ -176,4 +176,68 @@ describe('WWing', () => {
     // Without the complementary-connection guard, (0,2) would have 7 incorrectly eliminated.
     expect(result.eliminations.every(e => !(e.digit === 7))).toBe(true);
   });
+
+  it('near-miss: wing A is a link endpoint — soundness guard must prevent self-sees', () => {
+    // Bug case: X=(0,0) is bivalue {5,7} and appears in the bivalue list. When
+    // used as wing A, aSeesX = sees(X,X) = true (a cell always sees itself via
+    // row equality). The complementary-connection guard (aSeesX && bSeesY) passes
+    // even though "A sees X" carries no information when A IS X.
+    //
+    // Proof failure: in "case p at X", A = X = p, so A ≠ q is false.
+    // T ≠ q is therefore not guaranteed and the elimination is unsound.
+    //
+    // p=5, q=7. Col 0 strong link: X=(0,0) bivalue {5,7}, Y=(4,0).
+    // B=(4,5) bivalue {5,7}, sees Y via row 4, does NOT see X.
+    // Only valid W-Wing pairings involve X as a wing → no valid W-Wing exists.
+    const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+    const engine = new SolverEngine(board, [], {});
+
+    // Remove 5 from every cell except X=(0,0), Y=(4,0), and B=(4,5)
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++)
+        if (!((r === 0 && c === 0) || (r === 4 && c === 0) || (r === 4 && c === 5)))
+          engine.applyEliminations([{ cell: [r, c], digit: 5 }]);
+
+    // X=(0,0) bivalue {5,7}
+    for (const d of [1,2,3,4,6,8,9]) engine.applyEliminations([{ cell: [0,0], digit: d }]);
+
+    // B=(4,5) bivalue {5,7}
+    for (const d of [1,2,3,4,6,8,9]) engine.applyEliminations([{ cell: [4,5], digit: d }]);
+
+    const colUnit = board.units.find(
+      u => u.kind === UnitKind.COL && u.cells.some(([, c]) => c === 0)
+    )!;
+    // Without the guard: W-Wing fires with A=X and eliminates 7 from cells
+    // seeing both X and B (e.g. (0,5), (4,0)=Y).
+    // With the guard: no eliminations — all pairings involve a link endpoint as wing.
+    expect(rule.apply(unitCtx(board, colUnit, 5)).eliminations).toHaveLength(0);
+  });
+
+  it('near-miss: wing B is a link endpoint — soundness guard applies symmetrically', () => {
+    // Mirror case: Y=(4,0) is bivalue {5,7} and used as wing B.
+    // bSeesY = sees(Y,Y) = true; proof fails in "case p at Y" for same reason.
+    //
+    // p=5, q=7. Col 0 strong link: X=(0,0), Y=(4,0) bivalue {5,7}.
+    // A=(0,5) bivalue {5,7}, sees X via row 0, does NOT see Y.
+    // Only valid W-Wing pairings involve Y as a wing → no valid W-Wing exists.
+    const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+    const engine = new SolverEngine(board, [], {});
+
+    // Remove 5 from every cell except X=(0,0), Y=(4,0), and A=(0,5)
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++)
+        if (!((r === 0 && c === 0) || (r === 4 && c === 0) || (r === 0 && c === 5)))
+          engine.applyEliminations([{ cell: [r, c], digit: 5 }]);
+
+    // A=(0,5) bivalue {5,7}
+    for (const d of [1,2,3,4,6,8,9]) engine.applyEliminations([{ cell: [0,5], digit: d }]);
+
+    // Y=(4,0) bivalue {5,7}
+    for (const d of [1,2,3,4,6,8,9]) engine.applyEliminations([{ cell: [4,0], digit: d }]);
+
+    const colUnit = board.units.find(
+      u => u.kind === UnitKind.COL && u.cells.some(([, c]) => c === 0)
+    )!;
+    expect(rule.apply(unitCtx(board, colUnit, 5)).eliminations).toHaveLength(0);
+  });
 });
