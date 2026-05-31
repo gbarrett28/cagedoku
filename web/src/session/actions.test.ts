@@ -47,6 +47,7 @@ import {
 } from './actions.js';
 import { findLastConsistentTurnIdx } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
+import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
 import {
   makeBoxCageSpec,
   makeTrivialSpec,
@@ -58,6 +59,10 @@ import { specToData, specToCageStates } from './specUtils.js';
 import type { PuzzleState, Turn, UserAction } from './types.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import { hasMultipleCageTotals } from '../image/validation.js';
+
+// Tests that depend on CellSolutionElimination being active are skipped when
+// the rule is disabled (e.g. after sync-rule-fixtures adds it to DISABLED_RULES).
+const itCSE = DISABLED_RULES.includes('CellSolutionElimination') ? it.skip : it;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -274,7 +279,7 @@ describe('goldenSolution cached after confirmPuzzle (#17)', () => {
 describe('computeCandidates — placement propagation (#24)', () => {
   beforeEach(() => { makeKillerConfirmed(); });
 
-  it('placed digit absent from row peers', () => {
+  itCSE('placed digit absent from row peers', () => {
     // Use the golden solution digit for (0,0) — placing the correct digit avoids
     // triggering the candidate-soundness assertion in the engine.
     const d = getState()!.goldenSolution![0]![0]!;
@@ -286,7 +291,7 @@ describe('computeCandidates — placement propagation (#24)', () => {
     expect(cands.cells[0]![8]!.candidates).not.toContain(d);
   });
 
-  it('placed digit absent from column peers', () => {
+  itCSE('placed digit absent from column peers', () => {
     const d = getState()!.goldenSolution![0]![0]!;
     enterCell(1, 1, d);
     const cands = computeCandidates();
@@ -294,7 +299,7 @@ describe('computeCandidates — placement propagation (#24)', () => {
     expect(cands.cells[4]![0]!.candidates).not.toContain(d);
   });
 
-  it('placed digit absent from box peers', () => {
+  itCSE('placed digit absent from box peers', () => {
     const d = getState()!.goldenSolution![0]![0]!;
     enterCell(1, 1, d);
     const cands = computeCandidates();
@@ -304,7 +309,7 @@ describe('computeCandidates — placement propagation (#24)', () => {
     expect(cands.cells[2]![2]!.candidates).not.toContain(d);
   });
 
-  it('two placed digits both absent from shared peer', () => {
+  itCSE('two placed digits both absent from shared peer', () => {
     const d0 = getState()!.goldenSolution![0]![0]!;
     const d1 = getState()!.goldenSolution![0]![1]!;
     enterCell(1, 1, d0);
@@ -382,7 +387,7 @@ describe('computeCandidates — CellSolutionElimination mandatory in Classic (#2
     expect(data.cells[0]![0]!.candidates).toEqual([5]);
   });
 
-  it('sparse classic: given + user-placed digits absent from box peers with rule disabled', () => {
+  itCSE('sparse classic: given + user-placed digits absent from box peers with rule disabled', () => {
     // Matches the screenshot scenario: sparse newspaper-style puzzle where only
     // a handful of digits are given, and the user has placed additional digits.
     // Box 1 (rows 0–2, cols 3–5): given r2c3=3 and r2c4=4; blank peers r0c3, r0c4.
@@ -557,7 +562,7 @@ describe('Bug #60 regression — addVirtualCage triggers auto-placements', () =>
     expect(getState()!.userGrid![0]![0]).toBe(0);
   });
 
-  it('addVirtualCage triggers applyAutoPlacements — NakedSingle places (0,0)', () => {
+  itCSE('addVirtualCage triggers applyAutoPlacements — NakedSingle places (0,0)', () => {
     // Any valid VC triggers the auto-placement pass; use two unsolved cells
     // in box-3 so the VC itself plays no role in placing (0,0).
     const gs = baseState.goldenSolution!;
