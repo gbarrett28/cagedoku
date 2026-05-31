@@ -12,6 +12,10 @@
  * Guards verified against proof:
  *   linkCells.length === 2                       strong link exists (exactly two p-cells)
  *   wing.size === 2 ∧ wing.has(p)               wings are bivalue on {p,q} (forcing is tight)
+ *   A ≠ X ∧ A ≠ Y ∧ B ≠ X ∧ B ≠ Y            wings must not coincide with link endpoints:
+ *       sees(cell, cell) = true (same row), so a link endpoint would pass the
+ *       complementary-connection guard via self-sees. The proof then fails because
+ *       "A sees X → A ≠ p" is vacuous when A IS X — if p is at X then A = p, not q.
  *   (aSeesX ∧ bSeesY) ∨ (aSeesY ∧ bSeesX)      complementary connection — soundness guard:
  *       each wing is tied to a different end; if both see the same end the far-end
  *       case leaves both wings uncommitted and the proof fails
@@ -67,6 +71,13 @@ export class WWing {
         if (qa !== qb) continue;
         if (ar === br && ac === bc) continue;
         if (sees(ar, ac, br, bc)) continue; // wings must not see each other
+        // Wings must not coincide with either link endpoint — sees(cell, cell) = true
+        // would make the complementary-connection guard pass via self-sees, but the
+        // proof requires "A sees X → A ≠ p", which is vacuous when A IS X.
+        if (ar === xr && ac === xc) continue;
+        if (ar === yr && ac === yc) continue;
+        if (br === xr && bc === xc) continue;
+        if (br === yr && bc === yc) continue;
         const q = qa;
 
         const aSeesX = sees(ar, ac, xr, xc);
@@ -110,6 +121,10 @@ export class WWing {
     for (const [[ar, ac], qa] of bivalue) {
       for (const [[br, bc], qb] of bivalue) {
         if (qa !== qb || (ar === br && ac === bc) || sees(ar, ac, br, bc)) continue;
+        if (ar === xr && ac === xc) continue;
+        if (ar === yr && ac === yc) continue;
+        if (br === xr && bc === xc) continue;
+        if (br === yr && bc === yc) continue;
         const q = qa;
         const aSeesX = sees(ar, ac, xr, xc); const aSeesY = sees(ar, ac, yr, yc);
         const bSeesX = sees(br, bc, xr, xc); const bSeesY = sees(br, bc, yr, yc);
