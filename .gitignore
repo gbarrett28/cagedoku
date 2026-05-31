@@ -16,6 +16,9 @@ build/
 
 # Tool configuration — not part of the project source
 .claude/
+!.claude/settings.json
+!.claude/hooks/
+!.claude/hooks/*
 .serena/
 .mcp.json
 no_gutter.py
