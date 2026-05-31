@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { hasConsent, grantConsent, uploadTrainingData, uploadPuzzleSpec, initiateUpload, uploadStallState, initiateStallUpload } from './trainingUpload.js';
-import type { PuzzleSpecExport, StallStateExport } from './trainingExport.js';
+import { hasConsent, grantConsent, uploadTrainingData, initiateUpload, submitPuzzleReport } from './trainingUpload.js';
 
 function clearCookies(): void {
   document.cookie.split(';').forEach(c => {
@@ -88,91 +87,6 @@ describe('uploadTrainingData', () => {
   });
 });
 
-const minimalPuzzleSpec: PuzzleSpecExport = {
-  version: 2,
-  exportedAt: '2026-05-09T00:00:00.000Z',
-  appVersion: 'test',
-  puzzleType: 'killer',
-  regions: Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, (__, c) => r * 9 + c + 1)),
-  cageTotals: Array.from({ length: 9 }, () => new Array<number>(9).fill(0)),
-  borderX: Array.from({ length: 9 }, () => new Array<boolean>(8).fill(false)),
-  borderY: Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false)),
-};
-
-describe('uploadPuzzleSpec', () => {
-  beforeEach(clearCookies);
-  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); clearCookies(); });
-
-  it('POSTs to worker when consent is granted and VITE_TRAINING_WORKER_URL is set', () => {
-    document.cookie = 'training_consent=granted';
-    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://test-worker.example.com');
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('OK'));
-
-    uploadPuzzleSpec(minimalPuzzleSpec);
-
-    expect(fetchSpy).toHaveBeenCalledOnce();
-    expect(fetchSpy).toHaveBeenCalledWith(
-      'https://test-worker.example.com',
-      expect.objectContaining({ method: 'POST' }),
-    );
-  });
-
-  it('does NOT POST when consent is not granted', () => {
-    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://test-worker.example.com');
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
-
-    uploadPuzzleSpec(minimalPuzzleSpec);
-
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it('does NOT POST when VITE_TRAINING_WORKER_URL is empty (even with consent)', () => {
-    document.cookie = 'training_consent=granted';
-    vi.stubEnv('VITE_TRAINING_WORKER_URL', '');
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
-
-    uploadPuzzleSpec(minimalPuzzleSpec);
-
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-});
-
-const minimalStallExport: StallStateExport = {
-  version: 1,
-  exportedAt: '2026-05-24T00:00:00.000Z',
-  appVersion: 'test',
-  puzzleType: 'killer',
-  stalledCandidates: Array.from({ length: 9 }, () =>
-    Array.from({ length: 9 }, () => [1, 2, 3]),
-  ),
-};
-
-describe('uploadStallState', () => {
-  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
-
-  it('POSTs stall state to worker when VITE_TRAINING_WORKER_URL is set', () => {
-    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://test-worker.example.com');
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('OK'));
-
-    uploadStallState(minimalStallExport);
-
-    expect(fetchSpy).toHaveBeenCalledOnce();
-    expect(fetchSpy).toHaveBeenCalledWith(
-      'https://test-worker.example.com',
-      expect.objectContaining({ method: 'POST' }),
-    );
-  });
-
-  it('does not call fetch when VITE_TRAINING_WORKER_URL is empty', () => {
-    vi.stubEnv('VITE_TRAINING_WORKER_URL', '');
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
-
-    uploadStallState(minimalStallExport);
-
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-});
-
 describe('initiateUpload', () => {
   beforeEach(clearCookies);
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); clearCookies(); });
@@ -202,30 +116,100 @@ describe('initiateUpload', () => {
   });
 });
 
-describe('initiateStallUpload', () => {
+const minimalStallReport = {
+  reason: 'stall' as const,
+  puzzleType: 'killer' as const,
+  regions: Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, () => r)),
+  cageTotals: Array.from({ length: 9 }, () => new Array<number>(9).fill(0)),
+  stalledCandidates: Array.from({ length: 9 }, () =>
+    Array.from({ length: 9 }, () => [1, 2, 3]),
+  ),
+};
+
+const minimalRuleBugReport = {
+  reason: 'rule-bug' as const,
+  puzzleType: 'classic' as const,
+  regions: Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, () => r)),
+  cageTotals: Array.from({ length: 9 }, () => new Array<number>(9).fill(0)),
+  stalledCandidates: Array.from({ length: 9 }, () =>
+    Array.from({ length: 9 }, () => [1, 2, 3]),
+  ),
+  ruleName: 'TestRule',
+  offendingEliminations: [{ cell: [0, 0] as [number, number], digit: 5 }],
+  goldenSolution: Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, (__, c) => ((r * 3 + Math.floor(r / 3) + c) % 9) + 1)),
+  actions: [] as [],
+  givenDigits: null,
+};
+
+describe('submitPuzzleReport', () => {
   beforeEach(clearCookies);
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); clearCookies(); });
 
-  it('uploads directly when consent is granted', () => {
+  it('POSTs a stall report when consent is granted', () => {
     document.cookie = 'training_consent=granted';
-    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://worker.example.com');
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://test-worker.example.com');
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('OK'));
-    const showModal = vi.fn();
 
-    initiateStallUpload(minimalStallExport, showModal);
+    submitPuzzleReport(minimalStallReport);
 
     expect(fetchSpy).toHaveBeenCalledOnce();
-    expect(showModal).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://test-worker.example.com',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
-  it('calls showConsentModal when no consent cookie is set', () => {
-    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://worker.example.com');
+  it('POSTs a rule-bug report when consent is granted', () => {
+    document.cookie = 'training_consent=granted';
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://test-worker.example.com');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('OK'));
+
+    submitPuzzleReport(minimalRuleBugReport);
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+  });
+
+  it('adds version/reportedAt/appVersion/userAgent envelope fields', () => {
+    document.cookie = 'training_consent=granted';
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://test-worker.example.com');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('OK'));
+
+    submitPuzzleReport(minimalStallReport);
+
+    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string) as Record<string, unknown>;
+    expect(body['version']).toBe(1);
+    expect(typeof body['reportedAt']).toBe('string');
+    expect(typeof body['appVersion']).toBe('string');
+    expect(typeof body['userAgent']).toBe('string');
+  });
+
+  it('silently drops the report when no consent and no modal provided', () => {
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://test-worker.example.com');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    submitPuzzleReport(minimalStallReport);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('calls showConsentModal when no consent and modal is provided', () => {
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://test-worker.example.com');
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const showModal = vi.fn();
 
-    initiateStallUpload(minimalStallExport, showModal);
+    submitPuzzleReport(minimalStallReport, showModal);
 
     expect(showModal).toHaveBeenCalledOnce();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not call fetch when VITE_TRAINING_WORKER_URL is empty (even with consent)', () => {
+    document.cookie = 'training_consent=granted';
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', '');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    submitPuzzleReport(minimalStallReport);
+
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

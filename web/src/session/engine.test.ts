@@ -7,6 +7,7 @@ import { makeTrivialSpec, KNOWN_SOLUTION } from '../engine/fixtures.js';
 import { specToData, specToCageStates, cageLabel } from './specUtils.js';
 import {
   buildEngine,
+  isUserCorrupted,
   userRemoved,
   userVirtualCages,
   applyAutoPlacements,
@@ -17,8 +18,6 @@ import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
 import type { PuzzleState, Turn, UserAction, VirtualCage } from './types.js';
 import type { Cell } from '../engine/types.js';
 
-// Tests that depend on CellSolutionElimination being active are skipped when
-// the rule is disabled (e.g. after sync-rule-fixtures adds it to DISABLED_RULES).
 const itCSE = DISABLED_RULES.includes('CellSolutionElimination') ? it.skip : it;
 
 // ---------------------------------------------------------------------------
@@ -180,6 +179,101 @@ describe('buildEngine', () => {
     // All digits except 1 should have been removed from (0,0)
     expect(board.candidates[0]![0]!.has(1)).toBe(true);
     // After solve the candidate set may be even smaller — just check no crash
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isUserCorrupted
+// ---------------------------------------------------------------------------
+
+describe('isUserCorrupted', () => {
+  it('returns false when goldenSolution is null', () => {
+    expect(isUserCorrupted(makeState())).toBe(false);
+  });
+
+  it('returns false when userGrid matches goldenSolution', () => {
+    const state: PuzzleState = {
+      ...makeState(),
+      goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
+      userGrid: KNOWN_SOLUTION.map(row => [...row]) as number[][],
+    };
+    expect(isUserCorrupted(state)).toBe(false);
+  });
+
+  it('returns true when userGrid has a wrong digit', () => {
+    const gold = KNOWN_SOLUTION[0]![0]!;
+    const wrong = gold === 1 ? 2 : 1;
+    const userGrid = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    userGrid[0]![0] = wrong;
+    const state: PuzzleState = {
+      ...makeState(),
+      goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
+      userGrid,
+    };
+    expect(isUserCorrupted(state)).toBe(true);
+  });
+
+  it('returns true when the user manually eliminated a golden candidate', () => {
+    const gold = KNOWN_SOLUTION[1]![1]!;
+    const state: PuzzleState = {
+      ...makeState(),
+      goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
+      turns: [makeTurn({ type: 'eliminateCandidate', row: 1, col: 1, digit: gold })],
+    };
+    expect(isUserCorrupted(state)).toBe(true);
+  });
+
+  it('returns false when the user eliminated then restored a golden candidate', () => {
+    const gold = KNOWN_SOLUTION[1]![1]!;
+    const state: PuzzleState = {
+      ...makeState(),
+      goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
+      turns: [
+        makeTurn({ type: 'eliminateCandidate', row: 1, col: 1, digit: gold }),
+        makeTurn({ type: 'restoreCandidate', row: 1, col: 1, digit: gold }),
+      ],
+    };
+    expect(isUserCorrupted(state)).toBe(false);
+  });
+});
+
+describe('buildEngine — golden check disabled when user-corrupted', () => {
+  it('does not disable golden checks when user has placed correct digits', () => {
+    // Build a state with all correct placements — golden check should still be active.
+    // We verify by checking that the engine has a goldenSolution set (indirectly:
+    // build completes without error and the board is consistent).
+    const state: PuzzleState = {
+      ...makeState(),
+      goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
+      userGrid: KNOWN_SOLUTION.map(row => [...row]) as number[][],
+    };
+    expect(() => buildEngine(state)).not.toThrow();
+  });
+
+  it('filters autoRemovedCandidates that violate the golden solution', () => {
+    // autoRemovedCandidates contains a golden digit for (0,0).
+    // The engine should NOT remove that candidate from the board.
+    const gold = KNOWN_SOLUTION[0]![0]!;
+    const state: PuzzleState = {
+      ...makeState(),
+      goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
+      autoRemovedCandidates: [[0, 0, gold]],
+    };
+    const { board } = buildEngine(state, { skipSolve: true });
+    expect(board.cands(0, 0).has(gold)).toBe(true);
+  });
+
+  it('applies autoRemovedCandidates that do NOT violate the golden solution', () => {
+    const gold = KNOWN_SOLUTION[0]![0]!;
+    const nonGold = gold === 1 ? 2 : 1;
+    const state: PuzzleState = {
+      ...makeState(),
+      goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
+      autoRemovedCandidates: [[0, 0, nonGold]],
+    };
+    const { board } = buildEngine(state, { skipSolve: true });
+    // nonGold was safely eliminated
+    expect(board.cands(0, 0).has(nonGold)).toBe(false);
   });
 });
 

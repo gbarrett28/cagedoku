@@ -24,7 +24,7 @@ import type { Cell, Elimination, Placement, RuleStep } from '../engine/types.js'
 import { NoSolnError } from '../solver/errors.js';
 import { dataToSpec, virtualCageKeyFromCage, solutionKey } from './specUtils.js';
 import { disableRuleForSession, isRuleDisabledForSession } from './store.js';
-import { submitRuleBugReport } from '../image/trainingUpload.js';
+import { submitPuzzleReport } from '../image/trainingUpload.js';
 import type { AutoMutation, BoardSnapshot, PuzzleState, Turn, UserAction, VirtualCage } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -100,6 +100,40 @@ export function userEliminations(board: BoardState, userGrid: number[][] | null)
 }
 
 // ---------------------------------------------------------------------------
+// User-corruption detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true when the user has placed a wrong digit or manually removed a
+ * golden-solution digit from the candidates — i.e. the board state has
+ * diverged from the golden solution through user action, not rule error.
+ *
+ * When true, `buildEngine` omits `goldenSolution` from the engine so rule
+ * checks are disabled; there is no point filing a rule-bug report when the
+ * board is already inconsistent.
+ */
+export function isUserCorrupted(state: PuzzleState): boolean {
+  const { goldenSolution, userGrid } = state;
+  if (goldenSolution === null) return false;
+
+  if (userGrid !== null) {
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        const placed = userGrid[r]![c]!;
+        const golden = goldenSolution[r]![c]!;
+        if (placed !== 0 && golden !== 0 && placed !== golden) return true;
+      }
+    }
+  }
+
+  for (const [r, c, d] of userRemoved(state)) {
+    if (goldenSolution[r]![c]! === d) return true;
+  }
+
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Engine construction
 // ---------------------------------------------------------------------------
 
@@ -154,21 +188,31 @@ export function buildEngine(
     ? new Set(rules.filter(r => !alwaysApplySet.has(r.name)).map(r => r.name))
     : new Set<string>();
 
-  const onViolation = state.goldenSolution !== null
+  // Golden checks are only meaningful when the user hasn't already corrupted the
+  // board. Once a wrong placement or candidate removal is present, rules might
+  // legitimately produce any elimination — disabling the checks prevents spurious
+  // bug reports that would merely reflect the user's mistake.
+  const userCorrupted = isUserCorrupted(state);
+  const activeGolden = userCorrupted ? null : state.goldenSolution;
+
+  const onViolation = activeGolden !== null
     ? (ruleName: string, offending: readonly Elimination[]) => {
         if (isRuleDisabledForSession(ruleName)) return;
         disableRuleForSession(ruleName);
         const stalledCandidates = Array.from({ length: 9 }, (_, r) =>
           Array.from({ length: 9 }, (_, c) => [...board.cands(r, c)].sort((a, b) => a - b))
         );
-        submitRuleBugReport({
+        submitPuzzleReport({
+          reason: 'rule-bug',
           ruleName,
           offendingEliminations: offending.map(e => ({ cell: [e.cell[0], e.cell[1]] as [number, number], digit: e.digit })),
-          goldenSolution: state.goldenSolution!,
+          goldenSolution: activeGolden,
           stalledCandidates,
           puzzleType: state.puzzleType,
           regions: spec.regions as number[][],
           cageTotals: spec.cageTotals as number[][],
+          actions: state.turns.map(t => t.action),
+          givenDigits: state.givenDigits,
         });
       }
     : null;
@@ -176,7 +220,7 @@ export function buildEngine(
   const engine = new SolverEngine(board, activeRules, {
     linearSystemActive: true,
     hintRules,
-    goldenSolution: state.goldenSolution,
+    goldenSolution: activeGolden,
     onViolation,
   });
 
@@ -189,10 +233,16 @@ export function buildEngine(
     const placementElims = userEliminations(board, state.userGrid);
     if (placementElims.length > 0) engine.applyEliminations(placementElims);
 
-    const removed = [
-      ...userRemoved(state),
-      ...(state.autoRemovedCandidates ?? []),
-    ];
+    // autoRemovedCandidates accumulate rule-generated eliminations across turns.
+    // If golden checks are active, filter out any stale golden violations before
+    // applying — these indicate a rule bug from a prior session that has since
+    // been suppressed; re-applying them would corrupt the board before rules run.
+    const autoRemoved = state.autoRemovedCandidates ?? [];
+    const safeAutoRemoved = activeGolden !== null
+      ? autoRemoved.filter(([r, c, d]) => activeGolden[r]?.[c] !== d)
+      : autoRemoved;
+
+    const removed = [...userRemoved(state), ...safeAutoRemoved];
     if (removed.length > 0) {
       engine.applyEliminations(
         removed.map(([r, c, d]) => ({ cell: [r, c] as Cell, digit: d })),
