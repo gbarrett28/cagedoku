@@ -105,13 +105,10 @@ async function main() {
   writeFileSync(FIXTURES_FILE, updatedFixtures);
   console.log(`Wrote ${newFixtures.length} new fixture(s) to __fixtures__/index.ts`);
 
-  // Update disabled-rules.ts: add any rules that have fixtures and are not yet disabled.
-  // Rules in NEVER_DISABLE are provably correct (violations are always false positives);
-  // they must never be excluded from deployed builds.
-  const NEVER_DISABLE = new Set(['CellSolutionElimination', 'NakedSingle', 'LinearElimination']);
+  // Update disabled-rules.ts: add any rules that have fixtures and are not yet disabled
   const rulesWithNewFixtures = [...new Set(newFixtures.map(f => f.ruleName))];
   const currentDisabled = [...disabledContent.matchAll(/'([^']+)'/g)].map(m => m[1]);
-  const toAdd = rulesWithNewFixtures.filter(r => !currentDisabled.includes(r) && !NEVER_DISABLE.has(r));
+  const toAdd = rulesWithNewFixtures.filter(r => !currentDisabled.includes(r));
   if (toAdd.length > 0) {
     const allDisabled = [...currentDisabled, ...toAdd];
     const newDisabledContent =
