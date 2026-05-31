@@ -15,7 +15,8 @@ dist/
 build/
 
 # Tool configuration — not part of the project source
-.claude/
+# Use .claude/* (not .claude/) so the !exceptions below can take effect.
+.claude/*
 !.claude/settings.json
 !.claude/hooks/
 !.claude/hooks/*
