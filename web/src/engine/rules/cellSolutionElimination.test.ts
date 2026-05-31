@@ -9,6 +9,9 @@ import type { RuleContext } from '../rule.js';
 import { Cell, Trigger, UnitKind } from '../types.js';
 import { makeTrivialSpec } from '../fixtures.js';
 import type { PuzzleSpec } from '../../solver/puzzleSpec.js';
+import { SolverEngine } from '../solverEngine.js';
+import { DISABLED_RULES } from './disabled-rules.js';
+import { ruleBugFixtures } from './__fixtures__/index.js';
 
 /** Spec where cells (2,5) and (3,6) share one 2-cell distinct cage (sum=3, digits {1,2}).
  *  They share NO row, col, or box, so any elimination between them must come from the cage. */
@@ -145,3 +148,60 @@ describe('CellSolutionElimination', () => {
     expect(hints[0]!.explanation).toContain('r1c1');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Rule-bug regression fixtures (populated by sync-rule-fixtures)
+// ---------------------------------------------------------------------------
+
+function boardFromStallCandidates(stalledCandidates: number[][][]): BoardState {
+  const spec = {
+    regions: Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, () => r + 1)),
+    cageTotals: Array.from({ length: 9 }, () =>
+      Array.from({ length: 9 }, (_, c) => (c === 0 ? 45 : 0))),
+    borderX: Array.from({ length: 9 }, () => Array.from({ length: 8 }, () => true)),
+    borderY: Array.from({ length: 8 }, () => Array.from({ length: 9 }, () => false)),
+  };
+  const board = new BoardState(spec, { includeVirtualCages: false });
+  const engine = new SolverEngine(board, []);
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const keep = new Set(stalledCandidates[r]![c]!);
+      const elims: Array<{ cell: Cell; digit: number }> = [];
+      for (let d = 1; d <= 9; d++) {
+        if (!keep.has(d) && board.cands(r, c).has(d))
+          elims.push({ cell: [r, c] as Cell, digit: d });
+      }
+      if (elims.length) engine.applyEliminations(elims);
+    }
+  }
+  return board;
+}
+
+const cseFixtures = ruleBugFixtures.filter(f => f.ruleName === 'CellSolutionElimination');
+const itCSE = DISABLED_RULES.includes('CellSolutionElimination') ? it.skip : it;
+
+if (cseFixtures.length > 0) {
+  describe('CellSolutionElimination — rule-bug regression fixtures', () => {
+    for (const fixture of cseFixtures) {
+      itCSE(`${fixture.name}: no elimination contradicts golden solution`, () => {
+        const board = boardFromStallCandidates(fixture.stalledCandidates);
+        const rule = new CellSolutionElimination();
+        for (let r = 0; r < 9; r++) {
+          for (let c = 0; c < 9; c++) {
+            if (board.cands(r, c).size !== 1) continue;
+            const d = [...board.cands(r, c)][0]!;
+            const ctx: RuleContext = {
+              board, unit: null, cell: [r, c] as Cell,
+              hint: Trigger.CELL_SOLVED, hintDigit: d,
+            };
+            const result = rule.apply(ctx);
+            for (const e of result.eliminations) {
+              const [er, ec] = e.cell;
+              expect(fixture.goldenSolution[er]![ec]).not.toBe(e.digit);
+            }
+          }
+        }
+      });
+    }
+  });
+}

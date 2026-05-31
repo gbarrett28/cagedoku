@@ -13,8 +13,13 @@ import {
   applyNextAutoPlacement,
 } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
+import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
 import type { PuzzleState, Turn, UserAction, VirtualCage } from './types.js';
 import type { Cell } from '../engine/types.js';
+
+// Tests that depend on CellSolutionElimination being active are skipped when
+// the rule is disabled (e.g. after sync-rule-fixtures adds it to DISABLED_RULES).
+const itCSE = DISABLED_RULES.includes('CellSolutionElimination') ? it.skip : it;
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -266,7 +271,7 @@ describe('applyAutoPlacements — continues even with wrong placements', () => {
     expect(result.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
   });
 
-  it('places some digit in (0,0) when the golden candidate was explicitly eliminated', () => {
+  itCSE('places some digit in (0,0) when the golden candidate was explicitly eliminated', () => {
     // User removed the correct digit from (0,0). Engine continues as if that removal
     // is intentional — some other digit gets forced via remaining constraints.
     const state = makeAlmostCompleteState();
@@ -302,7 +307,7 @@ describe('applyNextAutoPlacement — continues even with wrong placements', () =
     expect(result!.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
   });
 
-  it('places some non-golden digit in (0,0) when the golden candidate was eliminated', () => {
+  itCSE('places some non-golden digit in (0,0) when the golden candidate was eliminated', () => {
     const state = makeAlmostCompleteState();
     const gold = KNOWN_SOLUTION[0]![0]!;
     const stateWithElim: PuzzleState = {
