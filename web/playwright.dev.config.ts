@@ -11,6 +11,11 @@
 
 import { defineConfig } from '@playwright/test';
 
+// Pre-installed browser path in the Claude Code cloud environment.
+// Revision 1194 matches @playwright/test@1.56.x.
+// Remove once the environment is updated to provide revision 1217+ (see issue #134).
+process.env['PLAYWRIGHT_BROWSERS_PATH'] ??= '/opt/pw-browsers';
+
 export default defineConfig({
   testDir: './e2e',
   testMatch: 'flow.spec.ts',
