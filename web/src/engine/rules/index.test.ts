@@ -13,7 +13,6 @@ describe('defaultRules', () => {
   /** All rule names expected in the active rule set. */
   const EXPECTED_RULES = [
     'NakedSingle',
-    'CellSolutionElimination',
     'HiddenSingle',
     'LinearElimination',
     'CageCandidateFilter',

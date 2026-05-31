@@ -18,7 +18,7 @@ import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
 import type { PuzzleState, Turn, UserAction, VirtualCage } from './types.js';
 import type { Cell } from '../engine/types.js';
 
-const itCSE = DISABLED_RULES.includes('CellSolutionElimination') ? it.skip : it;
+const itNS = DISABLED_RULES.includes('NakedSingle') ? it.skip : it;
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -284,7 +284,7 @@ describe('buildEngine — golden check disabled when user-corrupted', () => {
 describe('DEFAULT_ALWAYS_APPLY_RULES', () => {
   it('contains the expected rule names', () => {
     expect(DEFAULT_ALWAYS_APPLY_RULES).toContain('CageCandidateFilter');
-    expect(DEFAULT_ALWAYS_APPLY_RULES).toContain('CellSolutionElimination');
+    expect(DEFAULT_ALWAYS_APPLY_RULES).toContain('NakedSingle');
   });
 });
 
@@ -341,11 +341,10 @@ function makeInternallyInconsistentState(): PuzzleState {
   };
 }
 
-describe('applyAutoPlacements — NakedSingle auto-apply implies CellSolutionElimination', () => {
-  it('places (0,0) when NakedSingle is always-apply but CellSolutionElimination is not', () => {
-    // Bug: NakedSingle in auto-apply yet appears as a hint because peer eliminations
-    // (CellSolutionElimination) are not running, so the cascade that determines (0,0)
-    // never fires. Fix: if NakedSingle is in alwaysApplySet, also force CSE in.
+describe('applyAutoPlacements — NakedSingle applies placement and peer eliminations', () => {
+  it('places (0,0) with NakedSingle as the only always-apply rule (no separate CSE needed)', () => {
+    // NakedSingle now handles both placement and peer elimination in one rule, so the
+    // cascade works correctly without any separate CellSolutionElimination rule.
     const spec = makeTrivialSpec();
     const userGrid = KNOWN_SOLUTION.map(row => [...row]) as number[][];
     userGrid[0]![0] = 0;
@@ -355,7 +354,7 @@ describe('applyAutoPlacements — NakedSingle auto-apply implies CellSolutionEli
       userGrid,
       virtualCages: [],
       turns: [],
-      alwaysApplyRules: ['NakedSingle'], // CSE intentionally omitted
+      alwaysApplyRules: ['NakedSingle'],
       goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
       puzzleType: 'killer',           // no classic override that would force CSE in
       givenDigits: null,
@@ -395,7 +394,7 @@ describe('applyAutoPlacements — continues even with wrong placements', () => {
     expect(result.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
   });
 
-  itCSE('places some digit in (0,0) when the golden candidate was explicitly eliminated', () => {
+  itNS('places some digit in (0,0) when the golden candidate was explicitly eliminated', () => {
     // User removed the correct digit from (0,0). Engine continues as if that removal
     // is intentional — some other digit gets forced via remaining constraints.
     const state = makeAlmostCompleteState();
@@ -431,7 +430,7 @@ describe('applyNextAutoPlacement — continues even with wrong placements', () =
     expect(result!.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
   });
 
-  itCSE('places some non-golden digit in (0,0) when the golden candidate was eliminated', () => {
+  itNS('places some non-golden digit in (0,0) when the golden candidate was eliminated', () => {
     const state = makeAlmostCompleteState();
     const gold = KNOWN_SOLUTION[0]![0]!;
     const stateWithElim: PuzzleState = {
