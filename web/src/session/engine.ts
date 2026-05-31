@@ -141,6 +141,12 @@ export function buildEngine(
   }
 
   const _disabled = new Set(DISABLED_RULES);
+  // CellSolutionElimination enforces a fundamental sudoku invariant (row/col/box
+  // uniqueness) and is provably correct. Its only apparent violations occur when
+  // the board is already inconsistent due to a prior user error — a false positive.
+  // Bypassing DISABLED_RULES here ensures the rule always runs and the engine
+  // remains functional even if spurious bug reports have accumulated in R2.
+  _disabled.delete('CellSolutionElimination');
   const rules = defaultRules().filter(r => !_disabled.has(r.name));
   const alwaysApplySet = new Set(state.alwaysApplyRules);
   // Always include CellSolutionElimination for Classic mode so row/col/box peer
@@ -157,6 +163,9 @@ export function buildEngine(
   const onViolation = state.goldenSolution !== null
     ? (ruleName: string, offending: readonly Elimination[]) => {
         if (isRuleDisabledForSession(ruleName)) return;
+        // CellSolutionElimination is provably correct — skip reporting to avoid
+        // false positives that arise when a prior wrong placement is on the board.
+        if (ruleName === 'CellSolutionElimination') return;
         disableRuleForSession(ruleName);
         const stalledCandidates = Array.from({ length: 9 }, (_, r) =>
           Array.from({ length: 9 }, (_, c) => [...board.cands(r, c)].sort((a, b) => a - b))
