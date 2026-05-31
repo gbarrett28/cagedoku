@@ -18,7 +18,7 @@ const SETTINGS_KEY = 'killer_sudoku_settings';
  */
 export const DEFAULT_ALWAYS_APPLY_RULES: readonly string[] = [
   'CageCandidateFilter',
-  'CellSolutionElimination',
+  'NakedSingle',
 ];
 
 /** Returns the current settings, falling back to defaults if none are stored. */
@@ -29,8 +29,11 @@ export function loadSettings(): CoachSettings {
     const parsed: unknown = JSON.parse(raw);
     if (!hasValidRules(parsed)) return defaultSettings();
     const obj = parsed as Record<string, unknown>;
+    let alwaysApplyRules = [...(obj['alwaysApplyRules'] as string[])];
+    // Migrate: CellSolutionElimination was merged into NakedSingle.
+    alwaysApplyRules = alwaysApplyRules.map(r => r === 'CellSolutionElimination' ? 'NakedSingle' : r);
     return {
-      alwaysApplyRules: [...(obj['alwaysApplyRules'] as string[])],
+      alwaysApplyRules,
       autoPlacementDelay: typeof obj['autoPlacementDelay'] === 'number' ? obj['autoPlacementDelay'] : 0,
       showCandidatesByDefault: typeof obj['showCandidatesByDefault'] === 'boolean' ? obj['showCandidatesByDefault'] : true,
     };

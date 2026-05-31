@@ -1,11 +1,13 @@
 /**
- * NakedSingle — R1a: cell with a single candidate receives that digit.
+ * NakedSingle — R1: cell with a single candidate receives that digit, and that
+ * digit is removed from all row/col/box/distinct-cage peers.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.naked_single` module.
+ * Combines the former NakedSingle (placement) and CellSolutionElimination (peer
+ * elimination) into a single rule so both effects are always applied together.
  *
  * Fires on CELL_DETERMINED (ctx.cell and ctx.hintDigit set by the engine when
- * a candidate set collapses to a singleton). Returns a Placement; the engine
- * records it in appliedPlacements for the UI to consume.
+ * a candidate set collapses to a singleton). Returns a Placement and all peer
+ * Eliminations in one RuleResult.
  */
 
 import type { HintResult } from '../hint.js';
@@ -24,11 +26,17 @@ export class NakedSingle {
   readonly name = 'NakedSingle';
   readonly displayName = 'Naked Single';
   readonly description = `\
-Naked Single — a cell reduced to one candidate must hold that digit.
+Naked Single — a cell reduced to one candidate must hold that digit, and that digit
+is eliminated from all peers in shared rows, columns, boxes, and distinct-digit cages.
 
-When all other digits have been eliminated from a cell, the remaining candidate is the cell's value by exhaustion: every digit from 1–9 must appear exactly once in the cell's row, column, and box, so the last possible digit is forced.
+When all other digits have been eliminated from a cell, the remaining candidate is the
+cell's value by exhaustion. Once placed, the digit cannot appear in any peer cell that
+shares a unit with it.
 
-Proof: Let C have candidates = {d}. Every other digit d' ≠ d has already been eliminated from C (by row, column, box, or cage constraints). Therefore C = d.
+Proof: Let C have candidates = {d}. Every other digit d' ≠ d has already been eliminated
+from C. Therefore C = d. For any peer P sharing a unit U with C: if d ∈ candidates(P),
+the unit constraint would require two occurrences of d in U — contradiction. Therefore d
+can be eliminated from every such P.
 
 Guards:
   ctx.cell !== null      engine sets this only when CELL_DETERMINED fires
@@ -39,15 +47,10 @@ Guards:
 
   apply(ctx: RuleContext): RuleResult {
     if (ctx.cell === null || ctx.hintDigit === null) return emptyResult();
-    return { ...emptyResult(), placements: [{ cell: ctx.cell, digit: ctx.hintDigit }] };
-  }
-
-  asHints(ctx: RuleContext, _eliminations: Elimination[]): HintResult[] {
-    if (ctx.cell === null || ctx.hintDigit === null) return [];
     const [r, c] = ctx.cell;
     const d = ctx.hintDigit;
     const seen = new Set<string>();
-    const peerElims: Elimination[] = [];
+    const elims: Elimination[] = [];
     for (const uid of ctx.board.cellUnitIds(r, c)) {
       const unit = ctx.board.units[uid]!;
       if (unit.kind === UnitKind.CAGE && !unit.distinctDigits) continue;
@@ -55,18 +58,26 @@ Guards:
         if (pr === r && pc === c) continue;
         const key = `${pr},${pc}`;
         if (seen.has(key)) continue;
-        if (ctx.board.cands(pr, pc).has(d)) { peerElims.push({ cell: [pr, pc] as Cell, digit: d }); seen.add(key); }
+        seen.add(key);
+        if (ctx.board.cands(pr, pc).has(d)) elims.push({ cell: [pr, pc] as Cell, digit: d });
       }
     }
-    const peerNote = peerElims.length > 0
-      ? ` This also removes ${d} from ${peerElims.length === 1 ? '1 peer' : `${peerElims.length} peers`}: ${peerElims.map(e => cellLabel(e.cell)).join(', ')}.`
+    return { ...emptyResult(), placements: [{ cell: ctx.cell, digit: d }], eliminations: elims };
+  }
+
+  asHints(ctx: RuleContext, eliminations: readonly Elimination[]): HintResult[] {
+    if (ctx.cell === null || ctx.hintDigit === null) return [];
+    const [r, c] = ctx.cell;
+    const d = ctx.hintDigit;
+    const peerNote = eliminations.length > 0
+      ? ` This also removes ${d} from ${eliminations.length === 1 ? '1 peer' : `${eliminations.length} peers`}: ${eliminations.map(e => cellLabel(e.cell)).join(', ')}.`
       : '';
     return [{
       ruleName: this.name,
       displayName: 'Naked Single',
       explanation: `Cell ${cellLabel([r, c] as Cell)} has only one remaining candidate: ${d}. Place ${d} there.${peerNote}`,
       highlightCells: [[r, c] as Cell],
-      eliminations: peerElims,
+      eliminations,
       placement: [r, c, d],
       virtualCageSuggestion: null,
     }];

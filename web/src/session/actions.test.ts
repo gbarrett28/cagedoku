@@ -60,9 +60,9 @@ import type { PuzzleState, Turn, UserAction } from './types.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import { hasMultipleCageTotals } from '../image/validation.js';
 
-// Tests that depend on CellSolutionElimination being active are skipped when
-// the rule is disabled (e.g. after sync-rule-fixtures adds it to DISABLED_RULES).
-const itCSE = DISABLED_RULES.includes('CellSolutionElimination') ? it.skip : it;
+// Tests that depend on NakedSingle being active are skipped when the rule is
+// disabled (e.g. after sync-rule-fixtures adds it to DISABLED_RULES).
+const itNS = DISABLED_RULES.includes('NakedSingle') ? it.skip : it;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -136,7 +136,7 @@ describe('computeCandidates — classic mode (#13)', () => {
 
   it('blank cell (0,0) has digit 5 as its only candidate', () => {
     // KNOWN_SOLUTION[0][0] = 5; makeClassicGivenDigits blanks that cell.
-    // After CellSolutionElimination propagation only digit 5 should remain.
+    // After NakedSingle peer-elimination propagation only digit 5 should remain.
     const data = computeCandidates();
     const cell = data.cells[0]![0]!;
     expect(cell.candidates).toEqual([5]);
@@ -279,7 +279,7 @@ describe('goldenSolution cached after confirmPuzzle (#17)', () => {
 describe('computeCandidates — placement propagation (#24)', () => {
   beforeEach(() => { makeKillerConfirmed(); });
 
-  itCSE('placed digit absent from row peers', () => {
+  itNS('placed digit absent from row peers', () => {
     // Use the golden solution digit for (0,0) — placing the correct digit avoids
     // triggering the candidate-soundness assertion in the engine.
     const d = getState()!.goldenSolution![0]![0]!;
@@ -291,7 +291,7 @@ describe('computeCandidates — placement propagation (#24)', () => {
     expect(cands.cells[0]![8]!.candidates).not.toContain(d);
   });
 
-  itCSE('placed digit absent from column peers', () => {
+  itNS('placed digit absent from column peers', () => {
     const d = getState()!.goldenSolution![0]![0]!;
     enterCell(1, 1, d);
     const cands = computeCandidates();
@@ -299,7 +299,7 @@ describe('computeCandidates — placement propagation (#24)', () => {
     expect(cands.cells[4]![0]!.candidates).not.toContain(d);
   });
 
-  itCSE('placed digit absent from box peers', () => {
+  itNS('placed digit absent from box peers', () => {
     const d = getState()!.goldenSolution![0]![0]!;
     enterCell(1, 1, d);
     const cands = computeCandidates();
@@ -309,7 +309,7 @@ describe('computeCandidates — placement propagation (#24)', () => {
     expect(cands.cells[2]![2]!.candidates).not.toContain(d);
   });
 
-  itCSE('two placed digits both absent from shared peer', () => {
+  itNS('two placed digits both absent from shared peer', () => {
     const d0 = getState()!.goldenSolution![0]![0]!;
     const d1 = getState()!.goldenSolution![0]![1]!;
     enterCell(1, 1, d0);
@@ -365,18 +365,18 @@ describe('cycleCandidate — candidate editing (#25)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// #24 – CellSolutionElimination mandatory for Classic mode
+// #24 – NakedSingle mandatory for Classic mode
 //
-// If the user removes CellSolutionElimination from alwaysApplyRules (via Config),
+// If the user removes NakedSingle from alwaysApplyRules (via Config),
 // Classic candidates must still be correct because buildEngine forces the rule on.
 // ---------------------------------------------------------------------------
 
-describe('computeCandidates — CellSolutionElimination mandatory in Classic (#24)', () => {
-  it('given digits eliminate peers even when CellSolutionElimination is removed from alwaysApplyRules', () => {
+describe('computeCandidates — NakedSingle mandatory in Classic (#24)', () => {
+  it('given digits eliminate peers even when NakedSingle is removed from alwaysApplyRules', () => {
     const givenDigits = makeClassicGivenDigits(); // KNOWN_SOLUTION with (0,0) blanked
     makeClassicState(givenDigits);
 
-    // Simulate user disabling CellSolutionElimination in Config.
+    // Simulate user disabling NakedSingle in Config.
     const { board } = solveCurrentSpec();
     const state = confirmPuzzle(board);
     const withoutRule: PuzzleState = { ...state, alwaysApplyRules: [] };
@@ -387,7 +387,7 @@ describe('computeCandidates — CellSolutionElimination mandatory in Classic (#2
     expect(data.cells[0]![0]!.candidates).toEqual([5]);
   });
 
-  itCSE('sparse classic: given + user-placed digits absent from box peers with rule disabled', () => {
+  itNS('sparse classic: given + user-placed digits absent from box peers with rule disabled', () => {
     // Matches the screenshot scenario: sparse newspaper-style puzzle where only
     // a handful of digits are given, and the user has placed additional digits.
     // Box 1 (rows 0–2, cols 3–5): given r2c3=3 and r2c4=4; blank peers r0c3, r0c4.
@@ -398,7 +398,7 @@ describe('computeCandidates — CellSolutionElimination mandatory in Classic (#2
     const { board } = solveCurrentSpec();
     const state = confirmPuzzle(board);
 
-    // Simulate user disabling CellSolutionElimination, then placing a digit.
+    // Simulate user disabling NakedSingle, then placing a digit.
     setState({ ...state, alwaysApplyRules: [] });
     // User places 6 at r0c5 (box 1 — same as the two givens above).
     enterCell(1, 6, 6);
@@ -562,7 +562,7 @@ describe('Bug #60 regression — addVirtualCage triggers auto-placements', () =>
     expect(getState()!.userGrid![0]![0]).toBe(0);
   });
 
-  itCSE('addVirtualCage triggers applyAutoPlacements — NakedSingle places (0,0)', () => {
+  itNS('addVirtualCage triggers applyAutoPlacements — NakedSingle places (0,0)', () => {
     // Any valid VC triggers the auto-placement pass; use two unsolved cells
     // in box-3 so the VC itself plays no role in placing (0,0).
     const gs = baseState.goldenSolution!;
@@ -733,16 +733,37 @@ describe('saveSettingsData', () => {
 
 describe('getHints — Rewind on wrong candidate elimination', () => {
   it('returns a Rewind hint when the user has eliminated the correct solution digit', () => {
-    // Classic puzzle with one blank cell (0,0). Golden solution has digit 5 at (0,0).
-    makeClassicConfirmed();
-    const gold = getState()!.goldenSolution![0]![0]!; // correct digit for (0,0)
+    // Killer puzzle with a unique golden solution. NakedSingle is intentionally
+    // excluded from alwaysApplyRules so (0,0) is NOT auto-placed after confirmPuzzle —
+    // the test needs a blank cell to eliminate the correct candidate from.
+    const spec = makeTrivialSpec();
+    const pre: PuzzleState = {
+      specData: specToData(spec),
+      cageStates: specToCageStates(spec),
+      userGrid: null,
+      virtualCages: [],
+      turns: [],
+      alwaysApplyRules: ['CageCandidateFilter'],
+      goldenSolution: null,
+      puzzleType: 'killer',
+      givenDigits: null,
+      originalImageUrl: null,
+      warpedImageUrl: null,
+      autoRemovedCandidates: [],
+    };
+    setState(pre);
+    const { board } = solveCurrentSpec();
+    confirmPuzzle(board);
+
+    const gold = getState()!.goldenSolution![0]![0]!;
     expect(gold).toBeGreaterThan(0);
+    expect(getState()!.userGrid![0]![0]).toBe(0); // must be blank (no auto-placement)
 
     // User explicitly eliminates the correct candidate at (0,0)
-    cycleCandidate(1, 1, gold); // eliminateCandidate action
+    cycleCandidate(1, 1, gold);
 
     const { hints } = getHints();
-    // The Rewind hint must appear (no other valid solution exists for this over-constrained classic puzzle)
+    // The Rewind hint must appear — no alternative valid solution for a fully-constrained puzzle
     const rewindHint = hints.find(h => h.rewindToTurnIdx !== null);
     expect(rewindHint).toBeDefined();
     expect(rewindHint!.displayName).toMatch(/[Rr]ewind/);

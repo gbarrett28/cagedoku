@@ -743,7 +743,10 @@ export function enterCell(row1b: number, col1b: number, digit: number): PuzzleSt
     ? { type: 'placeDigit', row: r, col: c, digit, source: 'user' }
     : { type: 'removeDigit', row: r, col: c };
   let updated = recordTurn(state, action);
-  updated = applyAutoPlacements(updated);
+  // Rebuild from turns so auto-placements are always derived from explicit user
+  // actions alone — mirrors undo/rewind. This keeps the round-trip invariant:
+  //   applyAutoPlacements(rebuildUserGrid(state)) === state.userGrid
+  updated = applyAutoPlacements(rebuildUserGrid(updated));
   setState(updated);
   return updated;
 }
@@ -843,7 +846,9 @@ export function cycleCandidate(row1b: number, col1b: number, digit: number): Puz
   }
 
   let updated = recordTurn(state, action);
-  updated = applyAutoPlacements(updated);
+  // Rebuild from turns so auto-placements stay consistent with explicit user
+  // actions — same invariant as enterCell and undo.
+  updated = applyAutoPlacements(rebuildUserGrid(updated));
   setState(updated);
   return updated;
 }

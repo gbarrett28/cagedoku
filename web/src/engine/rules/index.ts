@@ -2,8 +2,7 @@
  * Active rule set for the coaching engine.
  *
  * Priority order (ascending = higher priority = fired first):
- *  0  NakedSingle             — CELL_DETERMINED
- *  0  CellSolutionElimination — CELL_SOLVED
+ *  0  NakedSingle             — CELL_DETERMINED (placement + peer eliminations)
  *  1  HiddenSingle            — COUNT_HIT_ONE
  *  1  LinearElimination       — GLOBAL
  *  2  CageCandidateFilter     — SOLUTION_PRUNED
@@ -37,7 +36,6 @@ import type { SolverRule } from '../rule.js';
 import { CageCandidateFilter } from './cageCandidateFilter.js';
 import { CageConfinement } from './cageConfinement.js';
 import { CageIntersection } from './cageIntersection.js';
-import { CellSolutionElimination } from './cellSolutionElimination.js';
 import { DeltaConstraint } from './deltaConstraint.js';
 import { HiddenPair } from './hiddenPair.js';
 import { HiddenSingle } from './hiddenSingle.js';
@@ -68,7 +66,6 @@ export {
   CageCandidateFilter,
   CageConfinement,
   CageIntersection,
-  CellSolutionElimination,
   DeltaConstraint,
   HiddenPair,
   HiddenSingle,
@@ -104,7 +101,6 @@ export {
 export function defaultRules(): SolverRule[] {
   const rules: SolverRule[] = [
     new NakedSingle(),
-    new CellSolutionElimination(),
     new HiddenSingle(),
     new LinearElimination(),
     new CageCandidateFilter(),
