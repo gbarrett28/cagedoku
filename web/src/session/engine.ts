@@ -180,6 +180,11 @@ export function buildEngine(
   // Always include CellSolutionElimination for Classic mode so row/col/box peer
   // eliminations fire regardless of user settings.
   if (state.puzzleType === 'classic') alwaysApplySet.add('CellSolutionElimination');
+  // NakedSingle and CellSolutionElimination are inseparable: NakedSingle places the
+  // digit; CSE eliminates it from peers. Without CSE as always-apply, the peer
+  // eliminations that enable downstream NakedSingles never fire — the board stalls and
+  // CSE's "Naked Single" display-name hints appear for work that should auto-apply.
+  if (alwaysApplySet.has('NakedSingle')) alwaysApplySet.add('CellSolutionElimination');
 
   // Non-hint mode: only always-apply rules run.
   // Hint mode: all rules run; always-apply rules apply directly, hint-only rules go to pendingHints.

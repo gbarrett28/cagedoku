@@ -341,6 +341,36 @@ function makeInternallyInconsistentState(): PuzzleState {
   };
 }
 
+describe('applyAutoPlacements — NakedSingle auto-apply implies CellSolutionElimination', () => {
+  it('places (0,0) when NakedSingle is always-apply but CellSolutionElimination is not', () => {
+    // Bug: NakedSingle in auto-apply yet appears as a hint because peer eliminations
+    // (CellSolutionElimination) are not running, so the cascade that determines (0,0)
+    // never fires. Fix: if NakedSingle is in alwaysApplySet, also force CSE in.
+    const spec = makeTrivialSpec();
+    const userGrid = KNOWN_SOLUTION.map(row => [...row]) as number[][];
+    userGrid[0]![0] = 0;
+    const state: PuzzleState = {
+      specData: specToData(spec),
+      cageStates: specToCageStates(spec),
+      userGrid,
+      virtualCages: [],
+      turns: [],
+      alwaysApplyRules: ['NakedSingle'], // CSE intentionally omitted
+      goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
+      puzzleType: 'killer',           // no classic override that would force CSE in
+      givenDigits: null,
+      originalImageUrl: null,
+      warpedImageUrl: null,
+      autoRemovedCandidates: [],
+    };
+    const result = applyAutoPlacements(state);
+    // Without the fix: (0,0) stays 0 because CSE never eliminates peer digits and
+    // NakedSingle never fires for (0,0).  With the fix: CSE is coerced into
+    // alwaysApplySet, cascade runs, (0,0) is placed.
+    expect(result.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
+  });
+});
+
 describe('applyAutoPlacements — continues even with wrong placements', () => {
   it('places the deducible digit when board is consistent', () => {
     const state = makeAlmostCompleteState();
