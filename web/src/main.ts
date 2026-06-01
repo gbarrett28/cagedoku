@@ -15,7 +15,7 @@ import type { TrainingExport } from './image/trainingExport.js';
 import { defaultImagePipelineConfig } from './image/config.js';
 import { initiateUpload, grantConsent, uploadTrainingData, submitPuzzleReport } from './image/trainingUpload.js';
 import { dataToSpec } from './session/specUtils.js';
-import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec, makeClassicGivenDigits } from './engine/fixtures.js';
+import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec, makeClassicGivenDigits, makeClassicPartialGivenDigits } from './engine/fixtures.js';
 import {
   uploadPuzzle,
   loadSpecDirect,
@@ -2245,8 +2245,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // 'boxCage'     — 9 box cages (3×3 each, sum 45); no cell auto-placed → digit entry works.
     // 'classic'     — Classic sudoku with one blank cell; always goes to review screen.
     (window as unknown as Record<string, unknown>)['__testLoad'] = (specName?: string) => {
-      if (specName === 'classic') {
-        const { state, warpedImageUrl, warning } = loadClassicDirect(makeClassicGivenDigits());
+      if (specName === 'classic' || specName === 'classicPartial') {
+        const givenDigits = specName === 'classicPartial'
+          ? makeClassicPartialGivenDigits()
+          : makeClassicGivenDigits();
+        const { state, warpedImageUrl, warning } = loadClassicDirect(givenDigits);
         // Classic borders: all walls present; values don't affect Classic rendering/confirm.
         draftBorderX = Array.from({ length: 9 }, () => Array.from({ length: 8 }, () => true));
         draftBorderY = Array.from({ length: 8 }, () => Array.from({ length: 9 }, () => true));
