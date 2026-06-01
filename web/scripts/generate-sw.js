@@ -10,7 +10,7 @@
  * Writes: dist/sw.js                (final SW with correct asset list)
  */
 
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -36,6 +36,20 @@ const hashedAssets = Object.values(manifest)
   })
   .map(f => `./${f}`);
 
+// Stall fixture files are emitted by the Vite stallFixturesPlugin but do not
+// appear in manifest.json (emitFile assets aren't tracked there). Add them
+// explicitly so the SW re-fetches them on install, preventing stale cache
+// after a deploy that adds or updates fixtures.
+const stallFixturesDir = join(root, 'dist', 'stall-fixtures');
+let stallAssets = [];
+try {
+  stallAssets = readdirSync(stallFixturesDir)
+    .filter(f => f.endsWith('.stall.json') || f === 'index.json')
+    .map(f => `./stall-fixtures/${f}`);
+} catch {
+  // stall-fixtures dir absent in CI if focus-stall-fixtures.ts produced nothing
+}
+
 // Stable, unique list.
 const allAssets = [...new Set([
   './',
@@ -44,6 +58,7 @@ const allAssets = [...new Set([
   './num_recogniser.bin',
   './num_recogniser.json',
   ...hashedAssets,
+  ...stallAssets,
 ])];
 
 // Read the SW template.
