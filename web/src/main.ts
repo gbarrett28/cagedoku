@@ -1634,9 +1634,15 @@ function renderFixtureTable(fixtures: FixtureMeta[]): void {
           );
           if (!resp.ok) return;
           const fixture = (await resp.json()) as StallFixtureFile;
-          loadSpecDirect(fixture.spec);
-          draftBorderX = fixture.spec.borderX.map((col) => [...col]);
-          draftBorderY = fixture.spec.borderY.map((row) => [...row]);
+          if (fixture.puzzleType === 'classic' && fixture.givenDigits != null) {
+            loadClassicDirect(fixture.givenDigits);
+            draftBorderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(true));
+            draftBorderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
+          } else {
+            loadSpecDirect(fixture.spec);
+            draftBorderX = fixture.spec.borderX.map((col) => [...col]);
+            draftBorderY = fixture.spec.borderY.map((row) => [...row]);
+          }
           currentFixtureName = meta.name;
           currentFixtureUnsolvedCells = meta.unsolvedCells;
           currentFixtureTotalCandidates = meta.totalCandidates;

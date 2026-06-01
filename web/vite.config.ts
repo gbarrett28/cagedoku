@@ -64,7 +64,7 @@ const stallFixturesPlugin: Plugin = {
               const fixture = JSON.parse(
                 fs.readFileSync(path.join(fixturesDir, f), 'utf-8'),
               ) as StallFixtureFile;
-              const { spec: _spec, stalledCandidates: _sc, ...meta } = fixture;
+              const { spec: _spec, stalledCandidates: _sc, givenDigits: _gd, ...meta } = fixture;
               return meta;
             })
             .sort(
@@ -117,13 +117,13 @@ const stallFixturesPlugin: Plugin = {
       .readdirSync(fixturesDir)
       .filter((f) => f.endsWith('.stall.json'));
 
-    const metadata: Array<Omit<StallFixtureFile, 'spec' | 'stalledCandidates'>> = [];
+    const metadata: Array<Omit<StallFixtureFile, 'spec' | 'stalledCandidates' | 'givenDigits'>> = [];
 
     for (const filename of files) {
       const content = fs.readFileSync(path.join(fixturesDir, filename), 'utf-8');
       const fixture = JSON.parse(content) as StallFixtureFile;
       this.emitFile({ type: 'asset', fileName: `stall-fixtures/${filename}`, source: content });
-      const { spec: _spec, stalledCandidates: _sc, ...meta } = fixture;
+      const { spec: _spec, stalledCandidates: _sc, givenDigits: _gd, ...meta } = fixture;
       metadata.push(meta);
     }
 

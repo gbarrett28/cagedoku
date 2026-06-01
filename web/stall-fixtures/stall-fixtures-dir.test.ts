@@ -23,7 +23,10 @@ if (fixtureFiles.length === 0) {
       const fixture = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as StallFixtureFile;
 
       it(`${fixture.name} still requires backtracking`, () => {
-        const result = solve(fixture.spec);
+        const givenDigits = fixture.givenDigits
+          ? fixture.givenDigits.map(row => [...row])
+          : undefined;
+        const result = solve(fixture.spec, givenDigits);
 
         if (!result.usedBacktracking) {
           fs.unlinkSync(filePath);
