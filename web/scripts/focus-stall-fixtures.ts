@@ -156,8 +156,13 @@ for (const fixture of sourceFixtures) {
   // 1. Get the ground-truth solution via the full solver (uses backtracking).
   //    After solve(), every cell in result.board.cands(r, c) is a single-
   //    element set containing the correct digit.
+  //    For classic fixtures, pass givenDigits so the solver finds the
+  //    specific puzzle's unique solution rather than an arbitrary valid sudoku.
   // -----------------------------------------------------------------------
-  const solutionResult = solve(fixture.spec);
+  const givenDigits = fixture.givenDigits
+    ? fixture.givenDigits.map(row => [...row])
+    : undefined;
+  const solutionResult = solve(fixture.spec, givenDigits);
   const solution: number[][] = Array.from({ length: 9 }, (_, r) =>
     Array.from({ length: 9 }, (_, c) => [...solutionResult.board.cands(r, c)][0]!),
   );
@@ -220,6 +225,7 @@ for (const fixture of sourceFixtures) {
       addedAt: today,
       puzzleType: fixture.puzzleType,
       spec: fixture.spec,
+      ...(fixture.givenDigits !== undefined && { givenDigits: fixture.givenDigits }),
       stalledCandidates: sc,
       unsolvedCells,
       totalCandidates,
