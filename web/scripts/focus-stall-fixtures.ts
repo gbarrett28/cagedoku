@@ -1,16 +1,18 @@
 /**
  * Generates "focused" stall fixtures for every committed source fixture.
  *
- * For each source fixture, this script performs a BFS (breadth-first search)
+ * For each source fixture, this script performs a DFS (depth-first search)
  * over the space of stall states reachable by pinning one unsolved cell at a
  * time to its ground-truth solution value and re-running the full killer engine.
  *
- * The BFS finds "kernel" states — stall states where no single-cell pin
+ * The DFS finds "kernel" states — stall states where no single-cell pin
  * produces a new (distinct) stall state. Every pin from a kernel either solves
- * the puzzle outright or reaches an already-discovered stall state. These are
- * the most focused, hardest-to-crack positions in the fixture's solving tree.
+ * the puzzle outright or reaches an already-discovered stall state. DFS
+ * explores deep paths first, so the most focused kernels (fewest unsolved cells,
+ * most cells already determined) are discovered early.
  *
- * Kernel fixtures are written to web/stall-fixtures/ as
+ * After the full search, up to MAX_KERNELS of the most focused kernels are
+ * written to web/stall-fixtures/ as
  *   <source-name>-f<NNN>.stall.json
  * where NNN is a zero-padded index assigned after sorting kernel states by
  * (unsolvedCells ASC, totalCandidates ASC).
@@ -50,6 +52,10 @@ const today = new Date().toISOString().slice(0, 10);
  *  certainly corrupted by an OCR misread (cage totals wrong). A well-formed
  *  killer sudoku never has ≥ 50 cells unsolved after a full rule-engine pass. */
 const MAX_UNSOLVED_THRESHOLD = 50;
+
+/** Maximum focused fixtures emitted per source fixture. Only the most focused
+ *  (fewest unsolved cells) kernels are kept; deeper DFS paths surface these first. */
+const MAX_KERNELS = 20;
 
 /**
  * Returns true if any row, column, or box contains two solved cells (length === 1)
@@ -204,27 +210,32 @@ for (const fixture of sourceFixtures) {
   }
 
   // -----------------------------------------------------------------------
-  // 3. BFS over stall states to find kernel states.
+  // 3. DFS over stall states to find kernel states.
   //
   //    A kernel state is a stall from which no single-cell pin (to the
   //    ground-truth digit) produces a new, distinct stall state. Every pin
   //    from a kernel either solves the puzzle or reaches a state already
-  //    encountered in the BFS.
+  //    encountered in the search.
   //
-  //    frontier — states yet to be processed.
-  //    seen     — JSON keys of all states ever added to the frontier.
-  //    kernels  — collected kernel states to write as focused fixtures.
+  //    DFS (stack / pop) explores deep paths first so the most focused
+  //    kernels (fewest unsolved cells) tend to be found early. After the
+  //    full search the deepest MAX_KERNELS are kept.
+  //
+  //    stack   — states yet to be processed (LIFO).
+  //    seen    — JSON keys of all states ever pushed onto the stack.
+  //    kernels — collected kernel states; trimmed to MAX_KERNELS before writing.
   // -----------------------------------------------------------------------
+  type StackEntry = { state: number[][][]; depth: number };
   const seen = new Set<string>();
-  const frontier: number[][][][] = [];
-  const kernels: Array<{ sc: number[][][]; unsolvedCells: number; totalCandidates: number }> = [];
+  const stack: StackEntry[] = [];
+  const kernels: Array<{ sc: number[][][]; unsolvedCells: number; totalCandidates: number; depth: number }> = [];
 
   const sourceKey = JSON.stringify(fixture.stalledCandidates);
   seen.add(sourceKey);
-  frontier.push(fixture.stalledCandidates.map(row => row.map(cell => [...cell])));
+  stack.push({ state: fixture.stalledCandidates.map(row => row.map(cell => [...cell])), depth: 0 });
 
-  while (frontier.length > 0) {
-    const current = frontier.shift()!;
+  while (stack.length > 0) {
+    const { state: current, depth } = stack.pop()!; // DFS: LIFO
     let isKernel = true; // will be cleared if any pin produces a new stall
 
     for (let r = 0; r < 9; r++) {
@@ -243,21 +254,21 @@ for (const fixture of sourceFixtures) {
 
         const sc = result.stalledCandidates!;
         const key = JSON.stringify(sc);
-        if (seen.has(key)) continue; // already in the BFS graph
+        if (seen.has(key)) continue; // already in the DFS graph
 
         seen.add(key);
-        frontier.push(sc.map(row => row.map(cell => [...cell])));
+        stack.push({ state: sc.map(row => row.map(cell => [...cell])), depth: depth + 1 });
       }
     }
 
-    // Kernel states are emitted as focused fixtures, excluding the source itself.
+    // Kernel states are collected for output, excluding the source itself.
     if (isKernel && JSON.stringify(current) !== sourceKey) {
       const unsolvedCells = current.flat().filter(cell => cell.length > 1).length;
       const totalCandidates = current
         .flat()
         .filter(cell => cell.length > 1)
         .reduce((sum, cell) => sum + cell.length, 0);
-      kernels.push({ sc: current, unsolvedCells, totalCandidates });
+      kernels.push({ sc: current, unsolvedCells, totalCandidates, depth });
     }
   }
 
@@ -267,14 +278,17 @@ for (const fixture of sourceFixtures) {
   }
 
   // -----------------------------------------------------------------------
-  // 4. Sort by (unsolvedCells ASC, totalCandidates ASC) for stable indices.
+  // 4. Sort by (unsolvedCells ASC, totalCandidates ASC) and keep the deepest
+  //    MAX_KERNELS. The sort puts the most focused (fewest unsolved cells)
+  //    kernels first; trim to MAX_KERNELS so the fixture panel stays concise.
   // -----------------------------------------------------------------------
   kernels.sort((a, b) => a.unsolvedCells - b.unsolvedCells || a.totalCandidates - b.totalCandidates);
+  const kept = kernels.slice(0, MAX_KERNELS);
 
   // -----------------------------------------------------------------------
   // 5. Write focused fixtures to web/stall-fixtures/.
   // -----------------------------------------------------------------------
-  kernels.forEach(({ sc, unsolvedCells, totalCandidates }, idx) => {
+  kept.forEach(({ sc, unsolvedCells, totalCandidates }, idx) => {
     const idxStr = String(idx).padStart(3, '0');
     const name = `${fixture.name}-f${idxStr}`;
     const focusedFixture: StallFixtureFile = {
@@ -293,8 +307,9 @@ for (const fixture of sourceFixtures) {
     fs.writeFileSync(outPath, JSON.stringify(focusedFixture, null, 2));
   });
 
-  console.log(`${kernels.length} kernel state(s) (${seen.size - 1} BFS nodes explored)`);
-  totalWritten += kernels.length;
+  const trimMsg = kernels.length > MAX_KERNELS ? `, ${kernels.length - kept.length} trimmed` : '';
+  console.log(`${kept.length} kernel(s) written (${seen.size - 1} DFS nodes explored${trimMsg})`);
+  totalWritten += kept.length;
 }
 
 console.log(`\nDone. ${totalWritten} focused fixtures written across ${sourceFixtures.length} source fixtures.`);
