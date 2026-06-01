@@ -29,6 +29,12 @@ export interface StallFixtureFile {
   /** Full puzzle spec — passed directly to solve(). */
   spec: PuzzleSpec;
   /**
+   * For classic puzzles only: the 9×9 given-digits grid (0 = blank cell).
+   * Passed as the second argument to solve() so the stall test is meaningful.
+   * Absent for killer puzzles (all constraints are encoded in spec).
+   */
+  givenDigits?: readonly (readonly number[])[];
+  /**
    * 9×9 candidate grid at the moment the rule engine stalled, before
    * backtracking. Each cell is a sorted array of remaining candidates;
    * single-element = already solved.
