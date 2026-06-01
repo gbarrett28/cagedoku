@@ -114,6 +114,25 @@ export function makeClassicGivenDigits(): number[][] {
   return grid;
 }
 
+/**
+ * Classic given-digits grid with rows 0–2 entirely blank.
+ *
+ * With 27 blank cells spread across three rows, no cell is immediately
+ * deterministic by naked-single logic (each blank cell has ≥3 candidates
+ * from col constraints alone, with no row or box candidates to narrow
+ * further). applyAutoPlacements stalls immediately, leaving the grid
+ * partially filled — used by UI tests that need an unsolved playing state.
+ */
+export function makeClassicPartialGivenDigits(): number[][] {
+  const grid = KNOWN_SOLUTION.map(row => [...row]);
+  for (let c = 0; c < 9; c++) {
+    grid[0]![c] = 0;
+    grid[1]![c] = 0;
+    grid[2]![c] = 0;
+  }
+  return grid;
+}
+
 // ---------------------------------------------------------------------------
 // Lower-level helpers (mirrors Python's make_trivial_cage_totals etc.)
 // ---------------------------------------------------------------------------

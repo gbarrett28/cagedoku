@@ -110,7 +110,9 @@ test('undo after digit entry re-disables undo button', async ({ page }) => {
 });
 
 test('mode-toggle pill visible and toggles active state', async ({ page }) => {
-  await loadAndConfirm(page);
+  // Use box-cage spec: no cells are auto-placed after confirm, so the puzzle
+  // is not immediately solved and mode-toggle remains enabled.
+  await loadBoxCageAndConfirm(page);
   const pill = page.locator('#mode-toggle');
   await expect(pill).toBeVisible();
   await expect(pill).not.toBeDisabled();
@@ -169,6 +171,18 @@ async function loadClassicPuzzle(page: Page): Promise<void> {
 /** Load Classic puzzle then confirm to reach playing mode. */
 async function loadClassicAndConfirm(page: Page): Promise<void> {
   await loadClassicPuzzle(page);
+  await page.locator('#confirm-btn').click();
+  await expect(page.locator('#playing-actions')).toBeVisible({ timeout: 5_000 });
+}
+
+/**
+ * Load the partial classic spec (rows 0–2 blank) then confirm.
+ * No cells are auto-placed because naked-single stalls with ≥3 candidates
+ * per blank cell, so the puzzle is not immediately solved and action buttons
+ * remain enabled.
+ */
+async function loadClassicPartialAndConfirm(page: Page): Promise<void> {
+  await loadSpec(page, 'classicPartial');
   await page.locator('#confirm-btn').click();
   await expect(page.locator('#playing-actions')).toBeVisible({ timeout: 5_000 });
 }
@@ -372,7 +386,9 @@ test('hints button opens hints-list-modal dialog after confirm', async ({ page }
 // ---------------------------------------------------------------------------
 
 test('classic playing: hints and mode-toggle enabled after confirm', async ({ page }) => {
-  await loadClassicAndConfirm(page);
+  // Use the partial fixture (rows 0–2 blank) so the puzzle is not immediately
+  // auto-solved; buttons remain enabled until the user solves it.
+  await loadClassicPartialAndConfirm(page);
   // These are valid for Classic — candidates use row/col/box rules, hints work without cages.
   await expect(page.locator('#hints-btn')).not.toBeDisabled();
   await expect(page.locator('#mode-toggle')).not.toBeDisabled();
