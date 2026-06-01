@@ -1,16 +1,18 @@
 /**
  * Generates "focused" stall fixtures for every committed source fixture.
  *
- * For each source fixture (processed simplest-first by unsolvedCells ASC,
- * totalCandidates ASC), this script does a single pass: it reveals each
- * unsolved cell one at a time (pinning it to the ground-truth solution value),
- * re-runs the full killer engine via solveFromCandidates, and collects every
- * distinct stall state that emerges. One pass only — no recursion into the
- * discovered focused states.
+ * For each source fixture, this script performs a BFS (breadth-first search)
+ * over the space of stall states reachable by pinning one unsolved cell at a
+ * time to its ground-truth solution value and re-running the full killer engine.
  *
- * Focused fixtures are written to web/stall-fixtures/ as
+ * The BFS finds "kernel" states — stall states where no single-cell pin
+ * produces a new (distinct) stall state. Every pin from a kernel either solves
+ * the puzzle outright or reaches an already-discovered stall state. These are
+ * the most focused, hardest-to-crack positions in the fixture's solving tree.
+ *
+ * Kernel fixtures are written to web/stall-fixtures/ as
  *   <source-name>-f<NNN>.stall.json
- * where NNN is a zero-padded index assigned after sorting focused states by
+ * where NNN is a zero-padded index assigned after sorting kernel states by
  * (unsolvedCells ASC, totalCandidates ASC).
  *
  * Source fixtures are skipped when:
@@ -24,6 +26,9 @@
  *    This indicates an OCR error where a digit was read from an adjacent cage and placed
  *    inside an existing cage's region. The cage rules operate on structurally invalid
  *    totals, so any stall state is not a genuine rule gap.
+ *  - the puzzle has multiple valid solutions. Classic puzzles with OCR-dropped given
+ *    digits may be under-constrained; excluding any one solution digit from an unsolved
+ *    cell still leads to a fully-solved board, meaning a second solution exists.
  *
  * Focused files are gitignored and regenerated on every CI deploy so they
  * always reflect the current rule engine.
@@ -168,54 +173,108 @@ for (const fixture of sourceFixtures) {
   );
 
   // -----------------------------------------------------------------------
-  // 2. Single pass: pin each unsolved cell to its solution value, re-run the
-  //    engine, and collect any new stall states that emerge.
+  // 2. Multi-solution check: exclude the ground-truth digit from each unsolved
+  //    cell in turn. If any exclusion still yields a fully-solved board there
+  //    is a second valid solution — the puzzle is ambiguous (likely OCR-dropped
+  //    given digits) and must be skipped.
+  // -----------------------------------------------------------------------
+  let isMultiSolution = false;
+  for (let r = 0; r < 9 && !isMultiSolution; r++) {
+    for (let c = 0; c < 9 && !isMultiSolution; c++) {
+      if (fixture.stalledCandidates[r]![c]!.length <= 1) continue;
+      const solDigit = solution[r]![c]!;
+      const altCellCands = fixture.stalledCandidates[r]![c]!.filter(d => d !== solDigit);
+      if (altCellCands.length === 0) continue; // only candidate was the solution digit
+      const altCands = fixture.stalledCandidates.map(row => row.map(cell => [...cell]));
+      altCands[r]![c] = altCellCands;
+      const altResult = solveFromCandidates(fixture.spec, altCands);
+      // Board is fully solved if every cell has exactly one candidate remaining.
+      let allSolved = true;
+      for (let rr = 0; rr < 9 && allSolved; rr++) {
+        for (let cc = 0; cc < 9 && allSolved; cc++) {
+          if (altResult.board.cands(rr, cc).size !== 1) allSolved = false;
+        }
+      }
+      if (allSolved) isMultiSolution = true;
+    }
+  }
+  if (isMultiSolution) {
+    console.log(`SKIPPED (multiple solutions — likely OCR-dropped given digits)`);
+    continue;
+  }
+
+  // -----------------------------------------------------------------------
+  // 3. BFS over stall states to find kernel states.
   //
-  //    seen    — canonical JSON keys for deduplication across pins.
-  //    focused — collected stall states to write.
+  //    A kernel state is a stall from which no single-cell pin (to the
+  //    ground-truth digit) produces a new, distinct stall state. Every pin
+  //    from a kernel either solves the puzzle or reaches a state already
+  //    encountered in the BFS.
+  //
+  //    frontier — states yet to be processed.
+  //    seen     — JSON keys of all states ever added to the frontier.
+  //    kernels  — collected kernel states to write as focused fixtures.
   // -----------------------------------------------------------------------
   const seen = new Set<string>();
-  const focused: Array<{ sc: number[][][]; unsolvedCells: number; totalCandidates: number }> = [];
+  const frontier: number[][][][] = [];
+  const kernels: Array<{ sc: number[][][]; unsolvedCells: number; totalCandidates: number }> = [];
 
-  for (let r = 0; r < 9; r++) {
-    for (let c = 0; c < 9; c++) {
-      if ((fixture.stalledCandidates[r]![c]!).length <= 1) continue; // already solved
+  const sourceKey = JSON.stringify(fixture.stalledCandidates);
+  seen.add(sourceKey);
+  frontier.push(fixture.stalledCandidates.map(row => row.map(cell => [...cell])));
 
-      // Pin this cell to its ground-truth digit.
-      const pinned: number[][][] = fixture.stalledCandidates.map(row => row.map(cell => [...cell]));
-      pinned[r]![c] = [solution[r]![c]!];
+  while (frontier.length > 0) {
+    const current = frontier.shift()!;
+    let isKernel = true; // will be cleared if any pin produces a new stall
 
-      const result = solveFromCandidates(fixture.spec, pinned);
-      if (!result.usedBacktracking) continue; // pin solved the puzzle
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        if (current[r]![c]!.length <= 1) continue; // already solved cell
 
-      const sc = result.stalledCandidates!;
-      const key = JSON.stringify(sc);
-      if (seen.has(key)) continue;
+        // Pin this cell to its ground-truth digit.
+        const pinned: number[][][] = current.map(row => row.map(cell => [...cell]));
+        pinned[r]![c] = [solution[r]![c]!];
 
-      seen.add(key);
-      const unsolvedCells = sc.flat().filter(cell => cell.length > 1).length;
-      const totalCandidates = sc
+        const result = solveFromCandidates(fixture.spec, pinned);
+        if (!result.usedBacktracking) continue; // pin solved the puzzle — no child stall
+
+        // This pin produced a stall — current is not a kernel.
+        isKernel = false;
+
+        const sc = result.stalledCandidates!;
+        const key = JSON.stringify(sc);
+        if (seen.has(key)) continue; // already in the BFS graph
+
+        seen.add(key);
+        frontier.push(sc.map(row => row.map(cell => [...cell])));
+      }
+    }
+
+    // Kernel states are emitted as focused fixtures, excluding the source itself.
+    if (isKernel && JSON.stringify(current) !== sourceKey) {
+      const unsolvedCells = current.flat().filter(cell => cell.length > 1).length;
+      const totalCandidates = current
         .flat()
         .filter(cell => cell.length > 1)
         .reduce((sum, cell) => sum + cell.length, 0);
-      focused.push({ sc, unsolvedCells, totalCandidates });
+      kernels.push({ sc: current, unsolvedCells, totalCandidates });
     }
   }
 
-  if (focused.length === 0) {
+  if (kernels.length === 0) {
     console.log('none');
     continue;
   }
 
   // -----------------------------------------------------------------------
-  // 3. Sort by (unsolvedCells ASC, totalCandidates ASC) for stable indices.
+  // 4. Sort by (unsolvedCells ASC, totalCandidates ASC) for stable indices.
   // -----------------------------------------------------------------------
-  focused.sort((a, b) => a.unsolvedCells - b.unsolvedCells || a.totalCandidates - b.totalCandidates);
+  kernels.sort((a, b) => a.unsolvedCells - b.unsolvedCells || a.totalCandidates - b.totalCandidates);
 
   // -----------------------------------------------------------------------
-  // 4. Write focused fixtures to web/stall-fixtures/.
+  // 5. Write focused fixtures to web/stall-fixtures/.
   // -----------------------------------------------------------------------
-  focused.forEach(({ sc, unsolvedCells, totalCandidates }, idx) => {
+  kernels.forEach(({ sc, unsolvedCells, totalCandidates }, idx) => {
     const idxStr = String(idx).padStart(3, '0');
     const name = `${fixture.name}-f${idxStr}`;
     const focusedFixture: StallFixtureFile = {
@@ -234,8 +293,8 @@ for (const fixture of sourceFixtures) {
     fs.writeFileSync(outPath, JSON.stringify(focusedFixture, null, 2));
   });
 
-  console.log(`${focused.length} focused state(s)`);
-  totalWritten += focused.length;
+  console.log(`${kernels.length} kernel state(s) (${seen.size - 1} BFS nodes explored)`);
+  totalWritten += kernels.length;
 }
 
 console.log(`\nDone. ${totalWritten} focused fixtures written across ${sourceFixtures.length} source fixtures.`);
