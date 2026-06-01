@@ -28,9 +28,12 @@
  *    This indicates an OCR error where a digit was read from an adjacent cage and placed
  *    inside an existing cage's region. The cage rules operate on structurally invalid
  *    totals, so any stall state is not a genuine rule gap.
- *  - the puzzle has multiple valid solutions. Classic puzzles with OCR-dropped given
- *    digits may be under-constrained; excluding any one solution digit from an unsolved
- *    cell still leads to a fully-solved board, meaning a second solution exists.
+ *
+ * Each kernel is individually checked for ambiguity: if excluding the ground-truth
+ * digit from any of its unsolved cells still yields a fully-solved board, a second
+ * valid solution exists in that sub-position and the kernel is discarded. Checking
+ * at kernel level (1–5 unsolved cells) is far cheaper than checking the source
+ * directly, and kernels derived by pinning the ambiguous cells may pass cleanly.
  *
  * Focused files are gitignored and regenerated on every CI deploy so they
  * always reflect the current rule engine.
@@ -179,108 +182,101 @@ for (const fixture of sourceFixtures) {
   );
 
   // -----------------------------------------------------------------------
-  // 2. Multi-solution check: exclude the ground-truth digit from each unsolved
-  //    cell in turn. If any exclusion still yields a fully-solved board there
-  //    is a second valid solution — the puzzle is ambiguous (likely OCR-dropped
-  //    given digits) and must be skipped.
-  // -----------------------------------------------------------------------
-  let isMultiSolution = false;
-  for (let r = 0; r < 9 && !isMultiSolution; r++) {
-    for (let c = 0; c < 9 && !isMultiSolution; c++) {
-      if (fixture.stalledCandidates[r]![c]!.length <= 1) continue;
-      const solDigit = solution[r]![c]!;
-      const altCellCands = fixture.stalledCandidates[r]![c]!.filter(d => d !== solDigit);
-      if (altCellCands.length === 0) continue; // only candidate was the solution digit
-      const altCands = fixture.stalledCandidates.map(row => row.map(cell => [...cell]));
-      altCands[r]![c] = altCellCands;
-      const altResult = solveFromCandidates(fixture.spec, altCands);
-      // Board is fully solved if every cell has exactly one candidate remaining.
-      let allSolved = true;
-      for (let rr = 0; rr < 9 && allSolved; rr++) {
-        for (let cc = 0; cc < 9 && allSolved; cc++) {
-          if (altResult.board.cands(rr, cc).size !== 1) allSolved = false;
-        }
-      }
-      if (allSolved) isMultiSolution = true;
-    }
-  }
-  if (isMultiSolution) {
-    console.log(`SKIPPED (multiple solutions — likely OCR-dropped given digits)`);
-    continue;
-  }
-
-  // -----------------------------------------------------------------------
-  // 3. DFS over stall states to find kernel states.
+  // 2. DFS over stall states to find kernel states.
   //
   //    A kernel state is a stall from which no single-cell pin (to the
-  //    ground-truth digit) produces a new, distinct stall state. Every pin
-  //    from a kernel either solves the puzzle or reaches a state already
-  //    encountered in the search.
+  //    ground-truth digit) produces a new, distinct stall state.
   //
   //    DFS (stack / pop) explores deep paths first so the most focused
-  //    kernels (fewest unsolved cells) tend to be found early. After the
-  //    full search the deepest MAX_KERNELS are kept.
+  //    kernels (fewest unsolved cells) tend to be found early. The loop
+  //    exits as soon as MAX_KERNELS unambiguous kernels are collected.
+  //
+  //    Ambiguity check (per kernel, not per source):
+  //    Exclude the solution digit from each unsolved cell of the kernel.
+  //    If any exclusion yields a fully-solved board, a second valid solution
+  //    exists for the remaining cells — that kernel is discarded. Checking
+  //    at kernel level is cheap because kernels have very few unsolved cells
+  //    (typically 1–5 vs. 33 for the source). Kernels derived by pinning
+  //    the ambiguous cells are checked independently and may pass cleanly.
   //
   //    stack   — states yet to be processed (LIFO).
   //    seen    — JSON keys of all states ever pushed onto the stack.
-  //    kernels — collected kernel states; trimmed to MAX_KERNELS before writing.
+  //    kernels — collected unambiguous kernel states; written as fixtures.
   // -----------------------------------------------------------------------
   type StackEntry = { state: number[][][]; depth: number };
   const seen = new Set<string>();
   const stack: StackEntry[] = [];
   const kernels: Array<{ sc: number[][][]; unsolvedCells: number; totalCandidates: number; depth: number }> = [];
+  let ambiguousCount = 0;
 
   const sourceKey = JSON.stringify(fixture.stalledCandidates);
   seen.add(sourceKey);
   stack.push({ state: fixture.stalledCandidates.map(row => row.map(cell => [...cell])), depth: 0 });
 
-  while (stack.length > 0) {
+  while (stack.length > 0 && kernels.length < MAX_KERNELS) {
     const { state: current, depth } = stack.pop()!; // DFS: LIFO
-    let isKernel = true; // will be cleared if any pin produces a new stall
+    let isKernel = true;
 
     for (let r = 0; r < 9; r++) {
       for (let c = 0; c < 9; c++) {
-        if (current[r]![c]!.length <= 1) continue; // already solved cell
+        if (current[r]![c]!.length <= 1) continue;
 
-        // Pin this cell to its ground-truth digit.
         const pinned: number[][][] = current.map(row => row.map(cell => [...cell]));
         pinned[r]![c] = [solution[r]![c]!];
 
         const result = solveFromCandidates(fixture.spec, pinned);
-        if (!result.usedBacktracking) continue; // pin solved the puzzle — no child stall
+        if (!result.usedBacktracking) continue; // pin solved the puzzle
 
-        // This pin produced a stall — current is not a kernel.
         isKernel = false;
 
         const sc = result.stalledCandidates!;
         const key = JSON.stringify(sc);
-        if (seen.has(key)) continue; // already in the DFS graph
+        if (seen.has(key)) continue;
 
         seen.add(key);
         stack.push({ state: sc.map(row => row.map(cell => [...cell])), depth: depth + 1 });
       }
     }
 
-    // Kernel states are collected for output, excluding the source itself.
-    if (isKernel && JSON.stringify(current) !== sourceKey) {
-      const unsolvedCells = current.flat().filter(cell => cell.length > 1).length;
-      const totalCandidates = current
-        .flat()
-        .filter(cell => cell.length > 1)
-        .reduce((sum, cell) => sum + cell.length, 0);
-      kernels.push({ sc: current, unsolvedCells, totalCandidates, depth });
+    if (!isKernel || JSON.stringify(current) === sourceKey) continue;
+
+    // Per-kernel ambiguity check: exclude the solution digit from each
+    // unsolved cell. If any exclusion still yields a fully-solved board,
+    // a second valid solution exists in these remaining cells — discard.
+    let ambiguous = false;
+    for (let r = 0; r < 9 && !ambiguous; r++) {
+      for (let c = 0; c < 9 && !ambiguous; c++) {
+        if (current[r]![c]!.length <= 1) continue;
+        const altCands = current[r]![c]!.filter(d => d !== solution[r]![c]!);
+        if (altCands.length === 0) continue;
+        const testGrid = current.map(row => row.map(cell => [...cell]));
+        testGrid[r]![c] = altCands;
+        const altResult = solveFromCandidates(fixture.spec, testGrid);
+        let allSolved = true;
+        for (let rr = 0; rr < 9 && allSolved; rr++)
+          for (let cc = 0; cc < 9 && allSolved; cc++)
+            if (altResult.board.cands(rr, cc).size !== 1) allSolved = false;
+        if (allSolved) ambiguous = true;
+      }
     }
+    if (ambiguous) { ambiguousCount++; continue; }
+
+    const unsolvedCells = current.flat().filter(cell => cell.length > 1).length;
+    const totalCandidates = current
+      .flat()
+      .filter(cell => cell.length > 1)
+      .reduce((sum, cell) => sum + cell.length, 0);
+    kernels.push({ sc: current, unsolvedCells, totalCandidates, depth });
   }
 
   if (kernels.length === 0) {
-    console.log('none');
+    const ambigMsg = ambiguousCount > 0 ? ` (${ambiguousCount} kernels discarded as ambiguous)` : '';
+    console.log(`none${ambigMsg} — ${seen.size - 1} DFS nodes explored`);
     continue;
   }
 
   // -----------------------------------------------------------------------
-  // 4. Sort by (unsolvedCells ASC, totalCandidates ASC) and keep the deepest
-  //    MAX_KERNELS. The sort puts the most focused (fewest unsolved cells)
-  //    kernels first; trim to MAX_KERNELS so the fixture panel stays concise.
+  // 3. Sort by (unsolvedCells ASC, totalCandidates ASC) for stable indices.
   // -----------------------------------------------------------------------
   kernels.sort((a, b) => a.unsolvedCells - b.unsolvedCells || a.totalCandidates - b.totalCandidates);
   const kept = kernels.slice(0, MAX_KERNELS);
@@ -308,7 +304,8 @@ for (const fixture of sourceFixtures) {
   });
 
   const trimMsg = kernels.length > MAX_KERNELS ? `, ${kernels.length - kept.length} trimmed` : '';
-  console.log(`${kept.length} kernel(s) written (${seen.size - 1} DFS nodes explored${trimMsg})`);
+  const ambigMsg = ambiguousCount > 0 ? `, ${ambiguousCount} ambiguous` : '';
+  console.log(`${kept.length} kernel(s) written (${seen.size - 1} DFS nodes explored${ambigMsg}${trimMsg})`);
   totalWritten += kept.length;
 }
 
