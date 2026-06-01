@@ -215,10 +215,9 @@ function boardFromStallCandidates(stalledCandidates: number[][][]): BoardState {
   return board;
 }
 
-// Fixtures were filed as CellSolutionElimination bugs — NakedSingle now handles that logic.
-const nsFixtures = ruleBugFixtures.filter(
-  f => f.ruleName === 'CellSolutionElimination' || f.ruleName === 'NakedSingle'
-);
+// CellSolutionElimination was merged into NakedSingle; its fixtures are no longer fetched
+// by sync-rule-fixtures.js (propagation-rule bugs are caught by the golden check, not here).
+const nsFixtures = ruleBugFixtures.filter(f => f.ruleName === 'NakedSingle');
 const itNS = DISABLED_RULES.includes('NakedSingle') ? it.skip : it;
 
 if (nsFixtures.length > 0) {

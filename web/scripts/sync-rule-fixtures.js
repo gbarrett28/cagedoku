@@ -30,7 +30,9 @@ if (!WORKER_URL) {
 }
 
 const RULE_NAMES = [
-  'NakedSingle', 'CellSolutionElimination', 'HiddenSingle', 'LinearElimination',
+  // CellSolutionElimination was merged into NakedSingle (87ec19b); never fetch its fixtures
+  // because the regression test structure doesn't apply to propagation-only rules.
+  'NakedSingle', 'HiddenSingle', 'LinearElimination',
   'CageCandidateFilter', 'CageIntersection', 'SolutionMapFilter', 'MustContain',
   'MustContainOutie', 'DeltaConstraint', 'SumPairConstraint', 'NakedPair',
   'HiddenPair', 'NakedHiddenTriple', 'NakedHiddenQuad', 'PointingPairs',
