@@ -249,6 +249,22 @@ export function buildEngine(
       );
     }
 
+    // Fixture stall seed: bring the board to the documented all-rules-exhausted
+    // state before running rules. Since the stall is a fixed point of all rules,
+    // the subsequent engine.solve() finds nothing left to do.
+    if (state.fixtureStalledCandidates != null) {
+      const stallElims: Elimination[] = [];
+      for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+          const keep = new Set(state.fixtureStalledCandidates[r]![c]!);
+          for (const d of board.cands(r, c)) {
+            if (!keep.has(d)) stallElims.push({ cell: [r, c] as Cell, digit: d });
+          }
+        }
+      }
+      if (stallElims.length > 0) engine.applyEliminations(stallElims);
+    }
+
     if (!skipSolve) engine.solve();
   } catch (e) {
     if (!(e instanceof NoSolnError)) throw e;

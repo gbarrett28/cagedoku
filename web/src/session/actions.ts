@@ -143,6 +143,7 @@ export function loadSpecDirect(spec: PuzzleSpec): UploadResult {
     originalImageUrl: null,
     warpedImageUrl: null,
     autoRemovedCandidates: [],
+    fixtureStalledCandidates: null,
   };
   setState(state);
   return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map(), mergedThumbs: new Map() };
@@ -179,6 +180,7 @@ export function loadClassicDirect(givenDigits: readonly (readonly number[])[]): 
     originalImageUrl: null,
     warpedImageUrl: null,
     autoRemovedCandidates: [],
+    fixtureStalledCandidates: null,
   };
   setState(state);
   return {
@@ -366,6 +368,7 @@ async function buildStateFromParseResult(
     originalImageUrl,
     warpedImageUrl,
     autoRemovedCandidates: [],
+    fixtureStalledCandidates: null,
   };
 
   setState(state);
@@ -526,7 +529,7 @@ export function solveCurrentSpec(): SolveResult {
  * spec. Passing the board avoids a second solver run when the caller has
  * already solved (e.g. the auto-confirm path in handleProcess).
  */
-export function confirmPuzzle(board: BoardState): PuzzleState {
+export function confirmPuzzle(board: BoardState, fixtureStalledCandidates?: number[][][]): PuzzleState {
   const state = requireState();
   if (state.userGrid !== null) throw new Error('Session already confirmed');
 
@@ -565,6 +568,7 @@ export function confirmPuzzle(board: BoardState): PuzzleState {
     goldenSolution,
     userGrid,
     turns: givenTurns,
+    fixtureStalledCandidates: fixtureStalledCandidates ?? null,
   };
   updated = applyAutoPlacements(updated);
   setState(updated);

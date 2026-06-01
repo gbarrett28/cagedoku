@@ -39,6 +39,7 @@ function makeState(): PuzzleState {
     originalImageUrl: null,
     warpedImageUrl: null,
     autoRemovedCandidates: [],
+    fixtureStalledCandidates: null,
   };
 }
 
@@ -179,6 +180,42 @@ describe('buildEngine', () => {
     // All digits except 1 should have been removed from (0,0)
     expect(board.candidates[0]![0]!.has(1)).toBe(true);
     // After solve the candidate set may be even smaller — just check no crash
+  });
+
+  it('fixtureStalledCandidates: board starts from the given candidate grid, not a fresh solve', () => {
+    // alwaysApplyRules is empty so without fixtureStalledCandidates the board
+    // would keep all 9 candidates per cell. The stall seed must override that.
+    const stalledCandidates = KNOWN_SOLUTION.map(row => row.map(d => [d!]));
+    const state: PuzzleState = {
+      ...makeState(),
+      alwaysApplyRules: [],
+      fixtureStalledCandidates: stalledCandidates,
+    };
+    const { board } = buildEngine(state);
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        expect([...board.cands(r, c)]).toEqual([KNOWN_SOLUTION[r]![c]!]);
+      }
+    }
+  });
+
+  it('fixtureStalledCandidates: board candidates unchanged after hint-mode solve', () => {
+    // Hint rules can observe the board but cannot modify it — they only populate
+    // pendingHints. After seeding with fixtureStalledCandidates, the board must
+    // still reflect those candidates even after buildEngine runs hint rules.
+    const stalledCandidates = KNOWN_SOLUTION.map(row => row.map(d => [d!]));
+    const state: PuzzleState = {
+      ...makeState(),
+      alwaysApplyRules: [],
+      goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
+      fixtureStalledCandidates: stalledCandidates,
+    };
+    const { board } = buildEngine(state, { includeHints: true });
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        expect([...board.cands(r, c)]).toEqual([KNOWN_SOLUTION[r]![c]!]);
+      }
+    }
   });
 });
 

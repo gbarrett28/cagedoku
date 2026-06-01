@@ -117,6 +117,13 @@ export interface PuzzleState {
    * Rolled back automatically when the user undoes (snapshot restoration).
    */
   readonly autoRemovedCandidates: readonly [number, number, number][];
+  /**
+   * When non-null, buildEngine seeds the board from this candidate grid before
+   * running rules. Used when loading stall fixtures so the board starts at the
+   * documented all-rules-exhausted state rather than being rebuilt from only
+   * the user's alwaysApplyRules subset.
+   */
+  readonly fixtureStalledCandidates?: readonly number[][][] | null;
 }
 
 // ---------------------------------------------------------------------------
