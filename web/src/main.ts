@@ -15,6 +15,7 @@ import type { TrainingExport } from './image/trainingExport.js';
 import { defaultImagePipelineConfig } from './image/config.js';
 import { initiateUpload, grantConsent, uploadTrainingData, submitPuzzleReport } from './image/trainingUpload.js';
 import { dataToSpec } from './session/specUtils.js';
+import { analyseKernels } from './engine/kernelAnalysis.js';
 import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec, makeClassicGivenDigits, makeClassicPartialGivenDigits } from './engine/fixtures.js';
 import {
   uploadPuzzle,
@@ -134,6 +135,8 @@ let pendingMergedThumbs = new Map<string, Uint8Array>(); // pre-split merged thu
 let totalEditCell: { row: number; col: number } | null = null;  // 0-based, active overlay
 let totalEditPrev = 0;
 let reviewErrorCells = new Set<string>(); // "row,col" keys — cages failing Confirm validation
+let reviewSuspectCells = new Set<string>(); // "row,col" keys — cells suspected of OCR misread (amber)
+let kernelWarningShown = false; // true after first-confirm kernel warning; skips analysis on re-confirm
 
 // Bug reporting state
 let pendingBug: { info: string } | null = null;
@@ -154,6 +157,7 @@ function drawUnderlays(
   highlightKeys: Set<string> | null,
   selected: { row: number; col: number } | null,
   errorCells: Set<string> | undefined,
+  suspectCells?: Set<string>,
 ): void {
   const vcColors = [
     'rgba(20, 184, 166, 0.25)',
@@ -218,6 +222,14 @@ function drawUnderlays(
   if (errorCells && errorCells.size > 0) {
     ctx.fillStyle = 'rgba(239, 68, 68, 0.3)';
     for (const key of errorCells) {
+      const parts = key.split(',').map(Number);
+      const r = parts[0]!, c = parts[1]!;
+      ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
+    }
+  }
+  if (suspectCells && suspectCells.size > 0) {
+    ctx.fillStyle = 'rgba(245, 158, 11, 0.45)';
+    for (const key of suspectCells) {
       const parts = key.split(',').map(Number);
       const r = parts[0]!, c = parts[1]!;
       ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
@@ -461,6 +473,7 @@ function drawGrid(
   showEss: boolean = true,
   draft?: { borderX: boolean[][], borderY: boolean[][] },
   errorCells?: Set<string>,
+  suspectCells?: Set<string>,
 ): void {
   canvas.width = GRID_PX;
   canvas.height = GRID_PX;
@@ -468,7 +481,7 @@ function drawGrid(
   if (!ctx) return;
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, GRID_PX, GRID_PX);
-  drawUnderlays(ctx, candidatesData, vcSelection, highlightKeys, selected, errorCells);
+  drawUnderlays(ctx, candidatesData, vcSelection, highlightKeys, selected, errorCells, suspectCells);
   if (state.puzzleType !== 'classic') drawCageBorders(ctx, state, draft);
   drawGridLines(ctx);
   if (state.puzzleType !== 'classic') drawCageTotals(ctx, state);
@@ -549,6 +562,7 @@ function redrawGrid(): void {
     showEssential,
     currentState?.userGrid === null ? { borderX: draftBorderX, borderY: draftBorderY } : undefined,
     reviewErrorCells.size > 0 ? reviewErrorCells : undefined,
+    reviewSuspectCells.size > 0 ? reviewSuspectCells : undefined,
   );
   checkCompletion(currentState);
 }
@@ -644,6 +658,8 @@ function buildPlayingCallouts(isKiller: boolean, fromFixture = false): { id: str
 function renderPlayingMode(state: PuzzleState): void {
   currentState = state;
   reviewErrorCells = new Set();
+  reviewSuspectCells = new Set();
+  kernelWarningShown = false;
   const data = getSettingsData();
   showCandidates = data.showCandidatesByDefault;
   candidateEditMode = false;
@@ -973,6 +989,8 @@ function reportBug(e: unknown, context: string): void {
 
 function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, warning: string | null): void {
   reviewErrorCells = new Set();
+  reviewSuspectCells = new Set();
+  kernelWarningShown = false;
   renderState(state);
   const warpedCol = el<HTMLElement>('warped-col');
   const warpedImg = el<HTMLImageElement>('warped-img');
@@ -1246,6 +1264,33 @@ async function handleConfirm(): Promise<void> {
         true,
       );
       return;
+    }
+
+    // Kernel analysis: if the solver stalled and this is the first confirm attempt,
+    // run a bounded DFS to identify cells that are ambiguous due to OCR misreads.
+    // Skip for classic puzzles (given digits are shown directly on the review screen)
+    // and if ≥50 cells are unsolved (corrupted totals / inherently ambiguous spec).
+    const stalledCount = confirmStalledCandidates?.flat().filter(c => c.length > 1).length ?? 0;
+    if (confirmUsedBacktracking && confirmStalledCandidates && !kernelWarningShown
+        && currentState.puzzleType !== 'classic' && stalledCount < 50) {
+      const spec = dataToSpec(currentState.specData);
+      const solution: number[][] = Array.from({ length: 9 }, (_, r) =>
+        Array.from({ length: 9 }, (_, c) => [...confirmedBoard.cands(r, c)][0]!),
+      );
+      const analysis = analyseKernels(spec, confirmStalledCandidates, solution);
+      if (analysis.ambiguousCells.length > 0) {
+        kernelWarningShown = true;
+        reviewSuspectCells = new Set(analysis.ambiguousCells.map(([r, c]) => `${r},${c}`));
+        redrawGrid();
+        const cellNames = analysis.ambiguousCells
+          .map(([r, c]) => cellLabel([r, c]))
+          .join(', ');
+        setStatus(
+          `OCR may have missed a digit in ${cellNames} (highlighted) — check the original image. Click Confirm again to proceed anyway.`,
+          true,
+        );
+        return;
+      }
     }
 
     const playing = confirmPuzzle(confirmedBoard);

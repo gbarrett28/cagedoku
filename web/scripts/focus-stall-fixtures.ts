@@ -1,16 +1,20 @@
 /**
  * Generates "focused" stall fixtures for every committed source fixture.
  *
- * For each source fixture (processed simplest-first by unsolvedCells ASC,
- * totalCandidates ASC), this script does a single pass: it reveals each
- * unsolved cell one at a time (pinning it to the ground-truth solution value),
- * re-runs the full killer engine via solveFromCandidates, and collects every
- * distinct stall state that emerges. One pass only — no recursion into the
- * discovered focused states.
+ * For each source fixture, this script performs a DFS (depth-first search)
+ * over the space of stall states reachable by pinning one unsolved cell at a
+ * time to its ground-truth solution value and re-running the full killer engine.
  *
- * Focused fixtures are written to web/stall-fixtures/ as
+ * The DFS finds "kernel" states — stall states where no single-cell pin
+ * produces a new (distinct) stall state. Every pin from a kernel either solves
+ * the puzzle outright or reaches an already-discovered stall state. DFS
+ * explores deep paths first, so the most focused kernels (fewest unsolved cells,
+ * most cells already determined) are discovered early.
+ *
+ * After the full search, up to MAX_KERNELS of the most focused kernels are
+ * written to web/stall-fixtures/ as
  *   <source-name>-f<NNN>.stall.json
- * where NNN is a zero-padded index assigned after sorting focused states by
+ * where NNN is a zero-padded index assigned after sorting kernel states by
  * (unsolvedCells ASC, totalCandidates ASC).
  *
  * Source fixtures are skipped when:
@@ -24,6 +28,13 @@
  *    This indicates an OCR error where a digit was read from an adjacent cage and placed
  *    inside an existing cage's region. The cage rules operate on structurally invalid
  *    totals, so any stall state is not a genuine rule gap.
+ *
+ * After the DFS, ambiguity is detected via kernel intersection: the set of cell
+ * positions that are unsolved in EVERY kernel. These "always-stuck" cells are checked
+ * for ambiguity first (O(|intersection| × distinct_patterns) solver calls — typically
+ * just 1–2 calls even for large puzzles). Any kernel containing a confirmed-ambiguous
+ * intersection cell is discarded in O(1). Remaining kernels get a per-cell fallback
+ * check only for non-intersection cells (near-zero cost for well-formed puzzles).
  *
  * Focused files are gitignored and regenerated on every CI deploy so they
  * always reflect the current rule engine.
@@ -45,6 +56,10 @@ const today = new Date().toISOString().slice(0, 10);
  *  certainly corrupted by an OCR misread (cage totals wrong). A well-formed
  *  killer sudoku never has ≥ 50 cells unsolved after a full rule-engine pass. */
 const MAX_UNSOLVED_THRESHOLD = 50;
+
+/** Maximum focused fixtures emitted per source fixture. Only the most focused
+ *  (fewest unsolved cells) kernels are kept; deeper DFS paths surface these first. */
+const MAX_KERNELS = 20;
 
 /**
  * Returns true if any row, column, or box contains two solved cells (length === 1)
@@ -168,54 +183,181 @@ for (const fixture of sourceFixtures) {
   );
 
   // -----------------------------------------------------------------------
-  // 2. Single pass: pin each unsolved cell to its solution value, re-run the
-  //    engine, and collect any new stall states that emerge.
+  // 2. DFS over stall states to find kernel states.
   //
-  //    seen    — canonical JSON keys for deduplication across pins.
-  //    focused — collected stall states to write.
+  //    A kernel state is a stall from which no single-cell pin (to the
+  //    ground-truth digit) produces a new, distinct stall state.
+  //
+  //    DFS (stack / pop) explores deep paths first so the most focused
+  //    kernels (fewest unsolved cells) tend to be found early. The loop
+  //    exits as soon as MAX_KERNELS unambiguous kernels are collected.
+  //
+  //    Ambiguity check (per kernel, not per source):
+  //    Ambiguity is detected after the DFS via kernel intersection (see step 3).
+  //
+  //    stack   — states yet to be processed (LIFO).
+  //    seen    — JSON keys of all states ever pushed onto the stack.
+  //    kernels — all kernel states found (including potentially ambiguous ones).
   // -----------------------------------------------------------------------
+  type StackEntry = { state: number[][][]; depth: number };
   const seen = new Set<string>();
-  const focused: Array<{ sc: number[][][]; unsolvedCells: number; totalCandidates: number }> = [];
+  const stack: StackEntry[] = [];
+  const kernels: Array<{ sc: number[][][]; unsolvedCells: number; totalCandidates: number; depth: number }> = [];
 
-  for (let r = 0; r < 9; r++) {
-    for (let c = 0; c < 9; c++) {
-      if ((fixture.stalledCandidates[r]![c]!).length <= 1) continue; // already solved
+  const sourceKey = JSON.stringify(fixture.stalledCandidates);
+  seen.add(sourceKey);
+  stack.push({ state: fixture.stalledCandidates.map(row => row.map(cell => [...cell])), depth: 0 });
 
-      // Pin this cell to its ground-truth digit.
-      const pinned: number[][][] = fixture.stalledCandidates.map(row => row.map(cell => [...cell]));
-      pinned[r]![c] = [solution[r]![c]!];
+  while (stack.length > 0) {
+    const { state: current, depth } = stack.pop()!; // DFS: LIFO
+    let isKernel = true;
 
-      const result = solveFromCandidates(fixture.spec, pinned);
-      if (!result.usedBacktracking) continue; // pin solved the puzzle
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        if (current[r]![c]!.length <= 1) continue;
 
-      const sc = result.stalledCandidates!;
-      const key = JSON.stringify(sc);
-      if (seen.has(key)) continue;
+        const pinned: number[][][] = current.map(row => row.map(cell => [...cell]));
+        pinned[r]![c] = [solution[r]![c]!];
 
-      seen.add(key);
-      const unsolvedCells = sc.flat().filter(cell => cell.length > 1).length;
-      const totalCandidates = sc
-        .flat()
-        .filter(cell => cell.length > 1)
-        .reduce((sum, cell) => sum + cell.length, 0);
-      focused.push({ sc, unsolvedCells, totalCandidates });
+        const result = solveFromCandidates(fixture.spec, pinned);
+        if (!result.usedBacktracking) continue; // pin solved the puzzle
+
+        isKernel = false;
+
+        const sc = result.stalledCandidates!;
+        const key = JSON.stringify(sc);
+        if (seen.has(key)) continue;
+
+        seen.add(key);
+        stack.push({ state: sc.map(row => row.map(cell => [...cell])), depth: depth + 1 });
+      }
     }
+
+    if (!isKernel || JSON.stringify(current) === sourceKey) continue;
+
+    const unsolvedCells = current.flat().filter(cell => cell.length > 1).length;
+    const totalCandidates = current
+      .flat()
+      .filter(cell => cell.length > 1)
+      .reduce((sum, cell) => sum + cell.length, 0);
+    kernels.push({ sc: current, unsolvedCells, totalCandidates, depth });
   }
 
-  if (focused.length === 0) {
-    console.log('none');
+  if (kernels.length === 0) {
+    console.log(`none — ${seen.size - 1} DFS nodes explored`);
     continue;
   }
 
   // -----------------------------------------------------------------------
-  // 3. Sort by (unsolvedCells ASC, totalCandidates ASC) for stable indices.
+  // 3. Intersection-based ambiguity filter.
+  //
+  //    Compute the intersection of unsolved cell positions across all kernels.
+  //    Cells in the intersection are "always stuck" — no DFS path resolved them.
+  //    Check each intersection cell for ambiguity using the distinct non-solution
+  //    candidate patterns that appear across kernels (typically 1–2 patterns per
+  //    cell, far fewer than a full per-kernel scan). If a cell in the intersection
+  //    is ambiguous it affects every kernel → discard all kernels containing it
+  //    in one pass (fast path). Non-intersection cells that are individually
+  //    ambiguous in some kernels are caught by the slow-path fallback.
+  //
+  //    Cost for a fully ambiguous source (like a classic with OCR-dropped digits):
+  //      O(|intersection| × distinct_patterns) solver calls — e.g. 2 for this puzzle.
+  //    Cost for a well-formed single-solution source:
+  //      O(|intersection|) checks all pass → O(kernels × non-intersection cells)
+  //      fallback checks also all pass → 0 kernels discarded.
   // -----------------------------------------------------------------------
-  focused.sort((a, b) => a.unsolvedCells - b.unsolvedCells || a.totalCandidates - b.totalCandidates);
+
+  // Build intersection: set of (r,c) positions unsolved in every kernel.
+  let cellIntersection: Set<string> | null = null;
+  for (const { sc } of kernels) {
+    const here = new Set<string>();
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++)
+        if (sc[r]![c]!.length > 1) here.add(`${r},${c}`);
+    if (cellIntersection === null) { cellIntersection = here; continue; }
+    for (const k of cellIntersection) if (!here.has(k)) cellIntersection.delete(k);
+  }
+  cellIntersection ??= new Set<string>();
+
+  // For each intersection cell, test each distinct non-solution candidate pattern.
+  const ambiguousCellKeys = new Set<string>();
+  for (const cellKey of cellIntersection) {
+    const [r, c] = cellKey.split(',').map(Number) as [number, number];
+    const testedPatterns = new Set<string>();
+    for (const { sc } of kernels) {
+      if (ambiguousCellKeys.has(cellKey)) break;
+      if (sc[r]![c]!.length <= 1) continue;
+      const altCands = sc[r]![c]!.filter(d => d !== solution[r]![c]!);
+      if (altCands.length === 0) continue;
+      const patternKey = altCands.join(',');
+      if (testedPatterns.has(patternKey)) continue;
+      testedPatterns.add(patternKey);
+      const testGrid = sc.map(row => row.map(cell => [...cell]));
+      testGrid[r]![c] = altCands;
+      const altResult = solveFromCandidates(fixture.spec, testGrid);
+      let allSolved = true;
+      for (let rr = 0; rr < 9 && allSolved; rr++)
+        for (let cc = 0; cc < 9 && allSolved; cc++)
+          if (altResult.board.cands(rr, cc).size !== 1) allSolved = false;
+      if (allSolved) ambiguousCellKeys.add(cellKey);
+    }
+  }
+
+  // Filter kernels: fast path via known ambiguous cells, slow-path fallback for the rest.
+  let ambiguousCount = 0;
+  const goodKernels: typeof kernels = [];
+  for (const kernel of kernels) {
+    const { sc } = kernel;
+
+    // Fast path: kernel contains a known-ambiguous intersection cell.
+    let hasKnownAmbiguity = false;
+    for (const cellKey of ambiguousCellKeys) {
+      const [r, c] = cellKey.split(',').map(Number) as [number, number];
+      if (sc[r]![c]!.length > 1) { hasKnownAmbiguity = true; break; }
+    }
+    if (hasKnownAmbiguity) { ambiguousCount++; continue; }
+
+    // Slow path: per-kernel check for non-intersection cells (rare for OCR-ambiguous puzzles).
+    let kernelAmbiguous = false;
+    for (let r = 0; r < 9 && !kernelAmbiguous; r++) {
+      for (let c = 0; c < 9 && !kernelAmbiguous; c++) {
+        if (sc[r]![c]!.length <= 1) continue;
+        if (cellIntersection.has(`${r},${c}`)) continue; // already checked above
+        const altCands = sc[r]![c]!.filter(d => d !== solution[r]![c]!);
+        if (altCands.length === 0) continue;
+        const testGrid = sc.map(row => row.map(cell => [...cell]));
+        testGrid[r]![c] = altCands;
+        const altResult = solveFromCandidates(fixture.spec, testGrid);
+        let allSolved = true;
+        for (let rr = 0; rr < 9 && allSolved; rr++)
+          for (let cc = 0; cc < 9 && allSolved; cc++)
+            if (altResult.board.cands(rr, cc).size !== 1) allSolved = false;
+        if (allSolved) kernelAmbiguous = true;
+      }
+    }
+    if (kernelAmbiguous) { ambiguousCount++; continue; }
+
+    goodKernels.push(kernel);
+  }
+
+  if (goodKernels.length === 0) {
+    const ambigDetail = ambiguousCellKeys.size > 0
+      ? ` via intersection {${[...ambiguousCellKeys].map(k => { const [r,c] = k.split(','); return `r${+r+1}c${+c+1}`; }).join(',')}}`
+      : '';
+    console.log(`none (${ambiguousCount} kernels discarded as ambiguous${ambigDetail}) — ${seen.size - 1} DFS nodes explored`);
+    continue;
+  }
 
   // -----------------------------------------------------------------------
-  // 4. Write focused fixtures to web/stall-fixtures/.
+  // 4. Sort by (unsolvedCells ASC, totalCandidates ASC) and keep MAX_KERNELS.
   // -----------------------------------------------------------------------
-  focused.forEach(({ sc, unsolvedCells, totalCandidates }, idx) => {
+  goodKernels.sort((a, b) => a.unsolvedCells - b.unsolvedCells || a.totalCandidates - b.totalCandidates);
+  const kept = goodKernels.slice(0, MAX_KERNELS);
+
+  // -----------------------------------------------------------------------
+  // 5. Write focused fixtures to web/stall-fixtures/.
+  // -----------------------------------------------------------------------
+  kept.forEach(({ sc, unsolvedCells, totalCandidates }, idx) => {
     const idxStr = String(idx).padStart(3, '0');
     const name = `${fixture.name}-f${idxStr}`;
     const focusedFixture: StallFixtureFile = {
@@ -234,8 +376,10 @@ for (const fixture of sourceFixtures) {
     fs.writeFileSync(outPath, JSON.stringify(focusedFixture, null, 2));
   });
 
-  console.log(`${focused.length} focused state(s)`);
-  totalWritten += focused.length;
+  const trimMsg = goodKernels.length > MAX_KERNELS ? `, ${goodKernels.length - kept.length} trimmed` : '';
+  const ambigMsg = ambiguousCount > 0 ? `, ${ambiguousCount} ambiguous` : '';
+  console.log(`${kept.length} kernel(s) written (${seen.size - 1} DFS nodes explored${ambigMsg}${trimMsg})`);
+  totalWritten += kept.length;
 }
 
 console.log(`\nDone. ${totalWritten} focused fixtures written across ${sourceFixtures.length} source fixtures.`);
