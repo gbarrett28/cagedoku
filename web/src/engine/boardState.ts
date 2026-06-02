@@ -11,7 +11,7 @@
  *  - Classic: cage_totals all-zero → cage_solns all empty → cage rules are no-ops
  */
 
-import { solSums } from '../solver/equation.js';
+import { solSums, solDiffs } from '../solver/equation.js';
 import type { DiffSolution } from '../solver/equation.js';
 import { NoSolnError } from '../solver/errors.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
@@ -270,10 +270,19 @@ export class BoardState {
     this.units.push({ unitId: vunitId, kind: UnitKind.CAGE, cells, distinctDigits: distinct });
 
     if (negativeCells && negativeCells.length > 0) {
-      // Diff cage: cage-sum rules are no-ops (cageSolns empty).
-      // The distinct-digit constraint is still enforced via the unit.
-      this.cageSolns.push([]);
-      void eliminatedDiffSolns; // unused at engine level; tracked in session layer
+      // Diff cage: populate cageSolns with combined sorted digit arrays so that
+      // CageCandidateFilter and SolutionMapFilter work correctly.
+      // Combined [pos ∪ neg] is sound: any digit absent from all combined solutions
+      // cannot appear in any cage cell regardless of role.
+      const negKeys = new Set(negativeCells.map(([r, c]) => `${r},${c}`));
+      const posCount = cells.length - negKeys.size;
+      const negCount = negKeys.size;
+      const diffKey = (s: DiffSolution) => `${[...s.pos].join(',')}|${[...s.neg].join(',')}`;
+      const elimSet = new Set((eliminatedDiffSolns ?? []).map(diffKey));
+      const solns = solDiffs(posCount, negCount, total)
+        .filter(s => !elimSet.has(diffKey(s)))
+        .map(s => [...s.pos, ...s.neg].sort((a, b) => a - b));
+      this.cageSolns.push(solns);
     } else {
       const elimSet = new Set(eliminatedSolns.map(s => s.slice().sort().join(',')));
       const solns = solSums(cells.length, 0, total)
