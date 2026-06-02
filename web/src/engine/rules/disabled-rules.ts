@@ -1,1 +1,1 @@
-export const DISABLED_RULES: readonly string[] = [];
+export const DISABLED_RULES: readonly string[] = ['SolutionMapFilter'];
