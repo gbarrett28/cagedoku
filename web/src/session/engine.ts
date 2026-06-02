@@ -252,6 +252,20 @@ export function buildEngine(
       );
     }
 
+    // Eliminate each placed digit from row/col/box/cage peers unconditionally.
+    // Applied after userRemoved so explicit user candidate removals take effect
+    // first. This is a fundamental sudoku constraint independent of NakedSingle.
+    if (state.userGrid !== null) {
+      const peerElims: Elimination[] = [];
+      for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+          const d = state.userGrid[r]![c]!;
+          if (d > 0) peerElims.push(...board.peerEliminations(r, c, d));
+        }
+      }
+      if (peerElims.length > 0) engine.applyEliminations(peerElims);
+    }
+
     // Fixture stall seed: bring the board to the documented all-rules-exhausted
     // state before running rules. Since the stall is a fixed point of all rules,
     // the subsequent engine.solve() finds nothing left to do.

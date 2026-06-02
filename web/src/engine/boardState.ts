@@ -18,6 +18,7 @@ import { LinearSystem } from './linearSystem.js';
 import {
   BoardEvent,
   Cell,
+  Elimination,
   Trigger,
   Unit,
   UnitKind,
@@ -158,6 +159,30 @@ export class BoardState {
   boxUnitId(r: number, c: number): number { return BOX_UNIT_OFFSET + (r / 3 | 0) * 3 + (c / 3 | 0); }
   cageUnitId(r: number, c: number): number { return CAGE_UNIT_OFFSET + this.regions[r]![c]!; }
   cellUnitIds(r: number, c: number): number[] { return this._cellUnitIds[r]![c]!; }
+
+  /**
+   * Returns eliminations to apply to all peers of (r, c) when it is determined
+   * to hold digit d — i.e. d removed from every other cell sharing a row, col,
+   * box, or distinct-digit cage with (r, c).
+   *
+   * Used by NakedSingle and by buildEngine for unconditional placement propagation.
+   */
+  peerEliminations(r: number, c: number, d: number): Elimination[] {
+    const seen = new Set<string>();
+    const elims: Elimination[] = [];
+    for (const uid of this.cellUnitIds(r, c)) {
+      const unit = this.units[uid]!;
+      if (unit.kind === UnitKind.CAGE && !unit.distinctDigits) continue;
+      for (const [pr, pc] of unit.cells as Cell[]) {
+        if (pr === r && pc === c) continue;
+        const key = `${pr},${pc}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (this.cands(pr, pc).has(d)) elims.push({ cell: [pr, pc] as Cell, digit: d });
+      }
+    }
+    return elims;
+  }
 
   // ── Mutation ─────────────────────────────────────────────────────────────
 

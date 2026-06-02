@@ -49,20 +49,7 @@ Guards:
     if (ctx.cell === null || ctx.hintDigit === null) return emptyResult();
     const [r, c] = ctx.cell;
     const d = ctx.hintDigit;
-    const seen = new Set<string>();
-    const elims: Elimination[] = [];
-    for (const uid of ctx.board.cellUnitIds(r, c)) {
-      const unit = ctx.board.units[uid]!;
-      if (unit.kind === UnitKind.CAGE && !unit.distinctDigits) continue;
-      for (const [pr, pc] of unit.cells as Cell[]) {
-        if (pr === r && pc === c) continue;
-        const key = `${pr},${pc}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        if (ctx.board.cands(pr, pc).has(d)) elims.push({ cell: [pr, pc] as Cell, digit: d });
-      }
-    }
-    return { ...emptyResult(), placements: [{ cell: ctx.cell, digit: d }], eliminations: elims };
+    return { ...emptyResult(), placements: [{ cell: ctx.cell, digit: d }], eliminations: ctx.board.peerEliminations(r, c, d) };
   }
 
   asHints(ctx: RuleContext, eliminations: readonly Elimination[]): HintResult[] {

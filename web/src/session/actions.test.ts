@@ -277,14 +277,9 @@ describe('goldenSolution cached after confirmPuzzle (#17)', () => {
 // ---------------------------------------------------------------------------
 
 describe('computeCandidates — placement propagation (#24)', () => {
-  beforeEach(() => {
-    const s = makeKillerConfirmed();
-    // These tests exercise NakedSingle peer-elimination explicitly — ensure it is
-    // active regardless of cold-start defaults.
-    setState({ ...s, alwaysApplyRules: ['NakedSingle', ...s.alwaysApplyRules] });
-  });
+  beforeEach(() => { makeKillerConfirmed(); });
 
-  itNS('placed digit absent from row peers', () => {
+  it('placed digit absent from row peers', () => {
     // Use the golden solution digit for (0,0) — placing the correct digit avoids
     // triggering the candidate-soundness assertion in the engine.
     const d = getState()!.goldenSolution![0]![0]!;
@@ -296,7 +291,7 @@ describe('computeCandidates — placement propagation (#24)', () => {
     expect(cands.cells[0]![8]!.candidates).not.toContain(d);
   });
 
-  itNS('placed digit absent from column peers', () => {
+  it('placed digit absent from column peers', () => {
     const d = getState()!.goldenSolution![0]![0]!;
     enterCell(1, 1, d);
     const cands = computeCandidates();
@@ -304,7 +299,7 @@ describe('computeCandidates — placement propagation (#24)', () => {
     expect(cands.cells[4]![0]!.candidates).not.toContain(d);
   });
 
-  itNS('placed digit absent from box peers', () => {
+  it('placed digit absent from box peers', () => {
     const d = getState()!.goldenSolution![0]![0]!;
     enterCell(1, 1, d);
     const cands = computeCandidates();
@@ -314,7 +309,7 @@ describe('computeCandidates — placement propagation (#24)', () => {
     expect(cands.cells[2]![2]!.candidates).not.toContain(d);
   });
 
-  itNS('two placed digits both absent from shared peer', () => {
+  it('two placed digits both absent from shared peer', () => {
     const d0 = getState()!.goldenSolution![0]![0]!;
     const d1 = getState()!.goldenSolution![0]![1]!;
     enterCell(1, 1, d0);
@@ -370,13 +365,13 @@ describe('cycleCandidate — candidate editing (#25)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// #24 – NakedSingle mandatory for Classic mode
+// #24 – Peer elimination is unconditional for placements
 //
-// If the user removes NakedSingle from alwaysApplyRules (via Config),
-// Classic candidates must still be correct because buildEngine forces the rule on.
+// Placed digits (given or user) eliminate from peers regardless of which rules
+// are active. This is a fundamental sudoku constraint, not a rule.
 // ---------------------------------------------------------------------------
 
-describe('computeCandidates — NakedSingle mandatory in Classic (#24)', () => {
+describe('computeCandidates — peer elimination unconditional for placements (#24)', () => {
   it('given digits eliminate peers even when NakedSingle is removed from alwaysApplyRules', () => {
     const givenDigits = makeClassicGivenDigits(); // KNOWN_SOLUTION with (0,0) blanked
     makeClassicState(givenDigits);
@@ -392,7 +387,7 @@ describe('computeCandidates — NakedSingle mandatory in Classic (#24)', () => {
     expect(data.cells[0]![0]!.candidates).toEqual([5]);
   });
 
-  itNS('sparse classic: given + user-placed digits absent from box peers with rule disabled', () => {
+  it('sparse classic: given + user-placed digits absent from box peers with rule disabled', () => {
     // Matches the screenshot scenario: sparse newspaper-style puzzle where only
     // a handful of digits are given, and the user has placed additional digits.
     // Box 1 (rows 0–2, cols 3–5): given r2c3=3 and r2c4=4; blank peers r0c3, r0c4.
