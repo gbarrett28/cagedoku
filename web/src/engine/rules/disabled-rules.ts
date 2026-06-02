@@ -1,4 +1,4 @@
-export const DISABLED_RULES: readonly string[] = ['SolutionMapFilter'];
+export const DISABLED_RULES: readonly string[] = [];
 
 /**
  * Rules that have no meaning for classic (non-killer) sudoku — they depend on
