@@ -12,6 +12,7 @@
  */
 
 import { solSums } from '../solver/equation.js';
+import type { DiffSolution } from '../solver/equation.js';
 import { NoSolnError } from '../solver/errors.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import { LinearSystem } from './linearSystem.js';
@@ -259,15 +260,26 @@ export class BoardState {
     cells: readonly Cell[],
     total: number,
     eliminatedSolns: readonly (readonly number[])[],
-    { distinct = true } = {},
+    { distinct = true, negativeCells, eliminatedDiffSolns }: {
+      distinct?: boolean;
+      negativeCells?: readonly Cell[];
+      eliminatedDiffSolns?: readonly DiffSolution[];
+    } = {},
   ): void {
     const vunitId = this.units.length;
     this.units.push({ unitId: vunitId, kind: UnitKind.CAGE, cells, distinctDigits: distinct });
 
-    const elimSet = new Set(eliminatedSolns.map(s => s.slice().sort().join(',')));
-    const solns = solSums(cells.length, 0, total)
-      .filter(s => !elimSet.has(s.slice().sort().join(',')));
-    this.cageSolns.push(solns);
+    if (negativeCells && negativeCells.length > 0) {
+      // Diff cage: cage-sum rules are no-ops (cageSolns empty).
+      // The distinct-digit constraint is still enforced via the unit.
+      this.cageSolns.push([]);
+      void eliminatedDiffSolns; // unused at engine level; tracked in session layer
+    } else {
+      const elimSet = new Set(eliminatedSolns.map(s => s.slice().sort().join(',')));
+      const solns = solSums(cells.length, 0, total)
+        .filter(s => !elimSet.has(s.slice().sort().join(',')));
+      this.cageSolns.push(solns);
+    }
 
     const countsRow = new Array<number>(10).fill(0);
     for (let d = 1; d <= 9; d++)

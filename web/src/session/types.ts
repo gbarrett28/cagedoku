@@ -6,6 +6,8 @@
  */
 
 import type { Cell } from '../engine/types.js';
+import type { DiffSolution } from '../solver/equation.js';
+export type { DiffSolution };
 
 // ---------------------------------------------------------------------------
 // Puzzle specification interchange format
@@ -40,10 +42,18 @@ export interface CageState {
 }
 
 export interface VirtualCage {
+  /** All cells in the cage (positive + negative combined). */
   readonly cells: readonly Cell[];
   readonly total: number;
-  /** Sorted digit arrays excluded from the solution set. */
+  /** Sorted digit arrays excluded from the solution set (standard cages only). */
   readonly eliminatedSolns: readonly (readonly number[])[];
+  /**
+   * Cells that contribute with negative sign: sum(cells\negativeCells) − sum(negativeCells) = total.
+   * Undefined or empty = standard cage (all cells positive).
+   */
+  readonly negativeCells?: readonly Cell[];
+  /** DiffSolutions the user has explicitly marked as impossible (diff cages only). */
+  readonly eliminatedDiffSolns?: readonly DiffSolution[];
 }
 
 // ---------------------------------------------------------------------------
@@ -177,6 +187,15 @@ export interface VirtualCageInfo extends SolutionCategorization {
   /** Remaining solutions (not user-eliminated, not auto-impossible). */
   readonly solutions: readonly (readonly number[])[];
   readonly mustContain: number[];
+  // Diff-cage fields — undefined for standard cages.
+  /** Negative-role cells (0-based). Defined (possibly empty) only for diff cages. */
+  readonly negativeCells?: readonly [number, number][];
+  /** All mathematically valid split solutions for this diff cage. */
+  readonly allDiffSolutions?: readonly DiffSolution[];
+  /** Remaining diff solutions (not user-eliminated). */
+  readonly diffSolutions?: readonly DiffSolution[];
+  /** Diff solutions the user has explicitly eliminated. */
+  readonly eliminatedDiffSolns?: readonly DiffSolution[];
 }
 
 export interface CandidatesResponse {

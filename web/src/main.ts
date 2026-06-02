@@ -32,6 +32,7 @@ import {
   cycleCandidate,
   eliminateCageSolution,
   eliminateVirtualCageSolution,
+  eliminateVirtualCageDiffSolution,
   addVirtualCage,
   getHints,
   applyHint,
@@ -45,6 +46,7 @@ import {
 } from './session/actions.js';
 import type {
   CandidatesResponse,
+  DiffSolution,
   HintItem,
   PuzzleState,
   SolutionCategorization,
@@ -97,7 +99,8 @@ let showCandidates = false;
 let showEssential = true;
 let candidateEditMode = false;
 let virtualCageMode = false;
-let virtualCageSelection = new Set<string>();   // "r,c" keys, 0-based
+let virtualCageSelection = new Set<string>();   // "r,c" keys, 0-based — all selected cells
+let virtualCageNegCells = new Set<string>();    // "r,c" keys, 0-based — negative-role cells
 let hintHighlightCells = new Set<string>();     // "r,c" keys, 0-based — pattern cells (orange)
 let hintElimCells = new Set<string>();          // "r,c" keys, 0-based — elimination cells (yellow)
 let hintColourGroups: readonly { cells: readonly [number, number][]; colour: 'blue' | 'green' }[] = [];
@@ -158,6 +161,7 @@ function drawUnderlays(
   selected: { row: number; col: number } | null,
   errorCells: Set<string> | undefined,
   suspectCells?: Set<string>,
+  vcNegSelection?: Set<string>,
 ): void {
   const vcColors = [
     'rgba(20, 184, 166, 0.25)',
@@ -174,10 +178,12 @@ function drawUnderlays(
     }
   }
   if (vcSelection !== null && vcSelection.size > 0) {
-    ctx.fillStyle = 'rgba(99, 102, 241, 0.35)';
     for (const key of vcSelection) {
       const parts = key.split(',').map(Number);
       const r = parts[0]!, c = parts[1]!;
+      ctx.fillStyle = (vcNegSelection?.has(key))
+        ? 'rgba(239, 68, 68, 0.35)'     // red tint for negative cells
+        : 'rgba(99, 102, 241, 0.35)';   // indigo for positive cells
       ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
     }
   }
@@ -474,6 +480,7 @@ function drawGrid(
   draft?: { borderX: boolean[][], borderY: boolean[][] },
   errorCells?: Set<string>,
   suspectCells?: Set<string>,
+  vcNegSelection?: Set<string>,
 ): void {
   canvas.width = GRID_PX;
   canvas.height = GRID_PX;
@@ -481,7 +488,7 @@ function drawGrid(
   if (!ctx) return;
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, GRID_PX, GRID_PX);
-  drawUnderlays(ctx, candidatesData, vcSelection, highlightKeys, selected, errorCells, suspectCells);
+  drawUnderlays(ctx, candidatesData, vcSelection, highlightKeys, selected, errorCells, suspectCells, vcNegSelection);
   if (state.puzzleType !== 'classic') drawCageBorders(ctx, state, draft);
   drawGridLines(ctx);
   if (state.puzzleType !== 'classic') drawCageTotals(ctx, state);
@@ -563,6 +570,7 @@ function redrawGrid(): void {
     currentState?.userGrid === null ? { borderX: draftBorderX, borderY: draftBorderY } : undefined,
     reviewErrorCells.size > 0 ? reviewErrorCells : undefined,
     reviewSuspectCells.size > 0 ? reviewSuspectCells : undefined,
+    virtualCageNegCells.size > 0 ? virtualCageNegCells : undefined,
   );
   checkCompletion(currentState);
 }
@@ -760,6 +768,35 @@ function renderSolutionList(
   }
 }
 
+function renderDiffSolutionList(
+  container: HTMLElement,
+  allDiff: readonly DiffSolution[],
+  eliminated: readonly DiffSolution[],
+  onToggle: (soln: DiffSolution) => void,
+): void {
+  if (allDiff.length === 0) {
+    const p = document.createElement('span');
+    p.className = 'soln-item auto-impossible';
+    p.textContent = '(no valid solutions)';
+    container.appendChild(p);
+    return;
+  }
+  const diffKey = (s: DiffSolution) => `${[...s.pos].join(',')}|${[...s.neg].join(',')}`;
+  const elimKeys = new Set(eliminated.map(diffKey));
+  for (const soln of allDiff) {
+    const span = document.createElement('span');
+    if (elimKeys.has(diffKey(soln))) {
+      span.className = 'soln-item user-eliminated';
+      span.addEventListener('click', () => onToggle(soln));
+    } else {
+      span.className = 'soln-item active';
+      span.addEventListener('click', () => onToggle(soln));
+    }
+    span.textContent = `{${soln.pos.join(',')}}−{${soln.neg.join(',')}}`;
+    container.appendChild(span);
+  }
+}
+
 function renderCageCard(
   container: HTMLElement,
   heading: string,
@@ -792,9 +829,29 @@ function renderVirtualCagePanel(): void {
   list.replaceChildren();
   for (const vc of vcs) {
     const item = document.createElement('div'); item.className = 'vc-item';
-    const heading = `total ${vc.total} — ${vc.cells.length} cells: ` +
-      vc.cells.map(cell => cellLabel(cell)).join(' ');
-    renderCageCard(item, heading, vc, (soln) => { void handleEliminateVirtualCageSolution(vc.key, soln); });
+    if (vc.negativeCells !== undefined && vc.negativeCells.length > 0) {
+      const negKeys = new Set(vc.negativeCells.map(([r, c]) => `${r},${c}`));
+      const posCells = vc.cells.filter(([r, c]) => !negKeys.has(`${r},${c}`));
+      const negCells = vc.negativeCells;
+      const heading = `[${posCells.map(c => cellLabel(c)).join(' ')}] − [${negCells.map(c => cellLabel(c)).join(' ')}] = ${vc.total}`;
+      const headingEl = document.createElement('div');
+      headingEl.className = 'vc-item-header';
+      headingEl.textContent = heading;
+      item.appendChild(headingEl);
+      const solnsEl = document.createElement('div');
+      solnsEl.className = 'vc-solutions';
+      item.appendChild(solnsEl);
+      renderDiffSolutionList(
+        solnsEl,
+        vc.allDiffSolutions ?? [],
+        vc.eliminatedDiffSolns ?? [],
+        (soln) => { void handleEliminateVirtualCageDiffSolution(vc.key, soln); },
+      );
+    } else {
+      const heading = `total ${vc.total} — ${vc.cells.length} cells: ` +
+        vc.cells.map(cell => cellLabel(cell)).join(' ');
+      renderCageCard(item, heading, vc, (soln) => { void handleEliminateVirtualCageSolution(vc.key, soln); });
+    }
     list.appendChild(item);
   }
 }
@@ -845,6 +902,13 @@ async function handleEliminateVirtualCageSolution(vcKey: string, solution: numbe
   try {
     eliminateVirtualCageSolution(vcKey, solution);
     void fetchCandidates(); // re-renders virtual cage panel with updated eliminations
+  } catch (e) { setStatus(String(e), true); }
+}
+
+async function handleEliminateVirtualCageDiffSolution(vcKey: string, solution: DiffSolution): Promise<void> {
+  try {
+    eliminateVirtualCageDiffSolution(vcKey, solution);
+    void fetchCandidates();
   } catch (e) { setStatus(String(e), true); }
 }
 
@@ -1465,6 +1529,27 @@ async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number)
   redrawGrid();
 }
 
+function updateVcStatus(): void {
+  const vcStatus = el<HTMLElement>('vc-selection-status');
+  const posCount = virtualCageSelection.size - virtualCageNegCells.size;
+  const negCount = virtualCageNegCells.size;
+  const allSolved = virtualCageSelection.size >= 2 && currentState?.userGrid !== null &&
+    [...virtualCageSelection].every(k => {
+      const [kr, kc] = k.split(',').map(Number);
+      return (currentState!.userGrid![kr!]?.[kc!] ?? 0) !== 0;
+    });
+  if (virtualCageSelection.size < 2) {
+    vcStatus.textContent = 'Click to add positive cells, click again for negative';
+  } else if (allSolved) {
+    vcStatus.textContent = 'All cells already solved — select unsolved cells';
+  } else if (negCount > 0) {
+    vcStatus.textContent = `+${posCount} positive / −${negCount} negative`;
+  } else {
+    vcStatus.textContent = `${virtualCageSelection.size} cells selected (click again to mark negative)`;
+  }
+  el<HTMLButtonElement>('vc-add-btn').disabled = allSolved || virtualCageSelection.size < 2;
+}
+
 async function submitVirtualCage(): Promise<void> {
   if (virtualCageSelection.size < 2) return;
   if (currentState?.userGrid !== null) {
@@ -1475,13 +1560,22 @@ async function submitVirtualCage(): Promise<void> {
     if (allSolved) { setStatus('Cannot add virtual cage: all selected cells are already solved.', true); return; }
   }
   const totalInput = el<HTMLInputElement>('vc-total-input');
-  const total = Number(totalInput.value);
-  if (!total || total < 3) { totalInput.focus(); return; }
+  const isDiff = virtualCageNegCells.size > 0;
+  const rawTotal = Number(totalInput.value);
+  if (isDiff ? (isNaN(rawTotal) || rawTotal < 0) : (!rawTotal || rawTotal < 3)) {
+    totalInput.focus(); return;
+  }
+  const total = rawTotal;
   const cells = [...virtualCageSelection].map(key => key.split(',').map(Number) as [number, number]);
+  const negativeCells = isDiff
+    ? [...virtualCageNegCells].map(key => key.split(',').map(Number) as [number, number])
+    : undefined;
   try {
-    logAction('virtual_cage_added', `${cells.length} cells, total=${total}`);
-    currentState = addVirtualCage(cells, total);
-    virtualCageMode = false; virtualCageSelection = new Set();
+    logAction('virtual_cage_added', `${cells.length} cells, total=${total}${isDiff ? ` (diff, neg=${negativeCells!.length})` : ''}`);
+    currentState = addVirtualCage(cells, total, negativeCells);
+    virtualCageMode = false;
+    virtualCageSelection = new Set();
+    virtualCageNegCells = new Set();
     el<HTMLElement>('vc-form').hidden = true;
     el<HTMLElement>('side-panel').classList.remove('virtual-cage-open');
     totalInput.value = '';
@@ -1847,7 +1941,7 @@ document.addEventListener('DOMContentLoaded', () => {
     clearActionLog();
     currentState = null; currentCandidates = null; selectedCell = null;
     showCandidates = false; candidateEditMode = false;
-    virtualCageMode = false; virtualCageSelection = new Set();
+    virtualCageMode = false; virtualCageSelection = new Set(); virtualCageNegCells = new Set();
     hintHighlightCells = new Set(); hintElimCells = new Set(); hintColourGroups = []; activeHintItem = null;
     colourMode = 'off'; cellColours.clear();
     inspectCageMode = false;
@@ -2008,7 +2102,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Virtual cage
   el<HTMLButtonElement>('virtual-cage-btn').addEventListener('click', () => {
     virtualCageMode = !virtualCageMode;
-    virtualCageSelection = new Set();
+    virtualCageSelection = new Set(); virtualCageNegCells = new Set();
     const vcBtn = el<HTMLButtonElement>('virtual-cage-btn');
     vcBtn.classList.toggle('active', virtualCageMode);
     vcBtn.dataset['tooltip'] = virtualCageMode ? 'Cancel virtual cage' : 'Virtual cage';
@@ -2023,7 +2117,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   el<HTMLButtonElement>('vc-add-btn').addEventListener('click', () => { void submitVirtualCage(); });
   el<HTMLButtonElement>('vc-cancel-btn').addEventListener('click', () => {
-    virtualCageMode = false; virtualCageSelection = new Set();
+    virtualCageMode = false; virtualCageSelection = new Set(); virtualCageNegCells = new Set();
     el<HTMLElement>('vc-form').hidden = true;
     el<HTMLElement>('side-panel').classList.remove('virtual-cage-open');
     const vcBtn2 = el<HTMLButtonElement>('virtual-cage-btn');
@@ -2238,18 +2332,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (virtualCageMode) {
       const key = `${r0},${c0}`;
-      if (virtualCageSelection.has(key)) virtualCageSelection.delete(key); else virtualCageSelection.add(key);
-      const vcStatus = el<HTMLElement>('vc-selection-status');
-      const allSolved = virtualCageSelection.size >= 2 && currentState.userGrid !== null &&
-        [...virtualCageSelection].every(k => {
+      // Three-state toggle: unselected → positive → negative → unselected
+      if (!virtualCageSelection.has(key)) {
+        virtualCageSelection.add(key);
+      } else if (!virtualCageNegCells.has(key)) {
+        virtualCageNegCells.add(key);
+      } else {
+        virtualCageSelection.delete(key);
+        virtualCageNegCells.delete(key);
+      }
+      updateVcStatus();
+      // Auto-fill total from golden solution when neg cells are present
+      if (virtualCageNegCells.size > 0 && currentState.goldenSolution !== null) {
+        const gs = currentState.goldenSolution;
+        let total = 0;
+        for (const k of virtualCageSelection) {
           const [kr, kc] = k.split(',').map(Number);
-          return (currentState!.userGrid![kr!]?.[kc!] ?? 0) !== 0;
-        });
-      vcStatus.textContent = virtualCageSelection.size < 2
-        ? 'Click cells on the grid'
-        : allSolved ? 'All cells already solved — select unsolved cells'
-        : `${virtualCageSelection.size} cells selected`;
-      el<HTMLButtonElement>('vc-add-btn').disabled = allSolved || virtualCageSelection.size < 2;
+          const d = gs[kr!]?.[kc!] ?? 0;
+          total += virtualCageNegCells.has(k) ? -d : d;
+        }
+        if (total >= 0) {
+          el<HTMLInputElement>('vc-total-input').value = String(total);
+        }
+      }
       redrawGrid();
       return;
     }

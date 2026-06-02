@@ -34,11 +34,19 @@ export function cageLabel(i: number): string {
 
 /**
  * Builds a stable string key for a virtual cage.
- * Format: "r,c:r,c:...:total" with cells sorted by row then col.
+ * Standard format: "r,c:r,c:...:total"
+ * Diff format:     "r,c:r,c:...:total|r,c:r,c:..." (appends sorted neg cells after "|")
  */
-export function virtualCageKey(cells: readonly Cell[], total: number): string {
+export function virtualCageKey(
+  cells: readonly Cell[],
+  total: number,
+  negativeCells?: readonly Cell[],
+): string {
   const sorted = [...cells].sort(([r1, c1], [r2, c2]) => r1 - r2 || c1 - c2);
-  return [...sorted.map(([r, c]) => `${r},${c}`), String(total)].join(':');
+  const base = [...sorted.map(([r, c]) => `${r},${c}`), String(total)].join(':');
+  if (!negativeCells || negativeCells.length === 0) return base;
+  const negSorted = [...negativeCells].sort(([r1, c1], [r2, c2]) => r1 - r2 || c1 - c2);
+  return `${base}|${negSorted.map(([r, c]) => `${r},${c}`).join(':')}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -136,7 +144,7 @@ export function cageStatesToSpec(cages: readonly CageState[], base: PuzzleSpecDa
 // ---------------------------------------------------------------------------
 
 export function virtualCageKeyFromCage(cage: VirtualCage): string {
-  return virtualCageKey(cage.cells, cage.total);
+  return virtualCageKey(cage.cells, cage.total, cage.negativeCells);
 }
 
 // ---------------------------------------------------------------------------

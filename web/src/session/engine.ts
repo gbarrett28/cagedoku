@@ -171,7 +171,10 @@ export function buildEngine(
   // Re-add virtual cages — use state.virtualCages directly so that
   // eliminatedSolns set by eliminateVirtualCageSolution are applied.
   for (const vc of state.virtualCages) {
-    board.addVirtualCage(vc.cells, vc.total, vc.eliminatedSolns);
+    board.addVirtualCage(vc.cells, vc.total, vc.eliminatedSolns, {
+      ...(vc.negativeCells !== undefined && { negativeCells: vc.negativeCells }),
+      ...(vc.eliminatedDiffSolns !== undefined && { eliminatedDiffSolns: vc.eliminatedDiffSolns }),
+    });
   }
 
   const _disabled = new Set(DISABLED_RULES);

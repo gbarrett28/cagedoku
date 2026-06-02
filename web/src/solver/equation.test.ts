@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { solSums } from './equation.js';
+import { solDiffs, solSums } from './equation.js';
 
 describe('solSums', () => {
   it('returns correct combinations for well-known cage totals', () => {
@@ -53,5 +53,59 @@ describe('solSums', () => {
     expect(solSums(1, 4, 5)).toEqual([[5]]);
     // n=1, m=5, v=5: impossible (digit must be > 5, but only digit 5 sums to 5)
     expect(solSums(1, 5, 5)).toEqual([]);
+  });
+});
+
+describe('solDiffs', () => {
+  it('returns empty for negative target', () => {
+    expect(solDiffs(1, 1, -1)).toEqual([]);
+  });
+
+  it('returns empty when zero pos or neg cells', () => {
+    expect(solDiffs(0, 1, 3)).toEqual([]);
+    expect(solDiffs(1, 0, 3)).toEqual([]);
+  });
+
+  it('1 pos + 1 neg, target=0: all pairs a,b where a=b — impossible (distinct digits)', () => {
+    // a - b = 0 requires a = b, but digits must be distinct
+    expect(solDiffs(1, 1, 0)).toEqual([]);
+  });
+
+  it('1 pos + 1 neg, target=1: a - b = 1', () => {
+    const r = solDiffs(1, 1, 1);
+    // Pairs: (2,1),(3,2),(4,3),(5,4),(6,5),(7,6),(8,7),(9,8)
+    expect(r.length).toBe(8);
+    for (const { pos, neg } of r) {
+      expect(pos[0]! - neg[0]!).toBe(1);
+    }
+  });
+
+  it('2 pos + 1 neg, target=3: all distinct digit solutions with sum(pos)-neg=3', () => {
+    const r = solDiffs(2, 1, 3);
+    expect(r.length).toBeGreaterThan(0);
+    for (const { pos, neg } of r) {
+      expect(pos.length).toBe(2);
+      expect(neg.length).toBe(1);
+      expect(pos[0]! + pos[1]! - neg[0]!).toBe(3);
+      // All 3 digits are distinct
+      const all = [...pos, ...neg];
+      expect(new Set(all).size).toBe(3);
+    }
+  });
+
+  it('all digits in solutions are in 1-9 and distinct across pos and neg', () => {
+    const r = solDiffs(2, 2, 2);
+    for (const { pos, neg } of r) {
+      const all = [...pos, ...neg];
+      expect(new Set(all).size).toBe(4);
+      expect(all.every(d => d >= 1 && d <= 9)).toBe(true);
+      expect([...pos].sort((a, b) => a - b)).toEqual([...pos]);
+      expect([...neg].sort((a, b) => a - b)).toEqual([...neg]);
+    }
+  });
+
+  it('returns empty when no valid split exists (target too large)', () => {
+    // 1 pos + 8 neg, target = 100 is impossible
+    expect(solDiffs(1, 8, 100)).toEqual([]);
   });
 });

@@ -9,7 +9,8 @@
 
 import { solve, BoardState, SolveResult } from '../engine/index.js';
 import { mrvBacktrack } from '../engine/backtracker.js';
-import { solSums } from '../solver/equation.js';
+import { solSums, solDiffs } from '../solver/equation.js';
+import type { DiffSolution } from '../solver/equation.js';
 import { defaultRules } from '../engine/rules/index.js';
 import { CLASSIC_EXCLUDED_RULES } from '../engine/rules/disabled-rules.js';
 import { cageSumRange, cellKey, keyToCell } from '../engine/types.js';
@@ -39,6 +40,7 @@ import {
   cageStatesToSpec,
   specToData,
   virtualCageKey,
+  virtualCageKeyFromCage,
   solutionKey,
 } from './specUtils.js';
 import { getState, setState, getCV, getRec, getSplitRec } from './store.js';
@@ -690,14 +692,40 @@ function candidatesFromBoard(board: BoardState, state: PuzzleState): CandidatesR
   });
 
   // Virtual cage info — same SolutionCategorization shape as CageInfo.
+  const diffSolnKey = (s: DiffSolution) => `${[...s.pos].join(',')}|${[...s.neg].join(',')}`;
   const virtualCages = state.virtualCages.map((vc, i) => {
+    const isDiff = vc.negativeCells !== undefined && vc.negativeCells.length > 0;
+    const key = virtualCageKeyFromCage(vc);
+    if (isDiff) {
+      const negCells = vc.negativeCells!;
+      const negKeys = new Set(negCells.map(([r, c]) => `${r},${c}`));
+      const posCount = vc.cells.length - negKeys.size;
+      const negCount = negKeys.size;
+      const allDiff = solDiffs(posCount, negCount, vc.total);
+      const elimKeys = new Set((vc.eliminatedDiffSolns ?? []).map(diffSolnKey));
+      const remaining = allDiff.filter(s => !elimKeys.has(diffSolnKey(s)));
+      return {
+        key,
+        cells: vc.cells.map(([r, c]) => [r, c] as [number, number]),
+        total: vc.total,
+        solutions: [],
+        allSolutions: [],
+        autoImpossible: [],
+        userEliminated: [],
+        mustContain: [],
+        negativeCells: negCells.map(([r, c]) => [r, c] as [number, number]),
+        allDiffSolutions: allDiff,
+        diffSolutions: remaining,
+        eliminatedDiffSolns: (vc.eliminatedDiffSolns ?? []).slice(),
+      };
+    }
     const vcSolns = board.cageSolns[nRealCages + i] ?? [];
     const all = allCageSolutions(vc.cells.length, vc.total);
     const possibleKeys = new Set(vcSolns.map(solutionKey));
     // eliminatedSolns are stored sorted by toggleSolution; join is sufficient.
     const userEliminatedKeys = new Set(vc.eliminatedSolns.map(s => s.join(',')));
     return {
-      key: virtualCageKey(vc.cells, vc.total),
+      key,
       cells: vc.cells.map(([r, c]) => [r, c] as [number, number]),
       total: vc.total,
       solutions: vcSolns.map(s => [...s].sort((a, b) => a - b)),
@@ -911,8 +939,27 @@ export function eliminateCageSolution(label: string, solution: number[]): Puzzle
 export function eliminateVirtualCageSolution(vcKey: string, solution: number[]): PuzzleState {
   const state = requireConfirmed();
   const newVCs = state.virtualCages.map(vc =>
-    virtualCageKey(vc.cells, vc.total) !== vcKey ? vc : { ...vc, eliminatedSolns: toggleSolution(vc.eliminatedSolns, solution) },
+    virtualCageKeyFromCage(vc) !== vcKey ? vc : { ...vc, eliminatedSolns: toggleSolution(vc.eliminatedSolns, solution) },
   );
+  const updated: PuzzleState = { ...state, virtualCages: newVCs };
+  setState(updated);
+  return applyAutoPlacements(updated);
+}
+
+/** Toggle a DiffSolution as user-eliminated for a diff virtual cage identified by key. */
+export function eliminateVirtualCageDiffSolution(vcKey: string, solution: DiffSolution): PuzzleState {
+  const state = requireConfirmed();
+  const diffKey = (s: DiffSolution) => `${[...s.pos].join(',')}|${[...s.neg].join(',')}`;
+  const newVCs = state.virtualCages.map(vc => {
+    if (virtualCageKeyFromCage(vc) !== vcKey) return vc;
+    const current = vc.eliminatedDiffSolns ?? [];
+    const k = diffKey(solution);
+    const isElim = current.some(s => diffKey(s) === k);
+    const newElims = isElim
+      ? current.filter(s => diffKey(s) !== k)
+      : [...current, solution];
+    return { ...vc, eliminatedDiffSolns: newElims };
+  });
   const updated: PuzzleState = { ...state, virtualCages: newVCs };
   setState(updated);
   return applyAutoPlacements(updated);
@@ -925,9 +972,16 @@ export function eliminateVirtualCageSolution(vcKey: string, solution: number[]):
 /**
  * Validates and adds a user-defined virtual cage. Replaces POST /virtual-cages.
  * Cells are 0-based [row, col] pairs.
+ * Pass negativeCells (a subset of cells) to create a difference cage:
+ *   sum(cells \ negativeCells) − sum(negativeCells) = total  (total must be ≥ 0).
  */
-export function addVirtualCage(cells: [number, number][], total: number): PuzzleState {
+export function addVirtualCage(
+  cells: [number, number][],
+  total: number,
+  negativeCells?: [number, number][],
+): PuzzleState {
   const state = requireConfirmed();
+  const isDiff = negativeCells !== undefined && negativeCells.length > 0;
 
   if (cells.length < 2) throw new Error('Virtual cage requires at least 2 cells');
   const unique = new Set(cells.map(([r, c]) => `${r},${c}`));
@@ -935,18 +989,43 @@ export function addVirtualCage(cells: [number, number][], total: number): Puzzle
   for (const [r, c] of cells) {
     if (r < 0 || r > 8 || c < 0 || c > 8) throw new Error(`Cell (${r},${c}) out of range`);
   }
-  const n = cells.length;
-  const [minTotal, maxTotal] = cageSumRange(n);
-  if (total < minTotal || total > maxTotal) {
-    throw new Error(`Total ${total} impossible for ${n} distinct digits (${minTotal}–${maxTotal})`);
+
+  if (isDiff) {
+    // Diff cage validation
+    if (total < 0) throw new Error('Total must be non-negative for a difference cage');
+    const negKeys = new Set(negativeCells!.map(([r, c]) => `${r},${c}`));
+    for (const k of negKeys) {
+      if (!unique.has(k)) throw new Error(`Negative cell ${k} is not in the selected cells`);
+    }
+    if (negKeys.size === cells.length) {
+      throw new Error('At least one positive cell is required');
+    }
+    const posCount = cells.length - negKeys.size;
+    const negCount = negKeys.size;
+    const solutions = solDiffs(posCount, negCount, total);
+    if (solutions.length === 0) {
+      throw new Error(`Total ${total} has no valid solutions for ${posCount} positive and ${negCount} negative cells`);
+    }
+  } else {
+    const n = cells.length;
+    const [minTotal, maxTotal] = cageSumRange(n);
+    if (total < minTotal || total > maxTotal) {
+      throw new Error(`Total ${total} impossible for ${n} distinct digits (${minTotal}–${maxTotal})`);
+    }
   }
 
   const typedCells = cells.map(([r, c]) => [r, c] as Cell);
-  const key = virtualCageKey(typedCells as unknown as readonly Cell[], total);
-  const existing = new Set(userVirtualCages(state).map(vc => virtualCageKey(vc.cells, vc.total)));
+  const typedNeg = negativeCells?.map(([r, c]) => [r, c] as Cell);
+  const key = virtualCageKey(typedCells as unknown as readonly Cell[], total, typedNeg as unknown as readonly Cell[] | undefined);
+  const existing = new Set(userVirtualCages(state).map(vc => virtualCageKeyFromCage(vc)));
   if (existing.has(key)) throw new Error(`Virtual cage already exists: ${key}`);
 
-  const cage: VirtualCage = { cells: typedCells as Cell[], total, eliminatedSolns: [] };
+  const cage: VirtualCage = {
+    cells: typedCells as Cell[],
+    total,
+    eliminatedSolns: [],
+    ...(isDiff && { negativeCells: typedNeg as Cell[], eliminatedDiffSolns: [] }),
+  };
   const action: UserAction = { type: 'addVirtualCage', cage };
   let updated = recordTurn(state, action);
   updated = applyAutoPlacements(updated);
