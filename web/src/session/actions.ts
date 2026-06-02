@@ -11,6 +11,7 @@ import { solve, BoardState, SolveResult } from '../engine/index.js';
 import { mrvBacktrack } from '../engine/backtracker.js';
 import { solSums } from '../solver/equation.js';
 import { defaultRules } from '../engine/rules/index.js';
+import { CLASSIC_EXCLUDED_RULES } from '../engine/rules/disabled-rules.js';
 import { cageSumRange, cellKey, keyToCell } from '../engine/types.js';
 import type { Cell } from '../engine/types.js';
 import { parsePuzzleImage, ImageDecodeError, GridNotFoundError } from '../image/inpImage.js';
@@ -1238,11 +1239,15 @@ export function getAutoPlacementDelay(): number {
 
 export function getSettingsData(): SettingsResponse {
   const settings = loadSettings();
-  const hintableRules: RuleInfo[] = defaultRules().map(r => ({
-    name: r.name,
-    displayName: r.displayName,
-    description: r.description,
-  }));
+  const puzzleType = getState()?.puzzleType;
+  const excluded = puzzleType === 'classic' ? CLASSIC_EXCLUDED_RULES : new Set<string>();
+  const hintableRules: RuleInfo[] = defaultRules()
+    .filter(r => !excluded.has(r.name))
+    .map(r => ({
+      name: r.name,
+      displayName: r.displayName,
+      description: r.description,
+    }));
   return {
     alwaysApplyRules: settings.alwaysApplyRules,
     autoPlacementDelay: settings.autoPlacementDelay,

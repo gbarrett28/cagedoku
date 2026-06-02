@@ -47,7 +47,7 @@ import {
 } from './actions.js';
 import { findLastConsistentTurnIdx } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
-import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
+import { DISABLED_RULES, CLASSIC_EXCLUDED_RULES } from '../engine/rules/disabled-rules.js';
 import {
   makeBoxCageSpec,
   makeTrivialSpec,
@@ -277,7 +277,12 @@ describe('goldenSolution cached after confirmPuzzle (#17)', () => {
 // ---------------------------------------------------------------------------
 
 describe('computeCandidates — placement propagation (#24)', () => {
-  beforeEach(() => { makeKillerConfirmed(); });
+  beforeEach(() => {
+    const s = makeKillerConfirmed();
+    // These tests exercise NakedSingle peer-elimination explicitly — ensure it is
+    // active regardless of cold-start defaults.
+    setState({ ...s, alwaysApplyRules: ['NakedSingle', ...s.alwaysApplyRules] });
+  });
 
   itNS('placed digit absent from row peers', () => {
     // Use the golden solution digit for (0,0) — placing the correct digit avoids
@@ -655,6 +660,26 @@ describe('getSettingsData / getAutoPlacementDelay', () => {
 
   it('getAutoPlacementDelay returns a number', () => {
     expect(typeof getAutoPlacementDelay()).toBe('number');
+  });
+
+  it('classic: killer-specific rules excluded from hintableRules', () => {
+    makeClassicConfirmed();
+    const data = getSettingsData();
+    for (const name of CLASSIC_EXCLUDED_RULES) {
+      expect(data.hintableRules.some(r => r.name === name), `${name} should be absent for classic`).toBe(false);
+    }
+  });
+
+  it('killer: killer-specific rules present in hintableRules', () => {
+    makeKillerConfirmed();
+    const data = getSettingsData();
+    expect(data.hintableRules.some(r => r.name === 'CageCandidateFilter')).toBe(true);
+  });
+});
+
+describe('DEFAULT_ALWAYS_APPLY_RULES', () => {
+  it('does not include NakedSingle', () => {
+    expect(DEFAULT_ALWAYS_APPLY_RULES).not.toContain('NakedSingle');
   });
 });
 

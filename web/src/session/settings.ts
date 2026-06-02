@@ -18,7 +18,6 @@ const SETTINGS_KEY = 'killer_sudoku_settings';
  */
 export const DEFAULT_ALWAYS_APPLY_RULES: readonly string[] = [
   'CageCandidateFilter',
-  'NakedSingle',
 ];
 
 /** Returns the current settings, falling back to defaults if none are stored. */

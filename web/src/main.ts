@@ -1004,6 +1004,10 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
   const isClassicReview = state.puzzleType === 'classic';
   el<HTMLElement>('completion-msg').hidden = true;
   el<HTMLElement>('playing-actions').hidden = !isClassicReview;
+  if (isClassicReview) {
+    el<HTMLButtonElement>('inspect-cage-btn').hidden = true;
+    el<HTMLButtonElement>('virtual-cage-btn').hidden = true;
+  }
   el<HTMLElement>('upload-panel').hidden = true;
   el<HTMLButtonElement>('new-puzzle-btn').hidden = false;
   el<HTMLButtonElement>('edit-ocr-btn').hidden = true;

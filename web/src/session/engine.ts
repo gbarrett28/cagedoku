@@ -19,7 +19,7 @@
 import { BoardState } from '../engine/boardState.js';
 import { SolverEngine } from '../engine/solverEngine.js';
 import { defaultRules } from '../engine/rules/index.js';
-import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
+import { DISABLED_RULES, CLASSIC_EXCLUDED_RULES } from '../engine/rules/disabled-rules.js';
 import type { Cell, Elimination, Placement, RuleStep } from '../engine/types.js';
 import { NoSolnError } from '../solver/errors.js';
 import { dataToSpec, virtualCageKeyFromCage, solutionKey } from './specUtils.js';
@@ -175,7 +175,10 @@ export function buildEngine(
   }
 
   const _disabled = new Set(DISABLED_RULES);
-  const rules = defaultRules().filter(r => !_disabled.has(r.name));
+  const allRules = defaultRules().filter(r => !_disabled.has(r.name));
+  const rules = state.puzzleType === 'classic'
+    ? allRules.filter(r => !CLASSIC_EXCLUDED_RULES.has(r.name))
+    : allRules;
   const alwaysApplySet = new Set(state.alwaysApplyRules);
   // Always include NakedSingle for Classic mode so placement + peer eliminations
   // fire regardless of user settings.

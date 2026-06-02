@@ -321,7 +321,10 @@ describe('buildEngine — golden check disabled when user-corrupted', () => {
 describe('DEFAULT_ALWAYS_APPLY_RULES', () => {
   it('contains the expected rule names', () => {
     expect(DEFAULT_ALWAYS_APPLY_RULES).toContain('CageCandidateFilter');
-    expect(DEFAULT_ALWAYS_APPLY_RULES).toContain('NakedSingle');
+  });
+
+  it('does not contain NakedSingle (user-configurable, not a cold-start default)', () => {
+    expect(DEFAULT_ALWAYS_APPLY_RULES).not.toContain('NakedSingle');
   });
 });
 
