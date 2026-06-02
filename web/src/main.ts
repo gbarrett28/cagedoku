@@ -1268,7 +1268,11 @@ async function handleConfirm(): Promise<void> {
 
     // Kernel analysis: if the solver stalled and this is the first confirm attempt,
     // run a bounded DFS to identify cells that are ambiguous due to OCR misreads.
-    if (confirmUsedBacktracking && confirmStalledCandidates && !kernelWarningShown) {
+    // Skip for classic puzzles (given digits are shown directly on the review screen)
+    // and if ≥50 cells are unsolved (corrupted totals / inherently ambiguous spec).
+    const stalledCount = confirmStalledCandidates?.flat().filter(c => c.length > 1).length ?? 0;
+    if (confirmUsedBacktracking && confirmStalledCandidates && !kernelWarningShown
+        && currentState.puzzleType !== 'classic' && stalledCount < 50) {
       const spec = dataToSpec(currentState.specData);
       const solution: number[][] = Array.from({ length: 9 }, (_, r) =>
         Array.from({ length: 9 }, (_, c) => [...confirmedBoard.cands(r, c)][0]!),
