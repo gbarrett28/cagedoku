@@ -61,15 +61,11 @@ import { AssertionViolation, findDuplicateCells, hasDuplicateDigits, isCageSumCo
 import { initTutorial, appendCallouts } from './tutorial.js';
 import { resolveDigitKey } from './resolveDigitKey.js';
 import type { StallFixtureFile } from './engine/rules/stallFixtureFile.js';
-
-// ---------------------------------------------------------------------------
-// File System Access API — permission methods not yet in TS DOM lib
-// ---------------------------------------------------------------------------
-
-interface FileSystemHandleWithPermission extends FileSystemFileHandle {
-  queryPermission(desc: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
-  requestPermission(desc: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
-}
+import {
+  imageFileFromClipboard, imageFileFromDrop,
+  saveLastHandle, resolveLastHandle,
+} from './imageInput.js';
+import type { FileSystemHandleWithPermission } from './imageInput.js';
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -941,50 +937,10 @@ function setLoading(on: boolean): void {
   el<HTMLButtonElement>('choose-btn').disabled = on;
 }
 
-// ---------------------------------------------------------------------------
-// File System Access API — IndexedDB persistence for last-used handle
-// ---------------------------------------------------------------------------
-
-function openFsaDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open('coach-fsa', 1);
-    req.onupgradeneeded = () => { req.result.createObjectStore('handles'); };
-    req.onsuccess = () => { resolve(req.result); };
-    req.onerror = () => { reject(req.error); };
-  });
-}
-
-async function loadLastHandle(): Promise<FileSystemFileHandle | null> {
-  try {
-    const db = await openFsaDb();
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction('handles', 'readonly');
-      const req = tx.objectStore('handles').get('last');
-      req.onsuccess = () => { resolve((req.result as FileSystemFileHandle | undefined) ?? null); };
-      req.onerror = () => { reject(req.error); };
-    });
-  } catch { return null; }
-}
-
-async function saveLastHandle(handle: FileSystemFileHandle): Promise<void> {
-  try {
-    const db = await openFsaDb();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction('handles', 'readwrite');
-      const req = tx.objectStore('handles').put(handle, 'last');
-      req.onsuccess = () => { resolve(); };
-      req.onerror = () => { reject(req.error); };
-    });
-  } catch { /* best-effort */ }
-}
-
 async function initUseLastBtn(): Promise<void> {
-  if (!('showOpenFilePicker' in window)) return;
-  const handle = await loadLastHandle() as FileSystemHandleWithPermission | null;
+  const handle = await resolveLastHandle();
   if (!handle) return;
   lastFileHandle = handle;
-  const perm = await handle.queryPermission({ mode: 'read' });
-  if (perm !== 'granted') return;
   const btn = el<HTMLButtonElement>('use-last-btn');
   btn.textContent = `Use "${handle.name}"`;
   btn.hidden = false;
@@ -1994,11 +1950,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Paste: accept an image from the clipboard when the upload panel is visible.
   document.addEventListener('paste', (e) => {
     if (el<HTMLElement>('upload-panel').hidden) return;
-    const imageItem = Array.from(e.clipboardData?.items ?? []).find(i => i.type.startsWith('image/'));
-    if (!imageItem) return;
+    const pasted = imageFileFromClipboard(e);
+    if (!pasted) return;
     e.preventDefault();
-    const pasted = imageItem.getAsFile();
-    if (pasted) void handleProcess(pasted);
+    void handleProcess(pasted);
   });
 
   // Drag-and-drop onto the upload panel.
@@ -2013,8 +1968,8 @@ document.addEventListener('DOMContentLoaded', () => {
     uploadPanel.classList.remove('drag-over');
     if (uploadPanel.hidden) return;
     e.preventDefault();
-    const dropped = e.dataTransfer?.files[0];
-    if (dropped?.type.startsWith('image/')) void handleProcess(dropped);
+    const dropped = imageFileFromDrop(e);
+    if (dropped) void handleProcess(dropped);
   });
 
   void initUseLastBtn();

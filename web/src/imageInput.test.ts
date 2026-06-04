@@ -1,0 +1,122 @@
+// @vitest-environment jsdom
+
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { imageFileFromClipboard, imageFileFromDrop, resolveLastHandle } from './imageInput.js';
+import type { FileSystemHandleWithPermission } from './imageInput.js';
+
+// ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
+
+/** Build a minimal ClipboardEvent mock carrying a single file of the given type. */
+function makeClipboardEvent(mimeType: string | null, filename = 'img.png'): ClipboardEvent {
+  const file = mimeType ? new File(['x'], filename, { type: mimeType }) : null;
+  const items = file ? [{ type: mimeType!, getAsFile: () => file }] : [];
+  return { clipboardData: { items }, preventDefault: vi.fn() } as unknown as ClipboardEvent;
+}
+
+/** Build a minimal DragEvent mock whose dataTransfer holds a single file. */
+function makeDragEvent(mimeType: string | null, filename = 'img.jpg'): DragEvent {
+  const file = mimeType ? new File(['x'], filename, { type: mimeType }) : null;
+  return { dataTransfer: { files: file ? [file] : [] }, preventDefault: vi.fn() } as unknown as DragEvent;
+}
+
+/** Build a minimal FileSystemHandleWithPermission mock. */
+function makeMockHandle(name: string, perm: PermissionState): FileSystemHandleWithPermission {
+  return {
+    kind: 'file',
+    name,
+    isSameEntry: vi.fn(),
+    getFile: vi.fn().mockResolvedValue(new File([], name)),
+    queryPermission: vi.fn().mockResolvedValue(perm),
+    requestPermission: vi.fn().mockResolvedValue(perm),
+  } as unknown as FileSystemHandleWithPermission;
+}
+
+afterEach(() => { vi.unstubAllGlobals(); });
+
+// ---------------------------------------------------------------------------
+
+describe('imageFileFromClipboard', () => {
+  it('returns the image File when an image/* item is present', () => {
+    const e = makeClipboardEvent('image/png', 'screenshot.png');
+    const file = imageFileFromClipboard(e);
+    expect(file).not.toBeNull();
+    expect(file!.name).toBe('screenshot.png');
+    expect(file!.type).toBe('image/png');
+  });
+
+  it('returns null when no clipboard items are present', () => {
+    expect(imageFileFromClipboard(makeClipboardEvent(null))).toBeNull();
+  });
+
+  it('returns null for a non-image clipboard item', () => {
+    expect(imageFileFromClipboard(makeClipboardEvent('text/plain'))).toBeNull();
+  });
+
+  it('accepts image/webp and other image subtypes', () => {
+    const file = imageFileFromClipboard(makeClipboardEvent('image/webp', 'snap.webp'));
+    expect(file).not.toBeNull();
+    expect(file!.type).toBe('image/webp');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('imageFileFromDrop', () => {
+  it('returns the image File when an image is dropped', () => {
+    const e = makeDragEvent('image/jpeg', 'photo.jpg');
+    const file = imageFileFromDrop(e);
+    expect(file).not.toBeNull();
+    expect(file!.name).toBe('photo.jpg');
+    expect(file!.type).toBe('image/jpeg');
+  });
+
+  it('returns null for a non-image drop', () => {
+    expect(imageFileFromDrop(makeDragEvent('text/html'))).toBeNull();
+  });
+
+  it('returns null when no file is present in the drop', () => {
+    expect(imageFileFromDrop(makeDragEvent(null))).toBeNull();
+  });
+
+  it('accepts image/png drops', () => {
+    const file = imageFileFromDrop(makeDragEvent('image/png', 'grid.png'));
+    expect(file).not.toBeNull();
+    expect(file!.type).toBe('image/png');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('resolveLastHandle', () => {
+  it('returns the handle when the API is available and permission is granted', async () => {
+    vi.stubGlobal('showOpenFilePicker', vi.fn());
+    const handle = makeMockHandle('puzzle.png', 'granted');
+    const result = await resolveLastHandle(() => Promise.resolve(handle));
+    expect(result).toBe(handle);
+  });
+
+  it('returns null when permission is denied', async () => {
+    vi.stubGlobal('showOpenFilePicker', vi.fn());
+    const handle = makeMockHandle('puzzle.png', 'denied');
+    expect(await resolveLastHandle(() => Promise.resolve(handle))).toBeNull();
+  });
+
+  it('returns null when permission is prompt (not yet granted)', async () => {
+    vi.stubGlobal('showOpenFilePicker', vi.fn());
+    const handle = makeMockHandle('puzzle.png', 'prompt');
+    expect(await resolveLastHandle(() => Promise.resolve(handle))).toBeNull();
+  });
+
+  it('returns null when no handle is stored in IndexedDB', async () => {
+    vi.stubGlobal('showOpenFilePicker', vi.fn());
+    expect(await resolveLastHandle(() => Promise.resolve(null))).toBeNull();
+  });
+
+  it('returns null when showOpenFilePicker is unavailable (non-FSA browser)', async () => {
+    // In jsdom showOpenFilePicker is not present — no stub needed.
+    const handle = makeMockHandle('puzzle.png', 'granted');
+    expect(await resolveLastHandle(() => Promise.resolve(handle))).toBeNull();
+  });
+});

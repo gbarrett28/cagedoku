@@ -73,27 +73,27 @@ No PWA or manifest changes. Independently testable.
 
 ## Tests
 
-- [ ] **Unit test: paste handler** (`web/src/main.test.ts` or new file)
+- [x] **Unit test: paste handler** (`web/src/imageInput.test.ts`)
   - Synthesise a `ClipboardEvent` with an `image/png` item and verify `handleProcess`
     is called with the correct `File`
   - Verify paste is ignored when upload panel is hidden
 
-- [ ] **Unit test: `#use-last-btn` visibility**
+- [x] **Unit test: `#use-last-btn` visibility**
   - Mock IndexedDB with a stored handle whose `queryPermission` returns `'granted'`
   - Verify `#use-last-btn` is shown with the correct filename label
   - Verify it is hidden when permission returns `'denied'`
   - Verify it is hidden when no handle is stored
 
-- [ ] **Unit test: drop handler**
+- [x] **Unit test: drop handler**
   - Synthesise a `DragEvent` with a `DataTransfer` containing an image file
   - Verify `handleProcess` is called; verify non-image drop is ignored
 
-- [ ] **E2E smoke test** (`web/e2e/app.spec.ts` or new file)
+- [x] **E2E smoke test** (updated `app.spec.ts`, `offline.spec.ts`, `stress.spec.ts` — `setInputFiles` now auto-triggers without a button click)
   - Confirm that selecting a file via `#file-input` (`page.setInputFiles`) triggers
     processing without a separate button click (the existing test likely clicks
     `#process-btn` — update it)
 
 ## Gate
 
-- [ ] Run `bash scripts/run-bronze-gate.sh` — all checks pass
-- [ ] Commit on `claude/seamless-puzzle-analysis-xljer`
+- [x] Run `bash scripts/run-bronze-gate.sh` — all checks pass
+- [x] Commit on `claude/seamless-puzzle-analysis-xljer`
