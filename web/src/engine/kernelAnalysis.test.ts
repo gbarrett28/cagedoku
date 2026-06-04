@@ -15,6 +15,7 @@ describe('analyseKernels', () => {
     expect(result.budgetExhausted).toBe(false);
     expect(result.intersectionCells).toHaveLength(0);
     expect(result.ambiguousCells).toHaveLength(0);
+    expect(result.kernelStates).toHaveLength(0);
   });
 
   it('exhausts budget immediately when maxNodes=0', () => {
@@ -24,6 +25,7 @@ describe('analyseKernels', () => {
     const result = analyseKernels(spec, stalledCandidates, solution, 0);
     expect(result.budgetExhausted).toBe(true);
     expect(result.nodesExplored).toBe(0);
+    expect(result.kernelStates).toHaveLength(0);
   });
 
   it('returns valid cell coordinates in intersection and ambiguous arrays', () => {
@@ -55,4 +57,25 @@ describe('analyseKernels', () => {
       expect(result.nodesExplored).toBeLessThanOrEqual(budget);
     }
   });
+
+  it('kernelStates are valid 9×9 candidate grids', () => {
+    const spec = makeTrivialSpec();
+    const stalledCandidates = KNOWN_SOLUTION.map(row => row.map(d => [d]));
+    const solution = KNOWN_SOLUTION.map(row => [...row]);
+    const result = analyseKernels(spec, stalledCandidates, solution);
+    for (const ks of result.kernelStates) {
+      expect(ks).toHaveLength(9);
+      for (const row of ks) {
+        expect(row).toHaveLength(9);
+        for (const cell of row) {
+          expect(cell.length).toBeGreaterThanOrEqual(1);
+          for (const d of cell) {
+            expect(d).toBeGreaterThanOrEqual(1);
+            expect(d).toBeLessThanOrEqual(9);
+          }
+        }
+      }
+    }
+  });
 });
+

@@ -34,6 +34,13 @@ export interface KernelAnalysisResult {
    * These are the most likely OCR-dropped given digits.
    */
   readonly ambiguousCells: readonly [number, number][];
+  /**
+   * The discovered kernel candidate grids — the fully-constrained stall states
+   * from which no further single-cell pin creates a new distinct stall.
+   * Empty when no kernels are found (all solved, budget exhausted, or the
+   * source state itself is the only kernel).
+   */
+  readonly kernelStates: readonly number[][][][];
 }
 
 export function analyseKernels(
@@ -84,7 +91,7 @@ export function analyseKernels(
   }
 
   if (kernels.length === 0) {
-    return { nodesExplored, budgetExhausted, intersectionCells: [], ambiguousCells: [] };
+    return { nodesExplored, budgetExhausted, intersectionCells: [], ambiguousCells: [], kernelStates: [] };
   }
 
   // Compute the intersection of unsolved cell positions across all kernels.
@@ -132,5 +139,5 @@ export function analyseKernels(
     k => k.split(',').map(Number) as [number, number],
   );
 
-  return { nodesExplored, budgetExhausted, intersectionCells, ambiguousCells };
+  return { nodesExplored, budgetExhausted, intersectionCells, ambiguousCells, kernelStates: kernels };
 }

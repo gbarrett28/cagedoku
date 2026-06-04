@@ -18,8 +18,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { solve } from '../src/engine/index.js';
+import { analyseKernels } from '../src/engine/kernelAnalysis.js';
 import type { PuzzleSpec } from '../src/solver/puzzleSpec.js';
 import type { StallFixtureFile } from '../src/engine/rules/stallFixtureFile.js';
+
+/** Node budget for CI kernel analysis — generous since it's offline. */
+const KERNEL_BUDGET = 5000;
 
 // ---------------------------------------------------------------------------
 // Validation
@@ -81,10 +85,11 @@ if (jsonFiles.length === 0) {
   process.exit(0);
 }
 
-// Pre-load existing fixtures in the output directory for deduplication.
-// Key: JSON.stringify([regions, cageTotals]) — two specs with the same layout are the same puzzle.
-function specKey(spec: { regions: number[][]; cageTotals: number[][] }): string {
-  return JSON.stringify([spec.regions, spec.cageTotals]);
+// Pre-load existing fixtures for deduplication by stalledCandidates content.
+// Using candidate-grid key rather than spec key so multiple kernels from the
+// same puzzle can coexist, while exact duplicates are skipped.
+function candidatesKey(candidates: number[][][]): string {
+  return JSON.stringify(candidates);
 }
 
 const existingKeys = new Set<string>();
@@ -93,7 +98,7 @@ for (const f of fs.readdirSync(outputDir).filter(f => f.endsWith('.stall.json'))
     const existing = JSON.parse(
       fs.readFileSync(path.join(outputDir, f), 'utf-8'),
     ) as StallFixtureFile;
-    existingKeys.add(specKey(existing.spec));
+    existingKeys.add(candidatesKey(existing.stalledCandidates));
   } catch {
     // Ignore malformed existing fixtures
   }
@@ -135,36 +140,61 @@ for (const filename of jsonFiles) {
     continue;
   }
 
-  // Deduplicate: skip if a fixture with the same puzzle layout already exists.
-  if (existingKeys.has(specKey(spec))) {
-    console.log(`${name}: duplicate of an existing fixture — skipping`);
-    duplicate++;
-    continue;
+  const sc = result.stalledCandidates ?? [];
+
+  // Extract solution from the backtracked board.
+  const solution: number[][] = Array.from({ length: 9 }, (_, r) =>
+    Array.from({ length: 9 }, (_, c) => [...result.board.cands(r, c)][0]!),
+  );
+
+  // Run kernel analysis to find the fully-constrained stall states.
+  // Kernels are strictly better fixtures than the original stall — they
+  // represent the hardest remaining position for rule development.
+  const kernelResult = analyseKernels(spec, sc, solution, KERNEL_BUDGET);
+  const kernelStates = kernelResult.kernelStates;
+
+  if (kernelResult.budgetExhausted) {
+    console.warn(`${name}: kernel budget exhausted after ${kernelResult.nodesExplored} nodes`);
   }
 
-  const sc = result.stalledCandidates ?? [];
-  const unsolvedCells = sc.flat().filter(c => c.length > 1).length;
-  const totalCandidates = sc.flat().filter(c => c.length > 1).reduce((sum, c) => sum + c.length, 0);
+  // Use kernels when available; fall back to original stall if none found.
+  const statesToSave: Array<{ candidates: number[][][]; suffix: string }> =
+    kernelStates.length > 0
+      ? kernelStates.map((ks, i) => ({ candidates: ks, suffix: `-k${i + 1}` }))
+      : [{ candidates: sc, suffix: '' }];
 
-  const fixture: StallFixtureFile = {
-    version: 1,
-    source: 'r2',
-    name,
-    addedAt: today,
-    puzzleType: 'killer',
-    spec,
-    stalledCandidates: sc,
-    unsolvedCells,
-    totalCandidates,
-  };
+  for (const { candidates, suffix } of statesToSave) {
+    const fixtureName = `${name}${suffix}`;
+    const key = candidatesKey(candidates);
+    if (existingKeys.has(key)) {
+      console.log(`${fixtureName}: duplicate of an existing fixture — skipping`);
+      duplicate++;
+      continue;
+    }
 
-  const outPath = path.join(outputDir, `${name}.stall.json`);
-  fs.writeFileSync(outPath, JSON.stringify(fixture, null, 2));
-  existingKeys.add(specKey(spec)); // prevent same puzzle appearing twice in one run
-  console.log(`${name}: stalled (${unsolvedCells} unsolved, ${totalCandidates} candidates) → ${outPath}`);
-  stalled++;
+    const unsolvedCells = candidates.flat().filter(c => c.length > 1).length;
+    const totalCandidates = candidates.flat().filter(c => c.length > 1).reduce((sum, c) => sum + c.length, 0);
+
+    const fixture: StallFixtureFile = {
+      version: 1,
+      source: 'r2',
+      name: fixtureName,
+      addedAt: today,
+      puzzleType: 'killer',
+      spec,
+      stalledCandidates: candidates,
+      unsolvedCells,
+      totalCandidates,
+    };
+
+    const outPath = path.join(outputDir, `${fixtureName}.stall.json`);
+    fs.writeFileSync(outPath, JSON.stringify(fixture, null, 2));
+    existingKeys.add(key);
+    console.log(`${fixtureName}: ${suffix ? 'kernel' : 'stall'} (${unsolvedCells} unsolved, ${totalCandidates} candidates) → ${outPath}`);
+    stalled++;
+  }
 }
 
 console.log(
-  `\nDone. ${stalled} stalled, ${skipped} already solved, ${duplicate} duplicate, ${invalid} invalid.`,
+  `\nDone. ${stalled} fixtures written, ${skipped} already solved, ${duplicate} duplicate, ${invalid} invalid.`,
 );
