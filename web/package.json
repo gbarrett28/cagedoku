@@ -7,13 +7,15 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build && node scripts/generate-sw.js",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "generate-icons": "node scripts/generate-icons.cjs"
   },
   "devDependencies": {
     "@playwright/test": "1.56.1",
     "@types/jsdom": "^28.0.1",
     "@types/node": "^25.6.0",
     "@vitest/coverage-v8": "^1.6.1",
+    "canvas": "^3.2.3",
     "eslint": "^10.2.1",
     "jsdom": "^29.1.1",
     "typescript": "^5.4.5",

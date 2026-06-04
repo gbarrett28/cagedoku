@@ -110,7 +110,6 @@ test('upload puzzle image and process it while offline', async ({ page, context 
 
   // Upload and process — all computation is local (WebAssembly + JS).
   await page.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
-  await page.locator('#process-btn').click();
 
   await expect(page.locator('#review-panel')).toBeVisible({ timeout: 40_000 });
   await expect(page.locator('#upload-panel')).toBeHidden();
