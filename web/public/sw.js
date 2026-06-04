@@ -13,7 +13,7 @@
  * commit hash.
  */
 
-const CACHE_VERSION = 'v6';
+const CACHE_VERSION = 'v7';
 const CACHE_NAME = `coach-killer-sudoku-${CACHE_VERSION}`;
 
 /**
@@ -131,7 +131,10 @@ self.addEventListener('fetch', (event) => {
             const buffer = await imageFile.arrayBuffer();
             await stashShareItem({ buffer, name: imageFile.name, type: imageFile.type });
           }
-          return Response.redirect('/', 303);
+          // Redirect to the app root. Use self.location to derive the correct
+          // base URL so this works at any deployment path (e.g. /cagedoku/).
+          const appRoot = new URL('./', self.location.href).href;
+          return Response.redirect(appRoot, 303);
         }).catch(() => Response.redirect('/', 303)),
       );
     }
