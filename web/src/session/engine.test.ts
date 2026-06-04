@@ -403,9 +403,7 @@ describe('applyAutoPlacements — NakedSingle applies placement and peer elimina
       autoRemovedCandidates: [],
     };
     const result = applyAutoPlacements(state);
-    // Without the fix: (0,0) stays 0 because CSE never eliminates peer digits and
-    // NakedSingle never fires for (0,0).  With the fix: CSE is coerced into
-    // alwaysApplySet, cascade runs, (0,0) is placed.
+    // NakedSingle is in alwaysApplyRules, so the cascade runs and (0,0) is placed.
     expect(result.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
   });
 });

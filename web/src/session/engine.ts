@@ -183,9 +183,6 @@ export function buildEngine(
     ? allRules.filter(r => !CLASSIC_EXCLUDED_RULES.has(r.name))
     : allRules;
   const alwaysApplySet = new Set(state.alwaysApplyRules);
-  // Always include NakedSingle for Classic mode so placement + peer eliminations
-  // fire regardless of user settings.
-  if (state.puzzleType === 'classic') alwaysApplySet.add('NakedSingle');
 
   // Non-hint mode: only always-apply rules run.
   // Hint mode: all rules run; always-apply rules apply directly, hint-only rules go to pendingHints.
