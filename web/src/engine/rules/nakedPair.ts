@@ -96,7 +96,7 @@ Guards:
       ruleName: this.name,
       displayName: 'Naked Pair',
       explanation: `${cellLabel(c1)} and ${cellLabel(c2)} both have only {${dLo},${dHi}} as candidates in ${unitLabel(ctx.unit)}. These digits can be eliminated from all other cells in that unit.`,
-      highlightCells: [c1, c2, ...eliminations.map(e => e.cell)],
+      highlightCells: [c1, c2],
       eliminations,
       placement: null,
       virtualCageSuggestion: null,
