@@ -1,7 +1,8 @@
 # Plan: Seamless Input — Sprint 1 (Paste & Drag-drop)
 
-Implements clipboard paste, drag-and-drop, and auto-process-on-select on the
-Upload screen. No PWA or manifest changes. Independently testable.
+Implements clipboard paste, drag-and-drop, auto-process-on-select, and
+File System Access API handle persistence on the Upload screen.
+No PWA or manifest changes. Independently testable.
 
 ---
 
@@ -43,13 +44,32 @@ Upload screen. No PWA or manifest changes. Independently testable.
   - `.upload-hint` — small, muted secondary text
   - `#upload-panel.drag-over` — subtle visual feedback (e.g. dashed border tint)
 
+- [ ] **File System Access API: handle persistence + `startIn` hint**
+  (`web/src/main.ts`, Chrome/Edge only — feature-detected, silent fallback)
+  - After any successful `handleProcess(file)` call, attempt to store the
+    `FileSystemFileHandle` in IndexedDB (`coach-fsa`, key `lastHandle`) using
+    `window.showOpenFilePicker` availability as the feature guard. Only store when
+    the file originated from `showOpenFilePicker` (not paste/drop — those have no
+    handle). In practice: replace the hidden `#file-input` click path with
+    `showOpenFilePicker({ startIn: lastHandle ?? 'pictures', multiple: false })`
+    when the API is available; fall back to the `<input type="file">` click otherwise.
+  - On DOMContentLoaded, read `lastHandle` from IndexedDB. If present and
+    `await lastHandle.queryPermission({ mode: 'read' }) === 'granted'`, show a
+    `#use-last-btn` button labelled "Use [filename]" above `#choose-btn`.
+  - `#use-last-btn` click: `await lastHandle.requestPermission({ mode: 'read' })`,
+    then `await lastHandle.getFile()`, call `void handleProcess(file)`. Hide the
+    button if permission is denied.
+  - Clear `lastHandle` from IndexedDB (and hide `#use-last-btn`) when the user
+    clicks "New puzzle" so a stale suggestion doesn't persist across sessions.
+  - Add `#use-last-btn` to `index.html` inside `#upload-panel`, `hidden` by default.
+
 - [ ] **Tutorial callout update** (`web/src/main.ts`)
   - Replace `process-btn` callout ID with `choose-btn` in `buildUploadCallouts()`
 
 - [ ] **Update `docs/ui.md`**
   - Upload Screen component table: replace "Process button" with "Choose image button"
-    (`#choose-btn`); add paste and drop-zone entries
-  - Button inventory: replace `#process-btn` row with `#choose-btn`
+    (`#choose-btn`); add paste, drop-zone, and "Use last image" entries
+  - Button inventory: replace `#process-btn` row with `#choose-btn`; add `#use-last-btn`
 
 ## Tests
 
@@ -57,6 +77,12 @@ Upload screen. No PWA or manifest changes. Independently testable.
   - Synthesise a `ClipboardEvent` with an `image/png` item and verify `handleProcess`
     is called with the correct `File`
   - Verify paste is ignored when upload panel is hidden
+
+- [ ] **Unit test: `#use-last-btn` visibility**
+  - Mock IndexedDB with a stored handle whose `queryPermission` returns `'granted'`
+  - Verify `#use-last-btn` is shown with the correct filename label
+  - Verify it is hidden when permission returns `'denied'`
+  - Verify it is hidden when no handle is stored
 
 - [ ] **Unit test: drop handler**
   - Synthesise a `DragEvent` with a `DataTransfer` containing an image file
