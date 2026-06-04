@@ -96,9 +96,33 @@ button is hidden on every new upload and on every review-screen entry.
 
 | Element | Description |
 |---|---|
-| File input | Accepts any image file (`image/*`). PDF support planned (see below). |
-| Process button | Runs the image pipeline locally (no server required). |
-| Status message | Shows progress and warnings inline. Never blocks on error — see Behaviour. |
+| Choose image button (`#choose-btn`) | Opens the file picker. On Chrome/Edge uses `showOpenFilePicker` with `startIn` set to the last-used file's directory; falls back to a hidden `#file-input` on other browsers. Disabled while the pipeline is running. |
+| Use last image button (`#use-last-btn`) | Shown (Chrome/Edge only) when a `FileSystemFileHandle` from the previous session is stored in IndexedDB and read permission is still granted. Label shows the filename. Clicking it re-reads the file and starts processing immediately. Hidden by default; hidden while processing. |
+| Hidden file input (`#file-input`) | `accept="image/*,application/pdf"`. Used as fallback when `showOpenFilePicker` is unavailable. A `change` event auto-triggers `handleProcess()`. |
+| Upload hint | Static `<p class="upload-hint">` describing drag-drop and paste alternatives. |
+| Install banner (`#install-banner`) | Shown when the browser fires `beforeinstallprompt` (PWA installable) and the user has not previously dismissed it. Contains a label, an **Install** button (`#install-btn`), and a **✕** dismiss button (`#install-dismiss-btn`). Dismissed state is stored in `localStorage` under `coach_install_dismissed`. |
+| Status message (`#status-msg`) | Shows progress and warnings inline. Never blocks on error — see Behaviour. |
+
+**Alternative input methods**
+
+- **Paste** (`Ctrl+V` / `⌘V`): a `paste` listener on `document` captures the first `image/*` clipboard item and calls `handleProcess()` directly. Active only while `#upload-panel` is visible.
+- **Drag and drop**: `#upload-panel` handles `dragover` / `drop`. While a drag is in progress, the panel gains a `drag-over` CSS class (dashed outline). On drop, the first image file is passed to `handleProcess()`.
+- **Web Share Target** (installed PWA only): when the user shares an image to COACH from another app, the service worker intercepts the POST `/share-target` request, stashes `{ buffer, name, type }` in IndexedDB (`coach-share-inbox / pending`), and redirects to `/`. On load, `checkShareInbox()` reads and deletes the entry, reconstructs a `File`, and passes it to `handleProcess()`.
+- **File Handling API** (installed PWA, Chromium desktop): when the user opens an image file via "Open with → COACH", the browser fires `window.launchQueue`. The `setConsumer` callback retrieves the file via `params.files[0].getFile()` and calls `handleProcess()`.
+- All paths call `handleProcess(file)` with an explicit `File` argument; the legacy `#file-input` change path calls `handleProcess()` without one and reads `fileInput.files[0]` as before.
+- **Pending-file queue**: if any of the OS-integration paths fires before the image pipeline is ready, the file is stored in `pendingShareFile`. The CV-ready callback flushes it immediately after the pipeline loads.
+
+**Browser support summary**
+
+| Feature | Desktop | Android | iOS |
+|---|---|---|---|
+| Clipboard paste | All modern browsers | Chrome (user-gesture paste) | Limited |
+| Drag-and-drop | All modern browsers | N/A | N/A |
+| Auto-process on file select | All browsers | All browsers | All browsers |
+| File System Access API (Use last) | Chrome, Edge | Chrome | N/A |
+| PWA install | Chrome, Edge, Firefox, Safari 17+ | Chrome | Safari 16.4+ |
+| Web Share Target | N/A | Chrome | Safari 16.4+ (installed PWA) |
+| File Handling API | Chrome, Edge (installed PWA) | N/A | N/A |
 
 **Behaviour**
 
@@ -570,8 +594,13 @@ The element IDs match the HTML (`index.html`).
 
 | Element | ID | Notes |
 |---|---|---|
-| File input | `#file-input` | `accept="image/*"` |
-| Process button | `#process-btn` | Triggers OCR pipeline |
+| Hidden file input | `#file-input` | `accept="image/*,application/pdf"` — fallback for non-FSA browsers |
+| Choose image button | `#choose-btn` | Opens file picker; uses FSA `showOpenFilePicker` on Chrome/Edge |
+| Use last image button | `#use-last-btn` | Chrome/Edge only; hidden by default |
+| Upload hint | `.upload-hint` | Static text describing drag-drop / paste |
+| Install banner | `#install-banner` | Hidden by default; shown when PWA is installable and not dismissed |
+| Install button | `#install-btn` | Triggers `deferredInstallPrompt.prompt()` |
+| Dismiss button | `#install-dismiss-btn` | Sets `coach_install_dismissed` in localStorage |
 | Status message | `#status-msg` | Shows progress / error |
 | Pipeline progress | `#cv-loading-row` | Visible while OpenCV is loading |
 
@@ -808,6 +837,54 @@ In `worker/src/index.ts`, `createFeedbackIssue` handles the `'new-rule'` type:
   ```
 
 Bug-specific sections (`bugCategory` line, expected behaviour, exception) are omitted. Session trace and config sections are retained.
+
+---
+
+## PWA OS Integration
+
+The app is a Progressive Web App. Once installed, two OS-level hooks allow images to be opened directly without going through the file picker.
+
+### Web Share Target
+
+Declared in `manifest.webmanifest` as a `share_target` entry:
+
+```json
+"share_target": {
+  "action": "/share-target",
+  "method": "POST",
+  "enctype": "multipart/form-data",
+  "params": { "files": [{ "name": "image", "accept": ["image/*"] }] }
+}
+```
+
+Flow:
+1. User long-presses an image on Android → Share → COACH.
+2. The OS sends a `POST /share-target` multipart request to the installed scope.
+3. The service worker intercepts it (before the GET-only guard), reads the `image` field from `FormData`, converts it to an `ArrayBuffer`, and stores `{ buffer, name, type }` at key `'item'` in IndexedDB `coach-share-inbox / pending`. It then responds with `Response.redirect('/', 303)`.
+4. The page loads. `checkShareInbox()` (called inside `DOMContentLoaded`) opens the same database, reads and deletes the item, reconstructs a `File`, and calls `handleOrQueueFile()`.
+5. If the image pipeline is not yet ready, the file is held in `pendingShareFile` and processed as soon as the pipeline finishes loading.
+
+In dev mode, a Vite plugin middleware (`devShareTargetPlugin` in `vite.config.ts`) redirects `POST /share-target` to `GET /` so the redirect leg can be tested without a real service worker.
+
+**Browser support:** Android Chrome (with installed PWA). Not supported on Safari/Firefox.
+
+### File Handling API
+
+Declared in `manifest.webmanifest` as a `file_handlers` entry:
+
+```json
+"file_handlers": [
+  { "action": "/", "accept": { "image/*": [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"] } }
+]
+```
+
+Flow:
+1. User right-clicks an image file on desktop → Open with → COACH (or sets COACH as the default image opener).
+2. Chromium launches the installed PWA and populates `window.launchQueue`.
+3. The `setConsumer` callback (registered in `DOMContentLoaded`) calls `fileFromLaunchParams(params.files)` to get the `File`, then `handleOrQueueFile()`.
+4. Same `pendingShareFile` guard as the share-target path applies.
+
+**Browser support:** Chromium-based desktop browsers (Chrome, Edge) with the PWA installed. Not supported on Safari/Firefox.
 
 ---
 

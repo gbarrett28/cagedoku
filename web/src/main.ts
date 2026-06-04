@@ -61,6 +61,13 @@ import { AssertionViolation, findDuplicateCells, hasDuplicateDigits, isCageSumCo
 import { initTutorial, appendCallouts } from './tutorial.js';
 import { resolveDigitKey } from './resolveDigitKey.js';
 import type { StallFixtureFile } from './engine/rules/stallFixtureFile.js';
+import {
+  imageFileFromClipboard, imageFileFromDrop,
+  saveLastHandle, resolveLastHandle,
+  consumeShareInbox, fileFromLaunchParams,
+} from './imageInput.js';
+import type { FileSystemHandleWithPermission } from './imageInput.js';
+import { INSTALL_DISMISSED_KEY, shouldShowInstallBanner } from './installPrompt.js';
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -144,6 +151,25 @@ let kernelWarningShown = false; // true after first-confirm kernel warning; skip
 // Bug reporting state
 let pendingBug: { info: string } | null = null;
 let exceptionForSubmission: string | null = null;
+
+// Last FileSystemFileHandle from the File System Access API, persisted in
+// IndexedDB so the picker can reopen in the same directory next session.
+let lastFileHandle: FileSystemFileHandle | null = null;
+
+// PWA install prompt deferred from the beforeinstallprompt event.
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+}
+let deferredInstallPrompt: BeforeInstallPromptEvent | null = null;
+
+// File pending CV-pipeline readiness — set by share-target or launchQueue
+// consumer before the pipeline is ready; consumed once the pipeline loads.
+let pendingShareFile: File | null = null;
+
+// File Handling API type declarations (not yet in the TypeScript DOM lib).
+interface LaunchParams { readonly files: ReadonlyArray<FileSystemFileHandle>; }
+interface LaunchQueue { setConsumer(consumer: (params: LaunchParams) => void): void; }
+interface WindowWithLaunchQueue extends Window { launchQueue: LaunchQueue; }
 
 // OCR state preserved across auto-confirm for the Edit OCR button.
 let lastOcrState: PuzzleState | null = null;
@@ -628,7 +654,7 @@ function renderState(state: PuzzleState): void {
 
 function buildUploadCallouts(): { id: string; text: string }[] {
   return [
-    { id: 'process-btn',      text: 'Tap here to analyse your photo and detect the grid and cages.' },
+    { id: 'choose-btn',       text: 'Tap here to choose a photo, or drag and drop / paste one directly.' },
     { id: 'hard-puzzles-btn', text: 'Browse puzzles the rule engine cannot solve — try one and suggest a new rule.' },
     { id: 'help-btn',         text: 'Re-open this guide at any time.' },
     { id: 'feedback-btn',     text: 'Found a bug or have a suggestion? Tap the envelope to send feedback.' },
@@ -925,7 +951,40 @@ function setStatus(msg: string, isError = false): void {
 }
 
 function setLoading(on: boolean): void {
-  el<HTMLButtonElement>('process-btn').disabled = on;
+  el<HTMLButtonElement>('choose-btn').disabled = on;
+}
+
+function showInstallBanner(): void {
+  if (!shouldShowInstallBanner(localStorage)) return;
+  el<HTMLElement>('install-banner').hidden = false;
+}
+
+function hideInstallBanner(): void {
+  el<HTMLElement>('install-banner').hidden = true;
+}
+
+async function initUseLastBtn(): Promise<void> {
+  const handle = await resolveLastHandle();
+  if (!handle) return;
+  lastFileHandle = handle;
+  const btn = el<HTMLButtonElement>('use-last-btn');
+  btn.textContent = `Use "${handle.name}"`;
+  btn.hidden = false;
+}
+
+/** Processes a file immediately if the pipeline is ready; otherwise queues it. */
+function handleOrQueueFile(file: File): void {
+  if ((window as unknown as Record<string, unknown>)['__pipelineReady']) {
+    void handleProcess(file);
+  } else {
+    pendingShareFile = file;
+  }
+}
+
+/** Drains the Web Share Target inbox written by the service worker. */
+async function checkShareInbox(): Promise<void> {
+  const file = await consumeShareInbox();
+  if (file) handleOrQueueFile(file);
 }
 
 // ---------------------------------------------------------------------------
@@ -1078,15 +1137,14 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
   setStatus(warning ? `Warning: ${warning}` : '');
 }
 
-async function handleProcess(): Promise<void> {
-  const fileInput = el<HTMLInputElement>('file-input');
-  if (!fileInput.files || fileInput.files.length === 0) { setStatus('Please select an image or PDF file.', true); return; }
+async function handleProcess(file?: File): Promise<void> {
+  const f = file ?? el<HTMLInputElement>('file-input').files?.[0];
+  if (!f) { setStatus('Please drop, paste, or select an image.', true); return; }
   // Clear any active fixture — the normal image pipeline takes over.
   currentFixtureName = null;
   currentFixtureUnsolvedCells = null;
   currentFixtureTotalCandidates = null;
   clearActionLog();
-  const f = fileInput.files[0]!;
   logAction('file_selected', `${f.name} (${(f.size / 1024).toFixed(0)} KB)`);
   el<HTMLButtonElement>('edit-ocr-btn').hidden = true;
   lastOcrState = null;
@@ -1848,6 +1906,10 @@ document.addEventListener('DOMContentLoaded', () => {
     .then(() => {
       clearTimeout(loadTimeout);
       (window as unknown as Record<string, unknown>)['__pipelineReady'] = true;
+      if (pendingShareFile) {
+        void handleProcess(pendingShareFile);
+        pendingShareFile = null;
+      }
     })
     .catch(e => {
       clearTimeout(loadTimeout);
@@ -1883,7 +1945,112 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  el<HTMLButtonElement>('process-btn').addEventListener('click', () => { void handleProcess(); });
+  // ── Image input: choose button, file-input fallback, paste, drag-and-drop ───
+
+  el<HTMLButtonElement>('choose-btn').addEventListener('click', () => {
+    if ('showOpenFilePicker' in window) {
+      void (async () => {
+        try {
+          const [handle] = await (window as unknown as {
+            showOpenFilePicker(o?: {
+              multiple?: boolean;
+              startIn?: string | FileSystemFileHandle;
+              types?: { description?: string; accept: Record<string, string[]> }[];
+            }): Promise<FileSystemFileHandle[]>;
+          }).showOpenFilePicker({
+            multiple: false,
+            startIn: lastFileHandle ?? 'pictures',
+            types: [{ description: 'Images', accept: { 'image/*': ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'] } }],
+          });
+          if (!handle) return;
+          lastFileHandle = handle;
+          void saveLastHandle(handle);
+          el<HTMLButtonElement>('use-last-btn').hidden = true; // hide while processing
+          void handleProcess(await handle.getFile());
+        } catch (e) {
+          if (e instanceof Error && e.name !== 'AbortError') setStatus(`Could not open file: ${e.message}`, true);
+        }
+      })();
+    } else {
+      el<HTMLInputElement>('file-input').click();
+    }
+  });
+
+  // Legacy fallback: when FSA is not available the hidden file input is used.
+  el<HTMLInputElement>('file-input').addEventListener('change', () => { void handleProcess(); });
+
+  el<HTMLButtonElement>('use-last-btn').addEventListener('click', () => {
+    if (!lastFileHandle) return;
+    void (async () => {
+      try {
+        const perm = await (lastFileHandle as FileSystemHandleWithPermission).requestPermission({ mode: 'read' });
+        if (perm !== 'granted') { el<HTMLButtonElement>('use-last-btn').hidden = true; return; }
+        void handleProcess(await lastFileHandle.getFile());
+      } catch {
+        el<HTMLButtonElement>('use-last-btn').hidden = true;
+      }
+    })();
+  });
+
+  // Paste: accept an image from the clipboard when the upload panel is visible.
+  document.addEventListener('paste', (e) => {
+    if (el<HTMLElement>('upload-panel').hidden) return;
+    const pasted = imageFileFromClipboard(e);
+    if (!pasted) return;
+    e.preventDefault();
+    void handleProcess(pasted);
+  });
+
+  // Drag-and-drop onto the upload panel.
+  const uploadPanel = el<HTMLElement>('upload-panel');
+  uploadPanel.addEventListener('dragover', (e) => {
+    if (uploadPanel.hidden) return;
+    e.preventDefault();
+    uploadPanel.classList.add('drag-over');
+  });
+  uploadPanel.addEventListener('dragleave', () => { uploadPanel.classList.remove('drag-over'); });
+  uploadPanel.addEventListener('drop', (e) => {
+    uploadPanel.classList.remove('drag-over');
+    if (uploadPanel.hidden) return;
+    e.preventDefault();
+    const dropped = imageFileFromDrop(e);
+    if (dropped) void handleProcess(dropped);
+  });
+
+  void initUseLastBtn();
+
+  // PWA install prompt
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e as BeforeInstallPromptEvent;
+    showInstallBanner();
+  });
+  window.addEventListener('appinstalled', () => {
+    hideInstallBanner();
+    deferredInstallPrompt = null;
+  });
+  el<HTMLButtonElement>('install-btn').addEventListener('click', () => {
+    if (!deferredInstallPrompt) return;
+    void deferredInstallPrompt.prompt();
+    hideInstallBanner();
+    deferredInstallPrompt = null;
+  });
+  el<HTMLButtonElement>('install-dismiss-btn').addEventListener('click', () => {
+    localStorage.setItem(INSTALL_DISMISSED_KEY, '1');
+    hideInstallBanner();
+  });
+
+  // Web Share Target: consume any image stashed in IDB by the service worker.
+  void checkShareInbox();
+
+  // File Handling API: process an image file opened via OS "Open with".
+  if ('launchQueue' in window) {
+    (window as unknown as WindowWithLaunchQueue).launchQueue.setConsumer(async (params) => {
+      const file = await fileFromLaunchParams(params.files);
+      if (file) handleOrQueueFile(file);
+    });
+  }
+
   el<HTMLButtonElement>('confirm-btn').addEventListener('click', () => { void handleConfirm(); });
 
   el<HTMLButtonElement>('undo-btn').addEventListener('click', () => { void handleUndo(); });
@@ -1968,6 +2135,8 @@ document.addEventListener('DOMContentLoaded', () => {
     el<HTMLButtonElement>('reveal-btn').hidden = true;
     el<HTMLInputElement>('file-input').value = '';
     setStatus('');
+    // Re-show #use-last-btn if a valid handle is still available.
+    void initUseLastBtn();
 
     // Apply any pending SW update now that all puzzle state has been cleared.
     // The page will reload once the new SW activates and fires controllerchange.
