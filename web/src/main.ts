@@ -68,6 +68,8 @@ import {
 } from './imageInput.js';
 import type { FileSystemHandleWithPermission } from './imageInput.js';
 import { INSTALL_DISMISSED_KEY, shouldShowInstallBanner } from './installPrompt.js';
+import { saveSession, loadSession, clearPersistedSession } from './session/persistence.js';
+import { toCanvas as qrToCanvas } from 'qrcode';
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -657,6 +659,7 @@ function buildUploadCallouts(): { id: string; text: string }[] {
     { id: 'choose-btn',       text: 'Tap here to choose a photo, or drag and drop / paste one directly.' },
     { id: 'hard-puzzles-btn', text: 'Browse puzzles the rule engine cannot solve — try one and suggest a new rule.' },
     { id: 'help-btn',         text: 'Re-open this guide at any time.' },
+    { id: 'share-btn',        text: 'Share a link to this app with others.' },
     { id: 'feedback-btn',     text: 'Found a bug or have a suggestion? Tap the envelope to send feedback.' },
     { id: 'config-btn',       text: 'Configure which logical rules run automatically.' },
   ];
@@ -1868,6 +1871,22 @@ function renderFixtureTable(fixtures: FixtureMeta[]): void {
 
 document.addEventListener('DOMContentLoaded', () => {
 
+  // ── Persist session across accidental refreshes ───────────────────────────────
+  // Save whenever the page is about to unload (refresh, close, navigate away).
+  // visibilitychange to 'hidden' is the reliable signal on iOS/Android PWAs where
+  // beforeunload may not fire.
+  window.addEventListener('beforeunload', () => {
+    if (currentState !== null && currentState.userGrid !== null) {
+      saveSession(currentState, cellColours);
+    }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && currentState !== null && currentState.userGrid !== null) {
+      saveSession(currentState, cellColours);
+    }
+  });
+  // ─────────────────────────────────────────────────────────────────────────────
+
   // Startup: load OpenCV (with download progress bar) and digit recogniser in parallel
   el<HTMLElement>('version-banner').textContent =
     `${import.meta.env.DEV ? 'dev' : 'prod'} ${__BUILD_TIME__}`;
@@ -1918,9 +1937,20 @@ document.addEventListener('DOMContentLoaded', () => {
       setStatus(`Image pipeline failed: ${String(e)} — open DevTools (F12) for details`, true);
     });
 
+  // ── Restore session from previous visit ──────────────────────────────────────
+  const savedSession = loadSession();
+  if (savedSession !== null) {
+    setState(savedSession.state);
+    for (const [k, v] of savedSession.cellColours) cellColours.set(k, v);
+    renderPlayingMode(savedSession.state);
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
+
   // Tutorial — show help modal on first visit, then walk through button callouts.
   initTutorial();
-  appendCallouts(buildUploadCallouts());
+  appendCallouts(savedSession !== null
+    ? buildPlayingCallouts(savedSession.state.puzzleType !== 'classic')
+    : buildUploadCallouts());
 
   el<HTMLDivElement>('logo-k').addEventListener('click', () => {
     const calloutEl = el<HTMLElement>('callout');
@@ -2106,6 +2136,7 @@ document.addEventListener('DOMContentLoaded', () => {
   el<HTMLButtonElement>('new-puzzle-btn').addEventListener('click', () => {
     logAction('new_puzzle');
     clearActionLog();
+    clearPersistedSession();
     currentState = null; currentCandidates = null; selectedCell = null;
     showCandidates = false; candidateEditMode = false;
     virtualCageMode = false; virtualCageSelection = new Set(); virtualCageNegCells = new Set();
@@ -2225,6 +2256,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
   el<HTMLButtonElement>('feedback-submit-btn').addEventListener('click', () => {
     void handleFeedbackSubmit();
+  });
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  // ── Share modal (QR code + native share + copy link) ─────────────────────────
+  el<HTMLButtonElement>('share-btn').addEventListener('click', () => {
+    const url = window.location.href;
+    el<HTMLElement>('share-url-display').textContent = url;
+    el<HTMLButtonElement>('share-native-btn').hidden = !navigator.share;
+    el<HTMLButtonElement>('share-copy-btn').textContent = 'Copy link';
+    void qrToCanvas(el<HTMLCanvasElement>('share-qr-canvas'), url, { width: 240, margin: 2 });
+    (el<HTMLDialogElement>('share-modal') as HTMLDialogElement).showModal();
+  });
+
+  el<HTMLButtonElement>('share-native-btn').addEventListener('click', () => {
+    void navigator.share({ title: document.title, url: window.location.href });
+  });
+
+  el<HTMLButtonElement>('share-copy-btn').addEventListener('click', () => {
+    void navigator.clipboard.writeText(window.location.href).then(() => {
+      el<HTMLButtonElement>('share-copy-btn').textContent = 'Copied!';
+      setTimeout(() => { el<HTMLButtonElement>('share-copy-btn').textContent = 'Copy link'; }, 2000);
+    });
+  });
+
+  el<HTMLButtonElement>('share-close-btn').addEventListener('click', () => {
+    el<HTMLDialogElement>('share-modal').close();
   });
   // ─────────────────────────────────────────────────────────────────────────────
 
