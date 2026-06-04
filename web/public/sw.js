@@ -13,7 +13,7 @@
  * commit hash.
  */
 
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const CACHE_NAME = `coach-killer-sudoku-${CACHE_VERSION}`;
 
 /**
@@ -95,13 +95,51 @@ self.addEventListener('message', (event) => {
 });
 
 // ---------------------------------------------------------------------------
+// Share inbox — persists a shared image for the page to consume on load
+// ---------------------------------------------------------------------------
+
+/** Stores a share item in the coach-share-inbox IDB database. */
+function stashShareItem(item) {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('coach-share-inbox', 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore('pending'); };
+    req.onsuccess = () => {
+      const db = req.result;
+      const tx = db.transaction('pending', 'readwrite');
+      const putReq = tx.objectStore('pending').put(item, 'item');
+      putReq.onsuccess = () => { resolve(); };
+      putReq.onerror = () => { reject(putReq.error); };
+    };
+    req.onerror = () => { reject(req.error); };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Fetch — cache-first for known assets; network-first for everything else
 // ---------------------------------------------------------------------------
 
 self.addEventListener('fetch', (event) => {
+  // Web Share Target: POST /share-target — stash the image in IDB then redirect.
+  // Must be checked before the GET-only guard below.
+  if (event.request.method === 'POST') {
+    const url = new URL(event.request.url);
+    if (url.pathname === '/share-target') {
+      event.respondWith(
+        event.request.formData().then(async (formData) => {
+          const imageFile = formData.get('image');
+          if (imageFile instanceof File) {
+            const buffer = await imageFile.arrayBuffer();
+            await stashShareItem({ buffer, name: imageFile.name, type: imageFile.type });
+          }
+          return Response.redirect('/', 303);
+        }).catch(() => Response.redirect('/', 303)),
+      );
+    }
+    return;
+  }
+
   // Only handle GET requests over http(s). Ignore chrome-extension://, data:,
   // blob: etc. — those come from browser extensions and must not be intercepted.
-  if (event.request.method !== 'GET') return;
   if (!event.request.url.startsWith('http')) return;
 
   // Vite dev server uses internal routes (/@vite/client, /src/*, /node_modules/*)

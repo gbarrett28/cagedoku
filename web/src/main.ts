@@ -64,6 +64,7 @@ import type { StallFixtureFile } from './engine/rules/stallFixtureFile.js';
 import {
   imageFileFromClipboard, imageFileFromDrop,
   saveLastHandle, resolveLastHandle,
+  consumeShareInbox, fileFromLaunchParams,
 } from './imageInput.js';
 import type { FileSystemHandleWithPermission } from './imageInput.js';
 import { INSTALL_DISMISSED_KEY, shouldShowInstallBanner } from './installPrompt.js';
@@ -160,6 +161,15 @@ interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
 }
 let deferredInstallPrompt: BeforeInstallPromptEvent | null = null;
+
+// File pending CV-pipeline readiness — set by share-target or launchQueue
+// consumer before the pipeline is ready; consumed once the pipeline loads.
+let pendingShareFile: File | null = null;
+
+// File Handling API type declarations (not yet in the TypeScript DOM lib).
+interface LaunchParams { readonly files: ReadonlyArray<FileSystemFileHandle>; }
+interface LaunchQueue { setConsumer(consumer: (params: LaunchParams) => void): void; }
+interface WindowWithLaunchQueue extends Window { launchQueue: LaunchQueue; }
 
 // OCR state preserved across auto-confirm for the Edit OCR button.
 let lastOcrState: PuzzleState | null = null;
@@ -960,6 +970,21 @@ async function initUseLastBtn(): Promise<void> {
   const btn = el<HTMLButtonElement>('use-last-btn');
   btn.textContent = `Use "${handle.name}"`;
   btn.hidden = false;
+}
+
+/** Processes a file immediately if the pipeline is ready; otherwise queues it. */
+function handleOrQueueFile(file: File): void {
+  if ((window as unknown as Record<string, unknown>)['__pipelineReady']) {
+    void handleProcess(file);
+  } else {
+    pendingShareFile = file;
+  }
+}
+
+/** Drains the Web Share Target inbox written by the service worker. */
+async function checkShareInbox(): Promise<void> {
+  const file = await consumeShareInbox();
+  if (file) handleOrQueueFile(file);
 }
 
 // ---------------------------------------------------------------------------
@@ -1881,6 +1906,10 @@ document.addEventListener('DOMContentLoaded', () => {
     .then(() => {
       clearTimeout(loadTimeout);
       (window as unknown as Record<string, unknown>)['__pipelineReady'] = true;
+      if (pendingShareFile) {
+        void handleProcess(pendingShareFile);
+        pendingShareFile = null;
+      }
     })
     .catch(e => {
       clearTimeout(loadTimeout);
@@ -2010,6 +2039,17 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem(INSTALL_DISMISSED_KEY, '1');
     hideInstallBanner();
   });
+
+  // Web Share Target: consume any image stashed in IDB by the service worker.
+  void checkShareInbox();
+
+  // File Handling API: process an image file opened via OS "Open with".
+  if ('launchQueue' in window) {
+    (window as unknown as WindowWithLaunchQueue).launchQueue.setConsumer(async (params) => {
+      const file = await fileFromLaunchParams(params.files);
+      if (file) handleOrQueueFile(file);
+    });
+  }
 
   el<HTMLButtonElement>('confirm-btn').addEventListener('click', () => { void handleConfirm(); });
 

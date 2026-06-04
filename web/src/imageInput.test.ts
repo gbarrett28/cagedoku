@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { imageFileFromClipboard, imageFileFromDrop, resolveLastHandle } from './imageInput.js';
+import {
+  imageFileFromClipboard, imageFileFromDrop, resolveLastHandle,
+  consumeShareInbox, fileFromLaunchParams,
+} from './imageInput.js';
 import type { FileSystemHandleWithPermission } from './imageInput.js';
 
 // ---------------------------------------------------------------------------
@@ -118,5 +121,49 @@ describe('resolveLastHandle', () => {
     // In jsdom showOpenFilePicker is not present — no stub needed.
     const handle = makeMockHandle('puzzle.png', 'granted');
     expect(await resolveLastHandle(() => Promise.resolve(handle))).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('consumeShareInbox', () => {
+  it('reconstructs a File from a stored share item', async () => {
+    const buffer = new TextEncoder().encode('pixel-data').buffer;
+    const read = vi.fn().mockResolvedValue({ buffer, name: 'puzzle.png', type: 'image/png' });
+    const file = await consumeShareInbox(read);
+    expect(file).not.toBeNull();
+    expect(file!.name).toBe('puzzle.png');
+    expect(file!.type).toBe('image/png');
+  });
+
+  it('returns null when the inbox is empty', async () => {
+    const read = vi.fn().mockResolvedValue(null);
+    expect(await consumeShareInbox(read)).toBeNull();
+  });
+
+  it('returns null when the read function rejects', async () => {
+    const read = vi.fn().mockRejectedValue(new Error('IDB unavailable'));
+    expect(await consumeShareInbox(read)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('fileFromLaunchParams', () => {
+  it('returns the file from the first handle', async () => {
+    const file = new File(['data'], 'puzzle.jpg', { type: 'image/jpeg' });
+    const result = await fileFromLaunchParams([{ getFile: () => Promise.resolve(file) }]);
+    expect(result).toBe(file);
+  });
+
+  it('returns null when the list is empty', async () => {
+    expect(await fileFromLaunchParams([])).toBeNull();
+  });
+
+  it('returns null when getFile rejects', async () => {
+    const result = await fileFromLaunchParams([
+      { getFile: () => Promise.reject(new Error('permission denied')) },
+    ]);
+    expect(result).toBeNull();
   });
 });

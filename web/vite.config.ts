@@ -139,8 +139,22 @@ const stallFixturesPlugin: Plugin = {
   },
 };
 
+// In dev mode, redirect POST /share-target to GET / so the flow can be tested
+// without a real service worker. The SW handles this intercept in production.
+const devShareTargetPlugin: Plugin = {
+  name: 'dev-share-target',
+  apply: 'serve',
+  configureServer(server) {
+    server.middlewares.use('/share-target', (req, res, next) => {
+      if (req.method !== 'POST') { next(); return; }
+      res.writeHead(303, { Location: '/' });
+      res.end();
+    });
+  },
+};
+
 export default defineConfig({
-  plugins: [devSwPoisonPill, stallFixturesPlugin],
+  plugins: [devSwPoisonPill, devShareTargetPlugin, stallFixturesPlugin],
   define: {
     // Injected at dev-server start / build time; displayed in the version banner
     // so it's always clear which code revision is running in the browser.

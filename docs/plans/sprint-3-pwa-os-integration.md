@@ -10,7 +10,7 @@ Adds Web Share Target (mobile long-press → Share) and File Handling API
 
 ### Web Share Target
 
-- [ ] **Add `share_target` to `web/public/manifest.webmanifest`**
+- [x] **Add `share_target` to `web/public/manifest.webmanifest`**
   ```json
   "share_target": {
     "action": "/share-target",
@@ -22,7 +22,7 @@ Adds Web Share Target (mobile long-press → Share) and File Handling API
   }
   ```
 
-- [ ] **Service worker: intercept POST `/share-target`** (`web/public/sw.js`)
+- [x] **Service worker: intercept POST `/share-target`** (`web/public/sw.js`)
   - In the `fetch` handler, check `event.request.method === 'POST'` and
     `new URL(event.request.url).pathname === '/share-target'`
   - Open an IndexedDB database `coach-share-inbox`, object store `pending`
@@ -30,21 +30,21 @@ Adds Web Share Target (mobile long-press → Share) and File Handling API
   - Convert to `ArrayBuffer`, store as `{ buffer, name, type }` at key `'item'`
   - `event.respondWith(Response.redirect('/', 303))`
 
-- [ ] **Page: consume shared image on load** (`web/src/main.ts`)
+- [x] **Page: consume shared image on load** (`web/src/main.ts`)
   - `checkShareInbox()` — async function, called once inside `DOMContentLoaded`
   - Opens `coach-share-inbox` IndexedDB, reads key `'item'`, deletes it
   - Reconstructs `new File([buffer], name, { type })`, calls `void handleProcess(file)`
   - Guard: only run when OpenCV is ready (`cvReady` flag); if not ready, store the
     file in a module-level `pendingShareFile` variable and process it once CV loads
 
-- [ ] **`/share-target` URL — dev server** (`web/vite.config.ts`)
+- [x] **`/share-target` URL — dev server** (`web/vite.config.ts`)
   - The SW redirect handles production; in dev the Vite dev server will 404 on
     `/share-target` before the SW intercepts it. Add a tiny Vite plugin middleware
     that redirects `POST /share-target` to `GET /` so manual testing in dev works.
 
 ### File Handling API
 
-- [ ] **Add `file_handlers` to `web/public/manifest.webmanifest`**
+- [x] **Add `file_handlers` to `web/public/manifest.webmanifest`**
   ```json
   "file_handlers": [
     {
@@ -54,7 +54,7 @@ Adds Web Share Target (mobile long-press → Share) and File Handling API
   ]
   ```
 
-- [ ] **`launchQueue` consumer** (`web/src/main.ts`)
+- [x] **`launchQueue` consumer** (`web/src/main.ts`)
   - Add `LaunchQueue` / `LaunchParams` interface declarations (not in TS lib)
   - Inside `DOMContentLoaded`, after CV-ready setup:
     ```ts
@@ -70,14 +70,14 @@ Adds Web Share Target (mobile long-press → Share) and File Handling API
     `pendingShareFile` (same variable as the share-inbox path) and process on
     CV-ready
 
-- [ ] **Shared `pendingShareFile` variable** (`web/src/main.ts`)
+- [x] **Shared `pendingShareFile` variable** (`web/src/main.ts`)
   - `let pendingShareFile: File | null = null`
   - In the CV-ready callback: if `pendingShareFile !== null`, call
     `void handleProcess(pendingShareFile)` then null it out
 
 ### Service worker bump
 
-- [ ] **Bump `CACHE_VERSION` to `v5`** in `web/public/sw.js` (manifest changed)
+- [x] **Bump `CACHE_VERSION` to `v5`** in `web/public/sw.js` (manifest changed)
 
 ### Docs
 
@@ -86,12 +86,12 @@ Adds Web Share Target (mobile long-press → Share) and File Handling API
 
 ## Tests
 
-- [ ] **Unit test: `checkShareInbox`**
+- [x] **Unit test: `checkShareInbox`**
   - Mock IndexedDB; verify that a stored `{ buffer, name, type }` entry causes
     `handleProcess` to be called with a `File` of the correct name and type
   - Verify the entry is deleted after consumption
 
-- [ ] **Unit test: `launchQueue` consumer**
+- [x] **Unit test: `launchQueue` consumer**
   - Mock `window.launchQueue.setConsumer`; verify that a `FileSystemFileHandle`
     with a `.getFile()` that resolves to an image `File` causes `handleProcess`
     to be called
@@ -104,7 +104,7 @@ Adds Web Share Target (mobile long-press → Share) and File Handling API
 
 ## Gate
 
-- [ ] Run `bash scripts/run-bronze-gate.sh` — all checks pass
+- [x] Run `bash scripts/run-bronze-gate.sh` — all checks pass
 - [ ] Commit on `claude/seamless-puzzle-analysis-xljer`
 
 ---
