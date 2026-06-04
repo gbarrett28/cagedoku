@@ -657,6 +657,7 @@ function buildUploadCallouts(): { id: string; text: string }[] {
     { id: 'choose-btn',       text: 'Tap here to choose a photo, or drag and drop / paste one directly.' },
     { id: 'hard-puzzles-btn', text: 'Browse puzzles the rule engine cannot solve — try one and suggest a new rule.' },
     { id: 'help-btn',         text: 'Re-open this guide at any time.' },
+    { id: 'share-btn',        text: 'Copy a link to this app to share it with others.' },
     { id: 'feedback-btn',     text: 'Found a bug or have a suggestion? Tap the envelope to send feedback.' },
     { id: 'config-btn',       text: 'Configure which logical rules run automatically.' },
   ];
@@ -2225,6 +2226,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   el<HTMLButtonElement>('feedback-submit-btn').addEventListener('click', () => {
     void handleFeedbackSubmit();
+  });
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  // ── Share link ───────────────────────────────────────────────────────────────
+  el<HTMLButtonElement>('share-btn').addEventListener('click', () => {
+    void navigator.clipboard.writeText(window.location.href).then(() => {
+      const btn = el<HTMLButtonElement>('share-btn');
+      const original = btn.dataset['tooltip'] ?? 'Share link';
+      btn.dataset['tooltip'] = 'Copied!';
+      setTimeout(() => { btn.dataset['tooltip'] = original; }, 2000);
+    });
   });
   // ─────────────────────────────────────────────────────────────────────────────
 
