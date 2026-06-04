@@ -100,6 +100,7 @@ button is hidden on every new upload and on every review-screen entry.
 | Use last image button (`#use-last-btn`) | Shown (Chrome/Edge only) when a `FileSystemFileHandle` from the previous session is stored in IndexedDB and read permission is still granted. Label shows the filename. Clicking it re-reads the file and starts processing immediately. Hidden by default; hidden while processing. |
 | Hidden file input (`#file-input`) | `accept="image/*,application/pdf"`. Used as fallback when `showOpenFilePicker` is unavailable. A `change` event auto-triggers `handleProcess()`. |
 | Upload hint | Static `<p class="upload-hint">` describing drag-drop and paste alternatives. |
+| Install banner (`#install-banner`) | Shown when the browser fires `beforeinstallprompt` (PWA installable) and the user has not previously dismissed it. Contains a label, an **Install** button (`#install-btn`), and a **✕** dismiss button (`#install-dismiss-btn`). Dismissed state is stored in `localStorage` under `coach_install_dismissed`. |
 | Status message (`#status-msg`) | Shows progress and warnings inline. Never blocks on error — see Behaviour. |
 
 **Alternative input methods**
@@ -582,6 +583,9 @@ The element IDs match the HTML (`index.html`).
 | Choose image button | `#choose-btn` | Opens file picker; uses FSA `showOpenFilePicker` on Chrome/Edge |
 | Use last image button | `#use-last-btn` | Chrome/Edge only; hidden by default |
 | Upload hint | `.upload-hint` | Static text describing drag-drop / paste |
+| Install banner | `#install-banner` | Hidden by default; shown when PWA is installable and not dismissed |
+| Install button | `#install-btn` | Triggers `deferredInstallPrompt.prompt()` |
+| Dismiss button | `#install-dismiss-btn` | Sets `coach_install_dismissed` in localStorage |
 | Status message | `#status-msg` | Shows progress / error |
 | Pipeline progress | `#cv-loading-row` | Visible while OpenCV is loading |
 

@@ -9,7 +9,7 @@ on the upload screen. Prerequisite for Sprint 3 (OS-level share/file-open).
 
 ### Icons
 
-- [ ] **Icon generation script** (`web/scripts/generate-icons.js`)
+- [x] **Icon generation script** (`web/scripts/generate-icons.js`)
   - Node.js script using the `canvas` npm package (add as `devDependency`)
   - Renders the existing SVG favicon design (blue rounded rect + "督" glyph) onto
     a Canvas at 192×192, 512×512, and 180×180
@@ -21,7 +21,7 @@ on the upload screen. Prerequisite for Sprint 3 (OS-level share/file-open).
 
 ### Manifest
 
-- [ ] **Create `web/public/manifest.webmanifest`**
+- [x] **Create `web/public/manifest.webmanifest`**
   ```json
   {
     "name": "COACH — Sudoku Coaching App",
@@ -42,7 +42,7 @@ on the upload screen. Prerequisite for Sprint 3 (OS-level share/file-open).
 
 ### HTML head
 
-- [ ] **Update `web/index.html`**
+- [x] **Update `web/index.html`**
   - Add `<link rel="manifest" href="/manifest.webmanifest">`
   - Add `<meta name="theme-color" content="#2563eb">`
   - Add `<link rel="apple-touch-icon" href="/apple-touch-icon.png">`
@@ -53,20 +53,20 @@ on the upload screen. Prerequisite for Sprint 3 (OS-level share/file-open).
 
 ### Service worker
 
-- [ ] **Update `web/public/sw.js` `PRECACHE_ASSETS`**
+- [x] **Update `web/public/sw.js` `PRECACHE_ASSETS`**
   - Add `'./manifest.webmanifest'`, `'./icon-192.png'`, `'./icon-512.png'`,
     `'./icon-maskable-512.png'`, `'./apple-touch-icon.png'`
   - Bump `CACHE_VERSION` to `v4`
 
 ### Install prompt
 
-- [ ] **Capture `beforeinstallprompt`** (`web/src/main.ts`)
+- [x] **Capture `beforeinstallprompt`** (`web/src/main.ts`)
   - Module-level `let deferredInstallPrompt: BeforeInstallPromptEvent | null = null`
   - `window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstallPrompt = e; showInstallBanner(); })`
   - `window.addEventListener('appinstalled', () => { hideInstallBanner(); deferredInstallPrompt = null; })`
   - Add `BeforeInstallPromptEvent` interface declaration (not in standard TS lib)
 
-- [ ] **Install banner UI** (`web/index.html`)
+- [x] **Install banner UI** (`web/index.html`)
   - Add inside `#upload-panel`, below the hint text:
     ```html
     <div id="install-banner" hidden>
@@ -76,7 +76,7 @@ on the upload screen. Prerequisite for Sprint 3 (OS-level share/file-open).
     </div>
     ```
 
-- [ ] **Install banner logic** (`web/src/main.ts`)
+- [x] **Install banner logic** (`web/src/main.ts`)
   - `showInstallBanner()`: show `#install-banner` unless
     `localStorage.getItem('coach_install_dismissed')` is set
   - `hideInstallBanner()`: hide `#install-banner`
@@ -84,30 +84,30 @@ on the upload screen. Prerequisite for Sprint 3 (OS-level share/file-open).
   - `#install-dismiss-btn` click: `localStorage.setItem('coach_install_dismissed', '1')`,
     hide banner
 
-- [ ] **CSS** (`web/public/styles.css`)
+- [x] **CSS** (`web/public/styles.css`)
   - `#install-banner` — flex row, small font, muted background, rounded, padding
 
 ### Vite config
 
-- [ ] **Ensure manifest is copied to dist**
+- [x] **Ensure manifest is copied to dist**
   - Vite copies everything in `public/` automatically — verify `manifest.webmanifest`
     appears in `dist/` after `npm run build`
 
 ### Docs
 
-- [ ] **Update `docs/ui.md`** — Upload Screen section: document install banner
+- [x] **Update `docs/ui.md`** — Upload Screen section: document install banner
   (`#install-banner`, `#install-btn`, `#install-dismiss-btn`)
 
 ## Tests
 
-- [ ] **Unit test: install prompt** (`web/src/main.test.ts`)
+- [x] **Unit test: install prompt** (`web/src/main.test.ts`)
   - Verify `showInstallBanner()` does not show the banner when
     `coach_install_dismissed` is in localStorage
   - Verify banner is shown when the flag is absent
 
 ## Gate
 
-- [ ] Run `bash scripts/run-bronze-gate.sh` — all checks pass
-- [ ] Verify with `npm run build` that `dist/manifest.webmanifest` and all icon
+- [x] Run `bash scripts/run-bronze-gate.sh` — all checks pass
+- [x] Verify with `npm run build` that `dist/manifest.webmanifest` and all icon
   files are present
-- [ ] Commit on `claude/seamless-puzzle-analysis-xljer`
+- [x] Commit on `claude/seamless-puzzle-analysis-xljer`

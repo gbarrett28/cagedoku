@@ -329,6 +329,24 @@ button:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 6%, var(--surface));
 }
 
+#install-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.install-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+
 /* ── Review panel: image columns ── */
 
 #images-row {

@@ -6,6 +6,13 @@
   <title>COACH — Sudoku</title>
   <link rel="stylesheet" href="/styles.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%232563eb'/><text x='16' y='23' font-size='18' font-family='sans-serif' font-weight='bold' fill='white' text-anchor='middle'>督</text></svg>">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="COACH">
 </head>
 <body>
 
@@ -50,6 +57,11 @@
       <span id="status-msg" class="status"></span>
     </div>
     <p class="upload-hint">or drag &amp; drop / paste (⌘V&thinsp;/&thinsp;Ctrl+V)</p>
+    <div id="install-banner" hidden>
+      <span class="install-banner-text">Install app for quicker access</span>
+      <button id="install-btn" class="btn-secondary">Install</button>
+      <button id="install-dismiss-btn" class="btn-secondary btn-icon" aria-label="Dismiss">✕</button>
+    </div>
     <div id="cv-loading-row" class="form-row" style="display:none;align-items:center;gap:0.5rem;">
       <span id="cv-loading-label" class="field-label" style="min-width:12rem">Loading image pipeline…</span>
       <progress id="cv-progress" max="100" value="0" style="flex:1"></progress>

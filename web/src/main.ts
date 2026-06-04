@@ -66,6 +66,7 @@ import {
   saveLastHandle, resolveLastHandle,
 } from './imageInput.js';
 import type { FileSystemHandleWithPermission } from './imageInput.js';
+import { INSTALL_DISMISSED_KEY, shouldShowInstallBanner } from './installPrompt.js';
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -153,6 +154,12 @@ let exceptionForSubmission: string | null = null;
 // Last FileSystemFileHandle from the File System Access API, persisted in
 // IndexedDB so the picker can reopen in the same directory next session.
 let lastFileHandle: FileSystemFileHandle | null = null;
+
+// PWA install prompt deferred from the beforeinstallprompt event.
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+}
+let deferredInstallPrompt: BeforeInstallPromptEvent | null = null;
 
 // OCR state preserved across auto-confirm for the Edit OCR button.
 let lastOcrState: PuzzleState | null = null;
@@ -935,6 +942,15 @@ function setStatus(msg: string, isError = false): void {
 
 function setLoading(on: boolean): void {
   el<HTMLButtonElement>('choose-btn').disabled = on;
+}
+
+function showInstallBanner(): void {
+  if (!shouldShowInstallBanner(localStorage)) return;
+  el<HTMLElement>('install-banner').hidden = false;
+}
+
+function hideInstallBanner(): void {
+  el<HTMLElement>('install-banner').hidden = true;
 }
 
 async function initUseLastBtn(): Promise<void> {
@@ -1973,6 +1989,27 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   void initUseLastBtn();
+
+  // PWA install prompt
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e as BeforeInstallPromptEvent;
+    showInstallBanner();
+  });
+  window.addEventListener('appinstalled', () => {
+    hideInstallBanner();
+    deferredInstallPrompt = null;
+  });
+  el<HTMLButtonElement>('install-btn').addEventListener('click', () => {
+    if (!deferredInstallPrompt) return;
+    void deferredInstallPrompt.prompt();
+    hideInstallBanner();
+    deferredInstallPrompt = null;
+  });
+  el<HTMLButtonElement>('install-dismiss-btn').addEventListener('click', () => {
+    localStorage.setItem(INSTALL_DISMISSED_KEY, '1');
+    hideInstallBanner();
+  });
 
   el<HTMLButtonElement>('confirm-btn').addEventListener('click', () => { void handleConfirm(); });
 

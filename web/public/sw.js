@@ -13,7 +13,7 @@
  * commit hash.
  */
 
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const CACHE_NAME = `coach-killer-sudoku-${CACHE_VERSION}`;
 
 /**
@@ -35,6 +35,11 @@ const PRECACHE_ASSETS = [
   './opencv.js',
   './num_recogniser.bin',
   './num_recogniser.json',
+  './manifest.webmanifest',
+  './icon-192.png',
+  './icon-512.png',
+  './icon-maskable-512.png',
+  './apple-touch-icon.png',
 ];
 
 // ---------------------------------------------------------------------------
