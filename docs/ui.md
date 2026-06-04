@@ -96,9 +96,17 @@ button is hidden on every new upload and on every review-screen entry.
 
 | Element | Description |
 |---|---|
-| File input | Accepts any image file (`image/*`). PDF support planned (see below). |
-| Process button | Runs the image pipeline locally (no server required). |
-| Status message | Shows progress and warnings inline. Never blocks on error — see Behaviour. |
+| Choose image button (`#choose-btn`) | Opens the file picker. On Chrome/Edge uses `showOpenFilePicker` with `startIn` set to the last-used file's directory; falls back to a hidden `#file-input` on other browsers. Disabled while the pipeline is running. |
+| Use last image button (`#use-last-btn`) | Shown (Chrome/Edge only) when a `FileSystemFileHandle` from the previous session is stored in IndexedDB and read permission is still granted. Label shows the filename. Clicking it re-reads the file and starts processing immediately. Hidden by default; hidden while processing. |
+| Hidden file input (`#file-input`) | `accept="image/*,application/pdf"`. Used as fallback when `showOpenFilePicker` is unavailable. A `change` event auto-triggers `handleProcess()`. |
+| Upload hint | Static `<p class="upload-hint">` describing drag-drop and paste alternatives. |
+| Status message (`#status-msg`) | Shows progress and warnings inline. Never blocks on error — see Behaviour. |
+
+**Alternative input methods**
+
+- **Paste** (`Ctrl+V` / `⌘V`): a `paste` listener on `document` captures the first `image/*` clipboard item and calls `handleProcess()` directly. Active only while `#upload-panel` is visible.
+- **Drag and drop**: `#upload-panel` handles `dragover` / `drop`. While a drag is in progress, the panel gains a `drag-over` CSS class (dashed outline). On drop, the first image file is passed to `handleProcess()`.
+- All three paths (choose, paste, drop) call `handleProcess(file)` with an explicit `File` argument; the legacy `#file-input` change path calls `handleProcess()` without one and reads `fileInput.files[0]` as before.
 
 **Behaviour**
 
@@ -570,8 +578,10 @@ The element IDs match the HTML (`index.html`).
 
 | Element | ID | Notes |
 |---|---|---|
-| File input | `#file-input` | `accept="image/*"` |
-| Process button | `#process-btn` | Triggers OCR pipeline |
+| Hidden file input | `#file-input` | `accept="image/*,application/pdf"` — fallback for non-FSA browsers |
+| Choose image button | `#choose-btn` | Opens file picker; uses FSA `showOpenFilePicker` on Chrome/Edge |
+| Use last image button | `#use-last-btn` | Chrome/Edge only; hidden by default |
+| Upload hint | `.upload-hint` | Static text describing drag-drop / paste |
 | Status message | `#status-msg` | Shows progress / error |
 | Pipeline progress | `#cv-loading-row` | Visible while OpenCV is loading |
 

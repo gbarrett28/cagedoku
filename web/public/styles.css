@@ -318,6 +318,17 @@ button:hover:not(:disabled) {
   color: var(--error);
 }
 
+.upload-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+#upload-panel.drag-over {
+  outline: 2px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+
 /* ── Review panel: image columns ── */
 
 #images-row {

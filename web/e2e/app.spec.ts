@@ -86,7 +86,7 @@ test('page loads with correct title and upload panel visible', async ({ page }) 
   await expect(page).toHaveTitle(/COACH/);
   await expect(page.locator('#upload-panel')).toBeVisible();
   await expect(page.locator('#review-panel')).toBeHidden();
-  await expect(page.locator('#process-btn')).toBeVisible();
+  await expect(page.locator('#choose-btn')).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------
@@ -152,7 +152,6 @@ pipelineTest('upload puzzle image → review panel appears with canvas', async (
   pipelineTest.setTimeout(90_000);
 
   await pipelinePage.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
-  await pipelinePage.locator('#process-btn').click();
 
   await expect(pipelinePage.locator('#review-panel')).toBeVisible({ timeout: 40_000 });
   await expect(pipelinePage.locator('#upload-panel')).toBeHidden();
@@ -172,7 +171,6 @@ pipelineTest('status message is empty after successful image process', async ({ 
   pipelineTest.setTimeout(90_000);
 
   await pipelinePage.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
-  await pipelinePage.locator('#process-btn').click();
 
   await expect(pipelinePage.locator('#review-panel')).toBeVisible({ timeout: 40_000 });
 
@@ -189,7 +187,6 @@ pipelineTest('confirm puzzle → playing actions panel appears', async ({ pipeli
   pipelineTest.setTimeout(90_000);
 
   await pipelinePage.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
-  await pipelinePage.locator('#process-btn').click();
   await expect(pipelinePage.locator('#review-panel')).toBeVisible({ timeout: 40_000 });
 
   await pipelinePage.locator('#confirm-btn').click();
@@ -208,7 +205,6 @@ pipelineTest('click cell then press digit → digit appears in canvas, undo enab
   pipelineTest.setTimeout(90_000);
 
   await pipelinePage.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
-  await pipelinePage.locator('#process-btn').click();
   await expect(pipelinePage.locator('#review-panel')).toBeVisible({ timeout: 40_000 });
   await pipelinePage.locator('#confirm-btn').click();
   await expect(pipelinePage.locator('#playing-actions')).toBeVisible({ timeout: 15_000 });
@@ -233,7 +229,6 @@ pipelineTest('undo after placing digit re-disables undo button', async ({ pipeli
   pipelineTest.setTimeout(90_000);
 
   await pipelinePage.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
-  await pipelinePage.locator('#process-btn').click();
   await expect(pipelinePage.locator('#review-panel')).toBeVisible({ timeout: 40_000 });
   await pipelinePage.locator('#confirm-btn').click();
   await expect(pipelinePage.locator('#playing-actions')).toBeVisible({ timeout: 15_000 });
@@ -258,7 +253,6 @@ pipelineTest('show candidates button toggles candidate display', async ({ pipeli
   pipelineTest.setTimeout(90_000);
 
   await pipelinePage.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
-  await pipelinePage.locator('#process-btn').click();
   await expect(pipelinePage.locator('#review-panel')).toBeVisible({ timeout: 40_000 });
   await pipelinePage.locator('#confirm-btn').click();
   await expect(pipelinePage.locator('#playing-actions')).toBeVisible({ timeout: 15_000 });
@@ -277,7 +271,6 @@ pipelineTest('new puzzle button returns to upload panel', async ({ pipelinePage 
   pipelineTest.setTimeout(90_000);
 
   await pipelinePage.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
-  await pipelinePage.locator('#process-btn').click();
   await expect(pipelinePage.locator('#review-panel')).toBeVisible({ timeout: 40_000 });
 
   await expect(pipelinePage.locator('#new-puzzle-btn')).toBeVisible();
@@ -297,7 +290,6 @@ pipelineTest('cageTotals row-major orientation — connectivityScore ≥ thresho
   pipelineTest.setTimeout(90_000);
 
   await pipelinePage.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
-  await pipelinePage.locator('#process-btn').click();
   // The hook is set as soon as borders are computed, regardless of whether the puzzle
   // auto-confirms (goes directly to playing mode) or shows the review screen.
   await pipelinePage.waitForFunction(

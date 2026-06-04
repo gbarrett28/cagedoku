@@ -43,14 +43,13 @@
   <!-- ── Phase 1a: Upload ── -->
   <section id="upload-panel" class="card">
     <h2>Open Puzzle</h2>
-    <div class="form-row">
-      <label class="field-label" for="file-input">Puzzle image</label>
-      <input type="file" id="file-input" accept="image/*,application/pdf">
-    </div>
+    <input type="file" id="file-input" accept="image/*,application/pdf" style="display:none">
     <div class="form-actions">
-      <button id="process-btn">Process image</button>
+      <button id="use-last-btn" class="btn-secondary" hidden></button>
+      <button id="choose-btn">Choose image…</button>
       <span id="status-msg" class="status"></span>
     </div>
+    <p class="upload-hint">or drag &amp; drop / paste (⌘V&thinsp;/&thinsp;Ctrl+V)</p>
     <div id="cv-loading-row" class="form-row" style="display:none;align-items:center;gap:0.5rem;">
       <span id="cv-loading-label" class="field-label" style="min-width:12rem">Loading image pipeline…</span>
       <progress id="cv-progress" max="100" value="0" style="flex:1"></progress>
@@ -259,8 +258,8 @@
 
   <h3>Phases</h3>
   <ol>
-    <li><strong>Upload</strong> &mdash; Select a photo and press
-    <em>Process image</em>. COACH detects the grid layout.</li>
+    <li><strong>Upload</strong> &mdash; Choose a photo, drag and drop one, or paste
+    from the clipboard. COACH detects the grid layout.</li>
     <li><strong>Review</strong> &mdash; Check the detected layout against the photo.
     Make any necessary corrections. Press <em>Confirm &amp; Solve</em>
     when ready.</li>

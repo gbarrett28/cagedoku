@@ -8,12 +8,12 @@ No PWA or manifest changes. Independently testable.
 
 ## Implementation
 
-- [ ] **Refactor `handleProcess` signature** (`web/src/main.ts`)
+- [x] **Refactor `handleProcess` signature** (`web/src/main.ts`)
   - Change signature to `async function handleProcess(file?: File): Promise<void>`
   - Replace `fileInput.files[0]` with `file ?? el<HTMLInputElement>('file-input').files?.[0]`
   - Update error message to "Please drop, paste, or select an image."
 
-- [ ] **Auto-process on file-input change**
+- [x] **Auto-process on file-input change**
   - Add `change` event listener on `#file-input` that calls `void handleProcess()`
   - Replace the `#process-btn` click handler + button with a "Choose image…" button
     that calls `el<HTMLInputElement>('file-input').click()`
@@ -21,14 +21,14 @@ No PWA or manifest changes. Independently testable.
   - Update `setLoading()` to disable/enable the new choose button instead of `process-btn`
   - Update `ui.md` button inventory: replace `#process-btn` with `#choose-btn`
 
-- [ ] **Clipboard paste handler** (`web/src/main.ts`)
+- [x] **Clipboard paste handler** (`web/src/main.ts`)
   - Add `document.addEventListener('paste', ...)` inside `DOMContentLoaded`
   - Guard: return early if `el<HTMLElement>('upload-panel').hidden`
   - Extract the first `image/*` item from `e.clipboardData?.items`
   - Call `void handleProcess(item.getAsFile()!)` if found
   - `e.preventDefault()` to suppress default browser paste behaviour
 
-- [ ] **Drag-and-drop handler** (`web/src/main.ts`)
+- [x] **Drag-and-drop handler** (`web/src/main.ts`)
   - Wire `dragover`, `dragleave`, `drop` on `#upload-panel`
   - `dragover`: `e.preventDefault()`, add `drag-over` CSS class
   - `dragleave` / `dragend`: remove `drag-over` class
@@ -36,15 +36,15 @@ No PWA or manifest changes. Independently testable.
     guard `file.type.startsWith('image/')`, call `void handleProcess(file)`
   - Guard all handlers: return early if `upload-panel` is hidden
 
-- [ ] **Upload panel hint text** (`web/index.html`)
+- [x] **Upload panel hint text** (`web/index.html`)
   - Add `<p id="upload-hint" class="upload-hint">or drag &amp; drop / paste (⌘V&nbsp;/&nbsp;Ctrl+V)</p>`
     below `#choose-btn` inside `#upload-panel`
 
-- [ ] **CSS for drop zone and hint** (`web/public/styles.css`)
+- [x] **CSS for drop zone and hint** (`web/public/styles.css`)
   - `.upload-hint` — small, muted secondary text
   - `#upload-panel.drag-over` — subtle visual feedback (e.g. dashed border tint)
 
-- [ ] **File System Access API: handle persistence + `startIn` hint**
+- [x] **File System Access API: handle persistence + `startIn` hint**
   (`web/src/main.ts`, Chrome/Edge only — feature-detected, silent fallback)
   - After any successful `handleProcess(file)` call, attempt to store the
     `FileSystemFileHandle` in IndexedDB (`coach-fsa`, key `lastHandle`) using
@@ -63,10 +63,10 @@ No PWA or manifest changes. Independently testable.
     clicks "New puzzle" so a stale suggestion doesn't persist across sessions.
   - Add `#use-last-btn` to `index.html` inside `#upload-panel`, `hidden` by default.
 
-- [ ] **Tutorial callout update** (`web/src/main.ts`)
+- [x] **Tutorial callout update** (`web/src/main.ts`)
   - Replace `process-btn` callout ID with `choose-btn` in `buildUploadCallouts()`
 
-- [ ] **Update `docs/ui.md`**
+- [x] **Update `docs/ui.md`**
   - Upload Screen component table: replace "Process button" with "Choose image button"
     (`#choose-btn`); add paste, drop-zone, and "Use last image" entries
   - Button inventory: replace `#process-btn` row with `#choose-btn`; add `#use-last-btn`

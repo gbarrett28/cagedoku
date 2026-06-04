@@ -86,7 +86,6 @@ async function processImage(page: Page, imagePath: string): Promise<ImageResult>
 
   try {
     await page.locator('#file-input').setInputFiles(imagePath);
-    await page.locator('#process-btn').click();
 
     // Wait for the review panel OR playing mode (auto-confirm may skip the review screen).
     // '#action-group:not([hidden])' uniquely identifies playing mode — it is hidden in
