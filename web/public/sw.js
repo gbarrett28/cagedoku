@@ -13,7 +13,7 @@
  * commit hash.
  */
 
-const CACHE_VERSION = 'v5';
+const CACHE_VERSION = 'v6';
 const CACHE_NAME = `coach-killer-sudoku-${CACHE_VERSION}`;
 
 /**
@@ -123,7 +123,7 @@ self.addEventListener('fetch', (event) => {
   // Must be checked before the GET-only guard below.
   if (event.request.method === 'POST') {
     const url = new URL(event.request.url);
-    if (url.pathname === '/share-target') {
+    if (url.pathname.endsWith('/share-target')) {
       event.respondWith(
         event.request.formData().then(async (formData) => {
           const imageFile = formData.get('image');
