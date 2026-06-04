@@ -103,7 +103,7 @@ Guards:
         hints.push({
           ruleName: this.name, displayName: 'X-Wing',
           explanation: `X-Wing: ${d} is confined to columns ${ca + 1} and ${cb + 1} in rows ${r1 + 1} and ${r2 + 1}. Remove ${d} from all other cells in those columns.`,
-          highlightCells: [...pivots, ...elims.map(e => e.cell)],
+          highlightCells: [...pivots],
           eliminations: elims, placement: null, virtualCageSuggestion: null,
         });
       }
@@ -129,7 +129,7 @@ Guards:
         hints.push({
           ruleName: this.name, displayName: 'X-Wing',
           explanation: `X-Wing: ${d} is confined to rows ${ra + 1} and ${rb + 1} in columns ${c1 + 1} and ${c2 + 1}. Remove ${d} from all other cells in those rows.`,
-          highlightCells: [...pivots, ...elims.map(e => e.cell)],
+          highlightCells: [...pivots],
           eliminations: elims, placement: null, virtualCageSuggestion: null,
         });
       }

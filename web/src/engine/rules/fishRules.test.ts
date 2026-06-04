@@ -45,6 +45,24 @@ describe('XWing', () => {
     expect(elims.every(e => e.cell[1] !== 1 || (e.cell[0] !== 2 && e.cell[0] !== 7))).toBe(true);
   });
 
+  it('asHints: highlightCells contains only the 4 pivot cells, not elimination targets (issue #144)', () => {
+    // Regression for bug #144: elimination cells must not appear in highlightCells.
+    const bs = new BoardState(makeTrivialSpec());
+    setDigitCells(bs, 3, [[0, 2], [0, 7], [4, 2], [4, 7], [2, 2], [6, 7]]);
+    const ctx = globalCtx(bs);
+    const rule = new XWing();
+    const elims = rule.apply(ctx).eliminations.filter(e => e.digit === 3);
+    expect(elims.length).toBeGreaterThan(0);
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBeGreaterThan(0);
+    const h = hints[0]!;
+    expect(h.highlightCells).toHaveLength(4);
+    const elimKeys = new Set(h.eliminations.map(e => `${e.cell[0]},${e.cell[1]}`));
+    for (const [r, c] of h.highlightCells) {
+      expect(elimKeys.has(`${r},${c}`)).toBe(false);
+    }
+  });
+
   it('returns empty when the two rows do not share the same column pair', () => {
     const bs = new BoardState(makeTrivialSpec());
     // Row 0: d in cols 2,7; Row 4: d in cols 3,8 — different column sets

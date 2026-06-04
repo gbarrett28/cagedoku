@@ -132,7 +132,7 @@ Guards:
               hints.push({
                 ruleName: this.name, displayName: 'Unique Rectangle',
                 explanation: `Unique Rectangle (Type 1): {${a},${b}} locked in ${roofIdx.map(i => cellLabel(corners[i]!)).join(', ')}. Remove {${a},${b}} from floor cell ${cellLabel(floor)}.`,
-                highlightCells: [...corners, ...elims.map(e => e.cell)],
+                highlightCells: roofIdx.map(i => corners[i]!),
                 eliminations: elims, placement: null, virtualCageSuggestion: null,
               });
             }
@@ -160,7 +160,7 @@ Guards:
                 hints.push({
                   ruleName: this.name, displayName: 'Unique Rectangle',
                   explanation: `Unique Rectangle (Type 2): extra digit ${x} in ${cellLabel(ea)} and ${cellLabel(eb)} — remove ${x} from cells seeing both.`,
-                  highlightCells: [...corners, ...elims.map(e => e.cell)],
+                  highlightCells: [...corners],
                   eliminations: elims, placement: null, virtualCageSuggestion: null,
                 });
               }

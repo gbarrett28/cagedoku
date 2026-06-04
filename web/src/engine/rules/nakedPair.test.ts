@@ -111,6 +111,41 @@ describe('NakedPair', () => {
     expect(new NakedPair().apply(ctx).eliminations).toEqual([]);
   });
 
+  it('asHints: highlightCells contains only the pair cells, not elimination targets (issue #141)', () => {
+    // Regression for bug #141: highlightCells must be exactly [c1, c2].
+    // Elimination cells must NOT appear in highlightCells so the UI can render
+    // pattern cells (orange) and elimination cells (yellow) without overlap.
+    const bs = new BoardState(makeTrivialSpec());
+    const rowUid = bs.rowUnitId(0);
+    bs.candidates[0]![0]! = new Set([4, 6]);
+    bs.candidates[0]![1]! = new Set([4, 6]);
+    for (let c = 2; c < 9; c++) {
+      bs.candidates[0]![c]! = new Set([1, 2, 3, 5, 6, 7, 8, 9]);
+    }
+    for (let d = 1; d <= 9; d++) {
+      bs.counts[rowUid]![d] = [...Array(9).keys()].filter(c => bs.cands(0, c).has(d)).length;
+    }
+    const ctx: RuleContext = {
+      unit: bs.units[rowUid] ?? null,
+      cell: null,
+      board: bs,
+      hint: Trigger.COUNT_HIT_TWO,
+      hintDigit: 4,
+    };
+    const elims = new NakedPair().apply(ctx).eliminations;
+    expect(elims.length).toBeGreaterThan(0);
+    const hints = new NakedPair().asHints(ctx, [...elims]);
+    expect(hints).toHaveLength(1);
+    const h = hints[0]!;
+    // highlightCells must be exactly the two pair cells
+    expect(h.highlightCells).toHaveLength(2);
+    // No elimination cell should appear in highlightCells
+    const elimKeys = new Set(h.eliminations.map(e => `${e.cell[0]},${e.cell[1]}`));
+    for (const [r, c] of h.highlightCells) {
+      expect(elimKeys.has(`${r},${c}`)).toBe(false);
+    }
+  });
+
   it('returns empty when two cells do not share the same pair', () => {
     const bs = new BoardState(makeTrivialSpec());
     const rowUid = bs.rowUnitId(0);

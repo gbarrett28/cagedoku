@@ -80,6 +80,29 @@ describe('UniqueRectangle', () => {
     expect(hints[0]!.placement).toBeNull();
   });
 
+  it('asHints type 1: highlightCells contains only roof cells, not the floor cell (issue #139)', () => {
+    // Regression for bug #139: the floor cell (1,3) must not appear in highlightCells.
+    // highlightCells must be exactly the 3 roof cells so the UI renders them orange;
+    // the floor cell is an elimination target and must only appear in eliminations (yellow).
+    const bs = new BoardState(makeTrivialSpec());
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
+    bs.candidates[0]![0]! = new Set([4, 7]);
+    bs.candidates[0]![3]! = new Set([4, 7]);
+    bs.candidates[1]![0]! = new Set([4, 7]);
+    bs.candidates[1]![3]! = new Set([3, 4, 7]);
+    const ctx = globalCtx(bs);
+    const rule = new UniqueRectangle();
+    const elims = rule.apply(ctx).eliminations;
+    expect(elims.length).toBeGreaterThan(0);
+    const hints = rule.asHints(ctx, elims);
+    expect(hints).toHaveLength(1);
+    const h = hints[0]!;
+    const elimKeys = new Set(h.eliminations.map(e => `${e.cell[0]},${e.cell[1]}`));
+    for (const [r, c] of h.highlightCells) {
+      expect(elimKeys.has(`${r},${c}`)).toBe(false);
+    }
+  });
+
   it('near-miss: only 2 corners have {a,b} (not 3) → Type 1 does not fire', () => {
     // roofIndices.length must be 3 for Type 1.
     // Here only (0,0) and (0,3) have exactly {4,7}; the other two corners have extra digits.
