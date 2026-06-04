@@ -68,6 +68,7 @@ import {
 } from './imageInput.js';
 import type { FileSystemHandleWithPermission } from './imageInput.js';
 import { INSTALL_DISMISSED_KEY, shouldShowInstallBanner } from './installPrompt.js';
+import { saveSession, loadSession, clearPersistedSession } from './session/persistence.js';
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -1869,6 +1870,22 @@ function renderFixtureTable(fixtures: FixtureMeta[]): void {
 
 document.addEventListener('DOMContentLoaded', () => {
 
+  // ── Persist session across accidental refreshes ───────────────────────────────
+  // Save whenever the page is about to unload (refresh, close, navigate away).
+  // visibilitychange to 'hidden' is the reliable signal on iOS/Android PWAs where
+  // beforeunload may not fire.
+  window.addEventListener('beforeunload', () => {
+    if (currentState !== null && currentState.userGrid !== null) {
+      saveSession(currentState, cellColours);
+    }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && currentState !== null && currentState.userGrid !== null) {
+      saveSession(currentState, cellColours);
+    }
+  });
+  // ─────────────────────────────────────────────────────────────────────────────
+
   // Startup: load OpenCV (with download progress bar) and digit recogniser in parallel
   el<HTMLElement>('version-banner').textContent =
     `${import.meta.env.DEV ? 'dev' : 'prod'} ${__BUILD_TIME__}`;
@@ -1919,9 +1936,20 @@ document.addEventListener('DOMContentLoaded', () => {
       setStatus(`Image pipeline failed: ${String(e)} — open DevTools (F12) for details`, true);
     });
 
+  // ── Restore session from previous visit ──────────────────────────────────────
+  const savedSession = loadSession();
+  if (savedSession !== null) {
+    setState(savedSession.state);
+    for (const [k, v] of savedSession.cellColours) cellColours.set(k, v);
+    renderPlayingMode(savedSession.state);
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
+
   // Tutorial — show help modal on first visit, then walk through button callouts.
   initTutorial();
-  appendCallouts(buildUploadCallouts());
+  appendCallouts(savedSession !== null
+    ? buildPlayingCallouts(savedSession.state.puzzleType !== 'classic')
+    : buildUploadCallouts());
 
   el<HTMLDivElement>('logo-k').addEventListener('click', () => {
     const calloutEl = el<HTMLElement>('callout');
@@ -2107,6 +2135,7 @@ document.addEventListener('DOMContentLoaded', () => {
   el<HTMLButtonElement>('new-puzzle-btn').addEventListener('click', () => {
     logAction('new_puzzle');
     clearActionLog();
+    clearPersistedSession();
     currentState = null; currentCandidates = null; selectedCell = null;
     showCandidates = false; candidateEditMode = false;
     virtualCageMode = false; virtualCageSelection = new Set(); virtualCageNegCells = new Set();
