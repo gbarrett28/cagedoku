@@ -57,10 +57,21 @@
       <span id="status-msg" class="status"></span>
     </div>
     <p class="upload-hint">or drag &amp; drop / paste (⌘V&thinsp;/&thinsp;Ctrl+V)</p>
+    <p class="upload-privacy">Images are processed on your device &mdash; nothing is uploaded. <a href="https://github.com/gbarrett28/cagedoku/blob/master/PRIVACY.md" target="_blank" rel="noopener">Privacy policy</a></p>
     <div id="install-banner" hidden>
-      <span class="install-banner-text">Install app for quicker access</span>
-      <button id="install-btn" class="btn-secondary">Install</button>
-      <button id="install-dismiss-btn" class="btn-secondary btn-icon" aria-label="Dismiss">✕</button>
+      <div class="install-banner-body">
+        <strong class="install-banner-title">Install for the best experience</strong>
+        <ul class="install-banner-features">
+          <li>Share images directly from your gallery or browser (long-press&thinsp;→&thinsp;Share)</li>
+          <li>Works fully offline after first load</li>
+          <li>Opens instantly, like a native app</li>
+        </ul>
+        <a class="install-banner-privacy" href="https://github.com/gbarrett28/cagedoku/blob/master/PRIVACY.md" target="_blank" rel="noopener">Privacy policy</a>
+      </div>
+      <div class="install-banner-actions">
+        <button id="install-btn" class="btn-secondary">Install</button>
+        <button id="install-dismiss-btn" class="btn-secondary btn-icon" aria-label="Dismiss">✕</button>
+      </div>
     </div>
     <div id="cv-loading-row" class="form-row" style="display:none;align-items:center;gap:0.5rem;">
       <span id="cv-loading-label" class="field-label" style="min-width:12rem">Loading image pipeline…</span>
@@ -306,6 +317,13 @@
     <tr><td>Delete / Backspace</td><td>Clear selected cell</td></tr>
     <tr><td>Arrow keys</td><td>Move selection</td></tr>
   </table>
+
+  <h3>Privacy</h3>
+  <p>All image processing runs locally on your device &mdash; your puzzle photos are
+  never uploaded. The only optional uploads are anonymised digit thumbnails for
+  training (requires explicit consent) and bug reports (requires your action).
+  No analytics, no tracking, no ads. Full details:
+  <a href="https://github.com/gbarrett28/cagedoku/blob/master/PRIVACY.md" target="_blank" rel="noopener">Privacy policy</a>.</p>
 
   <div class="tutorial-suppress-row">
     <label class="tutorial-suppress-label">

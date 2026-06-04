@@ -324,6 +324,12 @@ button:hover:not(:disabled) {
   color: var(--text-muted);
 }
 
+.upload-privacy {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 #upload-panel.drag-over {
   outline: 2px dashed var(--accent);
   background: color-mix(in srgb, var(--accent) 6%, var(--surface));
@@ -331,20 +337,46 @@ button:hover:not(:disabled) {
 
 #install-banner {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
   flex-wrap: wrap;
   margin-top: 0.75rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.6rem 0.75rem;
   background: color-mix(in srgb, var(--accent) 8%, var(--surface));
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 0.85rem;
 }
 
-.install-banner-text {
+.install-banner-body {
   flex: 1;
   min-width: 0;
+}
+
+.install-banner-title {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.install-banner-features {
+  margin: 0 0 0.35rem 1.1rem;
+  padding: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.install-banner-features li { margin: 0.1rem 0; }
+
+.install-banner-privacy {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.install-banner-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex-shrink: 0;
 }
 
 /* ── Review panel: image columns ── */
