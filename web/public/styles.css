@@ -1064,6 +1064,26 @@ dialog::backdrop {
   background: rgba(0, 0, 0, 0.6);
 }
 
+/* ── Share / QR modal ── */
+
+.share-qr-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 1rem 0 0.5rem;
+}
+
+.share-qr-wrap canvas {
+  border-radius: 6px;
+}
+
+.share-url-text {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  word-break: break-all;
+  text-align: center;
+  margin: 0 0 1rem;
+}
+
 /* ── Hints dropdown ── */
 
 .hints-area {

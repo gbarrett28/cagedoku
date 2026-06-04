@@ -69,6 +69,7 @@ import {
 import type { FileSystemHandleWithPermission } from './imageInput.js';
 import { INSTALL_DISMISSED_KEY, shouldShowInstallBanner } from './installPrompt.js';
 import { saveSession, loadSession, clearPersistedSession } from './session/persistence.js';
+import { toCanvas as qrToCanvas } from 'qrcode';
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -2258,19 +2259,29 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   // ─────────────────────────────────────────────────────────────────────────────
 
-  // ── Share link ───────────────────────────────────────────────────────────────
+  // ── Share modal (QR code + native share + copy link) ─────────────────────────
   el<HTMLButtonElement>('share-btn').addEventListener('click', () => {
     const url = window.location.href;
-    if (navigator.share) {
-      void navigator.share({ title: document.title, url });
-    } else {
-      void navigator.clipboard.writeText(url).then(() => {
-        const btn = el<HTMLButtonElement>('share-btn');
-        const original = btn.dataset['tooltip'] ?? 'Share';
-        btn.dataset['tooltip'] = 'Copied!';
-        setTimeout(() => { btn.dataset['tooltip'] = original; }, 2000);
-      });
-    }
+    el<HTMLElement>('share-url-display').textContent = url;
+    el<HTMLButtonElement>('share-native-btn').hidden = !navigator.share;
+    el<HTMLButtonElement>('share-copy-btn').textContent = 'Copy link';
+    void qrToCanvas(el<HTMLCanvasElement>('share-qr-canvas'), url, { width: 240, margin: 2 });
+    (el<HTMLDialogElement>('share-modal') as HTMLDialogElement).showModal();
+  });
+
+  el<HTMLButtonElement>('share-native-btn').addEventListener('click', () => {
+    void navigator.share({ title: document.title, url: window.location.href });
+  });
+
+  el<HTMLButtonElement>('share-copy-btn').addEventListener('click', () => {
+    void navigator.clipboard.writeText(window.location.href).then(() => {
+      el<HTMLButtonElement>('share-copy-btn').textContent = 'Copied!';
+      setTimeout(() => { el<HTMLButtonElement>('share-copy-btn').textContent = 'Copy link'; }, 2000);
+    });
+  });
+
+  el<HTMLButtonElement>('share-close-btn').addEventListener('click', () => {
+    el<HTMLDialogElement>('share-modal').close();
   });
   // ─────────────────────────────────────────────────────────────────────────────
 
