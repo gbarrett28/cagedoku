@@ -62,9 +62,10 @@ function runTriggerValidation(
   state: PuzzleState,
   spec: PuzzleSpec,
 ): void {
-  const misses = findTriggerMisses(board, rules, golden);
-  if (misses.length === 0) return;
+  const { misses, violations } = findTriggerMisses(board, rules, golden);
+  if (misses.length === 0 && violations.length === 0) return;
 
+  // Compute once — shared by both miss reports and violation reports.
   const stalledCandidates = Array.from({ length: 9 }, (_, r) =>
     Array.from({ length: 9 }, (__, c) => [...board.cands(r, c)].sort((a, b) => a - b)),
   );
@@ -82,6 +83,26 @@ function runTriggerValidation(
       puzzleType: state.puzzleType,
       regions: spec.regions as number[][],
       cageTotals: spec.cageTotals as number[][],
+    });
+  }
+
+  // Brute-force violations: a rule whose trigger never fires but whose apply()
+  // would eliminate a golden digit. The normal onViolation path in SolverEngine
+  // never sees these — this is the only detection point.
+  for (const violation of violations) {
+    if (isRuleDisabledForSession(violation.ruleName)) continue;
+    disableRuleForSession(violation.ruleName);
+    submitPuzzleReport({
+      reason: 'rule-bug',
+      ruleName: violation.ruleName,
+      offendingEliminations: violation.offendingEliminations.map(e => ({ cell: e.cell, digit: e.digit })),
+      goldenSolution: golden as number[][],
+      stalledCandidates,
+      puzzleType: state.puzzleType,
+      regions: spec.regions as number[][],
+      cageTotals: spec.cageTotals as number[][],
+      actions: state.turns.map(t => t.action),
+      givenDigits: state.givenDigits,
     });
   }
 }

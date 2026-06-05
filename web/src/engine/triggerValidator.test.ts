@@ -3,7 +3,8 @@
  *
  * Uses a minimal board to verify that the brute-force checker correctly
  * detects rules whose apply() would produce actionable eliminations that
- * have not yet been applied to the board.
+ * have not yet been applied to the board, and rules whose apply() would
+ * violate the golden solution (brute-force violations).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -43,89 +44,61 @@ function stubGlobalRule(name: string, eliminations: Array<{ cell: Cell; digit: n
 }
 
 // ---------------------------------------------------------------------------
-// Tests
+// Trigger miss tests
 // ---------------------------------------------------------------------------
 
-describe('findTriggerMisses', () => {
+describe('findTriggerMisses — misses', () => {
   it('detects a NakedSingle miss when a singleton cell has peers still carrying the digit', () => {
     const board = new BoardState(makeTrivialSpec());
     // Make [0,0] a singleton {5}; all peers in row 0 / col 0 / box 0 still have {1..9}.
     makeSingleton(board, 0, 0, 5);
 
-    const misses = findTriggerMisses(board, [new NakedSingle()]);
+    const { misses } = findTriggerMisses(board, [new NakedSingle()]);
 
-    // Should find exactly one miss for NakedSingle at context CELL_DETERMINED:r1c1
     expect(misses).toHaveLength(1);
     const miss = misses[0]!;
     expect(miss.ruleName).toBe('NakedSingle');
     expect(miss.missedContext).toBe('CELL_DETERMINED:r1c1');
-
-    // All missed eliminations must be digit 5 (NakedSingle removes the placed digit from peers)
     expect(miss.eliminations.length).toBeGreaterThan(0);
     expect(miss.eliminations.every(e => e.digit === 5)).toBe(true);
   });
 
-  it('returns empty after a full solve (no remaining actionable eliminations)', () => {
+  it('returns empty misses after a full solve (no remaining actionable eliminations)', () => {
     const board = new BoardState(makeTrivialSpec());
     const rules = [new NakedSingle()];
     new SolverEngine(board, rules, {}).solve();
 
-    const misses = findTriggerMisses(board, rules);
+    const { misses } = findTriggerMisses(board, rules);
     expect(misses).toHaveLength(0);
   });
 
-  it('returns empty when the rule result has only already-absent digits', () => {
+  it('returns empty misses when the rule result has only already-absent digits', () => {
     const board = new BoardState(makeTrivialSpec());
-    // Digit 9 is already absent from cell [0,0] because we removed it.
-    makeSingleton(board, 0, 0, 5); // incidentally removes 9 too
+    makeSingleton(board, 0, 0, 5); // incidentally removes 9
 
-    // Rule tries to eliminate 9 from [0,0] — but 9 is already gone.
     const staleRule = stubGlobalRule('StaleRule', [{ cell: [0, 0] as Cell, digit: 9 }]);
-    const misses = findTriggerMisses(board, [staleRule]);
+    const { misses } = findTriggerMisses(board, [staleRule]);
     expect(misses).toHaveLength(0);
   });
 
   it('detects a miss when a valid (non-golden) elimination has not been applied', () => {
     const board = new BoardState(makeTrivialSpec());
-    // Digit 9 is still in [0,0] (golden for [0,0] is 5). A rule that removes 9 is valid.
     const validRule = stubGlobalRule('ValidRule', [{ cell: [0, 0] as Cell, digit: 9 }]);
 
-    const misses = findTriggerMisses(board, [validRule], KNOWN_SOLUTION);
+    const { misses } = findTriggerMisses(board, [validRule], KNOWN_SOLUTION);
     expect(misses).toHaveLength(1);
     expect(misses[0]!.ruleName).toBe('ValidRule');
     expect(misses[0]!.eliminations).toEqual([{ cell: [0, 0], digit: 9 }]);
   });
 
-  it('skips a context entirely when any elimination would remove a golden digit', () => {
+  it('returns empty misses and no violations when no golden solution is provided and digit is present', () => {
     const board = new BoardState(makeTrivialSpec());
-    // Rule tries to eliminate 5 from [0,0] — 5 IS the golden digit there.
-    const wrongRule = stubGlobalRule('WrongRule', [{ cell: [0, 0] as Cell, digit: 5 }]);
-
-    const misses = findTriggerMisses(board, [wrongRule], KNOWN_SOLUTION);
-    expect(misses).toHaveLength(0); // golden violation → entire context skipped
-  });
-
-  it('skips contexts where elimination contradicts golden even if other eliminations are valid', () => {
-    const board = new BoardState(makeTrivialSpec());
-    // Mixed: eliminate both 9 (valid) and 5 (golden violation) from [0,0].
-    const mixedRule = stubGlobalRule('MixedRule', [
-      { cell: [0, 0] as Cell, digit: 9 }, // valid
-      { cell: [0, 0] as Cell, digit: 5 }, // golden violation
-    ]);
-
-    // Entire context must be skipped because of the golden violation.
-    const misses = findTriggerMisses(board, [mixedRule], KNOWN_SOLUTION);
-    expect(misses).toHaveLength(0);
-  });
-
-  it('returns empty when no golden solution is provided even if a "wrong" elimination would have been skipped', () => {
-    const board = new BoardState(makeTrivialSpec());
-    // Without a golden solution we cannot distinguish correct from wrong eliminations.
-    // The elimination IS present in the board, so it is reported as a miss.
+    // Without golden we cannot classify digit 5 as a violation — it is reported as a miss.
     const rule = stubGlobalRule('AnyRule', [{ cell: [0, 0] as Cell, digit: 5 }]);
 
-    const misses = findTriggerMisses(board, [rule]); // no golden
-    expect(misses).toHaveLength(1); // reported because we have no golden to compare
+    const { misses, violations } = findTriggerMisses(board, [rule]);
+    expect(misses).toHaveLength(1);
+    expect(violations).toHaveLength(0);
   });
 
   it('handles unit-scoped rules: calls the rule for every matching unit', () => {
@@ -138,12 +111,62 @@ describe('findTriggerMisses', () => {
       priority: 100,
       triggers: new Set([Trigger.COUNT_DECREASED]),
       unitKinds: new Set([UnitKind.ROW]),
-      apply: (_ctx) => { callCount++; return emptyResult(); },
+      apply: () => { callCount++; return emptyResult(); },
       asHints: () => [],
     };
 
     findTriggerMisses(board, [unitScopedRule]);
-    // Should call apply() once per ROW (9 rows × 1 trigger)
-    expect(callCount).toBe(9);
+    expect(callCount).toBe(9); // 9 rows × 1 trigger
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Brute-force violation tests
+// ---------------------------------------------------------------------------
+
+describe('findTriggerMisses — brute-force violations', () => {
+  it('reports a violation when the brute-force finds a golden-digit elimination', () => {
+    const board = new BoardState(makeTrivialSpec());
+    // Digit 5 is the golden solution for [0,0].
+    const wrongRule = stubGlobalRule('WrongRule', [{ cell: [0, 0] as Cell, digit: 5 }]);
+
+    const { misses, violations } = findTriggerMisses(board, [wrongRule], KNOWN_SOLUTION);
+    expect(misses).toHaveLength(0);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]!.ruleName).toBe('WrongRule');
+    expect(violations[0]!.missedContext).toBe('GLOBAL');
+    expect(violations[0]!.offendingEliminations).toEqual([{ cell: [0, 0], digit: 5 }]);
+  });
+
+  it('reports a violation (not a miss) when the context is tainted by a golden violation', () => {
+    const board = new BoardState(makeTrivialSpec());
+    // Mixed: eliminate both 9 (valid) and 5 (golden violation) from [0,0].
+    const mixedRule = stubGlobalRule('MixedRule', [
+      { cell: [0, 0] as Cell, digit: 9 }, // valid
+      { cell: [0, 0] as Cell, digit: 5 }, // golden violation
+    ]);
+
+    const { misses, violations } = findTriggerMisses(board, [mixedRule], KNOWN_SOLUTION);
+    expect(misses).toHaveLength(0);          // tainted context → not a miss
+    expect(violations).toHaveLength(1);
+    expect(violations[0]!.offendingEliminations).toEqual([{ cell: [0, 0], digit: 5 }]);
+  });
+
+  it('does not report a violation when the golden digit is already absent from the board', () => {
+    const board = new BoardState(makeTrivialSpec());
+    // Remove the golden digit 5 from [0,0] first — the rule can no longer do harm.
+    makeSingleton(board, 0, 0, 3); // leaves {3}, so 5 is gone
+
+    const wrongRule = stubGlobalRule('WrongRule', [{ cell: [0, 0] as Cell, digit: 5 }]);
+    const { violations } = findTriggerMisses(board, [wrongRule], KNOWN_SOLUTION);
+    expect(violations).toHaveLength(0); // 5 is already absent → no live violation
+  });
+
+  it('returns empty violations when no golden solution is provided', () => {
+    const board = new BoardState(makeTrivialSpec());
+    const rule = stubGlobalRule('Rule', [{ cell: [0, 0] as Cell, digit: 5 }]);
+
+    const { violations } = findTriggerMisses(board, [rule]); // no golden
+    expect(violations).toHaveLength(0);
   });
 });
