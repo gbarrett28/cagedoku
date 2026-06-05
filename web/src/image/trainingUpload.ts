@@ -67,9 +67,62 @@ export function grantConsent(): void {
 // Upload helpers
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Trigger miss report — background validator finding unfired rule triggers
+// ---------------------------------------------------------------------------
+
+/**
+ * Sent when the brute-force background validator finds a rule that produces
+ * actionable candidate eliminations after the normal solve pass has run to a
+ * fixed point. This indicates the trigger/queue system failed to enqueue the
+ * rule for a context where it would have made progress.
+ *
+ * Uses version 5 to match the worker schema (separate from PuzzleReport v1).
+ */
+export interface TriggerMissReport {
+  version: 5;
+  feedbackType: 'trigger-miss';
+  reportedAt: string;
+  appVersion: string;
+  userAgent: string;
+  ruleName: string;
+  /** Context where the miss was found, e.g. "GLOBAL" or "COUNT_DECREASED:ROW:3". */
+  missedContext: string;
+  missedEliminations: Array<{ cell: [number, number]; digit: number }>;
+  /** 9×9 candidate grid at the time the miss was detected. */
+  stalledCandidates: number[][][];
+  goldenSolution: number[][];
+  puzzleType: 'killer' | 'classic';
+  regions: number[][];
+  cageTotals: number[][];
+}
+
+/**
+ * Submit a trigger-miss report. Silently dropped when consent is absent —
+ * showing a modal during background validation would be disruptive.
+ */
+export function submitTriggerMissReport(
+  report: Omit<TriggerMissReport, 'version' | 'feedbackType' | 'reportedAt' | 'appVersion' | 'userAgent'>,
+): void {
+  if (!hasConsent()) return;
+  const payload: TriggerMissReport = {
+    version: 5,
+    feedbackType: 'trigger-miss',
+    reportedAt: new Date().toISOString(),
+    appVersion: __BUILD_TIME__,
+    userAgent: navigator.userAgent,
+    ...report,
+  };
+  postToWorker(payload);
+}
+
+// ---------------------------------------------------------------------------
+// Upload helpers
+// ---------------------------------------------------------------------------
+
 /** Fire-and-forget POST to the Cloudflare Worker. Network errors are swallowed
  *  intentionally — a failed upload must never interrupt the solve flow. */
-function postToWorker(data: TrainingExport | PuzzleReport): void {
+function postToWorker(data: TrainingExport | PuzzleReport | TriggerMissReport): void {
   const workerUrl = import.meta.env['VITE_TRAINING_WORKER_URL'] as string | undefined;
   if (!workerUrl) return;
   void fetch(workerUrl, {
