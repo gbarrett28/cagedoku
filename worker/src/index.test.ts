@@ -38,7 +38,7 @@ function makeRequest(options: {
 }
 
 const validExport = {
-  version: 1,
+  reportType: 'training-export' as const,
   exportedAt: '2026-05-07T00:00:00.000Z',
   appVersion: 'test',
   puzzleType: 'killer',
@@ -49,16 +49,17 @@ const validExport = {
 };
 
 const validStallState = {
-  version: 1 as const,
-  exportedAt: '2026-05-21T10:00:00.000Z',
+  reportType: 'stall' as const,
+  reportedAt: '2026-05-21T10:00:00.000Z',
   appVersion: '2026-05-21 09:00',
+  userAgent: 'Mozilla/5.0 test',
   puzzleType: 'classic' as const,
   stalledCandidates: Array.from({ length: 9 }, () =>
     Array.from({ length: 9 }, () => [1, 2, 3])),
 };
 
 const validFeedback = {
-  version: 3 as const,
+  reportType: 'feedback' as const,
   reportedAt: '2026-05-16T12:00:00.000Z',
   appVersion: '2026-05-16 10:00',
   feedbackType: 'bug' as const,
@@ -196,7 +197,7 @@ describe('Worker fetch handler', () => {
     expect(bucket.put).toHaveBeenCalledOnce();
     const [key, body] = bucket.put.mock.calls[0] as [string, string, unknown];
     expect(key).toMatch(/^training\/2026-05-07T00:00:00\.000Z-[0-9a-f-]+\.json$/);
-    expect(JSON.parse(body)).toMatchObject({ version: 1, sampleCount: 1 });
+    expect(JSON.parse(body)).toMatchObject({ reportType: 'training-export', sampleCount: 1 });
 
     expect(globalThis.fetch).toHaveBeenCalledOnce();
     const githubCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
@@ -215,7 +216,7 @@ describe('Worker fetch handler', () => {
     );
     expect(res.status).toBe(200);
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('[training-worker]'),
+      expect.stringContaining('[worker]'),
       expect.any(Error),
     );
   });
@@ -247,7 +248,7 @@ describe('Worker fetch handler', () => {
     expect(bucket.put).toHaveBeenCalledOnce();
     const [key, body] = bucket.put.mock.calls[0] as [string, string, unknown];
     expect(key).toMatch(/^stall\/2026-05-21T10:00:00\.000Z-[0-9a-f-]+\.json$/);
-    expect(JSON.parse(body)).toMatchObject({ version: 1, puzzleType: 'classic' });
+    expect(JSON.parse(body)).toMatchObject({ reportType: 'stall', puzzleType: 'classic' });
 
     expect(globalThis.fetch).toHaveBeenCalledOnce();
     const githubCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
@@ -267,7 +268,7 @@ describe('Worker fetch handler', () => {
     );
     expect(res.status).toBe(200);
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('[training-worker]'),
+      expect.stringContaining('[worker]'),
       expect.any(Error),
     );
   });
@@ -297,7 +298,7 @@ describe('Worker fetch handler', () => {
     );
     expect(res.status).toBe(200);
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('[training-worker]'),
+      expect.stringContaining('[worker]'),
       expect.any(Error),
     );
   });
