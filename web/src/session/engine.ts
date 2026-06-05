@@ -21,11 +21,70 @@ import { SolverEngine } from '../engine/solverEngine.js';
 import { defaultRules } from '../engine/rules/index.js';
 import { DISABLED_RULES, CLASSIC_EXCLUDED_RULES } from '../engine/rules/disabled-rules.js';
 import type { Cell, Elimination, Placement, RuleStep } from '../engine/types.js';
+import type { SolverRule } from '../engine/rule.js';
 import { NoSolnError } from '../solver/errors.js';
+import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import { dataToSpec, virtualCageKeyFromCage, solutionKey } from './specUtils.js';
-import { disableRuleForSession, isRuleDisabledForSession } from './store.js';
-import { submitPuzzleReport } from '../image/trainingUpload.js';
+import { disableRuleForSession, isRuleDisabledForSession, hasTriggerMissBeenReported, markTriggerMissReported } from './store.js';
+import { submitPuzzleReport, submitTriggerMissReport } from '../image/trainingUpload.js';
+import { findTriggerMisses } from '../engine/triggerValidator.js';
 import type { AutoMutation, BoardSnapshot, PuzzleState, Turn, UserAction, VirtualCage } from './types.js';
+
+// ---------------------------------------------------------------------------
+// Background trigger-miss validation
+// ---------------------------------------------------------------------------
+
+let _validationTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Schedule a brute-force trigger validation to run after the current JS task.
+ * Cancels any previously scheduled validation so only the most recent board
+ * state is checked (avoids stale or redundant reports during rapid interaction).
+ */
+function scheduleTriggerValidation(
+  board: BoardState,
+  rules: readonly SolverRule[],
+  golden: readonly (readonly number[])[],
+  state: PuzzleState,
+  spec: PuzzleSpec,
+): void {
+  if (_validationTimer !== null) clearTimeout(_validationTimer);
+  _validationTimer = setTimeout(() => {
+    _validationTimer = null;
+    runTriggerValidation(board, rules, golden, state, spec);
+  }, 0);
+}
+
+function runTriggerValidation(
+  board: BoardState,
+  rules: readonly SolverRule[],
+  golden: readonly (readonly number[])[],
+  state: PuzzleState,
+  spec: PuzzleSpec,
+): void {
+  const misses = findTriggerMisses(board, rules, golden);
+  if (misses.length === 0) return;
+
+  const stalledCandidates = Array.from({ length: 9 }, (_, r) =>
+    Array.from({ length: 9 }, (__, c) => [...board.cands(r, c)].sort((a, b) => a - b)),
+  );
+
+  for (const miss of misses) {
+    const key = `${miss.ruleName}:${miss.missedContext}`;
+    if (hasTriggerMissBeenReported(key)) continue;
+    markTriggerMissReported(key);
+    submitTriggerMissReport({
+      ruleName: miss.ruleName,
+      missedContext: miss.missedContext,
+      missedEliminations: miss.eliminations.map(e => ({ cell: e.cell, digit: e.digit })),
+      stalledCandidates,
+      goldenSolution: golden as number[][],
+      puzzleType: state.puzzleType,
+      regions: spec.regions as number[][],
+      cageTotals: spec.cageTotals as number[][],
+    });
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Derive user state from turn history
@@ -232,6 +291,7 @@ export function buildEngine(
   // NoSolnError (e.g. removing the last candidate from a cell), and in every case
   // the board should be returned as-is so the caller can detect the contradiction
   // and offer a Rewind hint.
+  let _solveCompleted = false;
   try {
     const placementElims = userEliminations(board, state.userGrid);
     if (placementElims.length > 0) engine.applyEliminations(placementElims);
@@ -283,10 +343,19 @@ export function buildEngine(
     }
 
     if (!skipSolve) engine.solve();
+    _solveCompleted = true;
   } catch (e) {
     if (!(e instanceof NoSolnError)) throw e;
     // Board is contradictory — return as-is so callers can detect the inconsistency
     // via findLastConsistentTurnIdx / findMissingGoldenCandidate and offer a Rewind hint.
+  }
+
+  // Schedule a background brute-force check for trigger misses. Only runs when
+  // a golden solution is present and the board is not user-corrupted, so we can
+  // distinguish valid missed progress from wrong-rule bugs. Runs once per user
+  // action (debounced); no UX impact since it executes after the current task.
+  if (_solveCompleted && !includeHints && activeGolden !== null) {
+    scheduleTriggerValidation(board, rules, activeGolden, state, spec);
   }
 
   return { board, engine };

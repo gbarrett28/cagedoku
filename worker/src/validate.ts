@@ -191,6 +191,41 @@ export function isRuleBugReport(value: unknown): value is RuleBugReport {
   return true;
 }
 
+export interface TriggerMissReport {
+  version: 5;
+  feedbackType: 'trigger-miss';
+  reportedAt: string;
+  appVersion: string;
+  userAgent: string;
+  ruleName: string;
+  missedContext: string;
+  missedEliminations: Array<{ cell: [number, number]; digit: number }>;
+  stalledCandidates: number[][][];
+  goldenSolution: number[][];
+  puzzleType: 'killer' | 'classic';
+  regions: number[][];
+  cageTotals: number[][];
+}
+
+export function isTriggerMissReport(value: unknown): value is TriggerMissReport {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (v['version'] !== 5) return false;
+  if (v['feedbackType'] !== 'trigger-miss') return false;
+  if (typeof v['reportedAt'] !== 'string') return false;
+  if (typeof v['appVersion'] !== 'string') return false;
+  if (typeof v['userAgent'] !== 'string') return false;
+  if (typeof v['ruleName'] !== 'string' || v['ruleName'].length === 0) return false;
+  if (typeof v['missedContext'] !== 'string' || v['missedContext'].length === 0) return false;
+  if (!Array.isArray(v['missedEliminations'])) return false;
+  if (!isStallCandidates(v['stalledCandidates'])) return false;
+  if (!is9x9NumberGrid(v['goldenSolution'])) return false;
+  if (v['puzzleType'] !== 'killer' && v['puzzleType'] !== 'classic') return false;
+  if (!is9x9NumberGrid(v['regions'])) return false;
+  if (!is9x9NumberGrid(v['cageTotals'])) return false;
+  return true;
+}
+
 export function isFeedbackReport(value: unknown): value is FeedbackReport {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;

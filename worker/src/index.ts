@@ -1,5 +1,5 @@
-import { isTrainingExport, isPuzzleSpecExport, isStallStateExport, isFeedbackReport, isRuleBugReport } from './validate.js';
-import type { TrainingExport, PuzzleSpecExport, StallStateExport, FeedbackReport, RuleBugReport } from './validate.js';
+import { isTrainingExport, isPuzzleSpecExport, isStallStateExport, isFeedbackReport, isRuleBugReport, isTriggerMissReport } from './validate.js';
+import type { TrainingExport, PuzzleSpecExport, StallStateExport, FeedbackReport, RuleBugReport, TriggerMissReport } from './validate.js';
 
 export interface Env {
   TRAINING_BUCKET: R2Bucket;
@@ -157,6 +157,18 @@ export default {
       return new Response('OK', { status: 200, headers: corsHeaders(allowed) });
     }
 
+    if (isTriggerMissReport(body)) {
+      const data: TriggerMissReport = body;
+      const timestamp = new Date(data.reportedAt).toISOString().replace(/[:.]/g, '-');
+      const key = `trigger-misses/${data.ruleName}/${timestamp}-${crypto.randomUUID()}.json`;
+      await env.TRAINING_BUCKET.put(key, JSON.stringify(data), {
+        httpMetadata: { contentType: 'application/json' },
+        customMetadata: { appVersion: data.appVersion, ruleName: data.ruleName, missedContext: data.missedContext },
+      });
+      try { await postTriggerMissComment(env, data, key); } catch (err) { console.error('[training-worker] GitHub comment failed:', err); }
+      return new Response('OK', { status: 200, headers: corsHeaders(allowed) });
+    }
+
     return new Response('Bad request: unrecognised schema', { status: 400, headers: corsHeaders(allowed) });
   },
 };
@@ -203,6 +215,19 @@ async function postPuzzleSpecComment(env: Env, data: PuzzleSpecExport, key: stri
     `**Puzzle spec** — requires backtracking (${data.puzzleType}), ` +
     `app ${data.appVersion}, ${data.exportedAt}\n` +
     `R2 key: \`${key}\``,
+  );
+}
+
+async function postTriggerMissComment(env: Env, data: TriggerMissReport, key: string): Promise<void> {
+  const elimSummary = data.missedEliminations.slice(0, 5)
+    .map(e => `r${e.cell[0] + 1}c${e.cell[1] + 1}≠${e.digit}`)
+    .join(', ');
+  const more = data.missedEliminations.length > 5 ? ` (+${data.missedEliminations.length - 5} more)` : '';
+  await postToGitHub(
+    env,
+    `**Trigger miss** — rule \`${data.ruleName}\`, context \`${data.missedContext}\` (${data.puzzleType})\n` +
+    `Missed eliminations: ${elimSummary}${more}\n` +
+    `App ${data.appVersion}\nR2 key: \`${key}\``,
   );
 }
 
