@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { makeTrivialSpec, KNOWN_SOLUTION } from '../engine/fixtures.js';
+import { makeTrivialSpec, KNOWN_SOLUTION, makeRowCageSpec } from '../engine/fixtures.js';
 import { specToData, specToCageStates, cageLabel } from './specUtils.js';
 import {
   buildEngine,
@@ -478,5 +478,46 @@ describe('applyNextAutoPlacement — continues even with wrong placements', () =
     const result = applyNextAutoPlacement(stateWithElim);
     expect(result).not.toBeNull();
     expect(result!.userGrid![0]![0]).not.toBe(gold);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hint regression: issue #141 — NakedPair in top-right box
+// ---------------------------------------------------------------------------
+
+describe('buildEngine hints regression — issue #141', () => {
+  it('NakedPair appears in hints when pair {2,8} exists at r1c9 and r2c9', () => {
+    // Classic puzzle from issue #141.  Cells (0,8) and (1,8) (0-indexed) both
+    // have only {2,8} as candidates — a naked pair in col 9 and box 3,3.
+    // The pair should generate col-level eliminations that appear in pendingHints.
+    const spec = makeRowCageSpec();
+    const userGrid = [
+      [0, 0, 0, 9, 6, 0, 7, 3, 0],
+      [0, 0, 0, 1, 0, 3, 4, 0, 0],
+      [0, 0, 0, 7, 8, 0, 5, 9, 1],
+      [0, 0, 3, 5, 0, 0, 0, 4, 0],
+      [0, 5, 0, 0, 0, 0, 2, 0, 6],
+      [0, 0, 1, 2, 0, 6, 0, 0, 3],
+      [6, 0, 5, 4, 0, 7, 0, 0, 0],
+      [9, 0, 0, 0, 1, 0, 0, 0, 0],
+      [0, 8, 2, 0, 0, 0, 0, 0, 0],
+    ];
+    const state: PuzzleState = {
+      specData: specToData(spec),
+      cageStates: specToCageStates(spec),
+      userGrid,
+      virtualCages: [],
+      turns: [],
+      alwaysApplyRules: ['NakedSingle'],
+      goldenSolution: null,
+      puzzleType: 'classic',
+      givenDigits: null,
+      originalImageUrl: null,
+      warpedImageUrl: null,
+      autoRemovedCandidates: [],
+    };
+    const { engine } = buildEngine(state, { includeHints: true });
+    const nakedPairHints = engine.pendingHints.filter(h => h.ruleName === 'NakedPair');
+    expect(nakedPairHints.length).toBeGreaterThan(0);
   });
 });
