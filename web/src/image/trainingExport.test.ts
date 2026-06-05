@@ -75,9 +75,9 @@ describe('extractTrainingData', () => {
     expect(exp.subres).toBe(32);
   });
 
-  it('returns version 1 and thumbnailSize 64', () => {
+  it('returns reportType training-export and thumbnailSize 64', () => {
     const exp = extractTrainingData(new Map(), cageGrid(0, 0, 0), 'killer', 28);
-    expect(exp.version).toBe(1);
+    expect(exp.reportType).toBe('training-export');
     expect(exp.thumbnailSize).toBe(64);
   });
 });

@@ -1,4 +1,4 @@
-import type { GitHubAction, PuzzleRuleReport, ReproductionBundle } from '../report.js';
+import type { PuzzleRuleReport, ReproductionBundle } from '../report.js';
 import type { RuleBugFixture } from '../fixture.js';
 
 export interface RuleBugReport extends PuzzleRuleReport {

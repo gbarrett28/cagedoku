@@ -113,8 +113,11 @@ async function main() {
   const toAdd = rulesWithNewFixtures.filter(r => !currentDisabled.includes(r));
   if (toAdd.length > 0) {
     const allDisabled = [...currentDisabled, ...toAdd];
-    const newDisabledContent =
-      `export const DISABLED_RULES: readonly string[] = [${allDisabled.map(r => `'${r}'`).join(', ')}];\n`;
+    const replacement = `export const DISABLED_RULES: readonly string[] = [${allDisabled.map(r => `'${r}'`).join(', ')}];`;
+    const newDisabledContent = disabledContent.replace(
+      /export const DISABLED_RULES: readonly string\[\] = \[.*?\];/s,
+      replacement,
+    );
     writeFileSync(DISABLED_FILE, newDisabledContent);
     console.log(`Added to disabled-rules.ts: ${toAdd.join(', ')}`);
   } else {

@@ -1,4 +1,4 @@
-import type { GitHubAction, ReportBase } from '../report.js';
+import type { ReportBase } from '../report.js';
 
 export interface FeedbackReport extends ReportBase {
   readonly reportType: 'feedback';

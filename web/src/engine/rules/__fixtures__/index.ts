@@ -8,7 +8,7 @@
  * Do not edit by hand — re-run the script to regenerate.
  */
 
-import type { RuleBugFixture } from '../ruleBugFixture.js';
+import type { RuleBugFixture } from '../../../../../shared/src/fixture.js';
 
 export const ruleBugFixtures: readonly RuleBugFixture[] = [
   {
