@@ -482,6 +482,48 @@ describe('applyNextAutoPlacement — continues even with wrong placements', () =
 });
 
 // ---------------------------------------------------------------------------
+// Regression: issue #148 — NakedSingle auto-places digit 6 at r7c7
+// ---------------------------------------------------------------------------
+
+describe('buildEngine regression — issue #148', () => {
+  it('NakedSingle auto-places digit 6 at r7c7 (0-based r6c6) via linear-system chain', () => {
+    // Classic puzzle from issue #148. The row-6 cage constraint (total=45) with 4
+    // placed digits forces the remaining 5 cells to {1,2,6,8,9}. The linear system
+    // then eliminates 2 from (6,6) because placing 2 there would make the sum
+    // infeasible, leaving {6} as the only candidate. NakedSingle then places it.
+    const spec = makeRowCageSpec();
+    const userGrid = [
+      [0, 0, 0, 6, 5, 9, 0, 7, 3],
+      [0, 0, 7, 8, 0, 0, 5, 6, 9],
+      [5, 9, 6, 7, 3, 0, 8, 0, 0],
+      [7, 6, 8, 2, 1, 5, 9, 3, 4],
+      [0, 0, 4, 9, 6, 3, 7, 5, 8],
+      [9, 3, 5, 4, 8, 7, 1, 2, 6],
+      [4, 7, 3, 5, 0, 0, 0, 0, 0],
+      [6, 0, 0, 1, 7, 0, 3, 0, 5],
+      [0, 5, 0, 3, 0, 6, 0, 8, 7],
+    ];
+    const state: PuzzleState = {
+      specData: specToData(spec),
+      cageStates: specToCageStates(spec),
+      userGrid,
+      virtualCages: [],
+      turns: [],
+      alwaysApplyRules: ['NakedSingle'],
+      goldenSolution: null,
+      puzzleType: 'classic',
+      givenDigits: null,
+      originalImageUrl: null,
+      warpedImageUrl: null,
+      autoRemovedCandidates: [],
+    };
+    const { engine } = buildEngine(state);
+    const placed66 = engine.appliedPlacements.some(p => p.cell[0] === 6 && p.cell[1] === 6);
+    expect(placed66).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Hint regression: issue #141 — NakedPair in top-right box
 // ---------------------------------------------------------------------------
 
@@ -521,3 +563,4 @@ describe('buildEngine hints regression — issue #141', () => {
     expect(nakedPairHints.length).toBeGreaterThan(0);
   });
 });
+
