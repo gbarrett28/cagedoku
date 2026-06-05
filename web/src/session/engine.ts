@@ -353,7 +353,7 @@ export function buildEngine(
   // distinguish valid missed progress from wrong-rule bugs. Runs once per user
   // action (debounced); no UX impact since it executes after the current task.
   if (_solveCompleted && !includeHints && activeGolden !== null) {
-    scheduleTriggerValidation(board, rules, activeGolden, state, spec);
+    scheduleTriggerValidation(board, activeRules, activeGolden, state, spec);
   }
 
   return { board, engine };

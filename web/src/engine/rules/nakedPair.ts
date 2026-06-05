@@ -7,9 +7,10 @@
  * others, those two digits can be removed from all other cells in that unit.
  */
 
+import type { BoardState } from '../boardState.js';
 import type { HintResult } from '../hint.js';
 import type { RuleContext } from '../rule.js';
-import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
+import { Cell, Elimination, emptyResult, RuleResult, Trigger, Unit, UnitKind } from '../types.js';
 import { cellLabel, unitLabel } from './_labels.js';
 
 export class NakedPair {
@@ -38,27 +39,8 @@ Guards:
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_HIT_TWO, Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX]);
 
-  private _findPair(ctx: RuleContext): [Cell, Cell, number, number] | null {
-    if (!ctx.unit) return null;
-    const board = ctx.board;
-    const cells = ctx.unit.cells as Cell[];
-
-    if (ctx.hintDigit !== null) {
-      // COUNT_HIT_TWO path: hintDigit's count in this unit just reached 2.
-      const d1 = ctx.hintDigit;
-      const d1Cells = cells.filter(([r, c]) => board.cands(r, c).has(d1));
-      if (d1Cells.length !== 2) return null;
-      const [c1, c2] = [d1Cells[0]!, d1Cells[1]!];
-      const cands1 = board.cands(c1[0], c1[1]);
-      const cands2 = board.cands(c2[0], c2[1]);
-      if (cands1.size !== 2 || cands1.size !== cands2.size) return null;
-      for (const d of cands1) { if (!cands2.has(d)) return null; }
-      const d2 = [...cands1].find(d => d !== d1)!;
-      return [c1, c2, Math.min(d1, d2), Math.max(d1, d2)];
-    }
-
-    // GLOBAL path: scan all cells with exactly 2 candidates for matching pairs.
-    const twos = cells.filter(([r, c]) => board.cands(r, c).size === 2);
+  private _findPairInCells(board: BoardState, cells: readonly Cell[]): [Cell, Cell, number, number] | null {
+    const twos = (cells as Cell[]).filter(([r, c]) => board.cands(r, c).size === 2);
     for (let i = 0; i < twos.length - 1; i++) {
       const c1 = twos[i]!;
       const cands1 = board.cands(c1[0], c1[1]);
@@ -76,31 +58,44 @@ Guards:
     return null;
   }
 
+  private _activeUnits(ctx: RuleContext): readonly Unit[] {
+    if (ctx.unit !== null) return [ctx.unit];
+    return ctx.board.units.filter(u => this.unitKinds.has(u.kind));
+  }
+
   apply(ctx: RuleContext): RuleResult {
-    const pair = this._findPair(ctx);
-    if (!pair || !ctx.unit) return emptyResult();
-    const [c1, c2, dLo, dHi] = pair;
-    const c1k = `${c1[0]},${c1[1]}`, c2k = `${c2[0]},${c2[1]}`;
-    const elims: Elimination[] = (ctx.unit.cells as Cell[])
-      .filter(([r,c]) => `${r},${c}` !== c1k && `${r},${c}` !== c2k)
-      .flatMap(([r,c]) => [dLo, dHi].filter(d => ctx.board.cands(r, c).has(d))
-        .map(d => ({ cell: [r, c] as Cell, digit: d })));
+    const elims: Elimination[] = [];
+    for (const unit of this._activeUnits(ctx)) {
+      const pair = this._findPairInCells(ctx.board, unit.cells);
+      if (!pair) continue;
+      const [c1, c2, dLo, dHi] = pair;
+      const c1k = `${c1[0]},${c1[1]}`, c2k = `${c2[0]},${c2[1]}`;
+      for (const [r, c] of unit.cells as Cell[]) {
+        if (`${r},${c}` !== c1k && `${r},${c}` !== c2k) {
+          if (ctx.board.cands(r, c).has(dLo)) elims.push({ cell: [r, c] as Cell, digit: dLo });
+          if (ctx.board.cands(r, c).has(dHi)) elims.push({ cell: [r, c] as Cell, digit: dHi });
+        }
+      }
+    }
     return { ...emptyResult(), eliminations: elims };
   }
 
   asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
     if (!eliminations.length) return [];
-    const pair = this._findPair(ctx);
-    if (!pair || !ctx.unit) return [];
-    const [c1, c2, dLo, dHi] = pair;
-    return [{
-      ruleName: this.name,
-      displayName: 'Naked Pair',
-      explanation: `${cellLabel(c1)} and ${cellLabel(c2)} both have only {${dLo},${dHi}} as candidates in ${unitLabel(ctx.unit)}. These digits can be eliminated from all other cells in that unit.`,
-      highlightCells: [c1, c2],
-      eliminations,
-      placement: null,
-      virtualCageSuggestion: null,
-    }];
+    for (const unit of this._activeUnits(ctx)) {
+      const pair = this._findPairInCells(ctx.board, unit.cells);
+      if (!pair) continue;
+      const [c1, c2, dLo, dHi] = pair;
+      return [{
+        ruleName: this.name,
+        displayName: 'Naked Pair',
+        explanation: `${cellLabel(c1)} and ${cellLabel(c2)} both have only {${dLo},${dHi}} as candidates in ${unitLabel(unit)}. These digits can be eliminated from all other cells in that unit.`,
+        highlightCells: [c1, c2],
+        eliminations,
+        placement: null,
+        virtualCageSuggestion: null,
+      }];
+    }
+    return [];
   }
 }
