@@ -19,6 +19,7 @@ import { cellLabel } from './_labels.js';
 
 export class Skyscraper {
   readonly name = 'Skyscraper';
+  readonly killerOnly = false;
   readonly displayName = 'Skyscraper';
   readonly description = `
 Skyscraper — asymmetric two-row (or two-column) chain elimination.

@@ -24,6 +24,7 @@ interface _Match {
 
 export class LockedCandidates {
   readonly name = 'LockedCandidates';
+  readonly killerOnly = false;
   readonly displayName = 'Locked Candidates';
   readonly description = `\
 Locked Candidates — a digit confined to the intersection of two units can be eliminated from the remainder of each unit.

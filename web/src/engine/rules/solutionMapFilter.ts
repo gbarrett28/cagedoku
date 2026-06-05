@@ -38,6 +38,7 @@ function perCellPossible(
 
 export class SolutionMapFilter {
   readonly name = 'SolutionMapFilter';
+  readonly killerOnly = true;
   readonly displayName = 'Solution Map Filter';
   readonly description = `
 Solution Map Filter — per-cell feasibility filter for cage solutions.

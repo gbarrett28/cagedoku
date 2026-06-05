@@ -22,6 +22,7 @@ interface _Match {
 
 export class CageIntersection {
   readonly name = 'CageIntersection';
+  readonly killerOnly = true;
   readonly displayName = 'Cage Intersection';
   readonly description = `
 Cage Intersection — cage must-contain digit confined to one unit.

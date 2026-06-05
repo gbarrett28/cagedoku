@@ -11,6 +11,7 @@ import { combinations, dedupElims } from './_helpers.js';
 
 export class Jellyfish {
   readonly name = 'Jellyfish';
+  readonly killerOnly = false;
   readonly displayName = 'Jellyfish';
   readonly description = `
 Jellyfish — generalisation of X-Wing to four base rows and four cover columns.

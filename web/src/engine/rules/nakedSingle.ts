@@ -24,6 +24,7 @@ import { cellLabel } from './_labels.js';
 
 export class NakedSingle {
   readonly name = 'NakedSingle';
+  readonly killerOnly = false;
   readonly displayName = 'Naked Single';
   readonly description = `\
 Naked Single — a cell reduced to one candidate must hold that digit, and that digit

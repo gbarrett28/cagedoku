@@ -12,6 +12,7 @@ import { cellLabel, unitLabel } from './_labels.js';
 
 export class NakedHiddenQuad {
   readonly name = 'NakedHiddenQuad';
+  readonly killerOnly = false;
   readonly displayName = 'Naked/Hidden Quad';
   readonly description = `
 Naked/Hidden Quad — pigeonhole elimination at N=4 in a unit.

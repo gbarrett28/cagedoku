@@ -57,6 +57,7 @@ function findMatch(
 
 export class MustContainOutie {
   readonly name = 'MustContainOutie';
+  readonly killerOnly = true;
   readonly displayName = 'Must Contain Outie';
   readonly description = `
 Must Contain Outie — single external cell with candidates ⊆ must-contain constrains the outie.

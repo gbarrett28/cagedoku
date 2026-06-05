@@ -19,6 +19,7 @@ import { cellLabel } from './_labels.js';
 
 export class SumPairConstraint {
   readonly name = 'SumPairConstraint';
+  readonly killerOnly = true;
   readonly displayName = 'Sum Pair Constraint';
   readonly description = `
 Sum Pair Constraint — candidate restriction from a + b = T.

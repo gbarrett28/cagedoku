@@ -22,6 +22,7 @@ import {
 
 export class CageCandidateFilter {
   readonly name = 'CageCandidateFilter';
+  readonly killerOnly = true;
   readonly displayName = 'Cage Candidate Filter';
   readonly description = `\
 Cage Candidate Filter — a digit absent from every remaining cage solution cannot appear in any cage cell.

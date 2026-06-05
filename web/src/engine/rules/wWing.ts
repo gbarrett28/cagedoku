@@ -36,6 +36,7 @@ import { cellLabel, unitLabel } from './_labels.js';
 
 export class WWing {
   readonly name = 'WWing';
+  readonly killerOnly = false;
   readonly displayName = 'W-Wing';
   readonly description =
     'When two cells with the same two candidates are each connected to one end ' +

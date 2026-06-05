@@ -19,7 +19,7 @@
 import { BoardState } from '../engine/boardState.js';
 import { SolverEngine } from '../engine/solverEngine.js';
 import { defaultRules } from '../engine/rules/index.js';
-import { DISABLED_RULES, CLASSIC_EXCLUDED_RULES } from '../engine/rules/disabled-rules.js';
+import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
 import type { Cell, Elimination, Placement, RuleStep } from '../engine/types.js';
 import type { SolverRule } from '../engine/rule.js';
 import { NoSolnError } from '../solver/errors.js';
@@ -257,7 +257,7 @@ export function buildEngine(
   const _disabled = new Set(DISABLED_RULES);
   const allRules = defaultRules().filter(r => !_disabled.has(r.name));
   const rules = state.puzzleType === 'classic'
-    ? allRules.filter(r => !CLASSIC_EXCLUDED_RULES.has(r.name))
+    ? allRules.filter(r => !r.killerOnly)
     : allRules;
   const alwaysApplySet = new Set(state.alwaysApplyRules);
 

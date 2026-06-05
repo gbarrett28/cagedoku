@@ -12,6 +12,7 @@ import { cellLabel } from './_labels.js';
 
 export class UniqueRectangle {
   readonly name = 'UniqueRectangle';
+  readonly killerOnly = false;
   readonly displayName = 'Unique Rectangle';
   readonly description = `
 Unique Rectangle — assumes the puzzle has a unique solution; eliminates candidates that would create a deadly pattern.
