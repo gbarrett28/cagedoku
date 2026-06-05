@@ -89,9 +89,11 @@ async function main(): Promise<void> {
   writeFileSync(FIXTURES_FILE, updatedFixtures);
   console.log(`Wrote ${newFixtures.length} new fixture(s) to __fixtures__/index.ts`);
 
-  // Update disabled-rules.ts: add any rules that have fixtures and are not yet disabled.
-  // Use regex replacement to update only DISABLED_RULES, preserving the rest of the file.
-  const rulesWithNewFixtures = [...new Set((newFixtures as Array<{ ruleName: string }>).map(f => f.ruleName))];
+  // Update disabled-rules.ts: only disable rules that have source:'r2' fixtures (wrong eliminations
+  // proved by the golden solution). trigger-miss fixtures mean a predecessor rule failed to set a
+  // trigger — the named rule itself is correct and must not be disabled.
+  const ruleBugFixtures = (newFixtures as Array<{ source: string; ruleName: string }>).filter(f => f.source === 'r2');
+  const rulesWithNewFixtures = [...new Set(ruleBugFixtures.map(f => f.ruleName))];
   const currentDisabled = [...disabledContent.matchAll(/'([^']+)'/g)].map(m => m[1] as string);
   const toAdd = rulesWithNewFixtures.filter(r => !currentDisabled.includes(r));
   if (toAdd.length > 0) {
