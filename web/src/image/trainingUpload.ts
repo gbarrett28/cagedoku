@@ -1,5 +1,4 @@
 import type { TrainingExport } from './trainingExport.js';
-import type { UserAction } from '../session/types.js';
 
 // ---------------------------------------------------------------------------
 // Puzzle report — unified type for all puzzle-state uploads
@@ -27,26 +26,7 @@ type StallReport = PuzzleReportBase & {
   stalledCandidates: number[][][];
 };
 
-/**
- * Sent when a rule produces an elimination that contradicts the known golden
- * solution. Includes the full action history so the session can be replayed.
- */
-type RuleBugReport = PuzzleReportBase & {
-  reason: 'rule-bug';
-  ruleName: string;
-  offendingEliminations: Array<{ cell: [number, number]; digit: number }>;
-  stalledCandidates: number[][][];
-  goldenSolution: number[][];
-  /** Full turn action history — replay these to reproduce the board state. */
-  actions: readonly UserAction[];
-  /** Pre-filled digits for classic puzzles; null for killer. */
-  givenDigits: number[][] | null;
-};
-
-export type PuzzleReport = StallReport | RuleBugReport;
-
-/** Distributes Omit over a union so discriminant fields are preserved. */
-type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+export type PuzzleReport = StallReport;
 
 // ---------------------------------------------------------------------------
 // Consent
@@ -117,12 +97,53 @@ export function submitTriggerMissReport(
 }
 
 // ---------------------------------------------------------------------------
+// Rule bug report — sent when a rule eliminates a golden-solution digit
+// ---------------------------------------------------------------------------
+
+/**
+ * Matches the worker's RuleBugReport schema (version 4).
+ * Sent both when SolverEngine's onViolation fires (rule fired + was wrong)
+ * and when the brute-force background validator finds a rule that would
+ * produce a golden violation but whose trigger never fired.
+ */
+export interface WorkerRuleBugReport {
+  version: 4;
+  feedbackType: 'rule-bug';
+  reportedAt: string;
+  appVersion: string;
+  ruleName: string;
+  offendingEliminations: Array<{ cell: [number, number]; digit: number }>;
+  goldenSolution: number[][];
+  stalledCandidates: number[][][];
+  puzzleType: 'killer' | 'classic';
+  regions: number[][];
+  cageTotals: number[][];
+  userAgent: string;
+}
+
+/** Submit a rule-bug report. Silently dropped when consent is absent. */
+export function submitRuleBugReport(
+  report: Omit<WorkerRuleBugReport, 'version' | 'feedbackType' | 'reportedAt' | 'appVersion' | 'userAgent'>,
+): void {
+  if (!hasConsent()) return;
+  const payload: WorkerRuleBugReport = {
+    version: 4,
+    feedbackType: 'rule-bug',
+    reportedAt: new Date().toISOString(),
+    appVersion: __BUILD_TIME__,
+    userAgent: navigator.userAgent,
+    ...report,
+  };
+  postToWorker(payload);
+}
+
+// ---------------------------------------------------------------------------
 // Upload helpers
 // ---------------------------------------------------------------------------
 
 /** Fire-and-forget POST to the Cloudflare Worker. Network errors are swallowed
  *  intentionally — a failed upload must never interrupt the solve flow. */
-function postToWorker(data: TrainingExport | PuzzleReport | TriggerMissReport): void {
+function postToWorker(data: TrainingExport | PuzzleReport | TriggerMissReport | WorkerRuleBugReport): void {
   const workerUrl = import.meta.env['VITE_TRAINING_WORKER_URL'] as string | undefined;
   if (!workerUrl) return;
   void fetch(workerUrl, {
@@ -147,7 +168,7 @@ function postToWorker(data: TrainingExport | PuzzleReport | TriggerMissReport): 
  * a modal mid-solve would be disruptive).
  */
 export function submitPuzzleReport(
-  report: DistributiveOmit<PuzzleReport, 'version' | 'reportedAt' | 'appVersion' | 'userAgent'>,
+  report: Omit<PuzzleReport, 'version' | 'reportedAt' | 'appVersion' | 'userAgent'>,
   showConsentModal?: () => void,
 ): void {
   if (!hasConsent()) {
@@ -160,7 +181,7 @@ export function submitPuzzleReport(
     appVersion: __BUILD_TIME__,
     userAgent: navigator.userAgent,
     ...report,
-  } as PuzzleReport;
+  };
   postToWorker(payload);
 }
 

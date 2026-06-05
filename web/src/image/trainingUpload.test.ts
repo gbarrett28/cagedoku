@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { hasConsent, grantConsent, uploadTrainingData, initiateUpload, submitPuzzleReport } from './trainingUpload.js';
+import { hasConsent, grantConsent, uploadTrainingData, initiateUpload, submitPuzzleReport, submitRuleBugReport } from './trainingUpload.js';
 
 function clearCookies(): void {
   document.cookie.split(';').forEach(c => {
@@ -127,7 +127,6 @@ const minimalStallReport = {
 };
 
 const minimalRuleBugReport = {
-  reason: 'rule-bug' as const,
   puzzleType: 'classic' as const,
   regions: Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, () => r)),
   cageTotals: Array.from({ length: 9 }, () => new Array<number>(9).fill(0)),
@@ -137,8 +136,6 @@ const minimalRuleBugReport = {
   ruleName: 'TestRule',
   offendingEliminations: [{ cell: [0, 0] as [number, number], digit: 5 }],
   goldenSolution: Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, (__, c) => ((r * 3 + Math.floor(r / 3) + c) % 9) + 1)),
-  actions: [] as [],
-  givenDigits: null,
 };
 
 describe('submitPuzzleReport', () => {
@@ -157,16 +154,6 @@ describe('submitPuzzleReport', () => {
       'https://test-worker.example.com',
       expect.objectContaining({ method: 'POST' }),
     );
-  });
-
-  it('POSTs a rule-bug report when consent is granted', () => {
-    document.cookie = 'training_consent=granted';
-    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://test-worker.example.com');
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('OK'));
-
-    submitPuzzleReport(minimalRuleBugReport);
-
-    expect(fetchSpy).toHaveBeenCalledOnce();
   });
 
   it('adds version/reportedAt/appVersion/userAgent envelope fields', () => {
@@ -209,6 +196,36 @@ describe('submitPuzzleReport', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
 
     submitPuzzleReport(minimalStallReport);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('submitRuleBugReport', () => {
+  beforeEach(clearCookies);
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); clearCookies(); });
+
+  it('POSTs a rule-bug report with version 4 and feedbackType when consent is granted', () => {
+    document.cookie = 'training_consent=granted';
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://test-worker.example.com');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('OK'));
+
+    submitRuleBugReport(minimalRuleBugReport);
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string) as Record<string, unknown>;
+    expect(body['version']).toBe(4);
+    expect(body['feedbackType']).toBe('rule-bug');
+    expect(typeof body['reportedAt']).toBe('string');
+    expect(typeof body['appVersion']).toBe('string');
+    expect(typeof body['userAgent']).toBe('string');
+  });
+
+  it('silently drops the report when consent is absent', () => {
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://test-worker.example.com');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    submitRuleBugReport(minimalRuleBugReport);
 
     expect(fetchSpy).not.toHaveBeenCalled();
   });

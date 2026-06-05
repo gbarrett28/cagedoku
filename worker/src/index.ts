@@ -165,6 +165,31 @@ export default {
         httpMetadata: { contentType: 'application/json' },
         customMetadata: { appVersion: data.appVersion, ruleName: data.ruleName, missedContext: data.missedContext },
       });
+      // Also write a rule-fixtures entry so the nightly regression action picks it up.
+      const unsolvedCells = data.stalledCandidates.flat().filter(cell => cell.length > 1).length;
+      const totalCandidates = data.stalledCandidates.flat().reduce((s, cell) => s + cell.length, 0);
+      const fixtureName = `${data.ruleName}-trigger-miss-${timestamp}`;
+      const fixture = {
+        version: 1,
+        source: 'trigger-miss',
+        name: fixtureName,
+        addedAt: data.reportedAt.slice(0, 10),
+        puzzleType: data.puzzleType,
+        ruleName: data.ruleName,
+        regions: data.regions,
+        cageTotals: data.cageTotals,
+        stalledCandidates: data.stalledCandidates,
+        goldenSolution: data.goldenSolution,
+        missedContext: data.missedContext,
+        missedEliminations: data.missedEliminations,
+        unsolvedCells,
+        totalCandidates,
+      };
+      const fixtureKey = `rule-fixtures/${data.ruleName}/${timestamp}-${crypto.randomUUID()}.json`;
+      await env.TRAINING_BUCKET.put(fixtureKey, JSON.stringify(fixture), {
+        httpMetadata: { contentType: 'application/json' },
+        customMetadata: { ruleName: data.ruleName },
+      });
       try { await postTriggerMissComment(env, data, key); } catch (err) { console.error('[training-worker] GitHub comment failed:', err); }
       return new Response('OK', { status: 200, headers: corsHeaders(allowed) });
     }

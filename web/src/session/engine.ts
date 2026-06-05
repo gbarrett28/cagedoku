@@ -26,7 +26,7 @@ import { NoSolnError } from '../solver/errors.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import { dataToSpec, virtualCageKeyFromCage, solutionKey } from './specUtils.js';
 import { disableRuleForSession, isRuleDisabledForSession, hasTriggerMissBeenReported, markTriggerMissReported } from './store.js';
-import { submitPuzzleReport, submitTriggerMissReport } from '../image/trainingUpload.js';
+import { submitRuleBugReport, submitTriggerMissReport } from '../image/trainingUpload.js';
 import { findTriggerMisses } from '../engine/triggerValidator.js';
 import type { AutoMutation, BoardSnapshot, PuzzleState, Turn, UserAction, VirtualCage } from './types.js';
 
@@ -92,8 +92,7 @@ function runTriggerValidation(
   for (const violation of violations) {
     if (isRuleDisabledForSession(violation.ruleName)) continue;
     disableRuleForSession(violation.ruleName);
-    submitPuzzleReport({
-      reason: 'rule-bug',
+    submitRuleBugReport({
       ruleName: violation.ruleName,
       offendingEliminations: violation.offendingEliminations.map(e => ({ cell: e.cell, digit: e.digit })),
       goldenSolution: golden as number[][],
@@ -101,8 +100,6 @@ function runTriggerValidation(
       puzzleType: state.puzzleType,
       regions: spec.regions as number[][],
       cageTotals: spec.cageTotals as number[][],
-      actions: state.turns.map(t => t.action),
-      givenDigits: state.givenDigits,
     });
   }
 }
@@ -285,8 +282,7 @@ export function buildEngine(
         const stalledCandidates = Array.from({ length: 9 }, (_, r) =>
           Array.from({ length: 9 }, (_, c) => [...board.cands(r, c)].sort((a, b) => a - b))
         );
-        submitPuzzleReport({
-          reason: 'rule-bug',
+        submitRuleBugReport({
           ruleName,
           offendingEliminations: offending.map(e => ({ cell: [e.cell[0], e.cell[1]] as [number, number], digit: e.digit })),
           goldenSolution: activeGolden,
@@ -294,8 +290,6 @@ export function buildEngine(
           puzzleType: state.puzzleType,
           regions: spec.regions as number[][],
           cageTotals: spec.cageTotals as number[][],
-          actions: state.turns.map(t => t.action),
-          givenDigits: state.givenDigits,
         });
       }
     : null;
