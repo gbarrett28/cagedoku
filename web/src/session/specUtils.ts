@@ -7,8 +7,8 @@
  */
 
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
-import type { CageState, CellPosition, PuzzleSpecData, VirtualCage } from './types.js';
-import type { Cell } from '../engine/types.js';
+import type { CageState, CellPosition, PuzzleSpecData } from './types.js';
+export { virtualCageKey, virtualCageKeyFromCage } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Label generation — Excel-column-style (A, B, ..., Z, AA, AB, ...)
@@ -31,23 +31,6 @@ export function cageLabel(i: number): string {
 // ---------------------------------------------------------------------------
 // Virtual cage key — stable identity for a user-defined cage
 // ---------------------------------------------------------------------------
-
-/**
- * Builds a stable string key for a virtual cage.
- * Standard format: "r,c:r,c:...:total"
- * Diff format:     "r,c:r,c:...:total|r,c:r,c:..." (appends sorted neg cells after "|")
- */
-export function virtualCageKey(
-  cells: readonly Cell[],
-  total: number,
-  negativeCells?: readonly Cell[],
-): string {
-  const sorted = [...cells].sort(([r1, c1], [r2, c2]) => r1 - r2 || c1 - c2);
-  const base = [...sorted.map(([r, c]) => `${r},${c}`), String(total)].join(':');
-  if (!negativeCells || negativeCells.length === 0) return base;
-  const negSorted = [...negativeCells].sort(([r1, c1], [r2, c2]) => r1 - r2 || c1 - c2);
-  return `${base}|${negSorted.map(([r, c]) => `${r},${c}`).join(':')}`;
-}
 
 // ---------------------------------------------------------------------------
 // PuzzleSpec ↔ PuzzleSpecData
@@ -137,14 +120,6 @@ export function cageStatesToSpec(cages: readonly CageState[], base: PuzzleSpecDa
   }
 
   return dataToSpec({ regions, cageTotals });
-}
-
-// ---------------------------------------------------------------------------
-// Virtual cage key helper (for VirtualCage objects)
-// ---------------------------------------------------------------------------
-
-export function virtualCageKeyFromCage(cage: VirtualCage): string {
-  return virtualCageKey(cage.cells, cage.total, cage.negativeCells);
 }
 
 // ---------------------------------------------------------------------------
