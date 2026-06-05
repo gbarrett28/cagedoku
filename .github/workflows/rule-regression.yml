@@ -34,7 +34,7 @@ jobs:
       - name: Fetch new fixtures from worker
         env:
           TRAINING_WORKER_URL: ${{ secrets.TRAINING_WORKER_URL }}
-        run: node web/scripts/sync-rule-fixtures.js
+        run: npx vite-node web/scripts/sync-rule-fixtures.ts
 
       - name: Bronze gate
         working-directory: web

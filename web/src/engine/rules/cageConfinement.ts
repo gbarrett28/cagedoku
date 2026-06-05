@@ -32,6 +32,7 @@ function combinations<T>(arr: T[], k: number): T[][] {
 
 export class CageConfinement {
   readonly name = 'CageConfinement';
+  readonly killerOnly = true;
   readonly displayName = 'Cage Confinement';
   readonly description = `
 Cage Confinement — pigeonhole across cages covering N same-type units.

@@ -13,7 +13,7 @@ import { cellLabel } from './engine/rules/_labels.js';
 import { extractTrainingData } from './image/trainingExport.js';
 import type { TrainingExport } from './image/trainingExport.js';
 import { defaultImagePipelineConfig } from './image/config.js';
-import { initiateUpload, grantConsent, uploadTrainingData, submitPuzzleReport } from './image/trainingUpload.js';
+import { initiateUpload, grantConsent, uploadTrainingData, submitStallReport, hasConsent } from './image/trainingUpload.js';
 import { dataToSpec } from './session/specUtils.js';
 import { analyseKernels } from './engine/kernelAnalysis.js';
 import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec, makeClassicGivenDigits, makeClassicPartialGivenDigits } from './engine/fixtures.js';
@@ -1207,17 +1207,12 @@ async function handleProcess(file?: File): Promise<void> {
           pendingMergedThumbs = new Map();
           setStatus('');
           if (usedBacktracking && stalledCandidates && state.originalImageUrl !== null) {
-            const stallReport = {
-              reason: 'stall' as const,
-              puzzleType: layoutResult.state.puzzleType,
-              regions: layoutResult.state.specData.regions as number[][],
-              cageTotals: layoutResult.state.specData.cageTotals as number[][],
-              stalledCandidates,
-            };
-            submitPuzzleReport(
-              stallReport,
-              () => showTrainingConsentModal(() => submitPuzzleReport(stallReport)),
-            );
+            const stallReport = { puzzleType: layoutResult.state.puzzleType, stalledCandidates };
+            if (hasConsent()) {
+              submitStallReport(stallReport);
+            } else {
+              showTrainingConsentModal(() => submitStallReport(stallReport));
+            }
           }
           return;
         }
@@ -1288,17 +1283,12 @@ async function handleProcess(file?: File): Promise<void> {
           // 81/81-digit OCR result); coverage comes from the manual-confirm path
           // tests and the underlying upload-function unit tests.
           if (classicUsedBt && classicStalled && state.originalImageUrl !== null) {
-            const classicStallReport = {
-              reason: 'stall' as const,
-              puzzleType: 'classic' as const,
-              regions: state.specData.regions as number[][],
-              cageTotals: state.specData.cageTotals as number[][],
-              stalledCandidates: classicStalled,
-            };
-            submitPuzzleReport(
-              classicStallReport,
-              () => showTrainingConsentModal(() => submitPuzzleReport(classicStallReport)),
-            );
+            const classicStallReport = { puzzleType: 'classic' as const, stalledCandidates: classicStalled };
+            if (hasConsent()) {
+              submitStallReport(classicStallReport);
+            } else {
+              showTrainingConsentModal(() => submitStallReport(classicStallReport));
+            }
           }
           clearAndUploadTrainingData(extractTrainingData(
             pendingCellThumbs,
@@ -1432,17 +1422,12 @@ async function handleConfirm(): Promise<void> {
 
     // Upload puzzle spec when backtracking was needed (rules alone couldn't solve it).
     if (confirmUsedBacktracking && confirmStalledCandidates && currentState.originalImageUrl !== null) {
-      const stallReport = {
-        reason: 'stall' as const,
-        puzzleType: currentState.puzzleType,
-        regions: currentState.specData.regions as number[][],
-        cageTotals: currentState.specData.cageTotals as number[][],
-        stalledCandidates: confirmStalledCandidates,
-      };
-      submitPuzzleReport(
-        stallReport,
-        () => showTrainingConsentModal(() => submitPuzzleReport(stallReport)),
-      );
+      const stallReport = { puzzleType: currentState.puzzleType, stalledCandidates: confirmStalledCandidates };
+      if (hasConsent()) {
+        submitStallReport(stallReport);
+      } else {
+        showTrainingConsentModal(() => submitStallReport(stallReport));
+      }
     }
 
     // Upload training samples when the user confirmed a puzzle.
@@ -2673,7 +2658,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // the consent modal without needing a real OCR result.
     (window as unknown as Record<string, unknown>)['__testShowConsentModal'] = () => {
       const mockData: TrainingExport = {
-        version: 1,
+        reportType: 'training-export',
         exportedAt: new Date().toISOString(),
         appVersion: __BUILD_TIME__,
         puzzleType: 'killer',

@@ -292,6 +292,7 @@ interface SolverRule {
   readonly name: string;           // matches class name exactly
   readonly description: string;    // shown in the config modal (i) tooltip
   readonly priority: number;       // lower = higher priority = fired first
+  readonly killerOnly: boolean;    // true = rule requires cage constraints; excluded for classic puzzles
   readonly triggers: ReadonlySet<Trigger>;
   readonly unitKinds: ReadonlySet<UnitKind>; // empty = GLOBAL or cell-scoped
 
@@ -347,6 +348,8 @@ targets (rendered yellow). See `CellColour` and `ColourGroup` in `web/src/engine
 
 1. Create `web/src/engine/rules/<camelCaseName>.ts` — one class per file.
 2. Implement `SolverRule`.  Import types from `../types.js`, `../rule.js`, `../hint.js`.
+   Set `readonly killerOnly = true` if the rule requires cage constraints (e.g. sums,
+   cage solutions); set `readonly killerOnly = false` for classic-sudoku-compatible rules.
 3. Add it to `defaultRules()` in `web/src/engine/rules/index.ts` at the right priority.
 4. Co-locate tests as `<camelCaseName>.test.ts` using `makeTrivialSpec()` from
    `web/src/engine/fixtures.ts`.
@@ -374,7 +377,8 @@ is automatically detected and suppressed.  The lifecycle is:
    `rule-fixtures/<ruleName>/` in R2.
 
 3. **Nightly Action** — `.github/workflows/rule-regression.yml` runs
-   `node web/scripts/sync-rule-fixtures.js`, which fetches all `GET /rule-fixtures/<ruleName>`
+   `npx vite-node web/scripts/sync-rule-fixtures.ts`, which derives the rule list
+   dynamically from `defaultRules()`, fetches all `GET /rule-fixtures/<ruleName>`
    responses, appends new fixtures to `web/src/engine/rules/__fixtures__/index.ts`,
    and adds the rule name to `web/src/engine/rules/disabled-rules.ts`.  The Action
    then commits and pushes; the next `pages.yml` deployment picks up the change.

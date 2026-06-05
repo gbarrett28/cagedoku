@@ -25,6 +25,7 @@ import { cellLabel } from './_labels.js';
 
 export class TwoStringKite {
   readonly name = 'TwoStringKite';
+  readonly killerOnly = false;
   readonly displayName = '2-String Kite';
   readonly description =
     'When a row and a column each have exactly two candidates for a digit, and one ' +

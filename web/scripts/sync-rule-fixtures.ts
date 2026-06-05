@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env vite-node
 /**
  * Fetch new rule-bug stall fixtures from the Cloudflare Worker R2 bucket and
  * write them into web/src/engine/rules/__fixtures__/index.ts.
@@ -8,17 +8,19 @@
  * a developer fixes it and removes its name from the disabled list).
  *
  * Usage (from the repo root):
- *   TRAINING_WORKER_URL=https://... node web/scripts/sync-rule-fixtures.js
+ *   TRAINING_WORKER_URL=https://... npx vite-node web/scripts/sync-rule-fixtures.ts
  *
  * The TRAINING_WORKER_URL env var must point to the Cloudflare Worker's base URL.
+ * Rule names are derived dynamically from defaultRules() — no hardcoded list.
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { defaultRules } from '../src/engine/rules/index.js';
+import { fixtureToTypeScript } from '../../shared/src/fixture.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = join(__dirname, '..', '..');
 const WEB_ROOT = join(__dirname, '..');
 const FIXTURES_FILE = join(WEB_ROOT, 'src', 'engine', 'rules', '__fixtures__', 'index.ts');
 const DISABLED_FILE = join(WEB_ROOT, 'src', 'engine', 'rules', 'disabled-rules.ts');
@@ -29,61 +31,41 @@ if (!WORKER_URL) {
   process.exit(1);
 }
 
-const RULE_NAMES = [
-  // CellSolutionElimination was merged into NakedSingle (87ec19b); never fetch its fixtures
-  // because the regression test structure doesn't apply to propagation-only rules.
-  'NakedSingle', 'HiddenSingle', 'LinearElimination',
-  'CageCandidateFilter', 'CageIntersection', 'SolutionMapFilter', 'MustContain',
-  'MustContainOutie', 'DeltaConstraint', 'SumPairConstraint', 'NakedPair',
-  'HiddenPair', 'NakedHiddenTriple', 'NakedHiddenQuad', 'PointingPairs',
-  'LockedCandidates', 'CageConfinement', 'UnitPartitionFilter', 'XWing',
-  'Swordfish', 'Jellyfish', 'XYWing', 'UniqueRectangle', 'SimpleColouring',
-  'XYZWing', 'WWing', 'Skyscraper', 'TwoStringKite',
-];
+// CellSolutionElimination was merged into NakedSingle (87ec19b); never fetch its
+// fixtures because the regression test structure doesn't apply to propagation-only rules.
+const EXCLUDED_FROM_SYNC = new Set(['CellSolutionElimination']);
 
-function fixtureToTs(f) {
-  return `  {
-    version: ${f.version},
-    source: '${f.source}',
-    name: '${f.name}',
-    addedAt: '${f.addedAt}',
-    puzzleType: '${f.puzzleType}',${f.issueNumber !== undefined ? `\n    issueNumber: ${f.issueNumber},` : ''}
-    ruleName: '${f.ruleName}',
-    regions: ${JSON.stringify(f.regions)},
-    cageTotals: ${JSON.stringify(f.cageTotals)},
-    stalledCandidates: ${JSON.stringify(f.stalledCandidates)},
-    goldenSolution: ${JSON.stringify(f.goldenSolution)},
-    unsolvedCells: ${f.unsolvedCells},
-    totalCandidates: ${f.totalCandidates},
-  },`;
-}
+const RULE_NAMES = defaultRules()
+  .map(r => r.name)
+  .filter(n => !EXCLUDED_FROM_SYNC.has(n));
 
-async function fetchFixturesForRule(ruleName) {
+async function fetchFixturesForRule(ruleName: string): Promise<unknown[]> {
   const url = `${WORKER_URL}/rule-fixtures/${ruleName}`;
   const res = await fetch(url);
   if (!res.ok) {
     console.warn(`  GET ${url} → ${res.status}, skipping`);
     return [];
   }
-  return res.json();
+  return res.json() as Promise<unknown[]>;
 }
 
-async function main() {
+async function main(): Promise<void> {
   const fixturesContent = readFileSync(FIXTURES_FILE, 'utf8');
   const disabledContent = readFileSync(DISABLED_FILE, 'utf8');
 
   // Extract existing fixture names to avoid duplicates
   const existingNames = new Set(
-    [...fixturesContent.matchAll(/name:\s*'([^']+)'/g)].map(m => m[1])
+    [...fixturesContent.matchAll(/name:\s*'([^']+)'/g)].map(m => m[1]),
   );
   console.log(`Existing fixtures: ${existingNames.size}`);
+  console.log(`Checking ${RULE_NAMES.length} rules from defaultRules()`);
 
   // Fetch new fixtures from R2
-  let newFixtures = [];
+  const newFixtures: unknown[] = [];
   for (const ruleName of RULE_NAMES) {
     process.stdout.write(`Fetching rule-fixtures/${ruleName}... `);
     const fixtures = await fetchFixturesForRule(ruleName);
-    const fresh = fixtures.filter(f => !existingNames.has(f.name));
+    const fresh = (fixtures as Array<{ name: string }>).filter(f => !existingNames.has(f.name));
     console.log(`${fixtures.length} total, ${fresh.length} new`);
     newFixtures.push(...fresh);
   }
@@ -99,7 +81,7 @@ async function main() {
     console.error('Could not find closing `];` in fixtures index.ts');
     process.exit(1);
   }
-  const newEntries = newFixtures.map(fixtureToTs).join('\n');
+  const newEntries = (newFixtures as Parameters<typeof fixtureToTypeScript>[0][]).map(fixtureToTypeScript).join('\n');
   const updatedFixtures =
     fixturesContent.slice(0, insertPoint) +
     newEntries + '\n' +
@@ -107,14 +89,18 @@ async function main() {
   writeFileSync(FIXTURES_FILE, updatedFixtures);
   console.log(`Wrote ${newFixtures.length} new fixture(s) to __fixtures__/index.ts`);
 
-  // Update disabled-rules.ts: add any rules that have fixtures and are not yet disabled
-  const rulesWithNewFixtures = [...new Set(newFixtures.map(f => f.ruleName))];
-  const currentDisabled = [...disabledContent.matchAll(/'([^']+)'/g)].map(m => m[1]);
+  // Update disabled-rules.ts: add any rules that have fixtures and are not yet disabled.
+  // Use regex replacement to update only DISABLED_RULES, preserving the rest of the file.
+  const rulesWithNewFixtures = [...new Set((newFixtures as Array<{ ruleName: string }>).map(f => f.ruleName))];
+  const currentDisabled = [...disabledContent.matchAll(/'([^']+)'/g)].map(m => m[1] as string);
   const toAdd = rulesWithNewFixtures.filter(r => !currentDisabled.includes(r));
   if (toAdd.length > 0) {
     const allDisabled = [...currentDisabled, ...toAdd];
-    const newDisabledContent =
-      `export const DISABLED_RULES: readonly string[] = [${allDisabled.map(r => `'${r}'`).join(', ')}];\n`;
+    const replacement = `export const DISABLED_RULES: readonly string[] = [${allDisabled.map(r => `'${r}'`).join(', ')}];`;
+    const newDisabledContent = disabledContent.replace(
+      /export const DISABLED_RULES: readonly string\[\] = \[.*?\];/s,
+      replacement,
+    );
     writeFileSync(DISABLED_FILE, newDisabledContent);
     console.log(`Added to disabled-rules.ts: ${toAdd.join(', ')}`);
   } else {
@@ -122,7 +108,7 @@ async function main() {
   }
 }
 
-main().catch(err => {
+main().catch((err: unknown) => {
   console.error(err);
   process.exit(1);
 });

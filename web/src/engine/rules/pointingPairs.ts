@@ -21,6 +21,7 @@ interface _Match {
 
 export class PointingPairs {
   readonly name = 'PointingPairs';
+  readonly killerOnly = false;
   readonly displayName = 'Pointing Pairs';
   readonly description = `\
 Pointing Pairs — a digit confined to one row (or column) within a box cannot appear in that row (or column) outside the box.

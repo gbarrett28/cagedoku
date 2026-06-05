@@ -14,6 +14,7 @@ import { cellLabel, unitLabel } from './_labels.js';
 
 export class NakedPair {
   readonly name = 'NakedPair';
+  readonly killerOnly = false;
   readonly displayName = 'Naked Pair';
   readonly description = `\
 Naked Pair — two cells in a unit locked to the same two candidates exclude those digits from all other cells.

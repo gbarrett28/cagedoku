@@ -16,6 +16,7 @@ import { cellLabel } from './_labels.js';
 
 export class LinearElimination {
   readonly name = 'LinearElimination';
+  readonly killerOnly = true;
   readonly displayName = 'Linear Elimination';
   readonly description = `
 Linear Elimination — placements and eliminations from the cage-sum linear system.

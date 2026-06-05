@@ -1,32 +1,13 @@
-import type { TrainingExport } from './trainingExport.js';
+import type { TrainingExport } from '../../../shared/src/reports/TrainingExport.js';
+import type { StallStateExport } from '../../../shared/src/reports/StallStateExport.js';
+import type { RuleBugReport } from '../../../shared/src/reports/RuleBugReport.js';
+import type { TriggerMissReport } from '../../../shared/src/reports/TriggerMissReport.js';
+import type { AnyReport } from '../../../shared/src/reports/index.js';
 
-// ---------------------------------------------------------------------------
-// Puzzle report — unified type for all puzzle-state uploads
-// ---------------------------------------------------------------------------
-
-interface PuzzleReportBase {
-  version: 1;
-  reportedAt: string;
-  appVersion: string;
-  puzzleType: 'killer' | 'classic';
-  /** Row-major 9×9 cage index grid. */
-  regions: number[][];
-  /** Row-major 9×9 cage totals grid. */
-  cageTotals: number[][];
-  userAgent: string;
-}
-
-/**
- * Sent when the rule engine stalls and falls back to MRV backtracking.
- * Captures the candidate grid at stall time for offline rule analysis.
- */
-type StallReport = PuzzleReportBase & {
-  reason: 'stall';
-  /** 9×9 candidate grid at the moment the rule engine stalled. */
-  stalledCandidates: number[][][];
-};
-
-export type PuzzleReport = StallReport;
+export type { TrainingExport } from '../../../shared/src/reports/TrainingExport.js';
+export type { StallStateExport } from '../../../shared/src/reports/StallStateExport.js';
+export type { RuleBugReport } from '../../../shared/src/reports/RuleBugReport.js';
+export type { TriggerMissReport } from '../../../shared/src/reports/TriggerMissReport.js';
 
 // ---------------------------------------------------------------------------
 // Consent
@@ -44,106 +25,12 @@ export function grantConsent(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Upload helpers
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Trigger miss report — background validator finding unfired rule triggers
-// ---------------------------------------------------------------------------
-
-/**
- * Sent when the brute-force background validator finds a rule that produces
- * actionable candidate eliminations after the normal solve pass has run to a
- * fixed point. This indicates the trigger/queue system failed to enqueue the
- * rule for a context where it would have made progress.
- *
- * Uses version 5 to match the worker schema (separate from PuzzleReport v1).
- */
-export interface TriggerMissReport {
-  version: 5;
-  feedbackType: 'trigger-miss';
-  reportedAt: string;
-  appVersion: string;
-  userAgent: string;
-  ruleName: string;
-  /** Context where the miss was found, e.g. "GLOBAL" or "COUNT_DECREASED:ROW:3". */
-  missedContext: string;
-  missedEliminations: Array<{ cell: [number, number]; digit: number }>;
-  /** 9×9 candidate grid at the time the miss was detected. */
-  stalledCandidates: number[][][];
-  goldenSolution: number[][];
-  puzzleType: 'killer' | 'classic';
-  regions: number[][];
-  cageTotals: number[][];
-}
-
-/**
- * Submit a trigger-miss report. Silently dropped when consent is absent —
- * showing a modal during background validation would be disruptive.
- */
-export function submitTriggerMissReport(
-  report: Omit<TriggerMissReport, 'version' | 'feedbackType' | 'reportedAt' | 'appVersion' | 'userAgent'>,
-): void {
-  if (!hasConsent()) return;
-  const payload: TriggerMissReport = {
-    version: 5,
-    feedbackType: 'trigger-miss',
-    reportedAt: new Date().toISOString(),
-    appVersion: __BUILD_TIME__,
-    userAgent: navigator.userAgent,
-    ...report,
-  };
-  postToWorker(payload);
-}
-
-// ---------------------------------------------------------------------------
-// Rule bug report — sent when a rule eliminates a golden-solution digit
-// ---------------------------------------------------------------------------
-
-/**
- * Matches the worker's RuleBugReport schema (version 4).
- * Sent both when SolverEngine's onViolation fires (rule fired + was wrong)
- * and when the brute-force background validator finds a rule that would
- * produce a golden violation but whose trigger never fired.
- */
-export interface WorkerRuleBugReport {
-  version: 4;
-  feedbackType: 'rule-bug';
-  reportedAt: string;
-  appVersion: string;
-  ruleName: string;
-  offendingEliminations: Array<{ cell: [number, number]; digit: number }>;
-  goldenSolution: number[][];
-  stalledCandidates: number[][][];
-  puzzleType: 'killer' | 'classic';
-  regions: number[][];
-  cageTotals: number[][];
-  userAgent: string;
-}
-
-/** Submit a rule-bug report. Silently dropped when consent is absent. */
-export function submitRuleBugReport(
-  report: Omit<WorkerRuleBugReport, 'version' | 'feedbackType' | 'reportedAt' | 'appVersion' | 'userAgent'>,
-): void {
-  if (!hasConsent()) return;
-  const payload: WorkerRuleBugReport = {
-    version: 4,
-    feedbackType: 'rule-bug',
-    reportedAt: new Date().toISOString(),
-    appVersion: __BUILD_TIME__,
-    userAgent: navigator.userAgent,
-    ...report,
-  };
-  postToWorker(payload);
-}
-
-// ---------------------------------------------------------------------------
-// Upload helpers
+// Core upload helper
 // ---------------------------------------------------------------------------
 
 /** Fire-and-forget POST to the Cloudflare Worker. Network errors are swallowed
  *  intentionally — a failed upload must never interrupt the solve flow. */
-function postToWorker(data: TrainingExport | PuzzleReport | TriggerMissReport | WorkerRuleBugReport): void {
+function postToWorker(data: AnyReport | TrainingExport): void {
   const workerUrl = import.meta.env['VITE_TRAINING_WORKER_URL'] as string | undefined;
   if (!workerUrl) return;
   void fetch(workerUrl, {
@@ -155,28 +42,50 @@ function postToWorker(data: TrainingExport | PuzzleReport | TriggerMissReport | 
   });
 }
 
+// ---------------------------------------------------------------------------
+// Per-type submit helpers
+// ---------------------------------------------------------------------------
+
 /**
- * Submit a puzzle report. All reports require consent — puzzle data is
- * someone else's IP.
- *
- * If `showConsentModal` is provided and consent has not been granted, it is
- * called instead of sending; the modal should call `submitPuzzleReport` again
- * after the user grants consent.
- *
- * If no `showConsentModal` is provided and consent is absent, the report is
- * silently dropped (acceptable for automatic diagnostic reports where showing
- * a modal mid-solve would be disruptive).
+ * Submit a stall-state report. Silently dropped when consent is absent —
+ * showing a modal during background validation would be disruptive.
  */
-export function submitPuzzleReport(
-  report: Omit<PuzzleReport, 'version' | 'reportedAt' | 'appVersion' | 'userAgent'>,
-  showConsentModal?: () => void,
+export function submitStallReport(
+  report: Omit<StallStateExport, 'reportType' | 'reportedAt' | 'appVersion' | 'userAgent'>,
 ): void {
-  if (!hasConsent()) {
-    if (showConsentModal) showConsentModal();
-    return;
-  }
-  const payload: PuzzleReport = {
-    version: 1,
+  if (!hasConsent()) return;
+  const payload: StallStateExport = {
+    reportType: 'stall',
+    reportedAt: new Date().toISOString(),
+    appVersion: __BUILD_TIME__,
+    userAgent: navigator.userAgent,
+    ...report,
+  };
+  postToWorker(payload);
+}
+
+/** Submit a rule-bug report. Silently dropped when consent is absent. */
+export function submitRuleBugReport(
+  report: Omit<RuleBugReport, 'reportType' | 'reportedAt' | 'appVersion' | 'userAgent'>,
+): void {
+  if (!hasConsent()) return;
+  const payload: RuleBugReport = {
+    reportType: 'rule-bug',
+    reportedAt: new Date().toISOString(),
+    appVersion: __BUILD_TIME__,
+    userAgent: navigator.userAgent,
+    ...report,
+  };
+  postToWorker(payload);
+}
+
+/** Submit a trigger-miss report. Silently dropped when consent is absent. */
+export function submitTriggerMissReport(
+  report: Omit<TriggerMissReport, 'reportType' | 'reportedAt' | 'appVersion' | 'userAgent'>,
+): void {
+  if (!hasConsent()) return;
+  const payload: TriggerMissReport = {
+    reportType: 'trigger-miss',
     reportedAt: new Date().toISOString(),
     appVersion: __BUILD_TIME__,
     userAgent: navigator.userAgent,
@@ -186,7 +95,7 @@ export function submitPuzzleReport(
 }
 
 // ---------------------------------------------------------------------------
-// Training data (digit recogniser — separate from puzzle reports)
+// Training data (digit recogniser)
 // ---------------------------------------------------------------------------
 
 /** Check consent and either upload immediately or delegate to a modal. */

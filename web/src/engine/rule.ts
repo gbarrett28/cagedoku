@@ -42,6 +42,8 @@ export interface SolverRule {
   readonly displayName: string;
   readonly description: string;
   readonly priority: number;
+  /** True when this rule requires killer cage constraints and must be excluded for classic puzzles. */
+  readonly killerOnly: boolean;
   readonly triggers: ReadonlySet<Trigger>;
   /**
    * Empty set means GLOBAL / cell-scoped (unit=null in ctx).

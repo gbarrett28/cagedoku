@@ -89,6 +89,7 @@ describe('SolverEngine rule routing', () => {
       name: 'counter', displayName: 'counter',
       description: '',
       priority: 5,
+      killerOnly: false,
       triggers: new Set([Trigger.COUNT_DECREASED]),
       unitKinds: new Set([UnitKind.ROW]),
       apply(_ctx: RuleContext): RuleResult { calls.push(1); return emptyResult(); },
@@ -106,6 +107,7 @@ describe('SolverEngine rule routing', () => {
       name: 'noop', displayName: 'noop',
       description: '',
       priority: 5,
+      killerOnly: false,
       triggers: new Set([Trigger.COUNT_DECREASED]),
       unitKinds: new Set([UnitKind.ROW]),
       apply(_ctx: RuleContext): RuleResult { return emptyResult(); },
@@ -132,6 +134,7 @@ describe('SolverEngine solution eliminations', () => {
     const prunedCalls: number[] = [];
     const seRule: SolverRule = {
       name: 'seStub', displayName: 'seStub', description: '', priority: 5,
+      killerOnly: false,
       triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
       apply(_ctx: RuleContext): RuleResult {
         if (fired) return emptyResult();
@@ -143,6 +146,7 @@ describe('SolverEngine solution eliminations', () => {
     // SOLUTION_PRUNED subscriber — exercises line 282 (_applyGlobalRuleDefault enqueue path)
     const pruneRule: SolverRule = {
       name: 'pruneWatcher', displayName: 'pruneWatcher', description: '', priority: 5,
+      killerOnly: false,
       triggers: new Set([Trigger.SOLUTION_PRUNED]), unitKinds: new Set([UnitKind.CAGE]),
       apply(_ctx: RuleContext): RuleResult { prunedCalls.push(1); return emptyResult(); },
       asHints() { return []; },
@@ -167,6 +171,7 @@ describe('SolverEngine virtual cage additions', () => {
     let fired = false;
     const rule: SolverRule = {
       name: 'vcaStub', displayName: 'vcaStub', description: '', priority: 5,
+      killerOnly: false,
       triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
       apply(_ctx: RuleContext): RuleResult {
         if (fired) return emptyResult();
@@ -191,6 +196,7 @@ describe('SolverEngine candidate soundness assertion', () => {
     let fired = false;
     const badRule: SolverRule = {
       name: 'badRule', displayName: 'badRule', description: '', priority: 5,
+      killerOnly: false,
       triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
       apply(_ctx: RuleContext): RuleResult {
         if (fired) return emptyResult();
@@ -210,6 +216,7 @@ describe('SolverEngine candidate soundness assertion', () => {
     let fired = false;
     const safeRule: SolverRule = {
       name: 'safeRule', displayName: 'safeRule', description: '', priority: 5,
+      killerOnly: false,
       triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
       apply(_ctx: RuleContext): RuleResult {
         if (fired) return emptyResult();
@@ -227,6 +234,7 @@ describe('SolverEngine candidate soundness assertion', () => {
     let fired = false;
     const badRule: SolverRule = {
       name: 'badRule', displayName: 'badRule', description: '', priority: 5,
+      killerOnly: false,
       triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
       apply(_ctx: RuleContext): RuleResult {
         if (fired) return emptyResult();
@@ -245,6 +253,7 @@ describe('SolverEngine violation reporting — _violationFired', () => {
     let fired = false;
     return {
       name, displayName: name, description: '', priority: 5,
+      killerOnly: false,
       triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
       apply(): RuleResult {
         if (fired) return emptyResult();
@@ -294,6 +303,7 @@ describe('SolverEngine violation reporting — _violationFired', () => {
     let callCount = 0;
     const badRule: SolverRule = {
       name: 'badRule', displayName: 'badRule', description: '', priority: 5,
+      killerOnly: false,
       triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
       apply(): RuleResult {
         callCount++;
@@ -341,6 +351,7 @@ describe('SolverEngine golden check — hint-rule violations', () => {
     let fired = false;
     return {
       name, displayName: name, description: '', priority: 5,
+      killerOnly: false,
       triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
       apply(): RuleResult {
         if (fired) return emptyResult();
@@ -399,6 +410,7 @@ describe('SolverEngine golden check — hint-rule violations', () => {
     let alwaysFired = false;
     const badAlwaysRule: SolverRule = {
       name: 'badAlways', displayName: 'badAlways', description: '', priority: 1,
+      killerOnly: false,
       triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
       apply(): RuleResult {
         if (alwaysFired) return emptyResult();

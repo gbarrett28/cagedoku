@@ -15,6 +15,7 @@ import { cellLabel, unitLabel } from './_labels.js';
 
 export class HiddenSingle {
   readonly name = 'HiddenSingle';
+  readonly killerOnly = false;
   readonly displayName = 'Hidden Single';
   readonly description = `\
 Hidden Single — a digit with only one candidate cell in a unit must go there.

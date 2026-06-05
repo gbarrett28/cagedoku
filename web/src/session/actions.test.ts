@@ -47,7 +47,8 @@ import {
 } from './actions.js';
 import { findLastConsistentTurnIdx } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
-import { DISABLED_RULES, CLASSIC_EXCLUDED_RULES } from '../engine/rules/disabled-rules.js';
+import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
+import { defaultRules } from '../engine/rules/index.js';
 import {
   makeBoxCageSpec,
   makeTrivialSpec,
@@ -660,8 +661,8 @@ describe('getSettingsData / getAutoPlacementDelay', () => {
   it('classic: killer-specific rules excluded from hintableRules', () => {
     makeClassicConfirmed();
     const data = getSettingsData();
-    for (const name of CLASSIC_EXCLUDED_RULES) {
-      expect(data.hintableRules.some(r => r.name === name), `${name} should be absent for classic`).toBe(false);
+    for (const rule of defaultRules().filter(r => r.killerOnly)) {
+      expect(data.hintableRules.some(r => r.name === rule.name), `${rule.name} should be absent for classic`).toBe(false);
     }
   });
 

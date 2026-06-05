@@ -19,7 +19,7 @@
 import { BoardState } from '../engine/boardState.js';
 import { SolverEngine } from '../engine/solverEngine.js';
 import { defaultRules } from '../engine/rules/index.js';
-import { DISABLED_RULES, CLASSIC_EXCLUDED_RULES } from '../engine/rules/disabled-rules.js';
+import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
 import type { Cell, Elimination, Placement, RuleStep } from '../engine/types.js';
 import type { SolverRule } from '../engine/rule.js';
 import { NoSolnError } from '../solver/errors.js';
@@ -28,7 +28,8 @@ import { dataToSpec, virtualCageKeyFromCage, solutionKey } from './specUtils.js'
 import { disableRuleForSession, isRuleDisabledForSession, hasTriggerMissBeenReported, markTriggerMissReported } from './store.js';
 import { submitRuleBugReport, submitTriggerMissReport } from '../image/trainingUpload.js';
 import { findTriggerMisses } from '../engine/triggerValidator.js';
-import type { AutoMutation, BoardSnapshot, PuzzleState, Turn, UserAction, VirtualCage } from './types.js';
+import { UserAction } from './types.js';
+import type { AutoMutation, BoardSnapshot, PuzzleState, Turn, VirtualCage } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Background trigger-miss validation
@@ -116,20 +117,7 @@ function runTriggerValidation(
 export function userRemoved(state: PuzzleState): [number, number, number][] {
   const removed: [number, number, number][] = [];
   for (const turn of state.turns) {
-    const a = turn.action;
-    if (a.type === 'eliminateCandidate') {
-      removed.push([a.row, a.col, a.digit]);
-    } else if (a.type === 'applyHint') {
-      for (const triple of a.eliminations) removed.push([...triple]);
-    } else if (a.type === 'restoreCandidate') {
-      const idx = [...removed].reverse().findIndex(([r, c, d]) => r === a.row && c === a.col && d === a.digit);
-      if (idx !== -1) removed.splice(removed.length - 1 - idx, 1);
-    } else if (a.type === 'resetCellCandidates') {
-      const r = a.row; const c = a.col;
-      for (let i = removed.length - 1; i >= 0; i--) {
-        if (removed[i]![0] === r && removed[i]![1] === c) removed.splice(i, 1);
-      }
-    }
+    UserAction.updateRemovedList(turn.action, removed);
   }
   return removed;
 }
@@ -140,12 +128,7 @@ export function userRemoved(state: PuzzleState): [number, number, number][] {
 export function userVirtualCages(state: PuzzleState): VirtualCage[] {
   const cages = new Map<string, VirtualCage>();
   for (const turn of state.turns) {
-    if (turn.action.type === 'addVirtualCage') {
-      const cage = turn.action.cage;
-      cages.set(virtualCageKeyFromCage(cage), cage);
-    } else if (turn.action.type === 'removeVirtualCage') {
-      cages.delete(turn.action.key);
-    }
+    UserAction.applyToCages(turn.action, cages);
   }
   return [...cages.values()];
 }
@@ -257,7 +240,7 @@ export function buildEngine(
   const _disabled = new Set(DISABLED_RULES);
   const allRules = defaultRules().filter(r => !_disabled.has(r.name));
   const rules = state.puzzleType === 'classic'
-    ? allRules.filter(r => !CLASSIC_EXCLUDED_RULES.has(r.name))
+    ? allRules.filter(r => !r.killerOnly)
     : allRules;
   const alwaysApplySet = new Set(state.alwaysApplyRules);
 
@@ -430,47 +413,12 @@ export function recordTurn(
   state: PuzzleState,
   action: UserAction,
 ): PuzzleState {
-  const nextState = applyAction(state, action);
+  const nextState = UserAction.apply(action, state);
   const { board, engine } = buildEngine(nextState); // engine.solve() called inside buildEngine
   const autoMutations: AutoMutation[] = [...engine.appliedMutations];
   const snapshot = captureSnapshot(board);
   const turn: Turn = { action, autoMutations, snapshot };
   return { ...nextState, turns: [...nextState.turns, turn] };
-}
-
-/**
- * Applies a UserAction to the state without running the engine.
- * Returns the intermediate state before auto-mutations.
- */
-function applyAction(state: PuzzleState, action: UserAction): PuzzleState {
-  switch (action.type) {
-    case 'placeDigit': {
-      const g = state.userGrid ?? Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-      const newGrid = g.map(row => [...row]);
-      newGrid[action.row]![action.col] = action.digit;
-      return { ...state, userGrid: newGrid };
-    }
-    case 'removeDigit': {
-      const g = state.userGrid ?? Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-      const newGrid = g.map(row => [...row]);
-      newGrid[action.row]![action.col] = 0;
-      return { ...state, userGrid: newGrid };
-    }
-    case 'eliminateCandidate':
-    case 'restoreCandidate':
-    case 'resetCellCandidates':
-    case 'applyHint':
-      return state;
-    case 'addVirtualCage':
-      return { ...state, virtualCages: [...state.virtualCages, action.cage] };
-    case 'removeVirtualCage': {
-      const key = action.key;
-      const newCages = state.virtualCages.filter(vc => virtualCageKeyFromCage(vc) !== key);
-      return { ...state, virtualCages: newCages };
-    }
-    default:
-      return state;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -486,12 +434,7 @@ export function rebuildUserGrid(state: PuzzleState): PuzzleState {
   const newGrid: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
 
   for (const turn of state.turns) {
-    const a = turn.action;
-    if (a.type === 'placeDigit') {
-      newGrid[a.row]![a.col] = a.digit;
-    } else if (a.type === 'removeDigit') {
-      newGrid[a.row]![a.col] = 0;
-    }
+    UserAction.applyToGrid(turn.action, newGrid);
   }
 
   // Rebuild virtualCages from the add/remove turn history, but preserve any

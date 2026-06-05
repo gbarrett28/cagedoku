@@ -12,6 +12,7 @@ import { cellLabel, unitLabel } from './_labels.js';
 
 export class NakedHiddenTriple {
   readonly name = 'NakedHiddenTriple';
+  readonly killerOnly = false;
   readonly displayName = 'Naked/Hidden Triple';
   readonly description = `
 Naked/Hidden Triple — pigeonhole elimination at N=3 in a unit.
