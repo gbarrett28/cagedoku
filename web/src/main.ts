@@ -2279,7 +2279,8 @@ document.addEventListener('DOMContentLoaded', () => {
     showEssential = el<HTMLInputElement>('essential-toggle').checked;
     const delay = Number(el<HTMLInputElement>('config-delay-input').value);
     const showCandDefault = el<HTMLInputElement>('candidates-default-toggle').checked;
-    saveSettingsData(alwaysApply, delay, showCandDefault);
+    const updated = saveSettingsData(alwaysApply, delay, showCandDefault);
+    if (updated !== null) currentState = updated;
     el<HTMLDialogElement>('config-modal').close();
     if (currentState !== null) refreshDisplay();
   });

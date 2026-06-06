@@ -122,6 +122,37 @@ function makeClassicConfirmed(): PuzzleState {
   return confirmPuzzle(board);
 }
 
+/** Classic confirmed state using the same spec layout as loadClassicDirect:
+ *  9 row-cages (total=45 each). The linear system then has valid constraints
+ *  and engine.solve() can run to completion, enabling NS cascade tests. */
+function makeProperClassicConfirmed(): PuzzleState {
+  const givenDigits = makeClassicGivenDigits();
+  const borderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(true));
+  const borderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
+  const cageTotals = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+  for (let r = 0; r < 9; r++) cageTotals[r]![0] = 45;
+  const regions = Array.from({ length: 9 }, (_, r) => new Array<number>(9).fill(r + 1));
+  const spec = { regions, cageTotals, borderX, borderY };
+  const state: PuzzleState = {
+    specData: specToData(spec),
+    cageStates: specToCageStates(spec),
+    userGrid: null,
+    virtualCages: [],
+    turns: [],
+    alwaysApplyRules: [],
+    goldenSolution: null,
+    puzzleType: 'classic',
+    givenDigits,
+    originalImageUrl: null,
+    warpedImageUrl: null,
+    autoRemovedCandidates: [],
+    fixtureStalledCandidates: null,
+  };
+  setState(state);
+  const { board } = solveCurrentSpec();
+  return confirmPuzzle(board);
+}
+
 // ---------------------------------------------------------------------------
 // #13 – Classic candidates
 // ---------------------------------------------------------------------------
@@ -745,6 +776,25 @@ describe('saveSettingsData', () => {
     const result = saveSettingsData(['NakedSingle', 'CageCandidateFilter'], 0, false);
     expect(result).not.toBeNull();
     expect(result!.alwaysApplyRules).toEqual(['NakedSingle', 'CageCandidateFilter']);
+  });
+
+  // Regression: saveSettingsData must commit any NS cascade into the returned
+  // state. If the caller ignores the return value and redraws with the old
+  // state, placed-digit displays and candidate displays go out of sync —
+  // peers show the digit eliminated but no placed digit explains why.
+  itNS('commits NakedSingle cascade into the returned state', () => {
+    // Classic puzzle with proper row-cage spec (total=45 per row): 80 cells given,
+    // (0,0) is blank. With no NS in alwaysApplyRules at confirm time, (0,0) stays blank.
+    // The makeClassicState fixture uses an invalid single-cage spec (total=1 for 81 cells)
+    // that triggers a NoSolnError in the linear system, preventing engine.solve() from
+    // running. makeProperClassicConfirmed uses 9 row-cages (total=45) matching production.
+    makeProperClassicConfirmed();
+    expect(getState()!.userGrid![0]![0]).toBe(0);
+
+    // Adding NS to auto-apply must trigger refresh() which places (0,0).
+    const updated = saveSettingsData(['NakedSingle'], 0, false);
+    expect(updated).not.toBeNull();
+    expect(updated!.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]!);
   });
 });
 
