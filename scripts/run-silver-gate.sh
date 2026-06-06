@@ -28,6 +28,10 @@ echo "--- npm test --reporter=verbose ---"
 npm test -- --reporter=verbose || fail "npm test"
 
 echo ""
+echo "--- npm run build (required for playwright production tests) ---"
+npm run build || fail "npm run build"
+
+echo ""
 echo "--- playwright test (production build) ---"
 npx playwright test || fail "npx playwright test"
 
