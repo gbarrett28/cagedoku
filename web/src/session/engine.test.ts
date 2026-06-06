@@ -15,7 +15,7 @@ import {
 } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
 import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
-import type { PuzzleState, Turn, UserAction, VirtualCage } from './types.js';
+import { UserAction, type PuzzleState, type Turn, type VirtualCage, type EliminateCandidateAction, type RestoreCandidateAction, type ResetCellCandidatesAction, type ApplyHintAction } from './types.js';
 import type { Cell } from '../engine/types.js';
 
 const itNS = DISABLED_RULES.includes('NakedSingle') ? it.skip : it;
@@ -38,7 +38,7 @@ function makeState(): PuzzleState {
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
-    autoRemovedCandidates: [],
+    userRemovedCandidates: [],
     fixtureStalledCandidates: null,
   };
 }
@@ -97,29 +97,18 @@ describe('specToData / dataToSpec round-trip', () => {
 // ---------------------------------------------------------------------------
 
 describe('userRemoved', () => {
-  it('returns empty when no turns', () => {
+  it('returns empty when userRemovedCandidates is empty', () => {
     expect(userRemoved(makeState())).toHaveLength(0);
   });
 
-  it('accumulates eliminateCandidate turns', () => {
-    const state = makeState();
-    const turns = [
-      makeTurn({ type: 'eliminateCandidate', row: 0, col: 0, digit: 5 }),
-      makeTurn({ type: 'eliminateCandidate', row: 1, col: 2, digit: 3 }),
-    ];
-    const result = userRemoved({ ...state, turns });
+  it('returns userRemovedCandidates directly', () => {
+    const state: PuzzleState = {
+      ...makeState(),
+      userRemovedCandidates: [[0, 0, 5], [1, 2, 3]],
+    };
+    const result = userRemoved(state);
     expect(result).toContainEqual([0, 0, 5]);
     expect(result).toContainEqual([1, 2, 3]);
-  });
-
-  it('restoreCandidate removes the most recent matching entry', () => {
-    const state = makeState();
-    const turns = [
-      makeTurn({ type: 'eliminateCandidate', row: 0, col: 0, digit: 5 }),
-      makeTurn({ type: 'restoreCandidate', row: 0, col: 0, digit: 5 }),
-    ];
-    const result = userRemoved({ ...state, turns });
-    expect(result).not.toContainEqual([0, 0, 5]);
   });
 });
 
@@ -255,20 +244,16 @@ describe('isUserCorrupted', () => {
     const state: PuzzleState = {
       ...makeState(),
       goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
-      turns: [makeTurn({ type: 'eliminateCandidate', row: 1, col: 1, digit: gold })],
+      userRemovedCandidates: [[1, 1, gold]],
     };
     expect(isUserCorrupted(state)).toBe(true);
   });
 
-  it('returns false when the user eliminated then restored a golden candidate', () => {
-    const gold = KNOWN_SOLUTION[1]![1]!;
+  it('returns false when userRemovedCandidates is empty (eliminate + restore nets to nothing)', () => {
     const state: PuzzleState = {
       ...makeState(),
       goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
-      turns: [
-        makeTurn({ type: 'eliminateCandidate', row: 1, col: 1, digit: gold }),
-        makeTurn({ type: 'restoreCandidate', row: 1, col: 1, digit: gold }),
-      ],
+      userRemovedCandidates: [],
     };
     expect(isUserCorrupted(state)).toBe(false);
   });
@@ -287,29 +272,28 @@ describe('buildEngine — golden check disabled when user-corrupted', () => {
     expect(() => buildEngine(state)).not.toThrow();
   });
 
-  it('filters autoRemovedCandidates that violate the golden solution', () => {
-    // autoRemovedCandidates contains a golden digit for (0,0).
-    // The engine should NOT remove that candidate from the board.
+  it('applies userRemovedCandidates even when the digit matches the golden solution', () => {
+    // userRemovedCandidates is now applied without a safety filter — the user explicitly
+    // eliminated this candidate, so it is removed. isUserCorrupted() handles detection.
     const gold = KNOWN_SOLUTION[0]![0]!;
     const state: PuzzleState = {
       ...makeState(),
       goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
-      autoRemovedCandidates: [[0, 0, gold]],
+      userRemovedCandidates: [[0, 0, gold]],
     };
     const { board } = buildEngine(state, { skipSolve: true });
-    expect(board.cands(0, 0).has(gold)).toBe(true);
+    expect(board.cands(0, 0).has(gold)).toBe(false);
   });
 
-  it('applies autoRemovedCandidates that do NOT violate the golden solution', () => {
+  it('applies userRemovedCandidates that do NOT violate the golden solution', () => {
     const gold = KNOWN_SOLUTION[0]![0]!;
     const nonGold = gold === 1 ? 2 : 1;
     const state: PuzzleState = {
       ...makeState(),
       goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
-      autoRemovedCandidates: [[0, 0, nonGold]],
+      userRemovedCandidates: [[0, 0, nonGold]],
     };
     const { board } = buildEngine(state, { skipSolve: true });
-    // nonGold was safely eliminated
     expect(board.cands(0, 0).has(nonGold)).toBe(false);
   });
 });
@@ -354,7 +338,7 @@ function makeAlmostCompleteState(opts: { wrongAt?: [number, number] } = {}): Puz
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
-    autoRemovedCandidates: [],
+    userRemovedCandidates: [],
   };
 }
 
@@ -377,7 +361,7 @@ function makeInternallyInconsistentState(): PuzzleState {
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
-    autoRemovedCandidates: [],
+    userRemovedCandidates: [],
   };
 }
 
@@ -400,7 +384,7 @@ describe('applyAutoPlacements — NakedSingle applies placement and peer elimina
       givenDigits: null,
       originalImageUrl: null,
       warpedImageUrl: null,
-      autoRemovedCandidates: [],
+      userRemovedCandidates: [],
     };
     const result = applyAutoPlacements(state);
     // NakedSingle is in alwaysApplyRules, so the cascade runs and (0,0) is placed.
@@ -439,7 +423,7 @@ describe('applyAutoPlacements — continues even with wrong placements', () => {
     const gold = KNOWN_SOLUTION[0]![0]!;
     const stateWithElim: PuzzleState = {
       ...state,
-      turns: [makeTurn({ type: 'eliminateCandidate', row: 0, col: 0, digit: gold })],
+      userRemovedCandidates: [[0, 0, gold]],
     };
     const result = applyAutoPlacements(stateWithElim);
     expect(result.userGrid![0]![0]).not.toBe(0); // some digit was placed
@@ -473,7 +457,7 @@ describe('applyNextAutoPlacement — continues even with wrong placements', () =
     const gold = KNOWN_SOLUTION[0]![0]!;
     const stateWithElim: PuzzleState = {
       ...state,
-      turns: [makeTurn({ type: 'eliminateCandidate', row: 0, col: 0, digit: gold })],
+      userRemovedCandidates: [[0, 0, gold]],
     };
     const result = applyNextAutoPlacement(stateWithElim);
     expect(result).not.toBeNull();
@@ -515,11 +499,45 @@ describe('buildEngine regression — issue #148', () => {
       givenDigits: null,
       originalImageUrl: null,
       warpedImageUrl: null,
-      autoRemovedCandidates: [],
+      userRemovedCandidates: [],
     };
     const { engine } = buildEngine(state);
     const placed66 = engine.appliedPlacements.some(p => p.cell[0] === 6 && p.cell[1] === 6);
     expect(placed66).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// userRemovedCandidates — UserAction.apply accumulates eliminations
+// ---------------------------------------------------------------------------
+
+describe('userRemovedCandidates in UserAction.apply', () => {
+  it('eliminateCandidate adds triple to userRemovedCandidates', () => {
+    const action: EliminateCandidateAction = { type: 'eliminateCandidate', row: 0, col: 0, digit: 5 };
+    const next = UserAction.apply(action, makeState());
+    expect(next.userRemovedCandidates).toEqual([[0, 0, 5]]);
+  });
+
+  it('applyHint adds all eliminations to userRemovedCandidates', () => {
+    const action: ApplyHintAction = { type: 'applyHint', eliminations: [[0, 0, 3], [1, 2, 7]] };
+    const next = UserAction.apply(action, makeState());
+    expect(next.userRemovedCandidates).toEqual([[0, 0, 3], [1, 2, 7]]);
+  });
+
+  it('restoreCandidate removes the most recent matching triple', () => {
+    const base = makeState();
+    const withElim: PuzzleState = { ...base, userRemovedCandidates: [[0, 0, 5], [0, 0, 3]] };
+    const action: RestoreCandidateAction = { type: 'restoreCandidate', row: 0, col: 0, digit: 3 };
+    const next = UserAction.apply(action, withElim);
+    expect(next.userRemovedCandidates).toEqual([[0, 0, 5]]);
+  });
+
+  it('resetCellCandidates removes all triples for the given cell', () => {
+    const base = makeState();
+    const withElim: PuzzleState = { ...base, userRemovedCandidates: [[0, 0, 5], [1, 2, 7], [0, 0, 3]] };
+    const action: ResetCellCandidatesAction = { type: 'resetCellCandidates', row: 0, col: 0 };
+    const next = UserAction.apply(action, withElim);
+    expect(next.userRemovedCandidates).toEqual([[1, 2, 7]]);
   });
 });
 
@@ -556,7 +574,7 @@ describe('buildEngine hints regression — issue #141', () => {
       givenDigits: null,
       originalImageUrl: null,
       warpedImageUrl: null,
-      autoRemovedCandidates: [],
+      userRemovedCandidates: [],
     };
     const { engine } = buildEngine(state, { includeHints: true });
     const nakedPairHints = engine.pendingHints.filter(h => h.ruleName === 'NakedPair');

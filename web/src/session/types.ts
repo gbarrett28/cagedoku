@@ -160,11 +160,24 @@ export namespace UserAction {
         const key = action.key;
         return { ...state, virtualCages: state.virtualCages.filter(vc => virtualCageKeyFromCage(vc) !== key) };
       }
-      case 'eliminateCandidate':
-      case 'restoreCandidate':
-      case 'resetCellCandidates':
-      case 'applyHint':
-        return state;
+      case 'eliminateCandidate': {
+        const prev = state.userRemovedCandidates ?? [];
+        return { ...state, userRemovedCandidates: [...prev, [action.row, action.col, action.digit]] };
+      }
+      case 'applyHint': {
+        const prev = state.userRemovedCandidates ?? [];
+        return { ...state, userRemovedCandidates: [...prev, ...action.eliminations] };
+      }
+      case 'restoreCandidate': {
+        const list = [...(state.userRemovedCandidates ?? [])];
+        const idx = [...list].reverse().findIndex(([r, c, d]) => r === action.row && c === action.col && d === action.digit);
+        if (idx !== -1) list.splice(list.length - 1 - idx, 1);
+        return { ...state, userRemovedCandidates: list };
+      }
+      case 'resetCellCandidates': {
+        const { row, col } = action;
+        return { ...state, userRemovedCandidates: (state.userRemovedCandidates ?? []).filter(([r, c]) => r !== row || c !== col) };
+      }
       default:
         return assertNeverAction(action);
     }
@@ -248,12 +261,11 @@ export interface PuzzleState {
   /** Data URL of the perspective-corrected grid image; null for killers. */
   readonly warpedImageUrl: string | null;
   /**
-   * [row, col, digit] triples eliminated automatically during the rule-by-rule
-   * animation. Applied by buildEngine on every call so each solver step sees
-   * previously applied eliminations and does not re-produce them.
-   * Rolled back automatically when the user undoes (snapshot restoration).
+   * [row, col, digit] triples explicitly eliminated by the user (via eliminateCandidate,
+   * applyHint, etc.). Maintained by UserAction.apply() so buildEngine() can read a
+   * consistent snapshot without replaying turns.
    */
-  readonly autoRemovedCandidates: readonly [number, number, number][];
+  readonly userRemovedCandidates: readonly [number, number, number][];
   /**
    * When non-null, buildEngine seeds the board from this candidate grid before
    * running rules. Used when loading stall fixtures so the board starts at the

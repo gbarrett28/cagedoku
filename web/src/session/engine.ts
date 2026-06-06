@@ -110,16 +110,11 @@ function runTriggerValidation(
 // ---------------------------------------------------------------------------
 
 /**
- * Returns all (row, col, digit) triples explicitly removed by the user via
- * 'eliminateCandidate' actions, minus any subsequently restored.
- * May include duplicates — the engine deduplicates via Set semantics.
+ * Returns all (row, col, digit) triples explicitly removed by the user.
+ * Read directly from the state snapshot — no turn replay needed.
  */
-export function userRemoved(state: PuzzleState): [number, number, number][] {
-  const removed: [number, number, number][] = [];
-  for (const turn of state.turns) {
-    UserAction.updateRemovedList(turn.action, removed);
-  }
-  return removed;
+export function userRemoved(state: PuzzleState): readonly [number, number, number][] {
+  return state.userRemovedCandidates;
 }
 
 /**
@@ -294,16 +289,7 @@ export function buildEngine(
     const placementElims = userEliminations(board, state.userGrid);
     if (placementElims.length > 0) engine.applyEliminations(placementElims);
 
-    // autoRemovedCandidates accumulate rule-generated eliminations across turns.
-    // If golden checks are active, filter out any stale golden violations before
-    // applying — these indicate a rule bug from a prior session that has since
-    // been suppressed; re-applying them would corrupt the board before rules run.
-    const autoRemoved = state.autoRemovedCandidates ?? [];
-    const safeAutoRemoved = activeGolden !== null
-      ? autoRemoved.filter(([r, c, d]) => activeGolden[r]?.[c] !== d)
-      : autoRemoved;
-
-    const removed = [...userRemoved(state), ...safeAutoRemoved];
+    const removed = userRemoved(state);
     if (removed.length > 0) {
       engine.applyEliminations(
         removed.map(([r, c, d]) => ({ cell: [r, c] as Cell, digit: d })),
@@ -432,9 +418,11 @@ export function recordTurn(
 export function rebuildUserGrid(state: PuzzleState): PuzzleState {
   if (state.userGrid === null) return state;
   const newGrid: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+  const removedList: [number, number, number][] = [];
 
   for (const turn of state.turns) {
     UserAction.applyToGrid(turn.action, newGrid);
+    UserAction.updateRemovedList(turn.action, removedList);
   }
 
   // Rebuild virtualCages from the add/remove turn history, but preserve any
@@ -449,7 +437,7 @@ export function rebuildUserGrid(state: PuzzleState): PuzzleState {
     return { ...vc, eliminatedSolns: existingElims.get(key) ?? vc.eliminatedSolns };
   });
 
-  return { ...state, userGrid: newGrid, virtualCages: mergedVCs };
+  return { ...state, userGrid: newGrid, virtualCages: mergedVCs, userRemovedCandidates: removedList };
 }
 
 // ---------------------------------------------------------------------------
@@ -577,7 +565,7 @@ export function getNextAutoApplyStep(state: PuzzleState): RuleStep | null {
 
 /**
  * Applies a RuleStep to the state: places digits in userGrid and accumulates
- * eliminations in autoRemovedCandidates so subsequent solver calls do not
+ * eliminations in userRemovedCandidates so subsequent solver calls do not
  * re-produce them.
  */
 export function applyAutoApplyStep(state: PuzzleState, step: RuleStep): PuzzleState {
@@ -586,8 +574,8 @@ export function applyAutoApplyStep(state: PuzzleState, step: RuleStep): PuzzleSt
   return {
     ...state,
     userGrid: newGrid,
-    autoRemovedCandidates: [
-      ...state.autoRemovedCandidates,
+    userRemovedCandidates: [
+      ...state.userRemovedCandidates,
       ...step.eliminations.map(e => [e.cell[0], e.cell[1], e.digit] as [number, number, number]),
     ],
   };

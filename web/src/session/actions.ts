@@ -145,7 +145,7 @@ export function loadSpecDirect(spec: PuzzleSpec): UploadResult {
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
-    autoRemovedCandidates: [],
+    userRemovedCandidates: [],
     fixtureStalledCandidates: null,
   };
   setState(state);
@@ -182,7 +182,7 @@ export function loadClassicDirect(givenDigits: readonly (readonly number[])[]): 
     givenDigits: givenDigits.map(row => [...row]),
     originalImageUrl: null,
     warpedImageUrl: null,
-    autoRemovedCandidates: [],
+    userRemovedCandidates: [],
     fixtureStalledCandidates: null,
   };
   setState(state);
@@ -370,7 +370,7 @@ async function buildStateFromParseResult(
     givenDigits: result.givenDigits,
     originalImageUrl,
     warpedImageUrl,
-    autoRemovedCandidates: [],
+    userRemovedCandidates: [],
     fixtureStalledCandidates: null,
   };
 
@@ -520,7 +520,11 @@ export function solveCurrentSpec(): SolveResult {
   const state = requireState();
   if (state.userGrid !== null) throw new Error('Already confirmed');
   const spec = cageStatesToSpec(state.cageStates, state.specData);
-  const givenDigits = state.givenDigits ?? undefined;
+  // givenDigits are only meaningful for classic puzzles (pre-filled cells).
+  // For killer puzzles, readClassicDigits can produce false-positive detections
+  // (e.g. a cage total digit near the cell centre). Passing them to solve()
+  // would incorrectly force those cells, potentially producing invalid solutions.
+  const givenDigits = state.puzzleType === 'classic' ? (state.givenDigits ?? undefined) : undefined;
   return solve(spec, givenDigits);
 }
 
