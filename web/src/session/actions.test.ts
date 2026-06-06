@@ -610,6 +610,22 @@ describe('Bug #61 regression — cycleCandidate records an undoable turn', () =>
 });
 
 // ---------------------------------------------------------------------------
+// Undo bug regression — userRemovedCandidates must be restored after undo
+// ---------------------------------------------------------------------------
+
+describe('undo after eliminateCandidate restores userRemovedCandidates', () => {
+  it('undoing a cycleCandidate elimination removes the triple from userRemovedCandidates', () => {
+    makeKillerConfirmed();
+
+    cycleCandidate(1, 1, 5); // eliminate digit 5 from r1c1 (0-based: row 0, col 0)
+    expect(getState()!.userRemovedCandidates).toContainEqual([0, 0, 5]);
+
+    undo();
+    expect(getState()!.userRemovedCandidates).not.toContainEqual([0, 0, 5]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // #78 – Fast-forward drain invariant
 // Draining stepAutoPlacement() iteratively after enterCellStep() must reach
 // the same final userGrid as enterCell() in a single call. This is the
