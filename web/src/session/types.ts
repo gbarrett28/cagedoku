@@ -56,6 +56,23 @@ export interface VirtualCage {
   readonly eliminatedDiffSolns?: readonly DiffSolution[];
 }
 
+/** Builds a stable string key for a virtual cage (moved here from specUtils to avoid circular dep). */
+export function virtualCageKey(
+  cells: readonly Cell[],
+  total: number,
+  negativeCells?: readonly Cell[],
+): string {
+  const sorted = [...cells].sort(([r1, c1], [r2, c2]) => r1 - r2 || c1 - c2);
+  const base = [...sorted.map(([r, c]) => `${r},${c}`), String(total)].join(':');
+  if (!negativeCells || negativeCells.length === 0) return base;
+  const negSorted = [...negativeCells].sort(([r1, c1], [r2, c2]) => r1 - r2 || c1 - c2);
+  return `${base}|${negSorted.map(([r, c]) => `${r},${c}`).join(':')}`;
+}
+
+export function virtualCageKeyFromCage(cage: VirtualCage): string {
+  return virtualCageKey(cage.cells, cage.total, cage.negativeCells);
+}
+
 // ---------------------------------------------------------------------------
 // Turn history
 // ---------------------------------------------------------------------------
@@ -66,15 +83,125 @@ export interface BoardSnapshot {
   readonly candidates: number[][][];
 }
 
+// ---------------------------------------------------------------------------
+// UserAction — named variant interfaces + dispatch namespace
+// ---------------------------------------------------------------------------
+
+export interface PlaceDigitAction {
+  readonly type: 'placeDigit';
+  readonly row: number;
+  readonly col: number;
+  readonly digit: number;
+  readonly source: 'given' | 'user';
+}
+export interface RemoveDigitAction {
+  readonly type: 'removeDigit';
+  readonly row: number;
+  readonly col: number;
+}
+export interface EliminateCandidateAction {
+  readonly type: 'eliminateCandidate';
+  readonly row: number;
+  readonly col: number;
+  readonly digit: number;
+}
+export interface RestoreCandidateAction {
+  readonly type: 'restoreCandidate';
+  readonly row: number;
+  readonly col: number;
+  readonly digit: number;
+}
+export interface ResetCellCandidatesAction {
+  readonly type: 'resetCellCandidates';
+  readonly row: number;
+  readonly col: number;
+}
+export interface AddVirtualCageAction {
+  readonly type: 'addVirtualCage';
+  readonly cage: VirtualCage;
+}
+export interface RemoveVirtualCageAction {
+  readonly type: 'removeVirtualCage';
+  readonly key: string;
+}
+export interface ApplyHintAction {
+  readonly type: 'applyHint';
+  readonly eliminations: readonly [number, number, number][];
+}
+
 export type UserAction =
-  | { readonly type: 'placeDigit'; readonly row: number; readonly col: number; readonly digit: number; readonly source: 'given' | 'user' }
-  | { readonly type: 'removeDigit'; readonly row: number; readonly col: number }
-  | { readonly type: 'eliminateCandidate'; readonly row: number; readonly col: number; readonly digit: number }
-  | { readonly type: 'restoreCandidate'; readonly row: number; readonly col: number; readonly digit: number }
-  | { readonly type: 'resetCellCandidates'; readonly row: number; readonly col: number }
-  | { readonly type: 'addVirtualCage'; readonly cage: VirtualCage }
-  | { readonly type: 'removeVirtualCage'; readonly key: string }
-  | { readonly type: 'applyHint'; readonly eliminations: readonly [number, number, number][] };
+  | PlaceDigitAction | RemoveDigitAction | EliminateCandidateAction
+  | RestoreCandidateAction | ResetCellCandidatesAction
+  | AddVirtualCageAction | RemoveVirtualCageAction | ApplyHintAction;
+
+function assertNeverAction(action: never): never {
+  throw new Error(`Unhandled action type: ${(action as UserAction).type}`);
+}
+
+export namespace UserAction {
+  /** Apply the action's effect on PuzzleState (grid placement / virtual cage mutation). */
+  export function apply(action: UserAction, state: PuzzleState): PuzzleState {
+    switch (action.type) {
+      case 'placeDigit': {
+        const g = state.userGrid ?? Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+        const newGrid = g.map(row => [...row]);
+        newGrid[action.row]![action.col] = action.digit;
+        return { ...state, userGrid: newGrid };
+      }
+      case 'removeDigit': {
+        const g = state.userGrid ?? Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+        const newGrid = g.map(row => [...row]);
+        newGrid[action.row]![action.col] = 0;
+        return { ...state, userGrid: newGrid };
+      }
+      case 'addVirtualCage':
+        return { ...state, virtualCages: [...state.virtualCages, action.cage] };
+      case 'removeVirtualCage': {
+        const key = action.key;
+        return { ...state, virtualCages: state.virtualCages.filter(vc => virtualCageKeyFromCage(vc) !== key) };
+      }
+      case 'eliminateCandidate':
+      case 'restoreCandidate':
+      case 'resetCellCandidates':
+      case 'applyHint':
+        return state;
+      default:
+        return assertNeverAction(action);
+    }
+  }
+
+  /** Apply the action's grid mutation in-place (only placeDigit/removeDigit act). */
+  export function applyToGrid(action: UserAction, grid: number[][]): void {
+    if (action.type === 'placeDigit') { grid[action.row]![action.col] = action.digit; }
+    else if (action.type === 'removeDigit') { grid[action.row]![action.col] = 0; }
+  }
+
+  /** Update the mutable removed-candidates list for this action (eliminateCandidate/applyHint/restore/reset act). */
+  export function updateRemovedList(action: UserAction, list: [number, number, number][]): void {
+    if (action.type === 'eliminateCandidate') {
+      list.push([action.row, action.col, action.digit]);
+    } else if (action.type === 'applyHint') {
+      for (const [r, c, d] of action.eliminations) list.push([r, c, d]);
+    } else if (action.type === 'restoreCandidate') {
+      const idx = [...list].reverse().findIndex(([r, c, d]) => r === action.row && c === action.col && d === action.digit);
+      if (idx !== -1) list.splice(list.length - 1 - idx, 1);
+    } else if (action.type === 'resetCellCandidates') {
+      const { row, col } = action;
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (list[i]![0] === row && list[i]![1] === col) list.splice(i, 1);
+      }
+    }
+  }
+
+  /** Update the virtual-cage map for this action (addVirtualCage/removeVirtualCage act). */
+  export function applyToCages(action: UserAction, cages: Map<string, VirtualCage>): void {
+    if (action.type === 'addVirtualCage') {
+      cages.set(virtualCageKeyFromCage(action.cage), action.cage);
+    } else if (action.type === 'removeVirtualCage') {
+      cages.delete(action.key);
+    }
+  }
+}
 
 export interface AutoMutation {
   readonly ruleName: string;

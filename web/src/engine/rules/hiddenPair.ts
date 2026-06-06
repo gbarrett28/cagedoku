@@ -12,6 +12,7 @@ import { cellLabel, unitLabel } from './_labels.js';
 
 export class HiddenPair {
   readonly name = 'HiddenPair';
+  readonly killerOnly = false;
   readonly displayName = 'Hidden Pair';
   readonly description = `\
 Hidden Pair — two digits each confined to the same two cells restrict those cells to only those digits.

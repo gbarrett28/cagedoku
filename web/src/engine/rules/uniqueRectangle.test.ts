@@ -159,7 +159,7 @@ describe('UniqueRectangle', () => {
 // Skipped while UniqueRectangle is in DISABLED_RULES; active once the rule is fixed.
 // ---------------------------------------------------------------------------
 
-function boardFromStallCandidates(stalledCandidates: number[][][]): BoardState {
+function boardFromStallCandidates(stalledCandidates: readonly (readonly (readonly number[])[])[]): BoardState {
   const spec = {
     regions: Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, () => r + 1)),
     cageTotals: Array.from({ length: 9 }, () =>

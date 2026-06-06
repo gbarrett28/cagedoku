@@ -12,6 +12,7 @@ import { cellLabel } from './_labels.js';
 
 export class SimpleColouring {
   readonly name = 'SimpleColouring';
+  readonly killerOnly = false;
   readonly displayName = 'Simple Colouring';
   readonly description = `
 Simple Colouring — single-digit chain colouring using conjugate pairs.

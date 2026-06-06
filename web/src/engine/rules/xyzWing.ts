@@ -29,6 +29,7 @@ import { cellLabel } from './_labels.js';
 
 export class XYZWing {
   readonly name = 'XYZWing';
+  readonly killerOnly = false;
   readonly displayName = 'XYZ-Wing';
   readonly description =
     'When a trivalue cell (pivot) sees two bivalue cells (pincers) that each ' +

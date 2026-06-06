@@ -21,7 +21,7 @@ export interface SplitTrainingSample {
 }
 
 export interface TrainingExport {
-  version: 1;
+  reportType: 'training-export';
   exportedAt: string;
   /** App build timestamp — identifies which recogniser generated these samples. */
   appVersion: string;
@@ -85,7 +85,7 @@ export function extractTrainingData(
   }
 
   return {
-    version: 1,
+    reportType: 'training-export' as const,
     exportedAt: new Date().toISOString(),
     appVersion: __BUILD_TIME__,
     puzzleType,

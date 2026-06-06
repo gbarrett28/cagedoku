@@ -15,6 +15,7 @@ import { cellLabel } from './_labels.js';
 
 export class DeltaConstraint {
   readonly name = 'DeltaConstraint';
+  readonly killerOnly = true;
   readonly displayName = 'Delta Constraint';
   readonly description = `
 Delta Constraint — candidate restriction from p − q = δ.

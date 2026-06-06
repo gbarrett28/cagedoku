@@ -37,6 +37,16 @@ function dedupKey(item: WorkItem): string {
   if (item.trigger === Trigger.GLOBAL) {
     return `${item.ruleIdx}`;
   }
+  // COUNT_HIT_ONE and COUNT_HIT_TWO carry a specific digit whose count just
+  // changed. Rules that consume hintDigit (HiddenSingle, NakedPair) must fire
+  // once per digit, not once per unit. Including hintDigit in the key lets
+  // multiple digit-specific events for the same unit coexist in the queue.
+  if (
+    item.trigger === Trigger.COUNT_HIT_ONE ||
+    item.trigger === Trigger.COUNT_HIT_TWO
+  ) {
+    return `${item.ruleIdx}:${item.unitId}:${item.hintDigit ?? ''}`;
+  }
   return `${item.ruleIdx}:${item.unitId}`;
 }
 
@@ -78,7 +88,9 @@ export class SolverQueue {
     trigger: Trigger,
     hintDigit: number | null,
   ): void {
-    const key = `${ruleIdx}:${unitId}`;
+    const key = (trigger === Trigger.COUNT_HIT_ONE || trigger === Trigger.COUNT_HIT_TWO)
+      ? `${ruleIdx}:${unitId}:${hintDigit ?? ''}`
+      : `${ruleIdx}:${unitId}`;
     const existing = this._best.get(key);
     if (existing !== undefined && existing <= priority) return;
     this._best.set(key, priority);

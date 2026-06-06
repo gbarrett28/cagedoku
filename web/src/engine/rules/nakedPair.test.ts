@@ -88,6 +88,38 @@ describe('NakedPair', () => {
     expect(elims.every(e => e.cell[1] !== 0 && e.cell[1] !== 6)).toBe(true);
   });
 
+  it('GLOBAL with null unit: finds pair by scanning all board units (real engine behavior)', () => {
+    // Same board as the previous GLOBAL test, but ctx.unit = null.
+    // The real engine always passes unit: null for GLOBAL triggers;
+    // the existing test passes a non-null unit and therefore never exposed the bug.
+    const bs = new BoardState(makeTrivialSpec());
+    const rowUid = bs.rowUnitId(6);
+    bs.candidates[6]![0]! = new Set([1, 5]);
+    bs.candidates[6]![1]! = new Set([2]);
+    bs.candidates[6]![2]! = new Set([6, 8, 9]);
+    bs.candidates[6]![3]! = new Set([1, 5, 6, 8, 9]);
+    bs.candidates[6]![4]! = new Set([2]);
+    bs.candidates[6]![5]! = new Set([1, 6, 9]);
+    bs.candidates[6]![6]! = new Set([1, 5]);
+    bs.candidates[6]![7]! = new Set([3]);
+    bs.candidates[6]![8]! = new Set([7]);
+    for (let d = 1; d <= 9; d++) {
+      bs.counts[rowUid]![d] = [...Array(9).keys()].filter(c => bs.cands(6, c).has(d)).length;
+    }
+    const ctx: RuleContext = {
+      unit: null,
+      cell: null,
+      board: bs,
+      hint: Trigger.GLOBAL,
+      hintDigit: null,
+    };
+    const elims = new NakedPair().apply(ctx).eliminations;
+    expect(elims.some(e => e.cell[0] === 6 && e.cell[1] === 3 && e.digit === 1)).toBe(true);
+    expect(elims.some(e => e.cell[0] === 6 && e.cell[1] === 3 && e.digit === 5)).toBe(true);
+    expect(elims.some(e => e.cell[0] === 6 && e.cell[1] === 5 && e.digit === 1)).toBe(true);
+    expect(elims.every(e => e.cell[1] !== 0 && e.cell[1] !== 6)).toBe(true);
+  });
+
   it('near-miss: cell with 3 candidates is not a naked pair even if counts match', () => {
     // Cell (0,0) has {4,6,9} (3 candidates) and cell (0,1) has {4,6} (2 candidates).
     // count(4) = 2, so COUNT_HIT_TWO fires for digit 4.

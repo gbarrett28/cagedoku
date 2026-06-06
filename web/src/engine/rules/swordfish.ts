@@ -11,6 +11,7 @@ import { combinations, dedupElims } from './_helpers.js';
 
 export class Swordfish {
   readonly name = 'Swordfish';
+  readonly killerOnly = false;
   readonly displayName = 'Swordfish';
   readonly description = `
 Swordfish — generalisation of X-Wing to three base rows and three cover columns.

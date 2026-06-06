@@ -22,6 +22,8 @@ type Cv = OpenCVModule;
 let _state: PuzzleState | null = null;
 let _candidatesCache: CandidatesResponse | null = null;
 const _sessionDisabledRules = new Set<string>();
+/** Keys of trigger-miss reports already submitted this session: "${ruleName}:${missedContext}". */
+const _reportedTriggerMisses = new Set<string>();
 
 export function getState(): PuzzleState | null { return _state; }
 
@@ -39,6 +41,7 @@ export function clearSession(): void {
   _state = null;
   _candidatesCache = null;
   _sessionDisabledRules.clear();
+  _reportedTriggerMisses.clear();
 }
 
 /** Disable a rule for the rest of this browser session (in-memory only). */
@@ -54,6 +57,16 @@ export function isRuleDisabledForSession(ruleName: string): boolean {
 /** Snapshot of all rules disabled at runtime during this session. */
 export function getSessionDisabledRules(): ReadonlySet<string> {
   return _sessionDisabledRules;
+}
+
+/** True if a trigger-miss report for this (ruleName, missedContext) key was already submitted. */
+export function hasTriggerMissBeenReported(key: string): boolean {
+  return _reportedTriggerMisses.has(key);
+}
+
+/** Mark a trigger-miss report as submitted so it is not re-sent this session. */
+export function markTriggerMissReported(key: string): void {
+  _reportedTriggerMisses.add(key);
 }
 
 // ---------------------------------------------------------------------------

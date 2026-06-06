@@ -132,6 +132,7 @@ function expandCellLevel(
 
 export class UnitPartitionFilter {
   readonly name = 'UnitPartitionFilter';
+  readonly killerOnly = true;
   readonly displayName = 'Unit Partition Filter';
   readonly description = `
 Unit Partition Filter — cross-cage compatibility filter when cages tile a unit.
