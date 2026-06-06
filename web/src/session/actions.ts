@@ -756,7 +756,7 @@ export function computeCandidates(): CandidatesResponse {
 /**
  * Builds a partial CandidatesResponse for the rule-by-rule animation loop,
  * without running the full solver. Candidates reflect only what has been
- * eliminated so far (user placements + autoRemovedCandidates), giving a
+ * eliminated so far (user placements + userRemovedCandidates), giving a
  * progressive per-rule display rather than instantly collapsing everything.
  */
 export function computeAnimationCandidates(state: PuzzleState): CandidatesResponse {

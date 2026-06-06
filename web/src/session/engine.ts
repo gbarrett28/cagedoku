@@ -503,7 +503,7 @@ function captureSnapshot(board: BoardState): BoardSnapshot {
 
 /**
  * Returns the next rule step to be animated, or null when no more rules fire.
- * Builds the engine from scratch (applying autoRemovedCandidates) and returns
+ * Builds the engine from scratch (applying userRemovedCandidates) and returns
  * the first consecutive group of mutations from the same rule.
  */
 export function getNextAutoApplyStep(state: PuzzleState): RuleStep | null {

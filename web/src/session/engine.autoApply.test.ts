@@ -2,7 +2,7 @@
  * Tests for the rule-by-rule auto-apply session helpers:
  *   - applyAutoApplyStep
  *   - getNextAutoApplyStep
- *   - buildEngine applying autoRemovedCandidates
+ *   - buildEngine applying userRemovedCandidates
  *
  * All tests are RED until the feature is implemented.
  */
@@ -63,7 +63,7 @@ function makeAlmostCompleteState(): PuzzleState {
 }
 
 // ---------------------------------------------------------------------------
-// buildEngine — autoRemovedCandidates
+// buildEngine — userRemovedCandidates
 // ---------------------------------------------------------------------------
 
 describe('buildEngine with userRemovedCandidates', () => {
@@ -104,7 +104,7 @@ describe('applyAutoApplyStep', () => {
     expect(next.userGrid![0]![0]).toBe(5);
   });
 
-  it('accumulates eliminations in autoRemovedCandidates', () => {
+  it('accumulates eliminations in userRemovedCandidates', () => {
     const state = makeBaseState();
     const step = {
       ruleName: 'TestRule',
@@ -117,7 +117,7 @@ describe('applyAutoApplyStep', () => {
     expect(next.userRemovedCandidates).toContainEqual([1, 2, 7]);
   });
 
-  it('appends to existing autoRemovedCandidates', () => {
+  it('appends to existing userRemovedCandidates', () => {
     const state: PuzzleState = {
       ...makeBaseState(),
       userRemovedCandidates: [[3, 4, 9]] as [number, number, number][],
@@ -192,7 +192,7 @@ describe('getNextAutoApplyStep', () => {
     expect(getNextAutoApplyStep(state)).toBeNull();
   });
 
-  it('never re-produces a step whose eliminations are already in autoRemovedCandidates', () => {
+  it('never re-produces a step whose eliminations are already in userRemovedCandidates', () => {
     // Each applyAutoApplyStep accumulates eliminations. The next solver run must
     // see them via buildEngine → not re-produce them as a new step.
     let state = makeAlmostCompleteState();
