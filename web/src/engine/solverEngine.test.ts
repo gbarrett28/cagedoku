@@ -11,8 +11,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { solve } from './index.js';
-import { KillerBoardState } from './boardState.js';
-import { SolverEngine } from './solverEngine.js';
+import { BoardState, KillerBoardState } from './boardState.js';
+import { SolverEngine, KillerSolverEngine } from './solverEngine.js';
 import { defaultRules } from './rules/index.js';
 import { LinearElimination } from './rules/linearElimination.js';
 import type { RuleContext, SolverRule } from './rule.js';
@@ -82,6 +82,20 @@ describe('SolverEngine.applyEliminations', () => {
   });
 });
 
+describe('SolverEngine — _onCellDetermined virtual hook', () => {
+  it('base SolverEngine never touches LinearSystem when given a plain BoardState', () => {
+    const plain = new BoardState();
+    const engine = new SolverEngine(plain, []);
+    // Eliminate 8 of (0,0)'s 9 candidates, leaving exactly one — this fires
+    // CELL_DETERMINED, which _routeEvents forwards to _onCellDetermined. A plain
+    // BoardState has no `linearSystem` property; if the hook were anything other
+    // than the base no-op, this would throw a TypeError instead of completing.
+    const eliminations = [1, 2, 3, 4, 5, 6, 7, 8].map(d => ({ cell: [0, 0] as Cell, digit: d }));
+    expect(() => engine.applyEliminations(eliminations)).not.toThrow();
+    expect(plain.cands(0, 0)).toEqual(new Set([9]));
+  });
+});
+
 describe('SolverEngine rule routing', () => {
   it('routes COUNT_DECREASED events to subscribed rules', () => {
     const calls: number[] = [];
@@ -121,8 +135,8 @@ describe('SolverEngine rule routing', () => {
   });
 });
 
-describe('SolverEngine solution eliminations', () => {
-  it('_applyGlobalRuleDefault: removes a cage solution, records mutation, re-enqueues SOLUTION_PRUNED rules', () => {
+describe('KillerSolverEngine solution eliminations', () => {
+  it('_onSolutionElimination: removes a cage solution, records mutation, re-enqueues SOLUTION_PRUNED rules', () => {
     const bs = new KillerBoardState(makeTrivialSpec());
     const cageIdx = bs.regions[0]![0]!;
     const initialSolns = bs.cageSolns[cageIdx]!.length;
@@ -143,7 +157,7 @@ describe('SolverEngine solution eliminations', () => {
       },
       asHints() { return []; },
     };
-    // SOLUTION_PRUNED subscriber — exercises line 282 (_applyGlobalRuleDefault enqueue path)
+    // SOLUTION_PRUNED subscriber — exercises KillerSolverEngine._onSolutionElimination's enqueue path
     const pruneRule: SolverRule = {
       name: 'pruneWatcher', displayName: 'pruneWatcher', description: '', priority: 5,
       killerOnly: false,
@@ -152,7 +166,7 @@ describe('SolverEngine solution eliminations', () => {
       asHints() { return []; },
     };
 
-    const engine = new SolverEngine(bs, [seRule, pruneRule]);
+    const engine = new KillerSolverEngine(bs, [seRule, pruneRule]);
     engine.solve();
 
     expect(bs.cageSolns[cageIdx]!.length).toBe(initialSolns - 1);

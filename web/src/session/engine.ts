@@ -17,7 +17,7 @@
  */
 
 import { KillerBoardState } from '../engine/boardState.js';
-import { SolverEngine } from '../engine/solverEngine.js';
+import { SolverEngine, KillerSolverEngine } from '../engine/solverEngine.js';
 import { defaultRules } from '../engine/rules/index.js';
 import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
 import type { Cell, Elimination, Placement, RuleStep } from '../engine/types.js';
@@ -272,8 +272,7 @@ export function buildEngine(
       }
     : null;
 
-  const engine = new SolverEngine(board, activeRules, {
-    linearSystemActive: true,
+  const engine = new KillerSolverEngine(board, activeRules, {
     hintRules,
     goldenSolution: activeGolden,
     onViolation,
