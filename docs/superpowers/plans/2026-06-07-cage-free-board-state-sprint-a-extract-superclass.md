@@ -70,7 +70,7 @@ src/session/engine.ts
 src/solver/equation.ts
 ```
 
-- [ ] **Step 1: Create a feature branch**
+- [x] **Step 1: Create a feature branch**
 
 ```bash
 cd "C:\Users\geoff\PycharmProjects\killer_sudoku" && git checkout -b feature/cage-free-board-state
@@ -78,7 +78,7 @@ cd "C:\Users\geoff\PycharmProjects\killer_sudoku" && git checkout -b feature/cag
 
 Expected: `Switched to a new branch 'feature/cage-free-board-state'`
 
-- [ ] **Step 2: Run the word-boundary rename across all 46 files**
+- [x] **Step 2: Run the word-boundary rename across all 46 files**
 
 This is a pure identifier rename — `\b` word-boundary anchors mean `KillerBoardState` (which already contains the substring `BoardState`) is left untouched, and unrelated identifiers like `boardState.ts`/`boardState.js` (lowercase first letter — the file name) are also untouched.
 
@@ -109,7 +109,7 @@ cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && for f in \
 
 Expected: no output (sed runs silently on success).
 
-- [ ] **Step 3: Verify the rename is total — no bare `BoardState` identifier remains**
+- [x] **Step 3: Verify the rename is total — no bare `BoardState` identifier remains**
 
 ```bash
 cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && grep -rn '\bBoardState\b' src/ scripts/ --include="*.ts" | grep -v KillerBoardState
@@ -117,7 +117,7 @@ cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && grep -rn '\bBoardState\
 
 Expected: no output (every occurrence is now part of `KillerBoardState`).
 
-- [ ] **Step 4: Type-check both configs**
+- [x] **Step 4: Type-check both configs**
 
 ```bash
 cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npx tsc --noEmit && npx tsc -p tsconfig.node.json --noEmit
@@ -125,7 +125,7 @@ cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npx tsc --noEmit && npx
 
 Expected: both commands exit 0 with no output (clean compile — this is a pure rename, so nothing should fail).
 
-- [ ] **Step 5: Run the full test suite**
+- [x] **Step 5: Run the full test suite**
 
 ```bash
 cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npm test
@@ -133,7 +133,7 @@ cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npm test
 
 Expected: all 537 tests pass (same count as before the rename — behavior is unchanged).
 
-- [ ] **Step 6: Run the bronze gate and commit**
+- [x] **Step 6: Run the bronze gate and commit**
 
 ```bash
 cd "C:\Users\geoff\PycharmProjects\killer_sudoku" && bash scripts/run-bronze-gate.sh
@@ -167,7 +167,7 @@ This task replaces the single `KillerBoardState` class — which currently build
 
 The key device that makes the split clean is a new `protected _addUnit(unit: Unit)` helper on `BoardState`. It performs the four-array bookkeeping (`units.push` / `counts.push` / `unitVersions.push` / `_cellUnitIds[r][c].push`) that today is duplicated inline in the constructor (for real cages and virtual cages) **and** in `addVirtualCage` (lines 293–299 of the current file). Both constructors and `addVirtualCage` call it — removing that duplication is itself a small win, not just a side effect of the split.
 
-- [ ] **Step 1: Write the failing construction test for plain `BoardState`**
+- [x] **Step 1: Write the failing construction test for plain `BoardState`**
 
 Open `web/src/engine/boardState.test.ts`. Its current line 6 (post-rename) reads:
 ```typescript
@@ -222,7 +222,7 @@ describe('BoardState (plain) construction', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test file to verify it fails to compile**
+- [x] **Step 2: Run the test file to verify it fails to compile**
 
 ```bash
 cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npx vitest run src/engine/boardState.test.ts
@@ -234,7 +234,7 @@ Module '"./boardState.js"' has no exported member 'BoardState'.
 ```
 (At this point only `KillerBoardState` is exported, and its constructor requires a `PuzzleSpec` argument — `new BoardState()` cannot resolve to it either way.)
 
-- [ ] **Step 3: Replace `boardState.ts`'s class section with the split hierarchy**
+- [x] **Step 3: Replace `boardState.ts`'s class section with the split hierarchy**
 
 Open `web/src/engine/boardState.ts`. First, add a type-only import for the new `CageConstraints` interface (Task 3 will define it in `backtracker.ts`) — insert it directly after the existing `import type { PuzzleSpec } from '../solver/puzzleSpec.js';` line:
 
@@ -568,7 +568,7 @@ export class KillerBoardState extends BoardState {
 
 Leave the trailing `// Helpers` section (`nextInSet` and `validateSolution`, currently lines 303–322) **unchanged** — `validateSolution(board: BoardState)` already takes the (now-plain) base type and works generically for both, since its `unit.kind === UnitKind.CAGE` skip degrades correctly when there are no CAGE units.
 
-- [ ] **Step 4: Run the test file to verify it now passes**
+- [x] **Step 4: Run the test file to verify it now passes**
 
 ```bash
 cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npx vitest run src/engine/boardState.test.ts
@@ -576,7 +576,7 @@ cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npx vitest run src/engi
 
 Expected: **PASS** — all tests in both `describe('KillerBoardState init', ...)` and the new `describe('BoardState (plain) construction', ...)` block succeed.
 
-- [ ] **Step 5: Run the full test suite to confirm no regressions**
+- [x] **Step 5: Run the full test suite to confirm no regressions**
 
 ```bash
 cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npm test
@@ -584,13 +584,21 @@ cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npm test
 
 Expected: all tests pass — `KillerBoardState`'s public surface and runtime behavior are byte-for-byte identical to before the split (verified by the existing `KillerBoardState init` / cage-rule / linear-system / backtracker test suites, none of which needed to change).
 
-- [ ] **Step 6: Type-check both configs**
+- [x] **Step 6: Type-check both configs**
 
 ```bash
 cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npx tsc --noEmit && npx tsc -p tsconfig.node.json --noEmit
 ```
 
 Expected: both exit 0 with no output.
+
+> **Note (found during execution):** This step cannot pass in isolation — Step 3 above
+> introduces `import type { CageConstraints } from './backtracker.js'`, and `CageConstraints`
+> is not defined until Task 3 Step 3. `tsc --noEmit` reports `TS2305: Module has no exported
+> member 'CageConstraints'` at this point (vitest's esbuild transpilation doesn't type-check,
+> so Steps 4–5 above pass regardless). This is a one-task-early forward reference, not a
+> design flaw — Task 3 Step 5 runs the combined `npm test && tsc` that validates everything
+> together once `CageConstraints` exists. Proceeded directly into Task 3 without blocking here.
 
 ---
 
@@ -604,7 +612,7 @@ Expected: both exit 0 with no output.
 
 This also requires widening `cageValid`/`assign`/`search`'s `cageTotal`/`cageCells` parameters from `Map<number, ...>` to `ReadonlyMap<number, ...>` — they only ever call `.get()`/`.has()` on these maps, never mutate them, and `CageConstraints` exposes them as read-only views (the "weakest possible parameter type" rule from CLAUDE.md's TypeScript guidelines).
 
-- [ ] **Step 1: Write the failing test — `mrvBacktrack` against a plain `BoardState`**
+- [x] **Step 1: Write the failing test — `mrvBacktrack` against a plain `BoardState`**
 
 Open `web/src/engine/backtracker.test.ts`. Change line 7 (post-Task-1-rename: `import { KillerBoardState } from './boardState.js';`) to import both names:
 ```typescript
@@ -622,11 +630,17 @@ Then add this test at the end of the `describe('mrvBacktrack', ...)` block, imme
         bs.candidates[r]![c]! = new Set([KNOWN_SOLUTION[r]![c]!]);
     const result = mrvBacktrack(bs);
     expect(result).not.toBeNull();
-    expect(validateSudokuSolution(result)).toBeNull();
+    expect(validateSudokuSolution(result!)).toBeNull();
   });
 ```
 
-- [ ] **Step 2: Run the test file to verify it fails to compile**
+> **Fixed during execution:** the snippet above originally passed `result` (typed
+> `number[][] | null`) to `validateSudokuSolution(grid: number[][])`, which `tsc`
+> rejects (`TS2345`). Added the `!` non-null assertion — matching the established
+> convention two tests above (`result![r]!`) immediately after the same
+> `expect(result).not.toBeNull()` guard.
+
+- [x] **Step 2: Run the test file to verify it fails to compile**
 
 ```bash
 cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npx vitest run src/engine/backtracker.test.ts
@@ -639,7 +653,7 @@ Argument of type 'BoardState' is not assignable to parameter of type 'KillerBoar
 ```
 (`mrvBacktrack`'s parameter is currently typed `board: KillerBoardState` — the post-Task-1-rename signature.)
 
-- [ ] **Step 3: Add `CageConstraints`, widen the helper signatures, and rewire `mrvBacktrack`**
+- [x] **Step 3: Add `CageConstraints`, widen the helper signatures, and rewire `mrvBacktrack`**
 
 Open `web/src/engine/backtracker.ts`.
 
@@ -731,7 +745,7 @@ function search(
 
 Leave every line in the bodies of `cageValid`, `assign`, and `search` unchanged — they already only call `.get()`/`.has()` and iterate, which `ReadonlyMap`/`readonly Cell[]` support identically.
 
-- [ ] **Step 4: Run the test file to verify it now passes**
+- [x] **Step 4: Run the test file to verify it now passes**
 
 ```bash
 cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npx vitest run src/engine/backtracker.test.ts
@@ -739,7 +753,7 @@ cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npx vitest run src/engi
 
 Expected: **PASS** — all `mrvBacktrack` tests succeed, including the new plain-`BoardState` case.
 
-- [ ] **Step 5: Run the full test suite and type-check**
+- [x] **Step 5: Run the full test suite and type-check**
 
 ```bash
 cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npm test && npx tsc --noEmit && npx tsc -p tsconfig.node.json --noEmit
@@ -760,7 +774,7 @@ Two small accuracy fixes surfaced by the split:
 1. `engine/index.ts` re-exports `KillerBoardState` (post-rename) but downstream code (Sprint B/C) will need the new plain `BoardState` too — `actions.ts`/`session/engine.ts` import board types via this barrel.
 2. `types.ts`'s `BoardEvent` doc comment was correctly renamed to `KillerBoardState` by Task 1's blanket rename (at that moment it was the only class) — but now that `removeCandidate` is defined on the base `BoardState` (with `KillerBoardState` only overriding it), the comment's accurate referent is the generic `BoardState` again.
 
-- [ ] **Step 1: Add `BoardState` to the `index.ts` re-export**
+- [x] **Step 1: Add `BoardState` to the `index.ts` re-export**
 
 Open `web/src/engine/index.ts`. Line 22 currently reads (post-rename):
 ```typescript
@@ -771,7 +785,7 @@ Change it to:
 export { BoardState, KillerBoardState } from './boardState.js';
 ```
 
-- [ ] **Step 2: Revert the `BoardEvent` doc comment to the generic name**
+- [x] **Step 2: Revert the `BoardEvent` doc comment to the generic name**
 
 Open `web/src/engine/types.ts`. Find the line (renamed by Task 1 to):
 ```typescript
@@ -783,7 +797,7 @@ Change it back to:
 ```
 (`BoardEvent` is now genuinely returned by the base `BoardState.removeCandidate` — `KillerBoardState.removeCandidate` only appends cage-pruning events to what `super.removeCandidate` already produced.)
 
-- [ ] **Step 3: Type-check, run tests, run the bronze gate, and commit**
+- [x] **Step 3: Type-check, run tests, run the bronze gate, and commit**
 
 ```bash
 cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npx tsc --noEmit && npx tsc -p tsconfig.node.json --noEmit && npm test

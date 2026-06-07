@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { KillerBoardState } from './boardState.js';
+import { BoardState, KillerBoardState } from './boardState.js';
 import { mrvBacktrack } from './backtracker.js';
 import { KNOWN_SOLUTION, makeTrivialSpec, makeBoxCageSpec, makeRowCageSpec } from './fixtures.js';
 import { validateSudokuSolution } from '../session/assertions.js';
@@ -66,5 +66,16 @@ describe('mrvBacktrack', () => {
       const rowSum = (result![r]! as number[]).reduce((a, b) => a + b, 0);
       expect(rowSum).toBe(45);
     }
+  });
+
+  it('solves a plain classic grid via new BoardState() — no cage data, no KillerBoardState involved', () => {
+    const bs = new BoardState();
+    expect(bs.cageConstraints()).toBeNull();
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++)
+        bs.candidates[r]![c]! = new Set([KNOWN_SOLUTION[r]![c]!]);
+    const result = mrvBacktrack(bs);
+    expect(result).not.toBeNull();
+    expect(validateSudokuSolution(result!)).toBeNull();
   });
 });

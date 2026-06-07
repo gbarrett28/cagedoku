@@ -19,7 +19,7 @@ import { defaultRules } from './rules/index.js';
 import { DISABLED_RULES } from './rules/disabled-rules.js';
 import { Cell, Elimination } from './types.js';
 
-export { KillerBoardState } from './boardState.js';
+export { BoardState, KillerBoardState } from './boardState.js';
 export { SolverEngine } from './solverEngine.js';
 export { defaultRules } from './rules/index.js';
 export { mrvBacktrack } from './backtracker.js';

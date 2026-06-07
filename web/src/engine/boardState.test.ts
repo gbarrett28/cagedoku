@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { KillerBoardState } from './boardState.js';
+import { BoardState, KillerBoardState } from './boardState.js';
 import { NoSolnError } from '../solver/errors.js';
 import { Trigger, UnitKind } from './types.js';
 import { makeTrivialSpec } from './fixtures.js';
@@ -38,6 +38,46 @@ describe('KillerBoardState init', () => {
   it('unitVersions start at zero', () => {
     const bs = new KillerBoardState(makeTrivialSpec());
     expect(bs.unitVersions.every(v => v === 0)).toBe(true);
+  });
+});
+
+describe('BoardState (plain) construction', () => {
+  it('builds exactly 27 row/col/box units and no cage units', () => {
+    const bs = new BoardState();
+    expect(bs.units.length).toBe(27);
+    expect(bs.units.every(u => u.kind !== UnitKind.CAGE)).toBe(true);
+  });
+
+  it('candidates start as full sets', () => {
+    const bs = new BoardState();
+    expect(bs.candidates[0]![0]!).toEqual(new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]));
+    expect(bs.candidates[8]![8]!).toEqual(new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]));
+  });
+
+  it('counts are initialised to unit size for every digit', () => {
+    const bs = new BoardState();
+    const row0 = bs.rowUnitId(0);
+    for (let d = 1; d <= 9; d++) {
+      expect(bs.counts[row0]![d]!).toBe(9);
+    }
+  });
+
+  it('cell (0,0) belongs to ROW, COL and BOX units only — no CAGE', () => {
+    const bs = new BoardState();
+    const kinds = new Set(bs.cellUnitIds(0, 0).map(uid => bs.units[uid]!.kind));
+    expect(kinds).toEqual(new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX]));
+  });
+
+  it('cageConstraints returns null', () => {
+    const bs = new BoardState();
+    expect(bs.cageConstraints()).toBeNull();
+  });
+
+  it('removeCandidate works without any cage bookkeeping', () => {
+    const bs = new BoardState();
+    const events = bs.removeCandidate(0, 0, 9);
+    expect(events.some(e => e.trigger === Trigger.COUNT_DECREASED)).toBe(true);
+    expect(bs.cands(0, 0).has(9)).toBe(false);
   });
 });
 
