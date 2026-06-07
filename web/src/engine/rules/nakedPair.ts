@@ -7,7 +7,7 @@
  * others, those two digits can be removed from all other cells in that unit.
  */
 
-import type { KillerBoardState } from '../boardState.js';
+import type { BoardState } from '../boardState.js';
 import type { HintResult } from '../hint.js';
 import type { RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, Unit, UnitKind } from '../types.js';
@@ -39,7 +39,7 @@ Guards:
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_HIT_TWO, Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX]);
 
-  private _findPairInCells(board: KillerBoardState, cells: readonly Cell[]): [Cell, Cell, number, number] | null {
+  private _findPairInCells(board: BoardState, cells: readonly Cell[]): [Cell, Cell, number, number] | null {
     const twos = (cells as Cell[]).filter(([r, c]) => board.cands(r, c).size === 2);
     for (let i = 0; i < twos.length - 1; i++) {
       const c1 = twos[i]!;

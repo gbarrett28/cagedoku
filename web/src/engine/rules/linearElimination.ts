@@ -10,13 +10,13 @@
  */
 
 import type { HintResult } from '../hint.js';
-import type { RuleContext } from '../rule.js';
+import { KillerOnlyRule } from '../rule.js';
+import type { KillerRuleContext, RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { cellLabel } from './_labels.js';
 
-export class LinearElimination {
+export class LinearElimination extends KillerOnlyRule {
   readonly name = 'LinearElimination';
-  readonly killerOnly = true;
   readonly displayName = 'Linear Elimination';
   readonly description = `
 Linear Elimination — placements and eliminations from the cage-sum linear system.
@@ -39,21 +39,21 @@ Guards:
   /** KillerBoardState must be constructed with includeVirtualCages=true for this rule to function. */
   readonly requiresVirtualCages = true;
 
-  apply(ctx: RuleContext): RuleResult {
+  applyKiller(ctx: KillerRuleContext): RuleResult {
     const elims = ctx.board.linearSystem.initialEliminations.filter(
       e => ctx.board.cands(e.cell[0], e.cell[1]).has(e.digit)
     );
     return { ...emptyResult(), eliminations: elims };
   }
 
-  asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
+  asHintsKiller(ctx: KillerRuleContext, eliminations: readonly Elimination[]): HintResult[] {
     const hints: HintResult[] = [];
     hints.push(...this._t1PlacementHints(ctx, eliminations));
     hints.push(...this._t3VirtualCageHints(ctx));
     return hints;
   }
 
-  private _t1PlacementHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
+  private _t1PlacementHints(ctx: RuleContext, eliminations: readonly Elimination[]): HintResult[] {
     if (!eliminations.length) return [];
     const byCell = new Map<string, Elimination[]>();
     for (const e of eliminations) {
@@ -81,7 +81,7 @@ Guards:
     return hints;
   }
 
-  private _t3VirtualCageHints(ctx: RuleContext): HintResult[] {
+  private _t3VirtualCageHints(ctx: KillerRuleContext): HintResult[] {
     const nSpecCages = Math.max(...ctx.board.regions.flat()) + 1;
     const userVcThreshold = 27 + nSpecCages;
     const userVcCellSets = new Set(

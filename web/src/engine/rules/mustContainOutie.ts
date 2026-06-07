@@ -9,7 +9,8 @@
  */
 
 import type { HintResult } from '../hint.js';
-import type { RuleContext } from '../rule.js';
+import { KillerOnlyRule } from '../rule.js';
+import type { KillerRuleContext, RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { cellLabel, unitLabel } from './_labels.js';
 import type { Unit } from '../types.js';
@@ -55,9 +56,8 @@ function findMatch(
   return { cageCells, must, unit, outie, externalCell: qualifying[0]!, xCands, eliminations: elims };
 }
 
-export class MustContainOutie {
+export class MustContainOutie extends KillerOnlyRule {
   readonly name = 'MustContainOutie';
-  readonly killerOnly = true;
   readonly displayName = 'Must Contain Outie';
   readonly description = `
 Must Contain Outie — single external cell with candidates ⊆ must-contain constrains the outie.
@@ -76,7 +76,7 @@ Guards:
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED, Trigger.SOLUTION_PRUNED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX, UnitKind.CAGE]);
 
-  private _iterMatches(ctx: RuleContext): _Match[] {
+  private _iterMatches(ctx: KillerRuleContext): _Match[] {
     if (!ctx.unit) return [];
     const board = ctx.board;
     const matches: _Match[] = [];
@@ -116,12 +116,12 @@ Guards:
     return matches;
   }
 
-  apply(ctx: RuleContext): RuleResult {
+  applyKiller(ctx: KillerRuleContext): RuleResult {
     const elims = this._iterMatches(ctx).flatMap(m => m.eliminations);
     return { ...emptyResult(), eliminations: elims };
   }
 
-  asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
+  asHintsKiller(ctx: KillerRuleContext, eliminations: readonly Elimination[]): HintResult[] {
     if (!eliminations.length) return [];
     const seen = new Set<string>();
     const hints: HintResult[] = [];

@@ -8,8 +8,10 @@
  * state lives in KillerBoardState.
  */
 
-import type { KillerBoardState } from './boardState.js';
+import { KillerBoardState } from './boardState.js';
+import type { BoardState } from './boardState.js';
 import type { HintResult } from './hint.js';
+import { emptyResult } from './types.js';
 import type { Cell, Elimination, RuleResult, Trigger, Unit, UnitKind } from './types.js';
 
 /** Input to a rule's apply() method. */
@@ -18,7 +20,7 @@ export interface RuleContext {
   readonly unit: Unit | null;
   /** Set for CELL_DETERMINED; null otherwise. */
   readonly cell: Cell | null;
-  readonly board: KillerBoardState;
+  readonly board: BoardState;
   readonly hint: Trigger;
   readonly hintDigit: number | null;
 }
@@ -54,4 +56,51 @@ export interface SolverRule {
   apply(ctx: RuleContext): RuleResult;
 
   asHints(ctx: RuleContext, eliminations: readonly Elimination[]): HintResult[];
+}
+
+/** Narrows `RuleContext.board` to `KillerBoardState` for killer-only rules —
+ *  `ctx.board.linearSystem`/`regions`/`cageSolns`/`spec` are then directly
+ *  typed, with no cast and no further narrow inside the rule body. */
+export interface KillerRuleContext extends Omit<RuleContext, 'board'> {
+  readonly board: KillerBoardState;
+}
+
+/**
+ * Shared base for the ten rules that require killer cage constraints
+ * (`deltaConstraint`, `linearElimination`, `sumPairConstraint`,
+ * `cageCandidateFilter`, `cageConfinement`, `cageIntersection`, `mustContain`,
+ * `mustContainOutie`, `solutionMapFilter`, `unitPartitionFilter`).
+ *
+ * Performs the `ctx.board instanceof KillerBoardState` narrow exactly once —
+ * in `apply`/`asHints` — and hands subclasses a `KillerRuleContext` whose
+ * `board` is directly typed as `KillerBoardState`. `killerOnly` is set here so
+ * it is never repeated across the ten subclasses.
+ *
+ * `buildEngine` (via `PuzzleState.isKiller`) already filters `killerOnly`
+ * rules out of the classic rule set, so the `instanceof` branch below is
+ * unreachable in practice — but the type system still requires *some* narrow
+ * to expose `KillerBoardState`'s members to `applyKiller`/`asHintsKiller`,
+ * and this is the one place it lives (defense in depth).
+ */
+export abstract class KillerOnlyRule implements SolverRule {
+  readonly killerOnly = true;
+
+  apply(ctx: RuleContext): RuleResult {
+    if (!(ctx.board instanceof KillerBoardState)) return emptyResult();
+    return this.applyKiller({ ...ctx, board: ctx.board });
+  }
+
+  asHints(ctx: RuleContext, eliminations: readonly Elimination[]): HintResult[] {
+    if (!(ctx.board instanceof KillerBoardState)) return [];
+    return this.asHintsKiller({ ...ctx, board: ctx.board }, eliminations);
+  }
+
+  abstract readonly name: string;
+  abstract readonly displayName: string;
+  abstract readonly description: string;
+  abstract readonly priority: number;
+  abstract readonly triggers: ReadonlySet<Trigger>;
+  abstract readonly unitKinds: ReadonlySet<UnitKind>;
+  abstract applyKiller(ctx: KillerRuleContext): RuleResult;
+  abstract asHintsKiller(ctx: KillerRuleContext, eliminations: readonly Elimination[]): HintResult[];
 }

@@ -11,7 +11,9 @@
  */
 
 import type { HintResult } from '../hint.js';
-import type { RuleContext } from '../rule.js';
+import type { KillerBoardState } from '../boardState.js';
+import { KillerOnlyRule } from '../rule.js';
+import type { KillerRuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { cellLabel, unitLabel } from './_labels.js';
 import type { Unit } from '../types.js';
@@ -130,9 +132,8 @@ function expandCellLevel(
   return result;
 }
 
-export class UnitPartitionFilter {
+export class UnitPartitionFilter extends KillerOnlyRule {
   readonly name = 'UnitPartitionFilter';
-  readonly killerOnly = true;
   readonly displayName = 'Unit Partition Filter';
   readonly description = `
 Unit Partition Filter — cross-cage compatibility filter when cages tile a unit.
@@ -150,7 +151,7 @@ Guards:
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
 
-  private _iterMatches(board: RuleContext['board']): _Match[] {
+  private _iterMatches(board: KillerBoardState): _Match[] {
     const matches: _Match[] = [];
     for (const unit of board.units) {
       if (unit.kind !== UnitKind.ROW && unit.kind !== UnitKind.COL && unit.kind !== UnitKind.BOX) continue;
@@ -196,14 +197,14 @@ Guards:
     return matches;
   }
 
-  apply(ctx: RuleContext): RuleResult {
+  applyKiller(ctx: KillerRuleContext): RuleResult {
     const elims = this._iterMatches(ctx.board).flatMap(m => m.eliminations);
     const seen = new Set<string>();
     const dedup = elims.filter(e => { const k = `${e.cell[0]},${e.cell[1]}:${e.digit}`; if (seen.has(k)) return false; seen.add(k); return true; });
     return { ...emptyResult(), eliminations: dedup };
   }
 
-  asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
+  asHintsKiller(ctx: KillerRuleContext, eliminations: readonly Elimination[]): HintResult[] {
     if (!eliminations.length) return [];
     return this._iterMatches(ctx.board).map(m => {
       const uLbl = unitLabel(m.unit);
