@@ -7,7 +7,7 @@
  * main.ts can call them as drop-in replacements.
  */
 
-import { solve, KillerBoardState, SolveResult } from '../engine/index.js';
+import { solve, BoardState, KillerBoardState, SolveResult } from '../engine/index.js';
 import { mrvBacktrack } from '../engine/backtracker.js';
 import { solSums, solDiffs } from '../solver/equation.js';
 import type { DiffSolution } from '../solver/equation.js';
@@ -632,7 +632,7 @@ export function checkSolutionAssertions(state: PuzzleState): AssertionViolation 
  * Builds CandidatesResponse from an already-constructed KillerBoardState.
  * Shared by computeCandidates (full solve) and computeAnimationCandidates (skip solve).
  */
-function candidatesFromBoard(board: KillerBoardState, state: PuzzleState): CandidatesResponse {
+export function candidatesFromBoard(board: BoardState, state: PuzzleState): CandidatesResponse {
   // Per-cell user-removed lookup
   const removedByCell = new Map<string, Set<number>>();
   for (const [r, c, d] of userRemoved(state)) {
@@ -645,17 +645,15 @@ function candidatesFromBoard(board: KillerBoardState, state: PuzzleState): Candi
   // Build per-cell info
   const cells = Array.from({ length: 9 }, (_, r) =>
     Array.from({ length: 9 }, (__, c) => {
-      const cageIdx = board.regions[r]![c]!;
-      const remaining = board.cageSolns[cageIdx]!;
       const removedHere = removedByCell.get(`${r},${c}`) ?? new Set<number>();
-      // Classic mode: cage solutions are always empty (dummy spec) — use board
-      // candidates directly so row/col/box eliminations are reflected.
-      const cagePossible: Set<number> = remaining.length > 0
-        ? new Set(remaining.flat())
-        : new Set<number>();
-      const solverCands = state.puzzleType === 'classic'
-        ? new Set(board.cands(r, c))
-        : new Set([...board.cands(r, c)].filter(d => cagePossible.has(d)));
+      const solverCands = board instanceof KillerBoardState
+        ? (() => {
+            const cageIdx = board.regions[r]![c]!;
+            const remaining = board.cageSolns[cageIdx]!;
+            const cagePossible = new Set(remaining.flat());
+            return new Set([...board.cands(r, c)].filter(d => cagePossible.has(d)));
+          })()
+        : new Set(board.cands(r, c));
       // Union in user-removed so they show for strikethrough even after SolutionMapFilter prunes
       for (const d of removedHere) solverCands.add(d);
       return {
@@ -666,34 +664,37 @@ function candidatesFromBoard(board: KillerBoardState, state: PuzzleState): Candi
   );
 
   // Real cage info — allSolutions/autoImpossible/userEliminated match VirtualCageInfo shape.
-  const nRealCages = Math.max(...board.regions.flat()) + 1;
-  const cages = Array.from({ length: nRealCages }, (_, idx) => {
-    const unit = board.units[27 + idx]!;
-    // board.cageSolns[idx] has user-eliminated and engine-impossible both removed by buildEngine.
-    const solns = board.cageSolns[idx]!;
-    const cageState = state.cageStates[idx]!;
-    let total = 0;
-    for (const [r, c] of unit.cells) {
-      const v = board.spec.cageTotals[r]![c]!;
-      if (v) { total = v; break; }
-    }
-    const all = allCageSolutions(unit.cells.length, total);
-    // solns elements are already order-normalised by the engine; s.join(',') is sufficient.
-    const possibleKeys = new Set(solns.map(s => s.join(',')));
-    // userEliminatedSolns are stored sorted by toggleSolution; join is sufficient.
-    const userEliminatedKeys = new Set(cageState.userEliminatedSolns.map(s => s.join(',')));
-    return {
-      cageIdx: idx,
-      label: cageState.label,
-      cells: unit.cells.map(([r, c]) => [r, c] as [number, number]),
-      total,
-      solutions: solns.map(s => [...s].sort((a, b) => a - b)),
-      allSolutions: all,
-      autoImpossible: all.filter(s => !possibleKeys.has(s.join(',')) && !userEliminatedKeys.has(s.join(','))),
-      userEliminated: all.filter(s => userEliminatedKeys.has(s.join(','))),
-      mustContain: solns.length > 0 ? intersectAll(solns.map(s => new Set(s))) : [],
-    };
-  });
+  // A plain BoardState carries no cage data; cages/nRealCages are empty/zero for it.
+  const nRealCages = board instanceof KillerBoardState ? Math.max(...board.regions.flat()) + 1 : 0;
+  const cages = board instanceof KillerBoardState
+    ? Array.from({ length: nRealCages }, (_, idx) => {
+        const unit = board.units[27 + idx]!;
+        // board.cageSolns[idx] has user-eliminated and engine-impossible both removed by buildEngine.
+        const solns = board.cageSolns[idx]!;
+        const cageState = state.cageStates[idx]!;
+        let total = 0;
+        for (const [r, c] of unit.cells) {
+          const v = board.spec.cageTotals[r]![c]!;
+          if (v) { total = v; break; }
+        }
+        const all = allCageSolutions(unit.cells.length, total);
+        // solns elements are already order-normalised by the engine; s.join(',') is sufficient.
+        const possibleKeys = new Set(solns.map(s => s.join(',')));
+        // userEliminatedSolns are stored sorted by toggleSolution; join is sufficient.
+        const userEliminatedKeys = new Set(cageState.userEliminatedSolns.map(s => s.join(',')));
+        return {
+          cageIdx: idx,
+          label: cageState.label,
+          cells: unit.cells.map(([r, c]) => [r, c] as [number, number]),
+          total,
+          solutions: solns.map(s => [...s].sort((a, b) => a - b)),
+          allSolutions: all,
+          autoImpossible: all.filter(s => !possibleKeys.has(s.join(',')) && !userEliminatedKeys.has(s.join(','))),
+          userEliminated: all.filter(s => userEliminatedKeys.has(s.join(','))),
+          mustContain: solns.length > 0 ? intersectAll(solns.map(s => new Set(s))) : [],
+        };
+      })
+    : [];
 
   // Virtual cage info — same SolutionCategorization shape as CageInfo.
   const diffSolnKey = (s: DiffSolution) => `${[...s.pos].join(',')}|${[...s.neg].join(',')}`;
@@ -723,7 +724,10 @@ function candidatesFromBoard(board: KillerBoardState, state: PuzzleState): Candi
         eliminatedDiffSolns: (vc.eliminatedDiffSolns ?? []).slice(),
       };
     }
-    const vcSolns = board.cageSolns[nRealCages + i] ?? [];
+    // Virtual cages are killer-only (gated behind isKiller in main.ts's UI), so this
+    // branch never observes a non-empty array for a plain BoardState — but the type
+    // system needs the same instanceof narrow to read board.cageSolns at all.
+    const vcSolns = board instanceof KillerBoardState ? (board.cageSolns[nRealCages + i] ?? []) : [];
     const all = allCageSolutions(vc.cells.length, vc.total);
     const possibleKeys = new Set(vcSolns.map(solutionKey));
     // eliminatedSolns are stored sorted by toggleSolution; join is sufficient.

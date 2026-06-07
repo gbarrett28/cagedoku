@@ -35,6 +35,7 @@ import {
   stepAutoPlacement,
   undo,
   computeCandidates,
+  candidatesFromBoard,
   cycleCandidate,
   addVirtualCage,
   getSettingsData,
@@ -46,6 +47,7 @@ import {
   extractAndValidateSolution,
 } from './actions.js';
 import { findLastConsistentTurnIdx } from './engine.js';
+import { BoardState } from '../engine/index.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
 import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
 import { defaultRules } from '../engine/rules/index.js';
@@ -137,6 +139,21 @@ describe('computeCandidates — classic mode (#13)', () => {
     const data = computeCandidates();
     const cell = data.cells[0]![0]!;
     expect(cell.candidates).toEqual([5]);
+  });
+});
+
+describe('candidatesFromBoard — instanceof KillerBoardState narrow', () => {
+  it('produces an empty cages array and solverCands === board.cands(r, c) for a plain BoardState', () => {
+    const givenDigits = makeClassicGivenDigits();
+    const state = makeClassicState(givenDigits);
+    const board = new BoardState();
+    const data = candidatesFromBoard(board, state);
+    expect(data.cages).toEqual([]);
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        expect(data.cells[r]![c]!.candidates).toEqual([...board.cands(r, c)].sort((a, b) => a - b));
+      }
+    }
   });
 });
 
