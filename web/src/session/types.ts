@@ -275,6 +275,12 @@ export interface PuzzleState {
   readonly fixtureStalledCandidates?: readonly number[][][] | null;
 }
 
+export namespace PuzzleState {
+  export function isKiller(state: PuzzleState): boolean {
+    return state.puzzleType !== 'classic';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Coach settings
 // ---------------------------------------------------------------------------

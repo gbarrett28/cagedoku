@@ -15,7 +15,7 @@ import {
 } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
 import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
-import { UserAction, type PuzzleState, type Turn, type VirtualCage, type EliminateCandidateAction, type RestoreCandidateAction, type ResetCellCandidatesAction, type ApplyHintAction } from './types.js';
+import { UserAction, PuzzleState, type Turn, type VirtualCage, type EliminateCandidateAction, type RestoreCandidateAction, type ResetCellCandidatesAction, type ApplyHintAction } from './types.js';
 import type { Cell } from '../engine/types.js';
 
 const itNS = DISABLED_RULES.includes('NakedSingle') ? it.skip : it;
@@ -137,6 +137,20 @@ describe('userVirtualCages', () => {
       makeTurn({ type: 'removeVirtualCage', key }),
     ];
     expect(userVirtualCages({ ...state, turns })).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PuzzleState.isKiller
+// ---------------------------------------------------------------------------
+
+describe('PuzzleState.isKiller', () => {
+  it('returns true for killer puzzles', () => {
+    expect(PuzzleState.isKiller(makeState())).toBe(true);
+  });
+
+  it('returns false for classic puzzles', () => {
+    expect(PuzzleState.isKiller({ ...makeState(), puzzleType: 'classic' })).toBe(false);
   });
 });
 
