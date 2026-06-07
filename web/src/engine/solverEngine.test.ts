@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { solve } from './index.js';
-import { BoardState } from './boardState.js';
+import { KillerBoardState } from './boardState.js';
 import { SolverEngine } from './solverEngine.js';
 import { defaultRules } from './rules/index.js';
 import { LinearElimination } from './rules/linearElimination.js';
@@ -22,7 +22,7 @@ import type { HintResult } from './hint.js';
 
 describe('SolverEngine init', () => {
   it('constructs without crash', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const engine = new SolverEngine(bs, []);
     expect(engine).toBeDefined();
   });
@@ -34,7 +34,7 @@ describe('SolverEngine.solve', () => {
     // Python calls apply_initial_eliminations() then empty-rules engine.
     // In TS, LinearElimination handles initial eliminations from the linear system.
     const spec = makeTrivialSpec();
-    const bs = new BoardState(spec);
+    const bs = new KillerBoardState(spec);
     const engine = new SolverEngine(bs, [new LinearElimination()]);
     const result = engine.solve();
     let total = 0;
@@ -46,7 +46,7 @@ describe('SolverEngine.solve', () => {
   });
 
   it('returns the same board object', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const engine = new SolverEngine(bs, []);
     expect(engine.solve()).toBe(bs);
   });
@@ -60,7 +60,7 @@ describe('SolverEngine.solve', () => {
 
   it('bootstraps without linear-system seeding (engine stills solves trivial spec)', () => {
     const spec = makeTrivialSpec();
-    const board = new BoardState(spec);
+    const board = new KillerBoardState(spec);
     // Clear LinearSystem initial eliminations to simulate a pure cage-driven start
     board.linearSystem.initialEliminations.length = 0;
     const engine = new SolverEngine(board, defaultRules());
@@ -73,7 +73,7 @@ describe('SolverEngine.solve', () => {
 
 describe('SolverEngine.applyEliminations', () => {
   it('is idempotent — eliminating a digit twice is a no-op', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const engine = new SolverEngine(bs, []);
     engine.applyEliminations([{ cell: [0, 0] as unknown as Elimination['cell'], digit: 5 }]);
     const before = new Set(bs.candidates[0]![0]!);
@@ -95,7 +95,7 @@ describe('SolverEngine rule routing', () => {
       apply(_ctx: RuleContext): RuleResult { calls.push(1); return emptyResult(); },
       asHints() { return []; },
     };
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const engine = new SolverEngine(bs, [countRule]);
     engine.applyEliminations([{ cell: [0, 0] as unknown as Elimination['cell'], digit: 5 }]);
     engine.solve();
@@ -113,7 +113,7 @@ describe('SolverEngine rule routing', () => {
       apply(_ctx: RuleContext): RuleResult { return emptyResult(); },
       asHints() { return []; },
     };
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const engine = new SolverEngine(bs, [noopRule]);
     engine.applyEliminations([{ cell: [0, 0] as unknown as Elimination['cell'], digit: 5 }]);
     engine.solve();
@@ -123,7 +123,7 @@ describe('SolverEngine rule routing', () => {
 
 describe('SolverEngine solution eliminations', () => {
   it('_applyGlobalRuleDefault: removes a cage solution, records mutation, re-enqueues SOLUTION_PRUNED rules', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const cageIdx = bs.regions[0]![0]!;
     const initialSolns = bs.cageSolns[cageIdx]!.length;
     expect(initialSolns).toBeGreaterThan(0);
@@ -163,7 +163,7 @@ describe('SolverEngine solution eliminations', () => {
 
 describe('SolverEngine virtual cage additions', () => {
   it('records a virtual cage addition produced by a rule', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const vca: VirtualCageAddition = {
       cells: [[0, 0] as Cell, [0, 1] as Cell],
       total: 10,
@@ -191,7 +191,7 @@ describe('SolverEngine virtual cage additions', () => {
 
 describe('SolverEngine candidate soundness assertion', () => {
   it('throws when a rule eliminates the correct solution digit from a cell', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     // KNOWN_SOLUTION[0][0] = 5; cell (0,0) starts with candidates {1..9}
     let fired = false;
     const badRule: SolverRule = {
@@ -210,7 +210,7 @@ describe('SolverEngine candidate soundness assertion', () => {
   });
 
   it('does not throw when a rule eliminates a non-solution digit', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const gold = KNOWN_SOLUTION[0]![0]!;
     const safe = gold === 1 ? 2 : 1;
     let fired = false;
@@ -230,7 +230,7 @@ describe('SolverEngine candidate soundness assertion', () => {
   });
 
   it('does not throw when no goldenSolution is provided', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     let fired = false;
     const badRule: SolverRule = {
       name: 'badRule', displayName: 'badRule', description: '', priority: 5,
@@ -265,7 +265,7 @@ describe('SolverEngine violation reporting — _violationFired', () => {
   }
 
   it('calls onViolation for the first violating rule and suppresses its result', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const violations: string[] = [];
     const gold = KNOWN_SOLUTION[0]![0]!;
     const badRule = makeBadRule('badRule', [0, 0] as Cell, gold);
@@ -280,7 +280,7 @@ describe('SolverEngine violation reporting — _violationFired', () => {
   });
 
   it('only reports the first violating rule when two rules both violate in the same solve pass', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const violations: string[] = [];
     const gold0 = KNOWN_SOLUTION[0]![0]!;
     const gold1 = KNOWN_SOLUTION[0]![1]!;
@@ -298,7 +298,7 @@ describe('SolverEngine violation reporting — _violationFired', () => {
   });
 
   it('resets _violationFired between successive solve() calls', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const violations: string[] = [];
     let callCount = 0;
     const badRule: SolverRule = {
@@ -329,7 +329,7 @@ describe('SolverEngine violation reporting — _violationFired', () => {
 describe('SolverEngine hint mode', () => {
   it('rules in hintRules populate pendingHints rather than applying eliminations', () => {
     const spec = makeTrivialSpec();
-    const board = new BoardState(spec);
+    const board = new KillerBoardState(spec);
     const rules = defaultRules();
     const hintRuleNames = new Set(rules.map(r => r.name));
     const engine = new SolverEngine(board, rules, { hintRules: hintRuleNames });
@@ -339,7 +339,7 @@ describe('SolverEngine hint mode', () => {
 
   it('empty hintRules means all rules drain normally — no pending hints', () => {
     const spec = makeTrivialSpec();
-    const board = new BoardState(spec);
+    const board = new KillerBoardState(spec);
     const engine = new SolverEngine(board, defaultRules(), { hintRules: new Set() });
     engine.solve();
     expect(engine.pendingHints).toEqual([]);
@@ -368,7 +368,7 @@ describe('SolverEngine golden check — hint-rule violations', () => {
   }
 
   it('suppresses the hint and calls onViolation when a hint rule eliminates a golden candidate', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const violations: string[] = [];
     const gold = KNOWN_SOLUTION[0]![0]!;
     const badHintRule = makeHintRule('badHintRule', [0, 0] as Cell, gold);
@@ -383,7 +383,7 @@ describe('SolverEngine golden check — hint-rule violations', () => {
   });
 
   it('does not call onViolation and the hint appears when a hint rule produces only safe eliminations', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const violations: string[] = [];
     const gold = KNOWN_SOLUTION[0]![0]!;
     const safe = gold === 1 ? 2 : 1;
@@ -402,7 +402,7 @@ describe('SolverEngine golden check — hint-rule violations', () => {
     // Hint rules must always be reported so they are disabled for the session —
     // they cannot cascade like always-apply rules, so sharing _violationFired
     // would leave a bad hint rule enabled.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const violations: string[] = [];
     const gold0 = KNOWN_SOLUTION[0]![0]!;
     const gold1 = KNOWN_SOLUTION[0]![1]!;

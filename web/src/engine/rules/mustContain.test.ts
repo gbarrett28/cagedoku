@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { MustContain } from './mustContain.js';
 import type { RuleContext } from '../rule.js';
 import { Trigger } from '../types.js';
@@ -11,7 +11,7 @@ import { makeThreeCellCageSpec, makeTrivialSpec } from '../fixtures.js';
 
 describe('MustContain', () => {
   it('does not crash on a fresh trivial board (row unit)', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const ctx: RuleContext = {
       unit: bs.units[bs.rowUnitId(0)] ?? null,
       cell: null,
@@ -24,7 +24,7 @@ describe('MustContain', () => {
   });
 
   it('returns a list of eliminations for every unit type', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const rule = new MustContain();
     for (const unit of bs.units) {
       const ctx: RuleContext = {
@@ -43,7 +43,7 @@ describe('MustContain', () => {
     // Remove 5 from cage cells outside row 0 so 5 is confined to (0,0) in row 0.
     // Use includeVirtualCages:false to prevent linear-system virtual cages from interfering.
     const spec = makeThreeCellCageSpec();
-    const bs = new BoardState(spec, { includeVirtualCages: false });
+    const bs = new KillerBoardState(spec, { includeVirtualCages: false });
     const cageUid = bs.cageUnitId(0, 0);
     const cageIdx = cageUid - 27;
     bs.cageSolns[cageIdx] = [[5, 3, 4], [5, 1, 6]];
@@ -74,7 +74,7 @@ describe('MustContain', () => {
     // Same cage, but digit 5 remains a candidate in (1,0) — outside row 0 but inside cage.
     // otherElsewhere.has(5) is true → confined is empty → no elimination of 5 from row 0.
     const spec = makeThreeCellCageSpec();
-    const bs = new BoardState(spec, { includeVirtualCages: false });
+    const bs = new KillerBoardState(spec, { includeVirtualCages: false });
     const cageUid = bs.cageUnitId(0, 0);
     const cageIdx = cageUid - 27;
     bs.cageSolns[cageIdx] = [[5, 3, 4], [5, 1, 6]];

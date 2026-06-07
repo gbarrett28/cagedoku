@@ -112,7 +112,7 @@ export function hasProgress(r: RuleResult): boolean {
   );
 }
 
-/** Typed event returned by BoardState mutation methods. */
+/** Typed event returned by KillerBoardState mutation methods. */
 export interface BoardEvent {
   readonly trigger: Trigger;
   /** Cell for CELL_DETERMINED; unit_id (number) for all other triggers. */

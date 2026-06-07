@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { NakedPair } from './nakedPair.js';
 import type { RuleContext } from '../rule.js';
 import { Trigger } from '../types.js';
@@ -11,7 +11,7 @@ import { makeTrivialSpec } from '../fixtures.js';
 
 describe('NakedPair', () => {
   it('eliminates the pair digits from all other row cells', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const rowUid = bs.rowUnitId(0);
 
     // Pair cells: both have {4,6}
@@ -60,7 +60,7 @@ describe('NakedPair', () => {
     // Digit 1 appears in 4 cells; digit 5 in 3 — COUNT_HIT_TWO never fires.
     // GLOBAL must detect the naked pair {r6c0,r6c6}={1,5} and eliminate 1 and 5
     // from r6c3 and 1 from r6c5.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const rowUid = bs.rowUnitId(6);
     bs.candidates[6]![0]! = new Set([1, 5]);
     bs.candidates[6]![1]! = new Set([2]);
@@ -92,7 +92,7 @@ describe('NakedPair', () => {
     // Same board as the previous GLOBAL test, but ctx.unit = null.
     // The real engine always passes unit: null for GLOBAL triggers;
     // the existing test passes a non-null unit and therefore never exposed the bug.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const rowUid = bs.rowUnitId(6);
     bs.candidates[6]![0]! = new Set([1, 5]);
     bs.candidates[6]![1]! = new Set([2]);
@@ -125,7 +125,7 @@ describe('NakedPair', () => {
     // count(4) = 2, so COUNT_HIT_TWO fires for digit 4.
     // But (0,0).size !== 2, so the naked-pair condition fails — no elimination.
     // This verifies the guard: cands(c1).size === 2.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const rowUid = bs.rowUnitId(0);
     bs.candidates[0]![0]! = new Set([4, 6, 9]); // 3 candidates — NOT a naked pair
     bs.candidates[0]![1]! = new Set([4, 6]);
@@ -147,7 +147,7 @@ describe('NakedPair', () => {
     // Regression for bug #141: highlightCells must be exactly [c1, c2].
     // Elimination cells must NOT appear in highlightCells so the UI can render
     // pattern cells (orange) and elimination cells (yellow) without overlap.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const rowUid = bs.rowUnitId(0);
     bs.candidates[0]![0]! = new Set([4, 6]);
     bs.candidates[0]![1]! = new Set([4, 6]);
@@ -179,7 +179,7 @@ describe('NakedPair', () => {
   });
 
   it('returns empty when two cells do not share the same pair', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const rowUid = bs.rowUnitId(0);
     bs.candidates[0]![0]! = new Set([4, 6]);
     bs.candidates[0]![1]! = new Set([4, 7]); // different second digit

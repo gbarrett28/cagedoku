@@ -1,7 +1,7 @@
 /**
  * Engine entry point — mirrors Python's `killer_sudoku.solver.engine` module.
  *
- * `solve()` constructs a BoardState, seeds given digits, runs the rule engine,
+ * `solve()` constructs a KillerBoardState, seeds given digits, runs the rule engine,
  * and falls back to MRV backtracking if the engine stalls.
  *
  * `solveFromStall()` loads a pre-computed candidate grid and re-runs the rule
@@ -10,7 +10,7 @@
  * `getHints()` runs a hint-mode pass and returns the first available hint result.
  */
 
-import { BoardState } from './boardState.js';
+import { KillerBoardState } from './boardState.js';
 import { mrvBacktrack } from './backtracker.js';
 import { SolverEngine } from './solverEngine.js';
 import type { HintResult } from './hint.js';
@@ -19,13 +19,13 @@ import { defaultRules } from './rules/index.js';
 import { DISABLED_RULES } from './rules/disabled-rules.js';
 import { Cell, Elimination } from './types.js';
 
-export { BoardState } from './boardState.js';
+export { KillerBoardState } from './boardState.js';
 export { SolverEngine } from './solverEngine.js';
 export { defaultRules } from './rules/index.js';
 export { mrvBacktrack } from './backtracker.js';
 export type { HintResult } from './hint.js';
 
-function seedGivenDigits(engine: SolverEngine, board: BoardState, givenDigits: number[][]): void {
+function seedGivenDigits(engine: SolverEngine, board: KillerBoardState, givenDigits: number[][]): void {
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
       const d = givenDigits[r]![c]!;
@@ -42,7 +42,7 @@ function seedGivenDigits(engine: SolverEngine, board: BoardState, givenDigits: n
 }
 
 export interface SolveResult {
-  board: BoardState;
+  board: KillerBoardState;
   /** True when constraint propagation alone could not fully solve the puzzle
    *  and MRV backtracking was required to find a complete assignment. */
   usedBacktracking: boolean;
@@ -64,19 +64,19 @@ function makeClassicSpec(): PuzzleSpec {
   };
 }
 
-function checkStalled(board: BoardState): boolean {
+function checkStalled(board: KillerBoardState): boolean {
   return Array.from({ length: 9 }, (_, r) =>
     Array.from({ length: 9 }, (_, c) => board.cands(r, c).size !== 1)
   ).some(row => row.some(Boolean));
 }
 
-function snapshotCandidates(board: BoardState): number[][][] {
+function snapshotCandidates(board: KillerBoardState): number[][][] {
   return Array.from({ length: 9 }, (_, r) =>
     Array.from({ length: 9 }, (_, c) => [...board.cands(r, c)].sort((a, b) => a - b))
   );
 }
 
-function runWithBacktrack(board: BoardState, stalled: boolean): SolveResult {
+function runWithBacktrack(board: KillerBoardState, stalled: boolean): SolveResult {
   if (!stalled) return { board, usedBacktracking: false };
   const stalledCandidates = snapshotCandidates(board);
   const solution = mrvBacktrack(board);
@@ -96,7 +96,7 @@ function runWithBacktrack(board: BoardState, stalled: boolean): SolveResult {
  * candidate grid as it was at the moment the engine stalled.
  */
 export function solve(spec: PuzzleSpec, givenDigits?: number[][]): SolveResult {
-  const board = new BoardState(spec, { includeVirtualCages: false });
+  const board = new KillerBoardState(spec, { includeVirtualCages: false });
   const engine = new SolverEngine(board, defaultRules());
 
   if (givenDigits) seedGivenDigits(engine, board, givenDigits);
@@ -117,7 +117,7 @@ export function solve(spec: PuzzleSpec, givenDigits?: number[][]): SolveResult {
  * whether a newly added rule makes progress.
  */
 export function solveFromStall(candidates: number[][][]): SolveResult {
-  const board = new BoardState(makeClassicSpec(), { includeVirtualCages: false });
+  const board = new KillerBoardState(makeClassicSpec(), { includeVirtualCages: false });
   const engine = new SolverEngine(board, defaultRules());
 
   for (let r = 0; r < 9; r++)
@@ -148,7 +148,7 @@ export function solveFromStall(candidates: number[][][]): SolveResult {
  * candidates. Single-element arrays represent solved cells.
  */
 export function solveFromCandidates(spec: PuzzleSpec, candidates: number[][][]): SolveResult {
-  const board = new BoardState(spec, { includeVirtualCages: false });
+  const board = new KillerBoardState(spec, { includeVirtualCages: false });
   const engine = new SolverEngine(board, defaultRules());
 
   for (let r = 0; r < 9; r++)
@@ -175,7 +175,7 @@ export function getHints(
   hintRuleNames: ReadonlySet<string>,
 ): HintResult[] {
   const _disabled = new Set(DISABLED_RULES);
-  const board = new BoardState(spec, { includeVirtualCages: false });
+  const board = new KillerBoardState(spec, { includeVirtualCages: false });
   const engine = new SolverEngine(board, defaultRules().filter(r => !_disabled.has(r.name)), { hintRules: hintRuleNames });
 
   if (givenDigits) seedGivenDigits(engine, board, givenDigits);

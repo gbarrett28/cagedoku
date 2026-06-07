@@ -3,19 +3,19 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { CageConfinement } from './cageConfinement.js';
 import type { RuleContext } from '../rule.js';
 import { Trigger } from '../types.js';
 import { makeTrivialSpec, makeTwoCellCageSpec } from '../fixtures.js';
 
-function globalCtx(bs: BoardState): RuleContext {
+function globalCtx(bs: KillerBoardState): RuleContext {
   return { unit: null, cell: null, board: bs, hint: Trigger.GLOBAL, hintDigit: null };
 }
 
 describe('CageConfinement', () => {
   it('does not crash on a fresh trivial board', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     expect(Array.isArray(new CageConfinement().apply(globalCtx(bs)).eliminations)).toBe(true);
   });
 
@@ -24,7 +24,7 @@ describe('CageConfinement', () => {
     // Override solutions to [[5,6]] → must-contain = {5,6}.
     // Use includeVirtualCages:false and clear digit 5 from all other cells
     // to prevent interference from other cages or linear-system virtual cages.
-    const bs = new BoardState(makeTwoCellCageSpec(), { includeVirtualCages: false });
+    const bs = new KillerBoardState(makeTwoCellCageSpec(), { includeVirtualCages: false });
     const cageUid = bs.cageUnitId(0, 0);
     const cageIdx = cageUid - 27;
     bs.cageSolns[cageIdx] = [[5, 6]];
@@ -45,7 +45,7 @@ describe('CageConfinement', () => {
   it('near-miss: digit not in every cage solution → not must-contain → no elimination', () => {
     // Solutions [[5,6],[3,8]] — digit 5 only in first solution, not must-contain.
     // CageConfinement requires d in every solution; this cage fails that guard.
-    const bs = new BoardState(makeTwoCellCageSpec(), { includeVirtualCages: false });
+    const bs = new KillerBoardState(makeTwoCellCageSpec(), { includeVirtualCages: false });
     const cageUid = bs.cageUnitId(0, 0);
     const cageIdx = cageUid - 27;
     bs.cageSolns[cageIdx] = [[5, 6], [3, 8]];
@@ -59,7 +59,7 @@ describe('CageConfinement', () => {
   });
 
   it('asHints: returns hint with correct shape for n=1 confinement', () => {
-    const bs = new BoardState(makeTwoCellCageSpec(), { includeVirtualCages: false });
+    const bs = new KillerBoardState(makeTwoCellCageSpec(), { includeVirtualCages: false });
     const cageUid = bs.cageUnitId(0, 0);
     const cageIdx = cageUid - 27;
     bs.cageSolns[cageIdx] = [[5, 6]];

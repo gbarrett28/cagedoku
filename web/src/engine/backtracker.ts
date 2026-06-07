@@ -11,7 +11,7 @@
  * are included in the validity check when cage_total > 0.
  */
 
-import type { BoardState } from './boardState.js';
+import type { KillerBoardState } from './boardState.js';
 import type { Cell } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -38,14 +38,14 @@ const PEERS: readonly (readonly Cell[])[][] = Array.from({length: 9}, (_, r) =>
 // ---------------------------------------------------------------------------
 
 /**
- * Find a solution via MRV backtracking from a partially-solved BoardState.
+ * Find a solution via MRV backtracking from a partially-solved KillerBoardState.
  *
  * Extracts cage constraints, copies current candidate sets, and searches for
  * a valid completion. Forward checking keeps the branching factor small.
  *
  * Returns a 9×9 grid of placed digits, or null if unsolvable from this state.
  */
-export function mrvBacktrack(board: BoardState): number[][] | null {
+export function mrvBacktrack(board: KillerBoardState): number[][] | null {
   const cageOf  = Array.from({length: 9}, () => new Array<number>(9).fill(0));
   const cageTotal = new Map<number, number>();
   const cageCells = new Map<number, Cell[]>();

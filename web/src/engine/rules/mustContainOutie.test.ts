@@ -3,15 +3,15 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { MustContainOutie } from './mustContainOutie.js';
 import type { RuleContext } from '../rule.js';
 import { Trigger } from '../types.js';
 import { makeOutieSpec, makeTrivialSpec } from '../fixtures.js';
 
-/** Build a BoardState with the outie cage set up for must-contain {6,8,9}. */
-function boardWithOutie(): { bs: BoardState; cageIdx: number } {
-  const bs = new BoardState(makeOutieSpec());
+/** Build a KillerBoardState with the outie cage set up for must-contain {6,8,9}. */
+function boardWithOutie(): { bs: KillerBoardState; cageIdx: number } {
+  const bs = new KillerBoardState(makeOutieSpec());
   // Cage is at (row=5,col=0),(row=6,col=0),(row=7,col=0),(row=7,col=1).
   // regions[row][col] — head at (row=5, col=0).
   const cageIdx = bs.regions[5]![0]!;
@@ -31,7 +31,7 @@ function boardWithOutie(): { bs: BoardState; cageIdx: number } {
   return { bs, cageIdx };
 }
 
-function colCtx(bs: BoardState): RuleContext {
+function colCtx(bs: KillerBoardState): RuleContext {
   // The 4-cell outie cage occupies 3 cells in visual col 0 (rows 5,6,7) with
   // one outie at (row=7,col=1).  Trigger via colUnitId(0) = visual column 0.
   return {
@@ -45,7 +45,7 @@ function colCtx(bs: BoardState): RuleContext {
 
 describe('MustContainOutie', () => {
   it('does not crash on a fresh trivial board', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const ctx: RuleContext = {
       unit: bs.units[bs.rowUnitId(0)] ?? null,
       cell: null,

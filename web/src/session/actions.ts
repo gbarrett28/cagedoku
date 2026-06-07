@@ -7,7 +7,7 @@
  * main.ts can call them as drop-in replacements.
  */
 
-import { solve, BoardState, SolveResult } from '../engine/index.js';
+import { solve, KillerBoardState, SolveResult } from '../engine/index.js';
 import { mrvBacktrack } from '../engine/backtracker.js';
 import { solSums, solDiffs } from '../solver/equation.js';
 import type { DiffSolution } from '../solver/equation.js';
@@ -298,7 +298,7 @@ export function solveAndValidateSpec(spec: PuzzleSpec): string | null {
 }
 
 /**
- * Extracts a tentative 9×9 solution grid from a BoardState and validates it.
+ * Extracts a tentative 9×9 solution grid from a KillerBoardState and validates it.
  *
  * Cells with more than one candidate are recorded as 0 (unsolved).
  * Returns null if valid, or a human-readable error string if the solution
@@ -307,7 +307,7 @@ export function solveAndValidateSpec(spec: PuzzleSpec): string | null {
  * Used as the confirm-time guard to block corrupted puzzles before they reach
  * the playing screen.
  */
-export function extractAndValidateSolution(board: BoardState): string | null {
+export function extractAndValidateSolution(board: KillerBoardState): string | null {
   const grid: number[][] = Array.from({ length: 9 }, (_, r) =>
     Array.from({ length: 9 }, (__, c) => {
       const cands = board.cands(r, c);
@@ -536,7 +536,7 @@ export function solveCurrentSpec(): SolveResult {
  * spec. Passing the board avoids a second solver run when the caller has
  * already solved (e.g. the auto-confirm path in handleProcess).
  */
-export function confirmPuzzle(board: BoardState, fixtureStalledCandidates?: number[][][]): PuzzleState {
+export function confirmPuzzle(board: KillerBoardState, fixtureStalledCandidates?: number[][][]): PuzzleState {
   const state = requireState();
   if (state.userGrid !== null) throw new Error('Session already confirmed');
 
@@ -629,10 +629,10 @@ export function checkSolutionAssertions(state: PuzzleState): AssertionViolation 
 // ---------------------------------------------------------------------------
 
 /**
- * Builds CandidatesResponse from an already-constructed BoardState.
+ * Builds CandidatesResponse from an already-constructed KillerBoardState.
  * Shared by computeCandidates (full solve) and computeAnimationCandidates (skip solve).
  */
-function candidatesFromBoard(board: BoardState, state: PuzzleState): CandidatesResponse {
+function candidatesFromBoard(board: KillerBoardState, state: PuzzleState): CandidatesResponse {
   // Per-cell user-removed lookup
   const removedByCell = new Map<string, Set<number>>();
   for (const [r, c, d] of userRemoved(state)) {

@@ -3,19 +3,19 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { XYWing } from './xyWing.js';
 import type { RuleContext } from '../rule.js';
 import { Trigger } from '../types.js';
 import { makeTrivialSpec } from '../fixtures.js';
 
-function globalCtx(bs: BoardState): RuleContext {
+function globalCtx(bs: KillerBoardState): RuleContext {
   return { unit: null, cell: null, board: bs, hint: Trigger.GLOBAL, hintDigit: null };
 }
 
 describe('XYWing', () => {
   it('eliminates z from cells seeing both pincers', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     // Clear all candidates to isolate the pattern
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
 
@@ -38,7 +38,7 @@ describe('XYWing', () => {
   });
 
   it('asHints: returns hint with correct shape for a valid XY-Wing', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
     bs.candidates[0]![0]! = new Set([1, 2]);
     bs.candidates[0]![1]! = new Set([1, 3]);
@@ -68,7 +68,7 @@ describe('XYWing', () => {
   });
 
   it('returns empty when no bivalue cells form a valid chain', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
 
     // Pivot {1,2}, A {1,3}, B {2,4} — B has z=4 ≠ A's z=3, no matching z
@@ -85,7 +85,7 @@ describe('XYWing', () => {
     // and {2,3} looks like the pattern but changing the pivot to trivalue means the
     // standard XY-Wing proof breaks: if P=3, target T not seeing P could still have 3.
     // The rule must not fire.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
 
     bs.candidates[0]![0]! = new Set([1, 2, 3]); // trivalue "pivot" — must NOT be used

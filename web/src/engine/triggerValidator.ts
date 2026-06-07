@@ -15,7 +15,7 @@
  *                     Without this path, such rules silently escape detection.
  */
 
-import type { BoardState } from './boardState.js';
+import type { KillerBoardState } from './boardState.js';
 import type { RuleContext, SolverRule } from './rule.js';
 import { Cell, RuleResult, Trigger, UnitKind } from './types.js';
 
@@ -65,7 +65,7 @@ function unitKindLabel(k: UnitKind): string {
  */
 function classifyEliminations(
   result: RuleResult,
-  board: BoardState,
+  board: KillerBoardState,
   golden: readonly (readonly number[])[] | null,
 ): {
   violations: Array<{ cell: [number, number]; digit: number }>;
@@ -106,7 +106,7 @@ function classifyEliminations(
  * @param goldenSolution When provided, used to classify eliminations as violations vs. misses.
  */
 export function findTriggerMisses(
-  board: BoardState,
+  board: KillerBoardState,
   rules: readonly SolverRule[],
   goldenSolution: readonly (readonly number[])[] | null = null,
 ): TriggerValidationResult {

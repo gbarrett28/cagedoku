@@ -3,19 +3,19 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { SimpleColouring } from './simpleColouring.js';
 import type { RuleContext } from '../rule.js';
 import { Trigger } from '../types.js';
 import { makeTrivialSpec } from '../fixtures.js';
 
-function globalCtx(bs: BoardState): RuleContext {
+function globalCtx(bs: KillerBoardState): RuleContext {
   return { unit: null, cell: null, board: bs, hint: Trigger.GLOBAL, hintDigit: null };
 }
 
 describe('SimpleColouring', () => {
   it('trap: eliminates digit from uncoloured cell that sees both colours', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const d = 3;
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.cands(r, c).delete(d);
 
@@ -37,7 +37,7 @@ describe('SimpleColouring', () => {
   });
 
   it('asHints trap: returns a hint with correct shape', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const d = 3;
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.cands(r, c).delete(d);
     bs.cands(0, 0).add(d); bs.cands(5, 0).add(d);
@@ -56,7 +56,7 @@ describe('SimpleColouring', () => {
   });
 
   it('asHints wrap: returns a hint with correct shape', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const d = 5;
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.cands(r, c).delete(d);
     bs.cands(0, 0).add(d); bs.cands(0, 1).add(d); bs.cands(1, 1).add(d);
@@ -76,7 +76,7 @@ describe('SimpleColouring', () => {
     // Chain: (0,0) -[col0]- (5,0) -[row5]- (5,3) -[col3]- (0,3)
     // BFS colours: (0,0)=0, (5,0)=1, (5,3)=0, (0,3)=1
     // Trap target: (0,6) sees (0,0)=colour 0 and (0,3)=colour 1 via row 0
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const d = 3;
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.cands(r, c).delete(d);
     bs.cands(0, 0).add(d); bs.cands(5, 0).add(d);
@@ -107,7 +107,7 @@ describe('SimpleColouring', () => {
     // Chain: (0,0) -[row0]- (0,1) -[col1]- (1,1)
     // BFS: (0,0)=0, (0,1)=1, (1,1)=0
     // Wrap: (0,0) and (1,1) both colour 0 and share box 0 → colour 0 is eliminated
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const d = 5;
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.cands(r, c).delete(d);
     bs.cands(0, 0).add(d); bs.cands(0, 1).add(d); bs.cands(1, 1).add(d);
@@ -138,7 +138,7 @@ describe('SimpleColouring', () => {
     // (2,2) is uncoloured, in box 0: sees c0 via box AND c1 via box → phantom trap target.
     // apply() skips the trap via `continue`. asHints() must also skip it.
     // Note: (2,2) is in box 0 but not in row 0 or col 1, so the conjugate pairs are preserved.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const d = 5;
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.cands(r, c).delete(d);
     bs.cands(0, 0).add(d); // colour 0 (row-0 conjugate pair with (0,1))
@@ -164,7 +164,7 @@ describe('SimpleColouring', () => {
     // Colour-0 cells are (0,0) and (8,5): different row, col, and box → hasConflict is false.
     // Colour-1 cells are (0,5) and (8,2): different row, col, and box → hasConflict is false.
     // No trap target either. Rule should return no eliminations.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const d = 6;
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.cands(r, c).delete(d);
     bs.cands(0, 0).add(d); // colour 0
@@ -182,7 +182,7 @@ describe('SimpleColouring', () => {
     // Colour-0: (0,0). Colour-1: (0,3).
     // Candidate (3,0): sees (0,0) via col 0 (colour 0) but does NOT see (0,3) (different row, col, box).
     // seesC1 is false → trap guard fails → NOT eliminated.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const d = 9;
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.cands(r, c).delete(d);
     bs.cands(0, 0).add(d); // colour 0
@@ -193,7 +193,7 @@ describe('SimpleColouring', () => {
   });
 
   it('wrap: eliminates digit from a colour group when two same-colour cells see each other', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const d = 5;
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.cands(r, c).delete(d);
 

@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { SolverEngine } from '../solverEngine.js';
 import { defaultRules } from './index.js';
 import { NakedSingle } from './nakedSingle.js';
@@ -44,7 +44,7 @@ function makeDistinctCageSpec(): PuzzleSpec {
 describe('NakedSingle', () => {
   it('returns peer eliminations from apply() (combined placement+elimination rule)', () => {
     // NakedSingle now handles both the placement AND peer eliminations in one step.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     bs.candidates[0]![0]! = new Set([5]);
     const ctx: RuleContext = {
       unit: null,
@@ -72,7 +72,7 @@ describe('NakedSingle', () => {
 
   it('eliminates solved digit from distinct-cage peers that share no row/col/box', () => {
     // (2,5) and (3,6) are cage-mates only — different row, col, and box.
-    const bs = new BoardState(makeDistinctCageSpec());
+    const bs = new KillerBoardState(makeDistinctCageSpec());
     bs.candidates[3]![6]! = new Set([1]);
     const ctx: RuleContext = {
       unit: null,
@@ -86,7 +86,7 @@ describe('NakedSingle', () => {
   });
 
   it('does NOT eliminate from non-distinct virtual cage peer sharing no row/col/box', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     bs.addVirtualCage([[2, 5] as Cell, [3, 6] as Cell], 10, [], { distinct: false });
     bs.candidates[3]![6]! = new Set([1]);
     const ctx: RuleContext = {
@@ -102,7 +102,7 @@ describe('NakedSingle', () => {
   });
 
   it('does not produce duplicate eliminations when a peer shares multiple units', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     bs.candidates[0]![0]! = new Set([5]);
     const ctx: RuleContext = {
       unit: null,
@@ -121,7 +121,7 @@ describe('NakedSingle', () => {
   });
 
   it('returns empty result when ctx.cell is null', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const ctx: RuleContext = {
       unit: null,
       cell: null,
@@ -135,7 +135,7 @@ describe('NakedSingle', () => {
   });
 
   it('returns empty result when ctx.hintDigit is null', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const ctx: RuleContext = {
       unit: null,
       cell: [0, 0] as unknown as Cell,
@@ -149,7 +149,7 @@ describe('NakedSingle', () => {
   });
 
   it('asHints uses passed eliminations and mentions them in explanation', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const d = 5;
     bs.candidates[0]![0]! = new Set([d]);
     const ctx: RuleContext = {
@@ -176,7 +176,7 @@ describe('NakedSingle', () => {
 
   it('asHints produces placement hints when running hint-only against trivial spec', () => {
     const spec = makeTrivialSpec();
-    const bs = new BoardState(spec);
+    const bs = new KillerBoardState(spec);
     const rules = defaultRules();
     const engine = new SolverEngine(bs, rules, { hintRules: new Set(['NakedSingle']) });
     engine.solve();
@@ -191,7 +191,7 @@ describe('NakedSingle', () => {
 // Rule-bug regression fixtures (formerly CellSolutionElimination fixtures)
 // ---------------------------------------------------------------------------
 
-function boardFromStallCandidates(stalledCandidates: readonly (readonly (readonly number[])[])[]): BoardState {
+function boardFromStallCandidates(stalledCandidates: readonly (readonly (readonly number[])[])[]): KillerBoardState {
   const spec = {
     regions: Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, () => r + 1)),
     cageTotals: Array.from({ length: 9 }, () =>
@@ -199,7 +199,7 @@ function boardFromStallCandidates(stalledCandidates: readonly (readonly (readonl
     borderX: Array.from({ length: 9 }, () => Array.from({ length: 8 }, () => true)),
     borderY: Array.from({ length: 8 }, () => Array.from({ length: 9 }, () => false)),
   };
-  const board = new BoardState(spec, { includeVirtualCages: false });
+  const board = new KillerBoardState(spec, { includeVirtualCages: false });
   const engine = new SolverEngine(board, []);
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {

@@ -3,13 +3,13 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { NakedHiddenTriple } from './nakedHiddenTriple.js';
 import type { RuleContext } from '../rule.js';
 import { Trigger } from '../types.js';
 import { makeTrivialSpec } from '../fixtures.js';
 
-function makeCtx(bs: BoardState, row: number): RuleContext {
+function makeCtx(bs: KillerBoardState, row: number): RuleContext {
   const rowUid = bs.rowUnitId(row);
   for (let d = 1; d <= 9; d++) {
     bs.counts[rowUid]![d] = Array.from({ length: 9 }, (_, c) => c)
@@ -26,7 +26,7 @@ function makeCtx(bs: BoardState, row: number): RuleContext {
 
 describe('NakedHiddenTriple', () => {
   it('naked triple: eliminates triple digits from other row cells', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
 
     // Three cells forming a naked triple: union = {1,2,3}
     bs.candidates[0]![0]! = new Set([1, 2]);
@@ -48,7 +48,7 @@ describe('NakedHiddenTriple', () => {
   });
 
   it('asHints: naked triple returns hint with correct shape', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     bs.candidates[0]![0]! = new Set([1, 2]);
     bs.candidates[0]![1]! = new Set([2, 3]);
     bs.candidates[0]![2]! = new Set([1, 3]);
@@ -67,7 +67,7 @@ describe('NakedHiddenTriple', () => {
   });
 
   it('asHints: hidden triple returns hint with correct shape', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     bs.candidates[0]![0]! = new Set([1, 2, 4, 5]);
     bs.candidates[0]![1]! = new Set([2, 3, 6, 7]);
     bs.candidates[0]![2]! = new Set([1, 3, 8, 9]);
@@ -89,7 +89,7 @@ describe('NakedHiddenTriple', () => {
     // Cell (0,0) has {1} — a naked single. Cells (0,1) and (0,2) together with (0,0) have union {1,2,3},
     // which satisfies union.size===3. But including a naked single is degenerate (NakedSingle fires first).
     // The fix: guard size<2 prevents this from being treated as a naked triple.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     bs.candidates[0]![0]! = new Set([1]);       // singleton — naked single
     bs.candidates[0]![1]! = new Set([1, 2]);
     bs.candidates[0]![2]! = new Set([2, 3]);
@@ -102,7 +102,7 @@ describe('NakedHiddenTriple', () => {
   });
 
   it('near-miss naked triple: one cell has 4 candidates (union.size=4) → no naked triple', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     // Cells 0-2 have union {1,2,3,4} — size 4, not 3 → cannot be a naked triple
     bs.candidates[0]![0]! = new Set([1, 2]);
     bs.candidates[0]![1]! = new Set([2, 3]);
@@ -117,7 +117,7 @@ describe('NakedHiddenTriple', () => {
   });
 
   it('near-miss hidden triple: one of the three digits appears in a 4th cell → no hidden triple', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     // Digits 1,2,3 should form a hidden triple in cells 0-2.
     // But digit 1 also appears in cell 3 → cellsWith.size===4, not 3 → guard fails.
     bs.candidates[0]![0]! = new Set([1, 2, 4, 5]);
@@ -132,7 +132,7 @@ describe('NakedHiddenTriple', () => {
   });
 
   it('hidden triple: restricts three cells to only the triple digits', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
 
     // Digits 1,2,3 appear only in cells (0,0), (0,1), (0,2) — hidden triple
     bs.candidates[0]![0]! = new Set([1, 2, 4, 5]); // extras 4,5 to be removed

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { TwoStringKite } from './twoStringKite.js';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { SolverEngine } from '../solverEngine.js';
 import { makeTrivialSpec } from '../fixtures.js';
 import { Trigger } from '../types.js';
@@ -27,8 +27,8 @@ import { ruleBugFixtures } from './__fixtures__/index.js';
  * Row 1 keeps 5 at {(1,2),(1,3),(1,6)} (3 cells → no row strong link in row 1).
  * Col 3 keeps 5 at {(1,3),(4,3),(7,3)} (3 cells → no col strong link in col 3).
  */
-function makeKiteBoard(): BoardState {
-  const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+function makeKiteBoard(): KillerBoardState {
+  const board = new KillerBoardState(makeTrivialSpec(), { includeVirtualCages: false });
   const engine = new SolverEngine(board, [], {});
   const elim = (r: number, c: number) =>
     engine.applyEliminations([{ cell: [r, c] as Cell, digit: 5 }]);
@@ -45,7 +45,7 @@ function makeKiteBoard(): BoardState {
   return board;
 }
 
-const GLOBAL_CTX = (board: BoardState) =>
+const GLOBAL_CTX = (board: KillerBoardState) =>
   ({ board, unit: null, cell: null, hint: Trigger.GLOBAL, hintDigit: null } as const);
 
 describe('TwoStringKite', () => {
@@ -126,7 +126,7 @@ describe('TwoStringKite', () => {
   });
 
   it('returns empty on a fresh unconstrained board', () => {
-    const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+    const board = new KillerBoardState(makeTrivialSpec(), { includeVirtualCages: false });
     const ctx = GLOBAL_CTX(board);
     expect(rule.apply(ctx).eliminations).toHaveLength(0);
     expect(rule.asHints(ctx, [])).toHaveLength(0);
@@ -138,7 +138,7 @@ describe('TwoStringKite', () => {
 // Skipped while TwoStringKite is in DISABLED_RULES; active once the rule is fixed.
 // ---------------------------------------------------------------------------
 
-function boardFromStallCandidates(stalledCandidates: readonly (readonly (readonly number[])[])[]): BoardState {
+function boardFromStallCandidates(stalledCandidates: readonly (readonly (readonly number[])[])[]): KillerBoardState {
   const spec = {
     regions: Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, () => r + 1)),
     cageTotals: Array.from({ length: 9 }, () =>
@@ -146,7 +146,7 @@ function boardFromStallCandidates(stalledCandidates: readonly (readonly (readonl
     borderX: Array.from({ length: 9 }, () => Array.from({ length: 8 }, () => true)),
     borderY: Array.from({ length: 8 }, () => Array.from({ length: 9 }, () => false)),
   };
-  const board = new BoardState(spec, { includeVirtualCages: false });
+  const board = new KillerBoardState(spec, { includeVirtualCages: false });
   const engine = new SolverEngine(board, []);
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {

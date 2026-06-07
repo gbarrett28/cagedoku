@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { WWing } from './wWing.js';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { SolverEngine } from '../solverEngine.js';
 import { makeTrivialSpec } from '../fixtures.js';
 import { Trigger, UnitKind } from '../types.js';
@@ -24,8 +24,8 @@ import { Trigger, UnitKind } from '../types.js';
  *   - box 5 ∩ col 5: no overlap
  * → digit 7 eliminated from (4,5) and (0,7).
  */
-function makeWWingBoard(): { board: BoardState; unit: (typeof board.units)[number] } {
-  const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+function makeWWingBoard(): { board: KillerBoardState; unit: (typeof board.units)[number] } {
+  const board = new KillerBoardState(makeTrivialSpec(), { includeVirtualCages: false });
   const engine = new SolverEngine(board, [], {});
 
   // Strong link on 5 in col 0: keep 5 only in (0,0) and (4,0)
@@ -48,7 +48,7 @@ function makeWWingBoard(): { board: BoardState; unit: (typeof board.units)[numbe
   return { board, unit: colUnit };
 }
 
-function unitCtx(board: BoardState, unit: (typeof board.units)[number], hintDigit: number) {
+function unitCtx(board: KillerBoardState, unit: (typeof board.units)[number], hintDigit: number) {
   return { board, unit, cell: null, hint: Trigger.COUNT_HIT_TWO, hintDigit } as const;
 }
 
@@ -112,7 +112,7 @@ describe('WWing', () => {
   });
 
   it('returns empty when unit context is missing', () => {
-    const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+    const board = new KillerBoardState(makeTrivialSpec(), { includeVirtualCages: false });
     const ctx = { board, unit: null, cell: null, hint: Trigger.COUNT_HIT_TWO, hintDigit: 5 } as const;
     const result = rule.apply(ctx);
     expect(result.eliminations).toHaveLength(0);
@@ -127,7 +127,7 @@ describe('WWing', () => {
     // Strong link X=(0,0), Y=(4,0) in col 0.
     // A=(0,1)={5,7} sees X via row 0. B=(4,1)={5,7} sees Y via row 4.
     // A and B see each other via col 1 → `sees(A,B)` guard fires → no W-Wing.
-    const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+    const board = new KillerBoardState(makeTrivialSpec(), { includeVirtualCages: false });
     const engine = new SolverEngine(board, [], {});
 
     for (const r of [1,2,3,5,6,7,8]) engine.applyEliminations([{ cell: [r,0], digit: 5 }]);
@@ -154,7 +154,7 @@ describe('WWing', () => {
     // A and B do NOT see each other (different row, col, box).
     // `sees(A,B)` guard passes; complementary-connection guard fails → no W-Wing.
     // T=(0,2) sees A via row 0 and B via box 0 — must NOT have 7 eliminated.
-    const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+    const board = new KillerBoardState(makeTrivialSpec(), { includeVirtualCages: false });
     const engine = new SolverEngine(board, [], {});
 
     // Strong link in col 0: keep 5 only at (0,0) and (6,0)
@@ -189,7 +189,7 @@ describe('WWing', () => {
     // p=5, q=7. Col 0 strong link: X=(0,0) bivalue {5,7}, Y=(4,0).
     // B=(4,5) bivalue {5,7}, sees Y via row 4, does NOT see X.
     // Only valid W-Wing pairings involve X as a wing → no valid W-Wing exists.
-    const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+    const board = new KillerBoardState(makeTrivialSpec(), { includeVirtualCages: false });
     const engine = new SolverEngine(board, [], {});
 
     // Remove 5 from every cell except X=(0,0), Y=(4,0), and B=(4,5)
@@ -220,7 +220,7 @@ describe('WWing', () => {
     // p=5, q=7. Col 0 strong link: X=(0,0), Y=(4,0) bivalue {5,7}.
     // A=(0,5) bivalue {5,7}, sees X via row 0, does NOT see Y.
     // Only valid W-Wing pairings involve Y as a wing → no valid W-Wing exists.
-    const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+    const board = new KillerBoardState(makeTrivialSpec(), { includeVirtualCages: false });
     const engine = new SolverEngine(board, [], {});
 
     // Remove 5 from every cell except X=(0,0), Y=(4,0), and A=(0,5)

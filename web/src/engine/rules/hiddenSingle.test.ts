@@ -3,13 +3,13 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { HiddenSingle } from './hiddenSingle.js';
 import type { RuleContext } from '../rule.js';
 import { Cell, Trigger } from '../types.js';
 import { makeTrivialSpec, makeTwoCellCageSpec } from '../fixtures.js';
 
-function makeCtx(bs: BoardState, rowUid: number, hintDigit: number): RuleContext {
+function makeCtx(bs: KillerBoardState, rowUid: number, hintDigit: number): RuleContext {
   return {
     unit: bs.units[rowUid] ?? null,
     cell: null,
@@ -21,7 +21,7 @@ function makeCtx(bs: BoardState, rowUid: number, hintDigit: number): RuleContext
 
 describe('HiddenSingle', () => {
   it('eliminates all non-target candidates from the sole cell', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const rowUid = bs.rowUnitId(0);
     // Confine digit 7 to cell (0,4) in row 0
     for (let c = 0; c < 9; c++) {
@@ -39,7 +39,7 @@ describe('HiddenSingle', () => {
   });
 
   it('asHints returns a hint with display name and correct eliminations', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const rowUid = bs.rowUnitId(0);
     for (let c = 0; c < 9; c++) {
       if (c !== 4) bs.cands(0, c).delete(7);
@@ -55,7 +55,7 @@ describe('HiddenSingle', () => {
 
   it('asHints includes peer cells holding d in highlightCells', () => {
     // d=7 confined to (0,4) in row 0; col-4 and box-1 peers still hold 7
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const rowUid = bs.rowUnitId(0);
     for (let c = 0; c < 9; c++) {
       if (c !== 4) bs.cands(0, c).delete(7);
@@ -78,7 +78,7 @@ describe('HiddenSingle', () => {
   });
 
   it('returns empty eliminations when digit is absent from all cells', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const rowUid = bs.rowUnitId(0);
     for (let c = 0; c < 9; c++) bs.cands(0, c).delete(3);
     bs.counts[rowUid]![3] = 0;
@@ -90,7 +90,7 @@ describe('HiddenSingle', () => {
   it('near-miss: ctx.unit is null → returns empty (unit context required)', () => {
     // HiddenSingle requires a unit context — the proof relies on the unit constraint
     // (d must appear exactly once in the unit). Without a unit there is no such constraint.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const ctx: RuleContext = {
       unit: null, // no unit
       cell: null,
@@ -107,7 +107,7 @@ describe('HiddenSingle', () => {
     // We simulate this by using makeTwoCellCageSpec and ensuring that
     // solns do NOT all include a digit — we delete 5 from one solution directly.
     const spec = makeTwoCellCageSpec();
-    const bs = new BoardState(spec);
+    const bs = new KillerBoardState(spec);
     const cageUid = bs.cageUnitId(0, 0);
     const cageIdx = cageUid - 27;
     // Insert a solution that omits digit 5

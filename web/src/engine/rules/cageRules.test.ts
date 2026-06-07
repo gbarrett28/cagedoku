@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { CageCandidateFilter } from './cageCandidateFilter.js';
 import { CageIntersection } from './cageIntersection.js';
 import { SolutionMapFilter } from './solutionMapFilter.js';
@@ -16,7 +16,7 @@ import { Trigger } from '../types.js';
 import { makeThreeCellCageSpec, makeTrivialSpec, makeTwoCellCageSpec } from '../fixtures.js';
 
 function cageCtx(
-  bs: BoardState,
+  bs: KillerBoardState,
   cageUnitId: number,
   trigger: Trigger = Trigger.COUNT_DECREASED,
 ): RuleContext {
@@ -31,14 +31,14 @@ function cageCtx(
 
 describe('SolutionMapFilter', () => {
   it('does not crash on a fresh trivial board', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const cageIdx = bs.regions[0]![0]!;
     const result = new SolutionMapFilter().apply(cageCtx(bs, 27 + cageIdx));
     expect(Array.isArray(result.eliminations)).toBe(true);
   });
 
   it('returns a list (possibly empty) when cage solutions are restricted', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const cageIdx = bs.regions[0]![0]!;
     const cageUnit = bs.units[27 + cageIdx]!;
     const [r, c] = cageUnit.cells[0] as unknown as [number, number];
@@ -53,7 +53,7 @@ describe('SolutionMapFilter', () => {
     // 3-cell cage (row=0,col=0),(row=1,col=0),(row=2,col=0); total=12.
     // Restrict (row=0,col=0) and (row=1,col=0) to {1,2} → (row=2,col=0) forced to 9.
     const spec = makeThreeCellCageSpec();
-    const bs = new BoardState(spec);
+    const bs = new KillerBoardState(spec);
     const cageIdx = bs.regions[0]![0]!;  // head at (row=0, col=0)
     expect(bs.units[27 + cageIdx]!.cells.length).toBe(3);
 
@@ -78,7 +78,7 @@ describe('SolutionMapFilter', () => {
 
 describe('CageIntersection', () => {
   it('does not crash on a fresh trivial board', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     const cageIdx = bs.regions[0]![0]!;
     const result = new CageIntersection().apply(cageCtx(bs, 27 + cageIdx));
     expect(Array.isArray(result.eliminations)).toBe(true);
@@ -89,7 +89,7 @@ describe('CageIntersection', () => {
     // Digit 5 in every solution → must-contain; all carriers lie in col 0.
     // Should eliminate 5 from non-cage cells in col 0 (rows 3-8).
     const spec = makeThreeCellCageSpec();
-    const bs = new BoardState(spec);
+    const bs = new KillerBoardState(spec);
     const cageUid = bs.cageUnitId(0, 0);
     const cageIdx = cageUid - 27;
     bs.cageSolns[cageIdx] = [[5, 3, 4], [5, 1, 6]];
@@ -108,7 +108,7 @@ describe('CageIntersection', () => {
     // Digit 5 appears only in the first solution, not the second → not must-contain.
     // CageIntersection should not eliminate 5 from anywhere.
     const spec = makeThreeCellCageSpec();
-    const bs = new BoardState(spec);
+    const bs = new KillerBoardState(spec);
     const cageUid = bs.cageUnitId(0, 0);
     const cageIdx = cageUid - 27;
     bs.cageSolns[cageIdx] = [[5, 3, 4], [1, 2, 9]]; // 5 only in first solution
@@ -122,7 +122,7 @@ describe('CageIntersection', () => {
 describe('CageCandidateFilter', () => {
   it('asHints returns at least one hint for a two-cell cage', () => {
     const spec = makeTwoCellCageSpec();
-    const bs = new BoardState(spec);
+    const bs = new KillerBoardState(spec);
     const cageUid = bs.cageUnitId(0, 0);
     const ctx = cageCtx(bs, cageUid);
     const rule = new CageCandidateFilter();
@@ -136,7 +136,7 @@ describe('CageCandidateFilter', () => {
     // Two-cell cage (0,0)+(1,0), known solution = {5,6}. Set solutions to [{5,6}] only.
     // Digit 4 is not in any solution — it must be eliminated from both cage cells.
     const spec = makeTwoCellCageSpec();
-    const bs = new BoardState(spec);
+    const bs = new KillerBoardState(spec);
     const cageUid = bs.cageUnitId(0, 0);
     const cageIdx = cageUid - 27;
 
@@ -154,7 +154,7 @@ describe('CageCandidateFilter', () => {
     // Solution set = [{5,6}, {4,7}]. Digit 5 appears in the first solution.
     // Digit 5 must not be eliminated even though it is absent from the second solution.
     const spec = makeTwoCellCageSpec();
-    const bs = new BoardState(spec);
+    const bs = new KillerBoardState(spec);
     const cageUid = bs.cageUnitId(0, 0);
     const cageIdx = cageUid - 27;
     bs.cageSolns[cageIdx] = [[5, 6], [4, 7]];
@@ -170,7 +170,7 @@ describe('CageCandidateFilter', () => {
     // solutions the cage has already failed (a contradiction). The rule returns
     // empty (nothing further to eliminate; other logic handles the failure).
     const spec = makeTwoCellCageSpec();
-    const bs = new BoardState(spec);
+    const bs = new KillerBoardState(spec);
     const cageUid = bs.cageUnitId(0, 0);
     const cageIdx = cageUid - 27;
     bs.cageSolns[cageIdx] = []; // empty — degenerate state

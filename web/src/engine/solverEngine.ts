@@ -13,7 +13,7 @@
  * cage-specific rules become no-ops naturally.
  */
 
-import { BoardState, CAGE_UNIT_OFFSET } from './boardState.js';
+import { KillerBoardState, CAGE_UNIT_OFFSET } from './boardState.js';
 import type { HintResult } from './hint.js';
 import type { RuleContext, RuleStats, SolverRule } from './rule.js';
 import { makeRuleStats } from './rule.js';
@@ -159,7 +159,7 @@ function dedupHints(hints: HintResult[]): HintResult[] {
 // ---------------------------------------------------------------------------
 
 export class SolverEngine {
-  readonly board: BoardState;
+  readonly board: KillerBoardState;
   readonly queue: SolverQueue;
   readonly stats: Map<string, RuleStats>;
 
@@ -181,7 +181,7 @@ export class SolverEngine {
   private _violationFired = false;
 
   constructor(
-    board: BoardState,
+    board: KillerBoardState,
     rules: SolverRule[],
     { linearSystemActive = true, hintRules = new Set<string>(), goldenSolution = null, onViolation = null }: {
       linearSystemActive?: boolean;
@@ -319,7 +319,7 @@ export class SolverEngine {
    * `appliedVirtualCages`. Resets all accumulators on each call. Deduplicates
    * `pendingHints` before returning.
    */
-  solve(): BoardState {
+  solve(): KillerBoardState {
     this.appliedMutations = [];
     this.appliedPlacements = [];
     this.appliedVirtualCages = [];

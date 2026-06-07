@@ -36,7 +36,7 @@ Guards:
   readonly priority = 1;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
-  /** BoardState must be constructed with includeVirtualCages=true for this rule to function. */
+  /** KillerBoardState must be constructed with includeVirtualCages=true for this rule to function. */
   readonly requiresVirtualCages = true;
 
   apply(ctx: RuleContext): RuleResult {

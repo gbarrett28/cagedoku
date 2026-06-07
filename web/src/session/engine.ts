@@ -16,7 +16,7 @@
  *   from a clean slate each time.
  */
 
-import { BoardState } from '../engine/boardState.js';
+import { KillerBoardState } from '../engine/boardState.js';
 import { SolverEngine } from '../engine/solverEngine.js';
 import { defaultRules } from '../engine/rules/index.js';
 import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
@@ -43,7 +43,7 @@ let _validationTimer: ReturnType<typeof setTimeout> | null = null;
  * state is checked (avoids stale or redundant reports during rapid interaction).
  */
 function scheduleTriggerValidation(
-  board: BoardState,
+  board: KillerBoardState,
   rules: readonly SolverRule[],
   golden: readonly (readonly number[])[],
   state: PuzzleState,
@@ -57,7 +57,7 @@ function scheduleTriggerValidation(
 }
 
 function runTriggerValidation(
-  board: BoardState,
+  board: KillerBoardState,
   rules: readonly SolverRule[],
   golden: readonly (readonly number[])[],
   state: PuzzleState,
@@ -139,7 +139,7 @@ export function userVirtualCages(state: PuzzleState): VirtualCage[] {
  * this function only contributes eliminations from explicit userGrid placements
  * that differ from what the engine would have deduced.
  */
-export function userEliminations(board: BoardState, userGrid: number[][] | null): Elimination[] {
+export function userEliminations(board: KillerBoardState, userGrid: number[][] | null): Elimination[] {
   if (userGrid === null) return [];
   const elims: Elimination[] = [];
   for (let r = 0; r < 9; r++) {
@@ -193,11 +193,11 @@ export function isUserCorrupted(state: PuzzleState): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * Builds a fresh BoardState + SolverEngine from the current PuzzleState.
+ * Builds a fresh KillerBoardState + SolverEngine from the current PuzzleState.
  *
  * Steps (mirrors Python's _build_engine):
  * 1. Parse PuzzleSpec from specData
- * 2. Create BoardState (includeVirtualCages=false to skip linear derivation)
+ * 2. Create KillerBoardState (includeVirtualCages=false to skip linear derivation)
  * 3. Re-add all virtual cages from turn history
  * 4. Apply user explicit candidate eliminations
  * 5. Apply user grid placements (eliminate all other candidates in the cell)
@@ -210,9 +210,9 @@ export function isUserCorrupted(state: PuzzleState): boolean {
 export function buildEngine(
   state: PuzzleState,
   { includeHints = false, skipSolve = false }: { includeHints?: boolean; skipSolve?: boolean } = {},
-): { board: BoardState; engine: SolverEngine } {
+): { board: KillerBoardState; engine: SolverEngine } {
   const spec = dataToSpec(state.specData);
-  const board = new BoardState(spec, { includeVirtualCages: false });
+  const board = new KillerBoardState(spec, { includeVirtualCages: false });
 
   // Apply user-eliminated cage solutions for real cages before any rules run.
   for (let i = 0; i < state.cageStates.length; i++) {
@@ -490,7 +490,7 @@ export function findLastConsistentTurnIdx(state: PuzzleState): number | null {
 // Snapshot helpers
 // ---------------------------------------------------------------------------
 
-function captureSnapshot(board: BoardState): BoardSnapshot {
+function captureSnapshot(board: KillerBoardState): BoardSnapshot {
   const candidates = Array.from({ length: 9 }, (_, r) =>
     Array.from({ length: 9 }, (__, c) => [...board.cands(r, c)].sort((a, b) => a - b)),
   );

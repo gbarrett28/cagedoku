@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { XYZWing } from './xyzWing.js';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { SolverEngine } from '../solverEngine.js';
 import { makeTrivialSpec } from '../fixtures.js';
 import { Trigger } from '../types.js';
@@ -13,8 +13,8 @@ import { Trigger } from '../types.js';
  * (1,1) sees P via box 0, A via col 1, B via row 1 → digit 3 eliminated.
  * All other cells in rows/cols beyond (1,1) have 3 removed to avoid spurious targets.
  */
-function makeXYZWingBoard(): BoardState {
-  const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+function makeXYZWingBoard(): KillerBoardState {
+  const board = new KillerBoardState(makeTrivialSpec(), { includeVirtualCages: false });
   const engine = new SolverEngine(board, [], {});
   // Pivot (0,0) = {1,2,3}
   for (const d of [4,5,6,7,8,9]) engine.applyEliminations([{ cell: [0,0], digit: d }]);
@@ -33,7 +33,7 @@ function makeXYZWingBoard(): BoardState {
   return board;
 }
 
-const GLOBAL_CTX = (board: BoardState) =>
+const GLOBAL_CTX = (board: KillerBoardState) =>
   ({ board, unit: null, cell: null, hint: Trigger.GLOBAL, hintDigit: null } as const);
 
 describe('XYZWing', () => {
@@ -71,7 +71,7 @@ describe('XYZWing', () => {
   });
 
   it('returns empty when no XYZWing pattern exists', () => {
-    const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+    const board = new KillerBoardState(makeTrivialSpec(), { includeVirtualCages: false });
     const ctx = GLOBAL_CTX(board);
     const result = rule.apply(ctx);
     expect(result.eliminations).toHaveLength(0);
@@ -86,7 +86,7 @@ describe('XYZWing', () => {
     // P=(0,0)={1,2,3}, A=(0,6)={1,3} sees P via row 0,
     // B=(6,0)={2,3} sees P via col 0.
     // T=(6,6)={3,5} sees A via col 6 and B via row 6, but does NOT see P=(0,0).
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
     bs.candidates[0]![0]! = new Set([1, 2, 3]); // pivot P
     bs.candidates[0]![6]! = new Set([1, 3]);     // pincer A — sees P via row 0

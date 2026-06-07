@@ -1,5 +1,5 @@
 /**
- * BoardState — all mutable solver state for one puzzle.
+ * KillerBoardState — all mutable solver state for one puzzle.
  *
  * Mirrors Python's `killer_sudoku.solver.engine.board_state` module.
  *
@@ -51,10 +51,10 @@ function buildBoxCells(): readonly (readonly Cell[])[] {
 const BOX_CELLS: readonly (readonly Cell[])[] = buildBoxCells();
 
 // ---------------------------------------------------------------------------
-// BoardState
+// KillerBoardState
 // ---------------------------------------------------------------------------
 
-export class BoardState {
+export class KillerBoardState {
   readonly spec: PuzzleSpec;
   readonly units: Unit[];
   /** candidates[r][c] = set of remaining digits for cell (r, c). Use cands(r,c) for safe read access. */
@@ -309,7 +309,7 @@ function nextInSet<T>(s: Set<T>): T {
 }
 
 /** Validate that a fully-solved board satisfies row/col/box constraints (cages are skipped — validate separately). */
-export function validateSolution(board: BoardState): string[] {
+export function validateSolution(board: KillerBoardState): string[] {
   const violations: string[] = [];
   for (const unit of board.units) {
     if (unit.kind === UnitKind.CAGE) continue; // cage validation is separate

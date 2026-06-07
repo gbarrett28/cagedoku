@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { UniqueRectangle } from './uniqueRectangle.js';
 import type { RuleContext } from '../rule.js';
 import { Trigger } from '../types.js';
@@ -13,13 +13,13 @@ import { SolverEngine } from '../solverEngine.js';
 import { DISABLED_RULES } from './disabled-rules.js';
 import { ruleBugFixtures } from './__fixtures__/index.js';
 
-function globalCtx(bs: BoardState): RuleContext {
+function globalCtx(bs: KillerBoardState): RuleContext {
   return { unit: null, cell: null, board: bs, hint: Trigger.GLOBAL, hintDigit: null };
 }
 
 describe('UniqueRectangle', () => {
   it('type 1: eliminates UR pair from the floor cell', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
 
     // Rectangle: rows 0,1 × cols 0,3 — same row-band (0–2), different col-bands (0–2 vs 3–5)
@@ -39,7 +39,7 @@ describe('UniqueRectangle', () => {
   });
 
   it('asHints type 1: returns hint with correct shape', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
     // Same valid 2-box rectangle: rows 0,1 × cols 0,3 (boxes 0 and 1)
     bs.candidates[0]![0]! = new Set([4, 7]);
@@ -59,7 +59,7 @@ describe('UniqueRectangle', () => {
   });
 
   it('asHints type 2: returns hint with correct shape', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
     // Valid 2-box rectangle: rows 0,1 × cols 0,4 (boxes 0 and 1, same row-band)
     // Base corners in row 0, extra corners in row 1 (share row 1 → cells in row 1 see both)
@@ -84,7 +84,7 @@ describe('UniqueRectangle', () => {
     // Regression for bug #139: the floor cell (1,3) must not appear in highlightCells.
     // highlightCells must be exactly the 3 roof cells so the UI renders them orange;
     // the floor cell is an elimination target and must only appear in eliminations (yellow).
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
     bs.candidates[0]![0]! = new Set([4, 7]);
     bs.candidates[0]![3]! = new Set([4, 7]);
@@ -106,7 +106,7 @@ describe('UniqueRectangle', () => {
   it('near-miss: only 2 corners have {a,b} (not 3) → Type 1 does not fire', () => {
     // roofIndices.length must be 3 for Type 1.
     // Here only (0,0) and (0,3) have exactly {4,7}; the other two corners have extra digits.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
     bs.candidates[0]![0]! = new Set([4, 7]);
     bs.candidates[0]![3]! = new Set([4, 7]);
@@ -120,7 +120,7 @@ describe('UniqueRectangle', () => {
 
   it('near-miss: all 4 corners in the same box → boxes.size === 1 → no UR', () => {
     // Corners rows 0,1 × cols 0,1 are all in box 0 → boxes.size === 1, guard fails.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
     bs.candidates[0]![0]! = new Set([4, 7]);
     bs.candidates[0]![1]! = new Set([4, 7]);
@@ -131,7 +131,7 @@ describe('UniqueRectangle', () => {
   });
 
   it('type 2: eliminates extra digit from cells seeing both extra corners', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
 
     // Valid 2-box rectangle: rows 0,1 × cols 0,4 — same row-band (0–2), different col-bands
@@ -159,7 +159,7 @@ describe('UniqueRectangle', () => {
 // Skipped while UniqueRectangle is in DISABLED_RULES; active once the rule is fixed.
 // ---------------------------------------------------------------------------
 
-function boardFromStallCandidates(stalledCandidates: readonly (readonly (readonly number[])[])[]): BoardState {
+function boardFromStallCandidates(stalledCandidates: readonly (readonly (readonly number[])[])[]): KillerBoardState {
   const spec = {
     regions: Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, () => r + 1)),
     cageTotals: Array.from({ length: 9 }, () =>
@@ -167,7 +167,7 @@ function boardFromStallCandidates(stalledCandidates: readonly (readonly (readonl
     borderX: Array.from({ length: 9 }, () => Array.from({ length: 8 }, () => true)),
     borderY: Array.from({ length: 8 }, () => Array.from({ length: 9 }, () => false)),
   };
-  const board = new BoardState(spec, { includeVirtualCages: false });
+  const board = new KillerBoardState(spec, { includeVirtualCages: false });
   const engine = new SolverEngine(board, []);
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {

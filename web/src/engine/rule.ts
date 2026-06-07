@@ -5,10 +5,10 @@
  *
  * SolverRule is a structural interface — any object with the required
  * fields and an apply() method qualifies. Rules are stateless; all mutable
- * state lives in BoardState.
+ * state lives in KillerBoardState.
  */
 
-import type { BoardState } from './boardState.js';
+import type { KillerBoardState } from './boardState.js';
 import type { HintResult } from './hint.js';
 import type { Cell, Elimination, RuleResult, Trigger, Unit, UnitKind } from './types.js';
 
@@ -18,7 +18,7 @@ export interface RuleContext {
   readonly unit: Unit | null;
   /** Set for CELL_DETERMINED; null otherwise. */
   readonly cell: Cell | null;
-  readonly board: BoardState;
+  readonly board: KillerBoardState;
   readonly hint: Trigger;
   readonly hintDigit: number | null;
 }
