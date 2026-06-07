@@ -289,8 +289,8 @@ If code elsewhere maintains a `Set<string>` or `string[]` to track which variant
 
 | Kind | Location | Lifecycle |
 |---|---|---|
-| **Spec** | `docs/specs/<name>.md` | Design intent for a feature under development. Deleted once incorporated into a live doc. |
-| **Plan** | `docs/plans/<name>.md` | Step-by-step implementation plan with `- [ ]` checkboxes. Deleted once all steps are done. |
+| **Spec** | `docs/superpowers/specs/YYYY-MM-DD-<topic>.md` | Design intent for a feature under development (per `superpowers:brainstorming` defaults). Deleted once incorporated into a live doc. |
+| **Plan** | `docs/superpowers/plans/YYYY-MM-DD-<feature>.md` | Step-by-step implementation plan with `- [ ]` checkboxes (per `superpowers:writing-plans` defaults). Deleted once all steps are done. |
 | **Live doc** | `docs/architecture.md`, `docs/image-pipeline.md`, etc. | Permanent reference; always reflects the current codebase. |
 
 ---

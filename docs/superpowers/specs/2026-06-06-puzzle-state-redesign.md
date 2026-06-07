@@ -60,91 +60,187 @@ User-eliminated candidates are now an explicit field on `PuzzleState`, maintaine
 
 ---
 
-## 2. `buildEngine()` Contract
+## 2. `RuleMutation` Type Hierarchy
+
+Rule effects are broader than eliminations — a rule firing can place a digit, eliminate a candidate, add a virtual cage, or eliminate a cage solution. Each is an open interface carrying its own `apply`, so dispatch lives on the value itself rather than in an external switch:
 
 ```typescript
-function buildEngine(state: PuzzleState): {
+interface RuleMutation {
+  readonly type: string;
+  apply(state: PuzzleState): PuzzleState;
+}
+
+interface PlaceDigitMutation extends RuleMutation {
+  readonly type: 'placeDigit';
+  readonly row: number; readonly col: number; readonly digit: number;
+}
+interface EliminateCandidateMutation extends RuleMutation {
+  readonly type: 'eliminateCandidate';
+  readonly row: number; readonly col: number; readonly digit: number;
+}
+interface AddVirtualCageMutation extends RuleMutation {
+  readonly type: 'addVirtualCage';
+  readonly cage: VirtualCage;
+}
+interface EliminateCageSolutionMutation extends RuleMutation {
+  readonly type: 'eliminateCageSolution';
+  readonly cageId: string; readonly solution: readonly number[];
+}
+```
+
+TypeScript statically verifies each concrete type satisfies `RuleMutation` — a factory that omits `apply` is a compile error. A discriminated union would additionally buy exhaustiveness *at dispatch sites*, but since `apply` lives on the mutation itself, no external dispatch site needs to be exhaustive — callers just write `mutation.apply(state)`.
+
+A companion namespace provides factories and one `revive` — the single switch-on-`type` in the system, isolated to the deserialization boundary. (`RuleMutation` objects carry an `apply` function that `JSON.stringify` drops; `ApplyHintAction.mutations`, persisted in `Turn`/`localStorage`, must be revived from the surviving `type` + data fields after a JSON round-trip.)
+
+```typescript
+namespace RuleMutation {
+  export function placeDigit(row, col, digit): PlaceDigitMutation { ... }
+  export function eliminateCandidate(row, col, digit): EliminateCandidateMutation { ... }
+  export function addVirtualCage(cage): AddVirtualCageMutation { ... }
+  export function eliminateCageSolution(cageId, solution): EliminateCageSolutionMutation { ... }
+  export function revive(data: { type: string }): RuleMutation { /* type-keyed reconstruction, isolated here only */ }
+}
+```
+
+---
+
+## 3. `buildEngine()` Contract
+
+```typescript
+function buildEngine(
+  state: PuzzleState,
+  opts?: { includeHints?: boolean; skipSolve?: boolean; skipValidation?: boolean },
+): {
   board: BoardState;
+  baseBoard: BoardState;
   engine: SolverEngine;
-  ruleSteps: RuleStep[];
+  ruleSteps: readonly RuleStep[];
+  validationContext: { rules: readonly SolverRule[]; golden: readonly (readonly number[])[]; spec: PuzzleSpec } | null;
 }
 ```
 
 `buildEngine()` is a pure function. Given the same `PuzzleState`, it always returns the same result. It reads: `specData`, `cageStates`, `userGrid`, `userRemovedCandidates`, `virtualCages`, `alwaysApplyRules`, `goldenSolution`, `fixtureStalledCandidates`. It does not read `turns`.
 
-`ruleSteps` is the ordered transcript produced by `engine.solve()` — the sequence of rule firings that reached the fixed point, with proper chaining (later rules see earlier rules' eliminations because `solve()` iterates internally to fixed point). Callers that only need the board ignore it.
-
----
-
-## 3. Animation Player
-
-The animation player is pure UI state — nothing on `PuzzleState`.
+- **`baseBoard`** — the board built from `specData` + `userGrid` + `userRemovedCandidates`, *before* any always-apply rules run. `AnimationPlayer` replay starts here.
+- **`board`** — the board after always-apply rules run to fixpoint (today's sole returned board).
+- **`ruleSteps`** — the ordered transcript reaching `board` from `baseBoard`, computed in a single `engine.solve()` pass: consecutive same-rule mutations (placements, eliminations, virtual-cage additions, cage-solution eliminations — each wrapped as a `RuleMutation`) are grouped into one `RuleStep`.
 
 ```typescript
-interface AnimationPlayer {
-  readonly ruleSteps: RuleStep[];
-  readonly cursor: number;    // 0 = before any steps
-  readonly playing: boolean;
+interface RuleStep {
+  readonly ruleName: string;
+  readonly displayName: string;
+  readonly highlightCells: readonly Cell[];
+  readonly mutations: readonly RuleMutation[];
 }
 ```
 
-The displayed candidate grid at cursor position N is computed on the fly from the `buildEngine()` result minus eliminations from `ruleSteps[0..cursor-1]`. No state mutations occur during playback.
+- **`validationContext`** — `null` unless a golden solution is present and the board is not user-corrupted (the existing gate on the background trigger-miss check). When non-null it carries `{ rules, golden, spec }` so the one external caller that schedules validation explicitly (§5) doesn't re-derive rule filtering / `isUserCorrupted` / `dataToSpec`.
+- **`skipValidation`** — suppresses the automatic `scheduleTriggerValidation` call even though a full solve still runs. Used only by the caller in §5 that needs to validate against a *different* (later) state than the one passed in.
+
+`getNextAutoApplyStep` and `applyAutoApplyStep` are deleted: today each step rebuilds the engine from scratch (an O(n) re-solve across an n-step animation) and filters out mutations already reflected via `preCands` snapshots, to avoid re-emitting steps already folded into `userRemovedCandidates`. Computing `ruleSteps` once, in one pass, from a clean `baseState` removes the need for both the re-solving and the redundancy filter.
+
+---
+
+## 4. Animation Player
+
+The animation player is pure UI state — nothing on `PuzzleState`, never serialized.
+
+```typescript
+interface AnimationPlayer {
+  readonly baseState: PuzzleState;   // state right after the user's action, before any rule steps
+  readonly ruleSteps: readonly RuleStep[];
+  readonly cursor: number;            // 0..ruleSteps.length — steps fully applied so far
+  readonly playing: boolean;
+}
+
+namespace AnimationPlayer {
+  export function stateAtCursor(player: AnimationPlayer): PuzzleState {
+    let state = player.baseState;
+    for (let i = 0; i < player.cursor; i++)
+      for (const mutation of player.ruleSteps[i]!.mutations) state = mutation.apply(state);
+    return state;
+  }
+  export function boardAtCursor(player: AnimationPlayer): CandidatesResponse {
+    return computeAnimationCandidates(stateAtCursor(player));   // existing lightweight derivation, unchanged
+  }
+  export function currentStep(player: AnimationPlayer): RuleStep | null {
+    return player.ruleSteps[player.cursor] ?? null;
+  }
+}
+```
+
+`RuleMutation.apply` operates on `PuzzleState`, not `Board` — so the player folds mutations over plain data and re-derives a board for rendering on demand via the existing `computeAnimationCandidates` helper. This is exactly the model today's loop already uses (`applyAutoApplyStep` + `computeAnimationCandidates`), restructured around a precomputed step list instead of incremental re-solving — scrubbing is just changing `cursor` and re-rendering, no replay loop, no timers when paused.
 
 ### 5-button VCR control
 
 | Button | Effect |
 |---|---|
-| `«` | `cursor = 0` — cancel, no commit |
-| `<` | `cursor = max(0, cursor - 1)` |
-| `\|\|` | toggle `playing` |
-| `>` | `cursor = min(ruleSteps.length, cursor + 1)` |
-| `»` | commit all steps as `ApplyHintAction`, close player |
+| `«` | If `cursor > 0`: `{ cursor: 0, playing: false }`. If `cursor === 0`: close the player, no commit. |
+| `‹` | `{ cursor: max(0, cursor - 1), playing: false }` |
+| `▶`/`⏸` | toggle `playing` |
+| `›` | `{ cursor: min(ruleSteps.length, cursor + 1), playing: false }` |
+| `»` | fold remaining `ruleSteps[cursor..length)` mutations into one `ApplyHintAction`, dispatch, close player |
 
-Auto-play advances one step per tick, pausing at each rule boundary so the user sees one complete rule application before the next begins. Reaching the end stops playback without committing — the user must press `»` to confirm.
-
-`«` at cursor 0 closes the player with no state changes.
+**Any direct cursor manipulation forces `playing: false`** — only the play/pause button sets `playing: true`. Scrubbing implies the user wants manual control, so any timer-driven auto-advance stops; this is a single uniform guard rather than special-cased per button. Auto-play advances one step per tick; reaching the end stops playback without committing — the user must press `»` to confirm.
 
 ---
 
-## 4. Execution Path
+## 5. Execution Path
 
 Every user action follows a single shape. The three current divergent paths (`applyAutoPlacements`, `applyNextAutoPlacement`, `getNextAutoApplyStep`) are deleted.
 
 ```
 userAction(action, currentState):
-  newState                     = UserAction.apply(action, currentState)
-  { board, engine, ruleSteps } = buildEngine(newState)
+  baseState                                 = UserAction.apply(action, currentState)
+  { board, baseBoard, ruleSteps,
+    validationContext }                     = buildEngine(baseState, { skipValidation: true })
 
   if violation && rewindState === null:
     rewindState = currentState
 
-  finalState = recordTurn(newState, action, ruleSteps)
-  pushSnapshot(currentState)        // rolling window
+  pushSnapshot(currentState)                // rolling window
 
-  if ruleSteps produce placements or eliminations:
-    open animation player with ruleSteps   // or apply instantly per settings
-  else:
+  if ruleSteps.length === 0:
+    finalState = recordTurn(baseState, action, [])
     render(board)
+  else:
+    if validationContext !== null:
+      finalState = ruleSteps.flatMap(s => s.mutations).reduce((s, m) => m.apply(s), baseState)
+      scheduleTriggerValidation(board, validationContext.rules, validationContext.golden, finalState, validationContext.spec)
+
+    open animation player { baseState, ruleSteps, cursor: 0, playing: true }   // or apply instantly per settings
 ```
 
-`buildEngine()` is called exactly once per user action. The only remaining branch is **instant vs animated**, driven by user preference, not by which code path was called.
+`buildEngine()` runs its full solve exactly once per user action. The only remaining branch is **instant vs animated**, driven by user preference, not by which code path was called. (The player's `boardAtCursor` makes additional `buildEngine(state, { skipSolve: true })` calls while scrubbing — these never run a full solve and never trigger validation; see "Background validation timing" below.)
 
 ### Animation commit path
 
 ```
 user presses »:
-  action     = ApplyHintAction { eliminations: all from ruleSteps }
-  newState   = UserAction.apply(action, currentState)
+  action     = ApplyHintAction { mutations: remaining ruleSteps' mutations }
+  newState   = UserAction.apply(action, currentState)   // folds each mutation via .apply()
   { board }  = buildEngine(newState)
   finalState = recordTurn(newState, action, [])
   render(board)
 ```
 
+`ApplyHintAction.mutations: readonly RuleMutation[]` replaces the old `eliminations: readonly [number, number, number][]`. Storing the actual mutation objects (revived from JSON via `RuleMutation.revive` on load) means undo/redo and `rebuildUserGrid` replay exactly what happened — placements, eliminations, virtual cages, cage-solution eliminations — uniformly via `.apply()`, regardless of kind.
+
+### Background validation timing
+
+The brute-force trigger-miss check (`scheduleTriggerValidation`/`runTriggerValidation`, gated on `golden !== null && !userCorrupted`) needs to run only once per turn, against the fully-deduced (fixpoint) board. `buildEngine(baseState)`'s `board` *is* that fixpoint board — re-solving from `finalState` would be a no-op pass producing the identical board, since the rules already ran to completion. So:
+
+- `buildEngine(baseState, { skipValidation: true })` suppresses the automatic schedule and returns `validationContext`, the inputs it would have used.
+- The execution path immediately folds all `ruleSteps` mutations to compute `finalState`, then calls `scheduleTriggerValidation(board, ...)` directly — reusing the already-solved `board` (no second solve), with `finalState` supplying `puzzleType` for report metadata (invariant between `baseState` and `finalState`).
+- This schedules the check exactly once per turn, immediately — i.e. concurrently with the animation, not after the user finishes watching it.
+- `AnimationPlayer.boardAtCursor` → `computeAnimationCandidates` → `buildEngine(state, { skipSolve: true })` never sets `_solveCompleted`, so scrubbing/rendering never re-triggers validation — mirroring how today's `getNextAutoApplyStep`/`computeAnimationCandidates` (`skipSolve: true`) avoid spamming the validator per animation frame.
+- `runTriggerValidation` additionally early-returns when `!hasConsent()`: the brute-force `findTriggerMisses` comparison is otherwise pure waste, since its only output (the reports) is dropped at the upload gate regardless of whether the computation ran.
+
 `getHints()` simplifies from up to 3 `buildEngine()` calls (for inconsistency detection) to one, since violation state is returned directly from `buildEngine()`.
 
 ---
 
-## 5. `namespace PuzzleState` — Public API
+## 6. `namespace PuzzleState` — Public API
 
 `namespace PuzzleState` is the sole API surface. `UserAction` types, `puzzleType` checks, and rule lists are implementation details hidden inside it.
 
@@ -255,16 +351,16 @@ The display layer calls these six methods and paints. It has no other contact wi
 
 ---
 
-## 6. Serialization
+## 7. Serialization
 
-`PuzzleState` is serialized to R2 for bug reports. Old bug reports must remain loadable indefinitely.
+`PuzzleState` is serialized to R2 for bug reports. Old (pre-redesign) reports are not migrated: `deserialize` only recognises the current wire format and throws on anything else. A report that fails to load can simply be deleted from R2 — there is no requirement to keep old reports loadable indefinitely.
 
 ### Methods
 
 ```typescript
 namespace PuzzleState {
   export function serialize(state: PuzzleState): SerializedPuzzleState
-  export function deserialize(data: unknown): PuzzleState  // validates, migrates, constructs
+  export function deserialize(data: unknown): PuzzleState  // validates and constructs; throws on unrecognised format
 }
 ```
 
@@ -275,22 +371,16 @@ The serialized format adds an explicit `kind: 'classic' | 'killer'` tag so the d
 ```typescript
 interface SerializedPuzzleState {
   readonly kind: 'classic' | 'killer';
-  readonly version: number;           // bumped when format changes
+  readonly version: number;           // bumped when format changes; deserialize rejects any other value
   // ... all PuzzleState fields
 }
 ```
 
-### Migration from old format
-
-Old bug reports contain `autoRemovedCandidates` (now removed) and no `userRemovedCandidates`. The deserializer detects old format by `version` number (or absence of `userRemovedCandidates`) and reconstructs `userRemovedCandidates` by replaying `turns` through `UserAction.updateRemovedList`. `autoRemovedCandidates` is discarded.
-
-Old format also has `puzzleType: 'classic' | 'killer'` instead of `kind`. The deserializer accepts both field names.
-
-Migration is transparent to callers — `deserialize` always returns a valid current-format `PuzzleState`.
+`deserialize` checks `kind` and `version` up front and throws immediately if either is missing or unrecognised — no migration path, no dual field-name handling (`puzzleType` vs `kind`), no reconstruction of `userRemovedCandidates` from `turns`, no special handling of the old `autoRemovedCandidates` field. Pre-redesign reports simply fail `deserialize` and can be deleted on sight.
 
 ---
 
-## 7. Out of Scope
+## 8. Out of Scope
 
 The following are deferred and not part of this redesign:
 
