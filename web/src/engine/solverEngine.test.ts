@@ -9,7 +9,7 @@
  *  - No apply_initial_eliminations() in TS; LinearElimination rule handles that.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { solve } from './index.js';
 import { BoardState, KillerBoardState } from './boardState.js';
 import { SolverEngine, KillerSolverEngine } from './solverEngine.js';
@@ -93,6 +93,22 @@ describe('SolverEngine — _onCellDetermined virtual hook', () => {
     const eliminations = [1, 2, 3, 4, 5, 6, 7, 8].map(d => ({ cell: [0, 0] as Cell, digit: d }));
     expect(() => engine.applyEliminations(eliminations)).not.toThrow();
     expect(plain.cands(0, 0)).toEqual(new Set([9]));
+  });
+});
+
+describe('KillerSolverEngine — _onCellDetermined override', () => {
+  it('delegates to LinearSystem.substituteCell and substituteLiveRows on cell determination', () => {
+    const board = new KillerBoardState(makeTrivialSpec());
+    const engine = new KillerSolverEngine(board, []);
+    const substituteCellSpy = vi.spyOn(board.linearSystem, 'substituteCell');
+    const substituteLiveRowsSpy = vi.spyOn(board.linearSystem, 'substituteLiveRows');
+    // Eliminate 8 of (0,0)'s 9 candidates, leaving exactly digit 9 — this fires
+    // CELL_DETERMINED for cell [0,0] with value 9, which the override forwards
+    // to both LinearSystem methods with that exact (cell, value) pair.
+    const eliminations = [1, 2, 3, 4, 5, 6, 7, 8].map(d => ({ cell: [0, 0] as Cell, digit: d }));
+    engine.applyEliminations(eliminations);
+    expect(substituteCellSpy).toHaveBeenCalledWith([0, 0], 9);
+    expect(substituteLiveRowsSpy).toHaveBeenCalledWith([0, 0], 9);
   });
 });
 
