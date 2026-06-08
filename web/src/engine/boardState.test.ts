@@ -6,6 +6,9 @@ import { describe, expect, it } from 'vitest';
 import { BoardState, KillerBoardState } from './boardState.js';
 import { NoSolnError } from '../solver/errors.js';
 import { Trigger, UnitKind } from './types.js';
+import { HiddenSingle } from './rules/hiddenSingle.js';
+import { LockedCandidates } from './rules/lockedCandidates.js';
+import type { RuleContext } from './rule.js';
 import { makeTrivialSpec } from './fixtures.js';
 
 describe('KillerBoardState init', () => {
@@ -78,6 +81,35 @@ describe('BoardState (plain) construction', () => {
     const events = bs.removeCandidate(0, 0, 9);
     expect(events.some(e => e.trigger === Trigger.COUNT_DECREASED)).toBe(true);
     expect(bs.cands(0, 0).has(9)).toBe(false);
+  });
+});
+
+describe('Cage-aware rule hints never mention cages against a plain BoardState', () => {
+  it('HiddenSingle.asHints uses the non-cage explanation for a row unit', () => {
+    const bs = new BoardState();
+    for (let c = 1; c < 9; c++) bs.cands(0, c).delete(1);
+    const rowUid = bs.rowUnitId(0);
+    const ctx: RuleContext = { unit: bs.units[rowUid] ?? null, cell: null, board: bs, hint: Trigger.COUNT_HIT_ONE, hintDigit: 1 };
+    const rule = new HiddenSingle();
+    const hints = rule.asHints(ctx, [...rule.apply(ctx).eliminations]);
+    expect(hints).toHaveLength(1);
+    expect(hints[0]!.explanation.toLowerCase()).not.toContain('cage');
+    expect(hints[0]!.displayName.toLowerCase()).not.toContain('cage');
+  });
+
+  it('LockedCandidates.asHints uses the box-line explanation, never the cage-line one', () => {
+    const bs = new BoardState();
+    // Digit 5 in row 0 is confined to cols 0-2 (box 0) — forces a box-line elimination.
+    for (let c = 3; c < 9; c++) bs.cands(0, c).delete(5);
+    const rowUid = bs.rowUnitId(0);
+    const ctx: RuleContext = { unit: bs.units[rowUid] ?? null, cell: null, board: bs, hint: Trigger.COUNT_DECREASED, hintDigit: null };
+    const rule = new LockedCandidates();
+    const hints = rule.asHints(ctx, [...rule.apply(ctx).eliminations]);
+    expect(hints.length).toBeGreaterThan(0);
+    for (const hint of hints) {
+      expect(hint.displayName).toBe('Locked Candidates (Box-Line)');
+      expect(hint.explanation.toLowerCase()).not.toContain('cage');
+    }
   });
 });
 
