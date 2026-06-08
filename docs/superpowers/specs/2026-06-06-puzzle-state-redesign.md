@@ -14,7 +14,8 @@
 
 ```typescript
 interface PuzzleState {
-  readonly userGrid: number[][];
+  /** Null before /confirm (OCR review phase) — same object transitions in place via confirmPuzzle(). */
+  readonly userGrid: number[][] | null;
   readonly userRemovedCandidates: readonly [number, number, number][];
   readonly turns: readonly Turn[];
   readonly alwaysApplyRules: readonly string[];
@@ -33,6 +34,8 @@ interface KillerPuzzleState extends PuzzleState {
 ```
 
 **Hybrid killer** (killer with pre-given digits) is represented as `KillerPuzzleState` with `givenDigits !== null` — no new type needed.
+
+> **Note on `userGrid: number[][] | null`:** kept nullable (not narrowed away) because the OCR-review/pre-confirm phase is represented by the *same* `PuzzleState`/`KillerPuzzleState` object as the eventual playing state — `confirmPuzzle()` transitions it in place by populating `userGrid`, `goldenSolution`, and `turns`. Introducing a distinct pre-confirm review-state type was considered and rejected as out-of-scope churn: it would force every review-phase call site (`drawCageBorders`, `applyDraftLayout`, `validateCurrentReview`, etc.) to juggle two state types where one suffices today.
 
 **Future variants** (Big Apple, etc.) extend `PuzzleState` with their own constraint fields. Each adds a type guard to `namespace PuzzleState`. Existing callers are unaffected.
 
