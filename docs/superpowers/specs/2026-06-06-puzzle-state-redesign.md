@@ -36,13 +36,15 @@ interface KillerPuzzleState extends PuzzleState {
 
 **Future variants** (Big Apple, etc.) extend `PuzzleState` with their own constraint fields. Each adds a type guard to `namespace PuzzleState`. Existing callers are unaffected.
 
-### Removed: `autoRemovedCandidates`
+### Removed: `autoRemovedCandidates` — ✅ already shipped (`bb78a43`)
 
 `autoRemovedCandidates` is removed from `PuzzleState` entirely. It was a mutable side-channel accumulating rule-generated eliminations during step-by-step animation. Its removal is the primary correctness fix.
 
-### Added: `userRemovedCandidates`
+### Added: `userRemovedCandidates` — ✅ already shipped (`bb78a43`)
 
 User-eliminated candidates are now an explicit field on `PuzzleState`, maintained directly by `UserAction.apply()` alongside `userGrid` and `virtualCages`. Previously this was derived by replaying `turns` — an implicit O(n) dependency that made `buildEngine()` history-dependent.
+
+> **Status:** landed on `master` as a standalone precursor commit (`bb78a43: feat: replace autoRemovedCandidates with userRemovedCandidates on PuzzleState`) before this redesign's implementation branch was created. No remaining work here — `userRemovedCandidates` already exists on the flat `PuzzleState` and is exercised throughout `actions.ts`/`engine.ts`. It carries forward unchanged onto the base `PuzzleState` in the new hierarchy (§1 type hierarchy below).
 
 ### `turns` is history only
 
@@ -251,6 +253,8 @@ namespace PuzzleState {
   export function isKiller(state: PuzzleState): state is KillerPuzzleState
 }
 ```
+
+> **Status:** the predicate itself already shipped (`3706012: feat: add PuzzleState.isKiller as the canonical killer/classic predicate`) — but as a plain `boolean` (`state.puzzleType !== 'classic'`), since `KillerPuzzleState` doesn't exist yet to narrow to. Remaining work: once `KillerPuzzleState` exists (§1), widen `isKiller`'s return type to the `state is KillerPuzzleState` type guard shown above and remove the now-redundant `puzzleType` discriminant it currently reads.
 
 `isKiller` is used only inside the namespace. External callers never call it — they call a method that encapsulates the dispatch.
 
