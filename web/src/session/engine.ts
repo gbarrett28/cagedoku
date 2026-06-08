@@ -16,7 +16,7 @@
  *   from a clean slate each time.
  */
 
-import { KillerBoardState } from '../engine/boardState.js';
+import { BoardState, KillerBoardState } from '../engine/boardState.js';
 import { SolverEngine, KillerSolverEngine } from '../engine/solverEngine.js';
 import { defaultRules } from '../engine/rules/index.js';
 import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
@@ -28,8 +28,8 @@ import { dataToSpec, virtualCageKeyFromCage, solutionKey } from './specUtils.js'
 import { disableRuleForSession, isRuleDisabledForSession, hasTriggerMissBeenReported, markTriggerMissReported } from './store.js';
 import { submitRuleBugReport, submitTriggerMissReport } from '../image/trainingUpload.js';
 import { findTriggerMisses } from '../engine/triggerValidator.js';
-import { UserAction } from './types.js';
-import type { AutoMutation, BoardSnapshot, PuzzleState, Turn, VirtualCage } from './types.js';
+import { UserAction, PuzzleState } from './types.js';
+import type { AutoMutation, BoardSnapshot, Turn, VirtualCage } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Background trigger-miss validation
@@ -43,7 +43,7 @@ let _validationTimer: ReturnType<typeof setTimeout> | null = null;
  * state is checked (avoids stale or redundant reports during rapid interaction).
  */
 function scheduleTriggerValidation(
-  board: KillerBoardState,
+  board: BoardState,
   rules: readonly SolverRule[],
   golden: readonly (readonly number[])[],
   state: PuzzleState,
@@ -57,7 +57,7 @@ function scheduleTriggerValidation(
 }
 
 function runTriggerValidation(
-  board: KillerBoardState,
+  board: BoardState,
   rules: readonly SolverRule[],
   golden: readonly (readonly number[])[],
   state: PuzzleState,
@@ -139,7 +139,7 @@ export function userVirtualCages(state: PuzzleState): VirtualCage[] {
  * this function only contributes eliminations from explicit userGrid placements
  * that differ from what the engine would have deduced.
  */
-export function userEliminations(board: KillerBoardState, userGrid: number[][] | null): Elimination[] {
+export function userEliminations(board: BoardState, userGrid: number[][] | null): Elimination[] {
   if (userGrid === null) return [];
   const elims: Elimination[] = [];
   for (let r = 0; r < 9; r++) {
@@ -210,33 +210,14 @@ export function isUserCorrupted(state: PuzzleState): boolean {
 export function buildEngine(
   state: PuzzleState,
   { includeHints = false, skipSolve = false }: { includeHints?: boolean; skipSolve?: boolean } = {},
-): { board: KillerBoardState; engine: SolverEngine } {
+): { board: BoardState; engine: SolverEngine } {
   const spec = dataToSpec(state.specData);
-  const board = new KillerBoardState(spec, { includeVirtualCages: false });
-
-  // Apply user-eliminated cage solutions for real cages before any rules run.
-  for (let i = 0; i < state.cageStates.length; i++) {
-    const eliminated = state.cageStates[i]!.userEliminatedSolns;
-    if (eliminated.length === 0) continue;
-    const elimKeys = new Set(eliminated.map(solutionKey));
-    const solns = board.cageSolns[i]!;
-    solns.splice(0, Infinity, ...solns.filter(s => !elimKeys.has(solutionKey(s))));
-  }
-
-  // Re-add virtual cages — use state.virtualCages directly so that
-  // eliminatedSolns set by eliminateVirtualCageSolution are applied.
-  for (const vc of state.virtualCages) {
-    board.addVirtualCage(vc.cells, vc.total, vc.eliminatedSolns, {
-      ...(vc.negativeCells !== undefined && { negativeCells: vc.negativeCells }),
-      ...(vc.eliminatedDiffSolns !== undefined && { eliminatedDiffSolns: vc.eliminatedDiffSolns }),
-    });
-  }
 
   const _disabled = new Set(DISABLED_RULES);
   const allRules = defaultRules().filter(r => !_disabled.has(r.name));
-  const rules = state.puzzleType === 'classic'
-    ? allRules.filter(r => !r.killerOnly)
-    : allRules;
+  const rules = PuzzleState.isKiller(state)
+    ? allRules
+    : allRules.filter(r => !r.killerOnly);
   const alwaysApplySet = new Set(state.alwaysApplyRules);
 
   // Non-hint mode: only always-apply rules run.
@@ -253,30 +234,64 @@ export function buildEngine(
   const userCorrupted = isUserCorrupted(state);
   const activeGolden = userCorrupted ? null : state.goldenSolution;
 
-  const onViolation = activeGolden !== null
-    ? (ruleName: string, offending: readonly Elimination[]) => {
-        if (isRuleDisabledForSession(ruleName)) return;
-        disableRuleForSession(ruleName);
-        const stalledCandidates = Array.from({ length: 9 }, (_, r) =>
-          Array.from({ length: 9 }, (_, c) => [...board.cands(r, c)].sort((a, b) => a - b))
-        );
-        submitRuleBugReport({
-          ruleName,
-          offendingEliminations: offending.map(e => ({ cell: [e.cell[0], e.cell[1]] as [number, number], digit: e.digit })),
-          goldenSolution: activeGolden,
-          stalledCandidates,
-          puzzleType: state.puzzleType,
-          regions: spec.regions as number[][],
-          cageTotals: spec.cageTotals as number[][],
-        });
-      }
-    : null;
+  const makeOnViolation = (board: BoardState) =>
+    activeGolden !== null
+      ? (ruleName: string, offending: readonly Elimination[]) => {
+          if (isRuleDisabledForSession(ruleName)) return;
+          disableRuleForSession(ruleName);
+          const stalledCandidates = Array.from({ length: 9 }, (_, r) =>
+            Array.from({ length: 9 }, (_, c) => [...board.cands(r, c)].sort((a, b) => a - b))
+          );
+          submitRuleBugReport({
+            ruleName,
+            offendingEliminations: offending.map(e => ({ cell: [e.cell[0], e.cell[1]] as [number, number], digit: e.digit })),
+            goldenSolution: activeGolden,
+            stalledCandidates,
+            puzzleType: state.puzzleType,
+            regions: spec.regions as number[][],
+            cageTotals: spec.cageTotals as number[][],
+          });
+        }
+      : null;
 
-  const engine = new KillerSolverEngine(board, activeRules, {
-    hintRules,
-    goldenSolution: activeGolden,
-    onViolation,
-  });
+  const { board, engine }: { board: BoardState; engine: SolverEngine } = PuzzleState.isKiller(state)
+    ? (() => {
+        const board = new KillerBoardState(spec, { includeVirtualCages: false });
+
+        // Apply user-eliminated cage solutions for real cages before any rules run.
+        for (let i = 0; i < state.cageStates.length; i++) {
+          const eliminated = state.cageStates[i]!.userEliminatedSolns;
+          if (eliminated.length === 0) continue;
+          const elimKeys = new Set(eliminated.map(solutionKey));
+          const solns = board.cageSolns[i]!;
+          solns.splice(0, Infinity, ...solns.filter(s => !elimKeys.has(solutionKey(s))));
+        }
+
+        // Re-add virtual cages — use state.virtualCages directly so that
+        // eliminatedSolns set by eliminateVirtualCageSolution are applied.
+        for (const vc of state.virtualCages) {
+          board.addVirtualCage(vc.cells, vc.total, vc.eliminatedSolns, {
+            ...(vc.negativeCells !== undefined && { negativeCells: vc.negativeCells }),
+            ...(vc.eliminatedDiffSolns !== undefined && { eliminatedDiffSolns: vc.eliminatedDiffSolns }),
+          });
+        }
+
+        const engine = new KillerSolverEngine(board, activeRules, {
+          hintRules,
+          goldenSolution: activeGolden,
+          onViolation: makeOnViolation(board),
+        });
+        return { board, engine };
+      })()
+    : (() => {
+        const board = new BoardState();
+        const engine = new SolverEngine(board, activeRules, {
+          hintRules,
+          goldenSolution: activeGolden,
+          onViolation: makeOnViolation(board),
+        });
+        return { board, engine };
+      })();
 
   // Apply user placements and explicit candidate removals, then solve.
   // All three steps are wrapped in a single try/catch: any step can produce a
@@ -489,7 +504,7 @@ export function findLastConsistentTurnIdx(state: PuzzleState): number | null {
 // Snapshot helpers
 // ---------------------------------------------------------------------------
 
-function captureSnapshot(board: KillerBoardState): BoardSnapshot {
+function captureSnapshot(board: BoardState): BoardSnapshot {
   const candidates = Array.from({ length: 9 }, (_, r) =>
     Array.from({ length: 9 }, (__, c) => [...board.cands(r, c)].sort((a, b) => a - b)),
   );
