@@ -37,6 +37,63 @@ triggered rules to the queue.
 It is important to maintain as much sharing as possible between the autonomous and
 interactive modes in order to assure correctness of the interactive mode.
 
+### Board State Hierarchy
+
+`BoardState` (`web/src/engine/boardState.ts`) is the plain 9×9 sudoku skeleton — it
+needs no `PuzzleSpec` to construct, owns only the 27 ROW/COL/BOX `units`,
+`candidates`/`counts`/`unitVersions`, and `removeCandidate`'s row/col/box bookkeeping.
+It has no notion of cages: no `regions`, `cageSolns`, `linearSystem`, or `spec`.
+
+`KillerBoardState extends BoardState` adds every cage-related concept: `spec`,
+`regions`, `cageSolns`, `linearSystem`, CAGE `units` (id ≥ 27), `addVirtualCage`,
+`removeCageSolution`, and an `override removeCandidate` that additionally prunes cage
+solutions. Classic puzzles run on a plain `BoardState`; killer puzzles (and the
+one-shot OCR-validation/full-solve paths in `engine/index.ts`, which always receive a
+real `PuzzleSpec`) run on `KillerBoardState`.
+
+This split makes "classic has no cages" a structural fact enforced by the type
+system — but generic infrastructure (`SolverEngine`, `mrvBacktrack`, the rule
+contract) still needs to ask cage-shaped questions sometimes. Every such question is
+routed through one of two channels, so that **no consumer ever tests
+`instanceof KillerBoardState` to decide what to do** (the one exception —
+`candidatesFromBoard`'s display-data extraction — is documented below as the single
+deliberate exception):
+
+- **A virtual method on the board itself**, when the answer depends only on the board
+  (the board "knows what it is", the same template-method shape `removeCandidate`
+  already used for cage-solution pruning):
+  - `cageConstraints(): CageConstraints | null` — `KillerBoardState` builds
+    `{ cageOf, cageTotal, cageCells }` from `regions`/`spec.cageTotals`; plain
+    `BoardState` returns `null`. `mrvBacktrack` (`backtracker.ts`) calls this once and
+    degrades to pure row/col/box backtracking when it gets `null` — it never asks
+    what kind of board it has, the same way it already asks `board.cands(r, c)`.
+  - `protected _onCellDetermined(cell, val)` on `SolverEngine` — a no-op hook;
+    `KillerSolverEngine` overrides it to delegate to
+    `board.linearSystem.substituteCell`/`substituteLiveRows`. This replaced a
+    `_linearSystemActive` boolean flag that gated the same block inline — the virtual
+    hook makes "does this engine propagate through a `LinearSystem`" a property of
+    *which engine class you have*, not a runtime flag that could drift out of sync
+    with the board it was constructed against.
+- **The single canonical `PuzzleState.isKiller(state)` predicate**
+  (`session/types.ts`, a plain `boolean` — `state.puzzleType !== 'classic'`), consulted
+  once by `buildEngine` to decide which entire matching bundle to construct together:
+  `KillerBoardState` + `KillerSolverEngine` + the full rule list, or `BoardState` +
+  `SolverEngine` + `defaultRules().filter(r => !r.killerOnly)`. No other call site
+  re-derives "is this killer" from `state` or from `board`.
+
+**`KillerOnlyRule`** (`web/src/engine/rule.ts`) is the one place a runtime
+`instanceof KillerBoardState` narrow exists for rules — see Rule Contract below.
+
+**`candidatesFromBoard`** (`session/actions.ts`) is the one deliberate exception that
+*does* use `instanceof KillerBoardState` directly: it needs to decide whether the
+board carries cage display data (`regions`/`cageSolns`) at all, which is a structural
+question about the board's shape, not a "what kind of puzzle is this" dispatch — and
+`buildEngine`'s `isKiller`-driven construction already guarantees the two always agree.
+This replaced a `state.puzzleType === 'classic'` proxy test (with a
+"cage solutions are always empty (dummy spec)" comment) that was testing the wrong
+thing, because every board used to carry cage fields regardless of puzzle type — the
+synthetic-spec fiction this hierarchy split removes.
+
 ---
 
 ## TypeScript Array Conventions
@@ -54,7 +111,7 @@ This applies to every named array in `PuzzleSpec`, `BoardState`, and the engine:
 | `PuzzleSpec.borderX` | `boolean[][]` | `borderX[col][rowGap]` — wall between rows `rowGap` / `rowGap+1` in column `col` (shape 9×8) |
 | `PuzzleSpec.borderY` | `boolean[][]` | `borderY[colGap][row]` — wall between cols `colGap` / `colGap+1` in row `row` (shape 8×9) |
 | `BoardState.candidates` | `Set<number>[][]` | `candidates[row][col]` — remaining digit set |
-| `BoardState.regions` | `number[][]` | `regions[row][col]` — 0-based cage index |
+| `KillerBoardState.regions` | `number[][]` | `regions[row][col]` — 0-based cage index |
 | `Cell` (engine type) | `[number, number]` | `[row, col]` — 0-based |
 
 **Why the `[col][row]` comments in some source files are misleading:**
@@ -344,12 +401,27 @@ cells belong to the blue side and which to the green side. Chain cells are place
 rather than in `highlightCells`; `highlightCells` contains only the elimination
 targets (rendered yellow). See `CellColour` and `ColourGroup` in `web/src/engine/hint.ts`.
 
+**`KillerOnlyRule`** (`web/src/engine/rule.ts`) is an abstract base class for rules
+that require `KillerBoardState` (cage sums, cage solutions, the linear system —
+`deltaConstraint`, `linearElimination`, `sumPairConstraint`, `cageCandidateFilter`,
+`cageConfinement`, `cageIntersection`, `mustContain`, `mustContainOutie`,
+`solutionMapFilter`, `unitPartitionFilter`). It sets `readonly killerOnly = true` once
+(rather than each subclass repeating it), performs the one runtime
+`ctx.board instanceof KillerBoardState` narrow that the type system requires to expose
+`KillerBoardState`'s members, and hands subclasses a `KillerRuleContext` (whose `board`
+is typed `KillerBoardState`) through `applyKiller`/`asHintsKiller`. In practice this
+narrow is unreachable — `buildEngine` only ever constructs `killerOnly` rules with a
+`KillerBoardState` (via `PuzzleState.isKiller`) — but it is the codebase's single point
+of defense-in-depth for that invariant, exercised directly in `rule.test.ts` rather
+than relying on it never being hit.
+
 **Adding a new rule:**
 
 1. Create `web/src/engine/rules/<camelCaseName>.ts` — one class per file.
-2. Implement `SolverRule`.  Import types from `../types.js`, `../rule.js`, `../hint.js`.
-   Set `readonly killerOnly = true` if the rule requires cage constraints (e.g. sums,
-   cage solutions); set `readonly killerOnly = false` for classic-sudoku-compatible rules.
+2. Implement `SolverRule` directly for classic-compatible rules
+   (`readonly killerOnly = false`), or extend `KillerOnlyRule` (implementing
+   `applyKiller`/`asHintsKiller` against `KillerRuleContext`) for rules that require
+   cage constraints. Import types from `../types.js`, `../rule.js`, `../hint.js`.
 3. Add it to `defaultRules()` in `web/src/engine/rules/index.ts` at the right priority.
 4. Co-locate tests as `<camelCaseName>.test.ts` using `makeTrivialSpec()` from
    `web/src/engine/fixtures.ts`.
