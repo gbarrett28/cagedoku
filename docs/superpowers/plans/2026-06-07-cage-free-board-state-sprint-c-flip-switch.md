@@ -20,7 +20,7 @@
 
 `PuzzleState.isKiller` is the one canonical predicate every construction call site will consult (spec §2.5). It lives in a `namespace PuzzleState` immediately after the `PuzzleState` interface — the same relative position `namespace UserAction` already occupies relative to its type.
 
-- [ ] **Step 1: Change `PuzzleState` from a type-only import to a value import in `engine.test.ts`**
+- [x] **Step 1: Change `PuzzleState` from a type-only import to a value import in `engine.test.ts`**
 
 `PuzzleState.isKiller` is a namespace member — calling it requires importing `PuzzleState` as a value, not just a type (mirroring how `UserAction` is already imported as a value on the same line for `UserAction.applyToCages`).
 
@@ -35,7 +35,7 @@ import { UserAction, PuzzleState, type Turn, type VirtualCage, type EliminateCan
 
 (`PuzzleState` remains usable as a type everywhere it already is — TypeScript's declaration merging means a named import of an interface works as both a type and, once the namespace exists, a value.)
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Insert a new `describe` block directly after the `describe('userVirtualCages', ...)` block's closing `});` (currently line 141) and before the `// buildEngine` section comment (currently lines 143-145):
 ```typescript
@@ -90,12 +90,16 @@ describe('PuzzleState.isKiller', () => {
 describe('buildEngine', () => {
 ```
 
-- [ ] **Step 3: Run the test to verify it fails to compile**
+- [x] **Step 3: Run the test to verify it fails to compile**
+
+> **Plan defect found during execution:** the failure mode is a runtime `TypeError: Cannot read properties of undefined (reading 'isKiller')`, not a `tsc` compile error as the plan predicted. Vitest's esbuild transform doesn't type-check — `import { ..., PuzzleState, ... }` compiles fine as a value import of an interface-only symbol (erased to `undefined` at runtime); the type error `Property 'isKiller' does not exist on type 'typeof PuzzleState'` would only surface under `tsc --noEmit`. Either way the test fails red for the expected reason (no namespace exists yet) — just via a runtime exception instead of a compile error. Confirmed: 2/2 new cases failed with this `TypeError`, 38/40 total passed (the other 38 pre-existing tests unaffected).
 
 Run: `cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npx vitest run src/session/engine.test.ts`
 Expected: FAIL — TypeScript error similar to `Property 'isKiller' does not exist on type 'typeof PuzzleState'` (the interface has no namespace yet).
 
-- [ ] **Step 4: Add the `PuzzleState.isKiller` namespace**
+- [x] **Step 4: Add the `PuzzleState.isKiller` namespace**
+
+> Confirmed: anchor matched the actual `fixtureStalledCandidates` field/closing brace exactly (line numbers shifted by +1 from a one-line JSDoc difference, as expected for a living file).
 
 Open `web/src/session/types.ts`. Find the `PuzzleState` interface's closing brace (line 276):
 ```typescript
@@ -122,12 +126,14 @@ export namespace PuzzleState {
 // ---------------------------------------------------------------------------
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run: `cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npx vitest run src/session/engine.test.ts -t "isKiller"`
 Expected: PASS — both `isKiller` cases green.
 
-- [ ] **Step 6: Commit**
+> Confirmed: 2/2 passed.
+
+- [x] **Step 6: Commit**
 
 ```bash
 cd "C:\Users\geoff\PycharmProjects\killer_sudoku" && git add web/src/session/types.ts web/src/session/engine.test.ts && git commit -m "$(cat <<'EOF'
@@ -153,7 +159,7 @@ EOF
 
 Sprint A's blanket `\bBoardState\b → KillerBoardState` rename over-narrowed `classifyEliminations` and `findTriggerMisses` (and the file's `BoardState` import). Both functions touch only `board.cands()` and `RuleResult`/`RuleContext` shapes — no killer-only members. They must accept a plain `BoardState` because Sprint 3 of this plan makes `buildEngine` call `findTriggerMisses` (via `scheduleTriggerValidation` → `runTriggerValidation`) with a classic-puzzle's plain `BoardState`.
 
-- [ ] **Step 1: Widen the type-only `BoardState` import**
+- [x] **Step 1: Widen the type-only `BoardState` import**
 
 Open `web/src/engine/triggerValidator.ts`. Edit line 18:
 ```typescript
@@ -164,7 +170,7 @@ import type { KillerBoardState } from './boardState.js';
 import type { BoardState } from './boardState.js';
 ```
 
-- [ ] **Step 2: Widen `classifyEliminations`'s `board` parameter**
+- [x] **Step 2: Widen `classifyEliminations`'s `board` parameter**
 
 Edit line 68:
 ```typescript
@@ -175,7 +181,7 @@ Edit line 68:
   board: BoardState,
 ```
 
-- [ ] **Step 3: Widen `findTriggerMisses`'s `board` parameter**
+- [x] **Step 3: Widen `findTriggerMisses`'s `board` parameter**
 
 Edit line 109:
 ```typescript
@@ -186,12 +192,14 @@ Edit line 109:
   board: BoardState,
 ```
 
-- [ ] **Step 4: Run the type checker and the file's tests**
+- [x] **Step 4: Run the type checker and the file's tests**
+
+> Confirmed: `tsc --noEmit` clean; 10/10 tests in `triggerValidator.test.ts` passed unchanged (no test-file edits needed, as predicted).
 
 Run: `cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npx tsc --noEmit && npx vitest run src/engine/triggerValidator.test.ts`
 Expected: `tsc` exits 0; all tests in `triggerValidator.test.ts` pass unchanged — they construct `KillerBoardState` (assignable to the widened `BoardState` parameter, since `KillerBoardState extends BoardState`), so zero test-file edits are needed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd "C:\Users\geoff\PycharmProjects\killer_sudoku" && git add web/src/engine/triggerValidator.ts && git commit -m "$(cat <<'EOF'
@@ -219,7 +227,7 @@ This is the heart of the sprint. `buildEngine` currently always constructs `new 
 
 Four small helpers in this same file (`scheduleTriggerValidation`, `runTriggerValidation`, `userEliminations`, `captureSnapshot`) were over-narrowed to `KillerBoardState` by Sprint A's rename for the same reason as Task 2's `triggerValidator` functions — their bodies touch only `board.cands()`/`board.peerEliminations()`, base members. They must be widened back to `BoardState` so `buildEngine`'s classic branch can pass its plain `BoardState` through them without a type error.
 
-- [ ] **Step 1: Add board/engine class imports to `engine.test.ts`**
+- [x] **Step 1: Add board/engine class imports to `engine.test.ts`**
 
 Open `web/src/session/engine.test.ts`. Edit line 19 (directly after the `./types.js` import edited in Task 1):
 ```typescript
@@ -232,7 +240,7 @@ import { BoardState, KillerBoardState } from '../engine/boardState.js';
 import { SolverEngine, KillerSolverEngine } from '../engine/solverEngine.js';
 ```
 
-- [ ] **Step 2: Write the two failing tests**
+- [x] **Step 2: Write the two failing tests**
 
 Insert two new `it` blocks at the end of the `describe('buildEngine', ...)` block, directly before its closing `});` (currently lines 208-209):
 ```typescript
@@ -294,12 +302,16 @@ Insert two new `it` blocks at the end of the `describe('buildEngine', ...)` bloc
 });
 ```
 
-- [ ] **Step 3: Run the new tests to verify the classic one fails**
+- [x] **Step 3: Run the new tests to verify the classic one fails**
+
+> Confirmed exactly as predicted: killer test passed (regression guard), classic test failed at `expect(board).not.toBeInstanceOf(KillerBoardState)` with `expected KillerBoardState{ …(9) } to not be an instance of KillerBoardState`.
 
 Run: `cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npx vitest run src/session/engine.test.ts -t "constructs a"`
 Expected: the killer-puzzle test PASSES (current `buildEngine` already always builds `KillerBoardState`+`KillerSolverEngine`, so this is a regression guard, not a red test); the classic-puzzle test FAILS at `expect(board).not.toBeInstanceOf(KillerBoardState)` — `board` IS a `KillerBoardState` because `buildEngine` does not yet branch on puzzle type.
 
-- [ ] **Step 4: Widen the four over-narrowed helper signatures**
+- [x] **Step 4: Widen the four over-narrowed helper signatures**
+
+> All anchors matched the actual file content (with the expected off-by-one line-number shifts from intervening edits — e.g. the import was at line 18 not 19, `scheduleTriggerValidation` at line 45 not 46, etc.). One addition beyond the plan's literal text: line 19 (`import { SolverEngine, KillerSolverEngine } from '../engine/solverEngine.js';`) was already widened to include both names from earlier Sprint B work, so no edit was needed there. Applied all six remaining edits (boardState import, UserAction/PuzzleState value import, type-only import, and the four signatures) via `replace_content`.
 
 Open `web/src/session/engine.ts`.
 
@@ -370,12 +382,16 @@ function captureSnapshot(board: KillerBoardState): BoardSnapshot {
 function captureSnapshot(board: BoardState): BoardSnapshot {
 ```
 
-- [ ] **Step 5: Run the type checker to confirm the widened signatures still compile against existing callers**
+- [x] **Step 5: Run the type checker to confirm the widened signatures still compile against existing callers**
+
+> `tsc --noEmit` exits 0 with no output — confirmed the widened signatures compile cleanly against all existing callers (no type errors). The Step 3 test failure remains a runtime `expect` assertion failure, invisible to `tsc`.
 
 Run: `cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npx tsc --noEmit`
 Expected: still reports the one error from Step 3's new test (classic branch not yet implemented) plus possibly a "declared but its value is never read" warning is NOT expected — `BoardState` is now used by the widened signatures. No new errors beyond the test assertion failure (which is a runtime `expect` failure, not a compile error, so `tsc` itself should exit 0 at this point).
 
-- [ ] **Step 6: Restructure `buildEngine`'s construction to branch on `PuzzleState.isKiller`**
+- [x] **Step 6: Restructure `buildEngine`'s construction to branch on `PuzzleState.isKiller`**
+
+> Verified `BoardState`'s constructor takes no arguments (`constructor() { ... }` at boardState.ts:68) before applying — `new BoardState()` matches the plan's classic-branch construction. Widened the return-type annotation, then replaced the entire body verbatim via `replace_symbol_body` exactly as specified in the plan.
 
 Open `web/src/session/engine.ts`. First, widen the return-type annotation. Use serena's `find_symbol` to locate `buildEngine`, then `replace_content` (or a direct text edit) on the signature line:
 ```typescript
@@ -542,22 +558,47 @@ export function buildEngine(
 }
 ```
 
-- [ ] **Step 7: Run the type checker**
+- [x] **Step 7: Run the type checker**
+
+> Exits 0 with no output — confirmed clean. Both IIFE branches' `{ <Killer>BoardState; <Killer>SolverEngine }` pairs are assignable to the explicit `{ board: BoardState; engine: SolverEngine }` annotation with no cast needed, exactly as the plan's design intended.
 
 Run: `cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npx tsc --noEmit`
 Expected: exits 0 — no errors.
 
-- [ ] **Step 8: Run the new tests to verify they pass**
+- [x] **Step 8: Run the new tests to verify they pass**
 
 Run: `cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npx vitest run src/session/engine.test.ts`
 Expected: PASS — all tests in the file green, including both new `'constructs a ...'` cases.
 
-- [ ] **Step 9: Run the full unit suite**
+> **STOPPED HERE — substantive design conflict, not a stale-anchor defect. Requires explicit user decision before proceeding (CLAUDE.md "Test Specification Integrity" mandates approval before changing any test, and `superpowers:executing-plans` says to stop when the plan has a critical gap).**
+>
+> **Result:** Both new `'constructs a ...'` regression-guard tests now PASS (41/42 green). But a *third*, previously-green test broke:
+> `buildEngine regression — issue #148 > NakedSingle auto-places digit 6 at r7c7 (0-based r6c6) via linear-system chain` — `expected false to be true` (NakedSingle no longer auto-places digit 6).
+>
+> **Root cause:** This test (committed 3 days ago in `b7badec`, "fix(workQueue): deduplicate COUNT_HIT_ONE/TWO events per digit") sets `puzzleType: 'classic'` but builds its `PuzzleState` from `makeRowCageSpec()` — the same "nine fake row-cages, total=45 each" trick that `loadClassicDirect` uses (its comment literally says: *"Use 9 row-cages... so cage-based rules operate on correct row units for Classic puzzles"*, `actions.ts:165`). The test's documented mechanism — *"The linear system then eliminates 2 from (6,6) because placing 2 there would make the sum infeasible, leaving {6} as the only candidate"* — depends entirely on `KillerBoardState`'s combinatorial cage-solution-pruning machinery (`_pruneCageSolutions`/`cageSolns`/`LinearSystem`, `boardState.ts:255-282`), which runs as a structural part of the board (not a filterable "rule") and which a plain `BoardState` simply does not have.
+>
+> **Why this contradicts the spec's premise:** The cage-free spec asserts "classic puzzles don't need cage data" (motivation §, listing three concrete symptoms: cage-flavored hint text, `candidatesFromBoard` branching, synthetic-spec triplication) — but it never analyzed a *fourth* effect: `loadClassicDirect`'s row-cage spec also recruits `KillerBoardState`'s automatic combinatorial cage-pruning to give classic puzzles deduction power beyond plain row/col/box rules, and at least one regression test depends on exactly that power being present when `puzzleType === 'classic'`.
+>
+> **Mitigating fact — `loadClassicDirect` is dev/test-only:** It is called only from `window.__testLoad` (`main.ts:2624-2629`, gated by `import.meta.env.DEV` — stripped from production by Vite's dead-code elimination). The *production* classic-puzzle load path (`buildStateFromParseResult` ← OCR pipeline, `actions.ts:336-344`) instead falls back to a single trivial whole-grid cage (sum=405, no useful constraint) when `result.spec === null` for classic puzzles — so production classic puzzles do **not** actually receive the row-cage deduction boost today. This suggests the spec's premise may be correct for the *production* path, and that issue #148's test merely *happens* to reuse `loadClassicDirect`'s row-cage construction as a convenient way to set up the candidate state that exercises the `workQueue` COUNT_HIT_ONE/TWO dedup fix — not because classic puzzles are intended to rely on cage power.
+>
+> **What I did NOT do (and why):** I did not modify, skip, or delete this test — CLAUDE.md is explicit that assuming "the test is wrong" requires documenting the spec change and getting **explicit user approval** first; silently changing a test to make it pass is forbidden. I did not revert `buildEngine`'s restructure (the work is sound and matches the plan/spec design exactly — `tsc` is clean and 41/42 tests pass). I did not commit (the suite is currently red).
+>
+> **Resolution (explicit user approval, 2026-06-08):** Delete the test outright. User's reasoning: *"That cage-based machinery was making too many deductions for the classic case rather than relying on proper classic rules. Bugs like this one will turn up again quickly enough if they remain."* — i.e. the test was inadvertently asserting that classic puzzles benefit from `KillerBoardState`'s combinatorial cage-pruning, which is precisely the leaked-cage-power problem this redesign exists to remove from the interactive engine; keeping the assertion would re-encode the bug as a spec. The `describe('buildEngine regression — issue #148', ...)` block (lines 499-539, including its section-header comment) was deleted from `engine.test.ts` via `Edit`. `makeRowCageSpec` remains imported/used by the unrelated naked-pair hint test at the old line 584, so the import was left untouched.
+>
+> Note: the underlying `workQueue` COUNT_HIT_ONE/TWO per-digit-dedup fix (`b7badec`) remains in place and is not at risk — that fix is exercised generically by the engine's normal rule-trigger flow for *any* puzzle with multiple same-unit hidden singles across digits; it does not depend on this specific cage-powered classic scenario to stay correct. If a similar dedup regression resurfaces for classic puzzles now that they run on a plain `BoardState`, a fresh test can be written directly against that scenario — per the user's expectation that "bugs like this will turn up again quickly enough if they remain[ed]" [a justification for *not* preserving the over-powered assertion, not a prediction requiring follow-up].
+
+> Confirmed: `tsc --noEmit` clean (0 errors), `engine.test.ts` 41/41 green (down from 42 — issue #148's test deleted per the resolution above; both new `'constructs a ...'` regression-guard cases pass).
+
+- [x] **Step 9: Run the full unit suite**
+
+> Confirmed: 553/553 passing across 59 files (31.5s) — including `actions.test.ts` (48) and `tutorial.test.ts` (20), which exercise `buildEngine` end-to-end for both puzzle types via `loadClassicDirect`/cage flows, exactly as the plan anticipated. `loadClassicDirect`-loaded classic puzzles now correctly route through the plain-`BoardState` branch and still solve their puzzles (just without the unused cage overlay) — no regressions.
 
 Run: `cd "C:\Users\geoff\PycharmProjects\killer_sudoku\web" && npx vitest run`
 Expected: all tests pass. In particular `actions.test.ts`/`tutorial.test.ts` (which exercise `buildEngine` end-to-end for both puzzle types via `loadClassicDirect`/cage flows) stay green — `loadClassicDirect` is unchanged by this sprint (spec §3 row 3: it still synthesizes row-cage `specData`/`cageStates`, so `state.puzzleType === 'classic'` now routes through the new plain-`BoardState` branch instead of the old always-`KillerBoardState` branch, and the resulting board still solves the same puzzle — just without an unused `LinearSystem`/cage overlay).
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
+
+> Committed as `9e4f1d0` after a clean bronze gate run (553/553 tests, tsc clean). Updated the plan's provided commit message with an extra paragraph documenting the issue #148 test deletion and its rationale (the commit's diff includes that deletion, so the message needed to explain it — see the message body for the full justification, mirroring the resolution note above).
 
 ```bash
 cd "C:\Users\geoff\PycharmProjects\killer_sudoku" && git add web/src/session/engine.ts web/src/session/engine.test.ts && git commit -m "$(cat <<'EOF'
