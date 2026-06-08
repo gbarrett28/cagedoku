@@ -16,8 +16,8 @@
  *   from a clean slate each time.
  */
 
-import { BoardState } from '../engine/boardState.js';
-import { SolverEngine } from '../engine/solverEngine.js';
+import { BoardState, KillerBoardState } from '../engine/boardState.js';
+import { SolverEngine, KillerSolverEngine } from '../engine/solverEngine.js';
 import { defaultRules } from '../engine/rules/index.js';
 import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
 import type { Cell, Elimination, Placement, RuleStep } from '../engine/types.js';
@@ -28,8 +28,8 @@ import { dataToSpec, virtualCageKeyFromCage, solutionKey } from './specUtils.js'
 import { disableRuleForSession, isRuleDisabledForSession, hasTriggerMissBeenReported, markTriggerMissReported } from './store.js';
 import { submitRuleBugReport, submitTriggerMissReport } from '../image/trainingUpload.js';
 import { findTriggerMisses } from '../engine/triggerValidator.js';
-import { UserAction } from './types.js';
-import type { AutoMutation, BoardSnapshot, PuzzleState, Turn, VirtualCage } from './types.js';
+import { UserAction, PuzzleState } from './types.js';
+import type { AutoMutation, BoardSnapshot, Turn, VirtualCage } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Background trigger-miss validation
@@ -110,16 +110,11 @@ function runTriggerValidation(
 // ---------------------------------------------------------------------------
 
 /**
- * Returns all (row, col, digit) triples explicitly removed by the user via
- * 'eliminateCandidate' actions, minus any subsequently restored.
- * May include duplicates — the engine deduplicates via Set semantics.
+ * Returns all (row, col, digit) triples explicitly removed by the user.
+ * Read directly from the state snapshot — no turn replay needed.
  */
-export function userRemoved(state: PuzzleState): [number, number, number][] {
-  const removed: [number, number, number][] = [];
-  for (const turn of state.turns) {
-    UserAction.updateRemovedList(turn.action, removed);
-  }
-  return removed;
+export function userRemoved(state: PuzzleState): readonly [number, number, number][] {
+  return state.userRemovedCandidates;
 }
 
 /**
@@ -198,11 +193,11 @@ export function isUserCorrupted(state: PuzzleState): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * Builds a fresh BoardState + SolverEngine from the current PuzzleState.
+ * Builds a fresh KillerBoardState + SolverEngine from the current PuzzleState.
  *
  * Steps (mirrors Python's _build_engine):
  * 1. Parse PuzzleSpec from specData
- * 2. Create BoardState (includeVirtualCages=false to skip linear derivation)
+ * 2. Create KillerBoardState (includeVirtualCages=false to skip linear derivation)
  * 3. Re-add all virtual cages from turn history
  * 4. Apply user explicit candidate eliminations
  * 5. Apply user grid placements (eliminate all other candidates in the cell)
@@ -217,31 +212,12 @@ export function buildEngine(
   { includeHints = false, skipSolve = false }: { includeHints?: boolean; skipSolve?: boolean } = {},
 ): { board: BoardState; engine: SolverEngine } {
   const spec = dataToSpec(state.specData);
-  const board = new BoardState(spec, { includeVirtualCages: false });
-
-  // Apply user-eliminated cage solutions for real cages before any rules run.
-  for (let i = 0; i < state.cageStates.length; i++) {
-    const eliminated = state.cageStates[i]!.userEliminatedSolns;
-    if (eliminated.length === 0) continue;
-    const elimKeys = new Set(eliminated.map(solutionKey));
-    const solns = board.cageSolns[i]!;
-    solns.splice(0, Infinity, ...solns.filter(s => !elimKeys.has(solutionKey(s))));
-  }
-
-  // Re-add virtual cages — use state.virtualCages directly so that
-  // eliminatedSolns set by eliminateVirtualCageSolution are applied.
-  for (const vc of state.virtualCages) {
-    board.addVirtualCage(vc.cells, vc.total, vc.eliminatedSolns, {
-      ...(vc.negativeCells !== undefined && { negativeCells: vc.negativeCells }),
-      ...(vc.eliminatedDiffSolns !== undefined && { eliminatedDiffSolns: vc.eliminatedDiffSolns }),
-    });
-  }
 
   const _disabled = new Set(DISABLED_RULES);
   const allRules = defaultRules().filter(r => !_disabled.has(r.name));
-  const rules = state.puzzleType === 'classic'
-    ? allRules.filter(r => !r.killerOnly)
-    : allRules;
+  const rules = PuzzleState.isKiller(state)
+    ? allRules
+    : allRules.filter(r => !r.killerOnly);
   const alwaysApplySet = new Set(state.alwaysApplyRules);
 
   // Non-hint mode: only always-apply rules run.
@@ -258,31 +234,64 @@ export function buildEngine(
   const userCorrupted = isUserCorrupted(state);
   const activeGolden = userCorrupted ? null : state.goldenSolution;
 
-  const onViolation = activeGolden !== null
-    ? (ruleName: string, offending: readonly Elimination[]) => {
-        if (isRuleDisabledForSession(ruleName)) return;
-        disableRuleForSession(ruleName);
-        const stalledCandidates = Array.from({ length: 9 }, (_, r) =>
-          Array.from({ length: 9 }, (_, c) => [...board.cands(r, c)].sort((a, b) => a - b))
-        );
-        submitRuleBugReport({
-          ruleName,
-          offendingEliminations: offending.map(e => ({ cell: [e.cell[0], e.cell[1]] as [number, number], digit: e.digit })),
-          goldenSolution: activeGolden,
-          stalledCandidates,
-          puzzleType: state.puzzleType,
-          regions: spec.regions as number[][],
-          cageTotals: spec.cageTotals as number[][],
-        });
-      }
-    : null;
+  const makeOnViolation = (board: BoardState) =>
+    activeGolden !== null
+      ? (ruleName: string, offending: readonly Elimination[]) => {
+          if (isRuleDisabledForSession(ruleName)) return;
+          disableRuleForSession(ruleName);
+          const stalledCandidates = Array.from({ length: 9 }, (_, r) =>
+            Array.from({ length: 9 }, (_, c) => [...board.cands(r, c)].sort((a, b) => a - b))
+          );
+          submitRuleBugReport({
+            ruleName,
+            offendingEliminations: offending.map(e => ({ cell: [e.cell[0], e.cell[1]] as [number, number], digit: e.digit })),
+            goldenSolution: activeGolden,
+            stalledCandidates,
+            puzzleType: state.puzzleType,
+            regions: spec.regions as number[][],
+            cageTotals: spec.cageTotals as number[][],
+          });
+        }
+      : null;
 
-  const engine = new SolverEngine(board, activeRules, {
-    linearSystemActive: true,
-    hintRules,
-    goldenSolution: activeGolden,
-    onViolation,
-  });
+  const { board, engine }: { board: BoardState; engine: SolverEngine } = PuzzleState.isKiller(state)
+    ? (() => {
+        const board = new KillerBoardState(spec, { includeVirtualCages: false });
+
+        // Apply user-eliminated cage solutions for real cages before any rules run.
+        for (let i = 0; i < state.cageStates.length; i++) {
+          const eliminated = state.cageStates[i]!.userEliminatedSolns;
+          if (eliminated.length === 0) continue;
+          const elimKeys = new Set(eliminated.map(solutionKey));
+          const solns = board.cageSolns[i]!;
+          solns.splice(0, Infinity, ...solns.filter(s => !elimKeys.has(solutionKey(s))));
+        }
+
+        // Re-add virtual cages — use state.virtualCages directly so that
+        // eliminatedSolns set by eliminateVirtualCageSolution are applied.
+        for (const vc of state.virtualCages) {
+          board.addVirtualCage(vc.cells, vc.total, vc.eliminatedSolns, {
+            ...(vc.negativeCells !== undefined && { negativeCells: vc.negativeCells }),
+            ...(vc.eliminatedDiffSolns !== undefined && { eliminatedDiffSolns: vc.eliminatedDiffSolns }),
+          });
+        }
+
+        const engine = new KillerSolverEngine(board, activeRules, {
+          hintRules,
+          goldenSolution: activeGolden,
+          onViolation: makeOnViolation(board),
+        });
+        return { board, engine };
+      })()
+    : (() => {
+        const board = new BoardState();
+        const engine = new SolverEngine(board, activeRules, {
+          hintRules,
+          goldenSolution: activeGolden,
+          onViolation: makeOnViolation(board),
+        });
+        return { board, engine };
+      })();
 
   // Apply user placements and explicit candidate removals, then solve.
   // All three steps are wrapped in a single try/catch: any step can produce a
@@ -294,16 +303,7 @@ export function buildEngine(
     const placementElims = userEliminations(board, state.userGrid);
     if (placementElims.length > 0) engine.applyEliminations(placementElims);
 
-    // autoRemovedCandidates accumulate rule-generated eliminations across turns.
-    // If golden checks are active, filter out any stale golden violations before
-    // applying — these indicate a rule bug from a prior session that has since
-    // been suppressed; re-applying them would corrupt the board before rules run.
-    const autoRemoved = state.autoRemovedCandidates ?? [];
-    const safeAutoRemoved = activeGolden !== null
-      ? autoRemoved.filter(([r, c, d]) => activeGolden[r]?.[c] !== d)
-      : autoRemoved;
-
-    const removed = [...userRemoved(state), ...safeAutoRemoved];
+    const removed = userRemoved(state);
     if (removed.length > 0) {
       engine.applyEliminations(
         removed.map(([r, c, d]) => ({ cell: [r, c] as Cell, digit: d })),
@@ -432,9 +432,11 @@ export function recordTurn(
 export function rebuildUserGrid(state: PuzzleState): PuzzleState {
   if (state.userGrid === null) return state;
   const newGrid: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+  const removedList: [number, number, number][] = [];
 
   for (const turn of state.turns) {
     UserAction.applyToGrid(turn.action, newGrid);
+    UserAction.updateRemovedList(turn.action, removedList);
   }
 
   // Rebuild virtualCages from the add/remove turn history, but preserve any
@@ -449,7 +451,7 @@ export function rebuildUserGrid(state: PuzzleState): PuzzleState {
     return { ...vc, eliminatedSolns: existingElims.get(key) ?? vc.eliminatedSolns };
   });
 
-  return { ...state, userGrid: newGrid, virtualCages: mergedVCs };
+  return { ...state, userGrid: newGrid, virtualCages: mergedVCs, userRemovedCandidates: removedList };
 }
 
 // ---------------------------------------------------------------------------
@@ -515,7 +517,7 @@ function captureSnapshot(board: BoardState): BoardSnapshot {
 
 /**
  * Returns the next rule step to be animated, or null when no more rules fire.
- * Builds the engine from scratch (applying autoRemovedCandidates) and returns
+ * Builds the engine from scratch (applying userRemovedCandidates) and returns
  * the first consecutive group of mutations from the same rule.
  */
 export function getNextAutoApplyStep(state: PuzzleState): RuleStep | null {
@@ -577,7 +579,7 @@ export function getNextAutoApplyStep(state: PuzzleState): RuleStep | null {
 
 /**
  * Applies a RuleStep to the state: places digits in userGrid and accumulates
- * eliminations in autoRemovedCandidates so subsequent solver calls do not
+ * eliminations in userRemovedCandidates so subsequent solver calls do not
  * re-produce them.
  */
 export function applyAutoApplyStep(state: PuzzleState, step: RuleStep): PuzzleState {
@@ -586,8 +588,8 @@ export function applyAutoApplyStep(state: PuzzleState, step: RuleStep): PuzzleSt
   return {
     ...state,
     userGrid: newGrid,
-    autoRemovedCandidates: [
-      ...state.autoRemovedCandidates,
+    userRemovedCandidates: [
+      ...state.userRemovedCandidates,
       ...step.eliminations.map(e => [e.cell[0], e.cell[1], e.digit] as [number, number, number]),
     ],
   };

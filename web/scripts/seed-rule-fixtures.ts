@@ -14,7 +14,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { BoardState, SolverEngine, defaultRules, mrvBacktrack } from '../src/engine/index.js';
+import { KillerBoardState, SolverEngine, defaultRules, mrvBacktrack } from '../src/engine/index.js';
 import type { Cell, Elimination } from '../src/engine/types.js';
 import { dataToSpec } from '../src/session/specUtils.js';
 import type { RuleBugFixture } from '../src/engine/rules/ruleBugFixture.js';
@@ -83,7 +83,7 @@ const ISSUES: Array<{
 // Helpers
 // ---------------------------------------------------------------------------
 
-function seedGivenDigits(engine: SolverEngine, board: BoardState, givenDigits: number[][]): void {
+function seedGivenDigits(engine: SolverEngine, board: KillerBoardState, givenDigits: number[][]): void {
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
       const d = givenDigits[r]![c]!;
@@ -99,7 +99,7 @@ function seedGivenDigits(engine: SolverEngine, board: BoardState, givenDigits: n
   }
 }
 
-function snapshotCandidates(board: BoardState): number[][][] {
+function snapshotCandidates(board: KillerBoardState): number[][][] {
   return Array.from({ length: 9 }, (_, r) =>
     Array.from({ length: 9 }, (_, c) => [...board.cands(r, c)].sort((a, b) => a - b)));
 }
@@ -126,7 +126,7 @@ for (const issue of ISSUES) {
   // the user's auto-apply set was: NakedSingle, CellSolutionElimination,
   // CageCandidateFilter, SolutionMapFilter.
   const AUTO_APPLY = new Set(['NakedSingle', 'CellSolutionElimination', 'CageCandidateFilter', 'SolutionMapFilter']);
-  const board = new BoardState(spec, { includeVirtualCages: false });
+  const board = new KillerBoardState(spec, { includeVirtualCages: false });
   const autoRules = defaultRules().filter(r => AUTO_APPLY.has(r.name));
   const engine = new SolverEngine(board, autoRules);
   seedGivenDigits(engine, board, issue.givenDigits);

@@ -10,8 +10,10 @@
  * Fires as GLOBAL. Parameterised by maxN (default 2).
  */
 
+import type { KillerBoardState } from '../boardState.js';
 import type { HintResult } from '../hint.js';
-import type { RuleContext } from '../rule.js';
+import { KillerOnlyRule } from '../rule.js';
+import type { KillerRuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { cellLabel, typeUnitId, unitLabel, unitTypeLabel } from './_labels.js';
 
@@ -30,9 +32,8 @@ function combinations<T>(arr: T[], k: number): T[][] {
   return [...combinations(tail, k - 1).map(c => [head!, ...c]), ...combinations(tail, k)];
 }
 
-export class CageConfinement {
+export class CageConfinement extends KillerOnlyRule {
   readonly name = 'CageConfinement';
-  readonly killerOnly = true;
   readonly displayName = 'Cage Confinement';
   readonly description = `
 Cage Confinement — pigeonhole across cages covering N same-type units.
@@ -51,9 +52,9 @@ Guards:
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
 
-  constructor(private readonly maxN = 2) {}
+  constructor(private readonly maxN = 2) { super(); }
 
-  private _findAllMatches(board: RuleContext['board']): _ConfinementMatch[] {
+  private _findAllMatches(board: KillerBoardState): _ConfinementMatch[] {
     const matches: _ConfinementMatch[] = [];
     for (const kind of [UnitKind.ROW, UnitKind.COL, UnitKind.BOX] as UnitKind[]) {
       for (let d = 1; d <= 9; d++) {
@@ -63,7 +64,7 @@ Guards:
     return matches;
   }
 
-  private _search(board: RuleContext['board'], kind: UnitKind, d: number): _ConfinementMatch[] {
+  private _search(board: KillerBoardState, kind: UnitKind, d: number): _ConfinementMatch[] {
     // For each cage where d is essential, record which same-type unit IDs have d-candidates
     const cageInfo: Array<{cells: Cell[]; dUnitIds: Set<number>}> = [];
     for (const unit of board.units) {
@@ -109,7 +110,7 @@ Guards:
     return matches;
   }
 
-  apply(ctx: RuleContext): RuleResult {
+  applyKiller(ctx: KillerRuleContext): RuleResult {
     const seen = new Set<string>();
     const elims: Elimination[] = [];
     for (const m of this._findAllMatches(ctx.board)) {
@@ -121,7 +122,7 @@ Guards:
     return { ...emptyResult(), eliminations: elims };
   }
 
-  asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
+  asHintsKiller(ctx: KillerRuleContext, eliminations: readonly Elimination[]): HintResult[] {
     if (!eliminations.length) return [];
     const seen = new Set<string>();
     const hints: HintResult[] = [];

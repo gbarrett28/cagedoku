@@ -6,7 +6,7 @@
  * Usage: cd web && npx vite-node scripts/repro-bugs.ts
  */
 
-import { BoardState } from '../src/engine/boardState.js';
+import { KillerBoardState } from '../src/engine/boardState.js';
 import { SolverEngine } from '../src/engine/solverEngine.js';
 import { NakedSingle } from '../src/engine/rules/nakedSingle.js';
 import { HiddenSingle } from '../src/engine/rules/hiddenSingle.js';
@@ -33,11 +33,11 @@ function makeClassicSpec(): PuzzleSpec {
   };
 }
 
-function makeEngine(board: BoardState, ...rules: any[]): SolverEngine {
+function makeEngine(board: KillerBoardState, ...rules: any[]): SolverEngine {
   return new SolverEngine(board, rules, { linearSystemActive: false });
 }
 
-function seedDigits(engine: SolverEngine, board: BoardState, grid: number[][]): void {
+function seedDigits(engine: SolverEngine, board: KillerBoardState, grid: number[][]): void {
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
       const d = grid[r]![c]!;
@@ -53,21 +53,21 @@ function seedDigits(engine: SolverEngine, board: BoardState, grid: number[][]): 
   }
 }
 
-function getGolden(board: BoardState): number[][] | null {
+function getGolden(board: KillerBoardState): number[][] | null {
   const snap = board.candidates.map(row => row.map(cell => new Set(cell!)));
   const sol = mrvBacktrack(board);
   for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) board.candidates[r]![c]! = snap[r]![c]!;
   return sol;
 }
 
-function countUnsolved(board: BoardState): number {
+function countUnsolved(board: KillerBoardState): number {
   let n = 0;
   for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) if (board.cands(r, c).size > 1) n++;
   return n;
 }
 
 /** Check all hint rules simultaneously on the board, like the real hint engine does. */
-function checkAllHintRules(board: BoardState, golden: number[][] | null, hintRules: any[]): void {
+function checkAllHintRules(board: KillerBoardState, golden: number[][] | null, hintRules: any[]): void {
   for (const rule of hintRules) {
     const ctx = { board, unit: null, cell: null, hint: Trigger.GLOBAL, hintDigit: null };
     const result = rule.apply(ctx);
@@ -114,7 +114,7 @@ console.log('\n====== Bug #139 — Unique Rectangle ======');
 {
   // userGrid from bug report (has more solved cells than givenDigits)
   const userGrid = [[0,0,0,0,0,0,0,0,0],[7,0,6,4,5,0,0,3,0],[3,5,1,0,0,2,0,4,0],[0,0,2,6,1,0,4,0,0],[0,8,0,7,9,3,0,1,0],[0,0,0,0,2,4,0,0,0],[0,4,0,0,0,7,3,2,0],[0,0,3,0,4,0,1,0,0],[0,0,0,0,0,0,8,5,4]];
-  const board = new BoardState(makeClassicSpec(), { includeVirtualCages: false });
+  const board = new KillerBoardState(makeClassicSpec(), { includeVirtualCages: false });
   const engine = makeEngine(board, new NakedSingle());
   seedDigits(engine, board, userGrid);
   engine.solve();
@@ -159,7 +159,7 @@ console.log('\n====== Bug #141 — Naked Pair ======');
   // userGrid from bug report
   const userGrid = [[0,0,0,9,6,0,7,3,0],[0,0,0,1,0,3,4,0,0],[0,0,0,7,8,0,5,9,1],[0,0,3,5,0,0,0,4,0],[0,5,0,0,0,0,2,0,6],[0,0,1,2,0,6,0,0,3],[6,0,5,4,0,7,0,0,0],[9,0,0,0,1,0,0,0,0],[0,8,2,0,0,0,0,0,0]];
   const spec = makeClassicSpec();
-  const board = new BoardState(spec, { includeVirtualCages: false });
+  const board = new KillerBoardState(spec, { includeVirtualCages: false });
   const engine = makeEngine(board, new NakedSingle());
   seedDigits(engine, board, userGrid);
   engine.solve();
@@ -213,7 +213,7 @@ console.log('\n====== Bug #144 — X-Wing wrong cells ======');
 {
   // userGrid already has 2 Skyscraper hints applied
   const userGrid = [[5,6,0,3,0,4,7,2,0],[3,0,4,0,0,7,6,5,8],[0,0,7,0,6,5,3,4,0],[6,3,9,4,5,0,0,1,7],[7,0,5,9,0,1,4,3,6],[0,4,0,6,7,3,0,9,5],[4,0,6,0,1,9,5,7,3],[9,7,3,5,4,6,1,8,2],[0,5,0,7,3,0,9,6,4]];
-  const board = new BoardState(makeClassicSpec(), { includeVirtualCages: false });
+  const board = new KillerBoardState(makeClassicSpec(), { includeVirtualCages: false });
   const engine = makeEngine(board, new NakedSingle());
   seedDigits(engine, board, userGrid);
   engine.solve();

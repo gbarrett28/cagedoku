@@ -13,13 +13,13 @@
  */
 
 import type { HintResult } from '../hint.js';
-import type { RuleContext } from '../rule.js';
+import { KillerOnlyRule } from '../rule.js';
+import type { KillerRuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { cellLabel } from './_labels.js';
 
-export class SumPairConstraint {
+export class SumPairConstraint extends KillerOnlyRule {
   readonly name = 'SumPairConstraint';
-  readonly killerOnly = true;
   readonly displayName = 'Sum Pair Constraint';
   readonly description = `
 Sum Pair Constraint — candidate restriction from a + b = T.
@@ -38,7 +38,7 @@ Guards:
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED, Trigger.CELL_DETERMINED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX, UnitKind.CAGE]);
 
-  apply(ctx: RuleContext): RuleResult {
+  applyKiller(ctx: KillerRuleContext): RuleResult {
     // CELL_DETERMINED is handled by LinearSystem.substituteCell — skip here
     if (ctx.hint === Trigger.CELL_DETERMINED || !ctx.unit) return emptyResult();
     const board = ctx.board;
@@ -60,7 +60,7 @@ Guards:
     return { ...emptyResult(), eliminations: elims };
   }
 
-  asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
+  asHintsKiller(ctx: KillerRuleContext, eliminations: readonly Elimination[]): HintResult[] {
     if (!eliminations.length || ctx.hint === Trigger.CELL_DETERMINED || !ctx.unit) return [];
     const board = ctx.board;
     const hints: HintResult[] = [];

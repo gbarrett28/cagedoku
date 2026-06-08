@@ -35,6 +35,7 @@ import {
   stepAutoPlacement,
   undo,
   computeCandidates,
+  candidatesFromBoard,
   cycleCandidate,
   addVirtualCage,
   getSettingsData,
@@ -46,6 +47,7 @@ import {
   extractAndValidateSolution,
 } from './actions.js';
 import { findLastConsistentTurnIdx } from './engine.js';
+import { BoardState } from '../engine/index.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
 import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
 import { defaultRules } from '../engine/rules/index.js';
@@ -84,7 +86,7 @@ function makeClassicState(givenDigits: number[][]): PuzzleState {
     givenDigits,
     originalImageUrl: null,
     warpedImageUrl: null,
-    autoRemovedCandidates: [],
+    userRemovedCandidates: [],
   };
   setState(state);
   return state;
@@ -104,7 +106,7 @@ function makeKillerConfirmed(): PuzzleState {
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
-    autoRemovedCandidates: [],
+    userRemovedCandidates: [],
   };
   setState(pre);
   return confirmPuzzle(solveCurrentSpec().board);
@@ -137,6 +139,21 @@ describe('computeCandidates — classic mode (#13)', () => {
     const data = computeCandidates();
     const cell = data.cells[0]![0]!;
     expect(cell.candidates).toEqual([5]);
+  });
+});
+
+describe('candidatesFromBoard — instanceof KillerBoardState narrow', () => {
+  it('produces an empty cages array and solverCands === board.cands(r, c) for a plain BoardState', () => {
+    const givenDigits = makeClassicGivenDigits();
+    const state = makeClassicState(givenDigits);
+    const board = new BoardState();
+    const data = candidatesFromBoard(board, state);
+    expect(data.cages).toEqual([]);
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        expect(data.cells[r]![c]!.candidates).toEqual([...board.cands(r, c)].sort((a, b) => a - b));
+      }
+    }
   });
 });
 
@@ -466,7 +483,7 @@ describe('findLastConsistentTurnIdx — bug #30: wrong fallback when no matching
       givenDigits: null,
       originalImageUrl: null,
       warpedImageUrl: null,
-      autoRemovedCandidates: [],
+      userRemovedCandidates: [],
     };
 
     // With the bug: returns turns.length - 1 = 1 (the last unrelated turn).
@@ -506,7 +523,7 @@ describe('findLastConsistentTurnIdx — bug #30: wrong fallback when no matching
       givenDigits: null,
       originalImageUrl: null,
       warpedImageUrl: null,
-      autoRemovedCandidates: [],
+      userRemovedCandidates: [],
     };
 
     expect(findLastConsistentTurnIdx(state)).toBe(1);
@@ -541,7 +558,7 @@ describe('Bug #60 regression — addVirtualCage triggers auto-placements', () =>
       alwaysApplyRules: ['NakedSingle', ...DEFAULT_ALWAYS_APPLY_RULES],
       goldenSolution: null, puzzleType: 'killer',
       givenDigits: null, originalImageUrl: null, warpedImageUrl: null,
-      autoRemovedCandidates: [],
+      userRemovedCandidates: [],
     };
     setState(pre);
     baseState = confirmPuzzle(solveCurrentSpec().board);
@@ -606,6 +623,22 @@ describe('Bug #61 regression — cycleCandidate records an undoable turn', () =>
     const last = getState()!.turns[getState()!.turns.length - 1]!.action;
     expect(last.type).toBe('placeDigit');
     if (last.type === 'placeDigit') expect(last.source).toBe('given');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Undo bug regression — userRemovedCandidates must be restored after undo
+// ---------------------------------------------------------------------------
+
+describe('undo after eliminateCandidate restores userRemovedCandidates', () => {
+  it('undoing a cycleCandidate elimination removes the triple from userRemovedCandidates', () => {
+    makeKillerConfirmed();
+
+    cycleCandidate(1, 1, 5); // eliminate digit 5 from r1c1 (0-based: row 0, col 0)
+    expect(getState()!.userRemovedCandidates).toContainEqual([0, 0, 5]);
+
+    undo();
+    expect(getState()!.userRemovedCandidates).not.toContainEqual([0, 0, 5]);
   });
 });
 
@@ -727,7 +760,7 @@ describe('saveSettingsData', () => {
       givenDigits: null as number[][] | null,
       originalImageUrl: null as string | null,
       warpedImageUrl: null as string | null,
-      autoRemovedCandidates: [] as const,
+      userRemovedCandidates: [] as const,
     };
     setState(pre);
 
@@ -783,7 +816,7 @@ describe('getHints — Rewind on wrong candidate elimination', () => {
       givenDigits: null,
       originalImageUrl: null,
       warpedImageUrl: null,
-      autoRemovedCandidates: [],
+      userRemovedCandidates: [],
     };
     setState(pre);
     const { board } = solveCurrentSpec();

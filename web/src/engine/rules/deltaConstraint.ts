@@ -9,13 +9,13 @@
  */
 
 import type { HintResult } from '../hint.js';
-import type { RuleContext } from '../rule.js';
+import { KillerOnlyRule } from '../rule.js';
+import type { KillerRuleContext, RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { cellLabel } from './_labels.js';
 
-export class DeltaConstraint {
+export class DeltaConstraint extends KillerOnlyRule {
   readonly name = 'DeltaConstraint';
-  readonly killerOnly = true;
   readonly displayName = 'Delta Constraint';
   readonly description = `
 Delta Constraint — candidate restriction from p − q = δ.
@@ -50,7 +50,7 @@ Guards:
     return elims;
   }
 
-  apply(ctx: RuleContext): RuleResult {
+  applyKiller(ctx: KillerRuleContext): RuleResult {
     if (!ctx.unit) return emptyResult();
     const elims: Elimination[] = [];
     const seen = new Set<string>();
@@ -66,7 +66,7 @@ Guards:
     return { ...emptyResult(), eliminations: elims };
   }
 
-  asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
+  asHintsKiller(ctx: KillerRuleContext, eliminations: readonly Elimination[]): HintResult[] {
     if (!eliminations.length || !ctx.unit) return [];
     const hints: HintResult[] = [];
     const seen = new Set<string>();

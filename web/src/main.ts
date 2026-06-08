@@ -1496,6 +1496,10 @@ async function handleCellEntry(digit: number): Promise<void> {
         };
 
         let state = enterCellStep(selectedCell.row, selectedCell.col, digit);
+        // Save the pre-animation userRemovedCandidates so animation-only eliminations
+        // (accumulated by applyAutoApplyStep) can be discarded at cleanup without
+        // losing candidates the user manually eliminated before this animation started.
+        const preAnimationRemoved = state.userRemovedCandidates;
         currentState = state;
         animRefresh(currentState);
         updateUndoButton(state);
@@ -1524,12 +1528,13 @@ async function handleCellEntry(digit: number): Promise<void> {
           animRefresh(currentState);
         }
         // Final cleanup after all steps (or fast-forward drain).
-        // Commit the animation result to the global store (auto-placed digits in userGrid)
-        // and clear the transient autoRemovedCandidates before the final full-solve refresh.
+        // Commit the auto-placed digits in userGrid and restore userRemovedCandidates
+        // to the pre-animation snapshot, discarding the transient animation-only
+        // eliminations (buildEngine's full-solve pass will recompute them).
         hideHintPill(el('hint-pill'));
         hintHighlightCells = new Set();
         hintElimCells = new Set();
-        const finalState: PuzzleState = { ...currentState, autoRemovedCandidates: [] };
+        const finalState: PuzzleState = { ...currentState, userRemovedCandidates: preAnimationRemoved };
         setState(finalState);
         currentState = finalState;
         refreshDisplay();

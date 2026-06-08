@@ -18,7 +18,7 @@ export interface DiffSolution {
 /**
  * Enumerate all sets of n distinct digits > m whose elements sum to v.
  *
- * Mirrors Python's sol_sums(). Used by BoardState to populate cage_solns and
+ * Mirrors Python's sol_sums(). Used by KillerBoardState to populate cage_solns and
  * by the LinearSystem for virtual cage derivation.
  *
  * @param n    Number of cells in the cage.

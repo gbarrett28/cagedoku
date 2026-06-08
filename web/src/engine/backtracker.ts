@@ -33,6 +33,16 @@ const PEERS: readonly (readonly Cell[])[][] = Array.from({length: 9}, (_, r) =>
   )
 );
 
+/**
+ * Cage-sum data for mrvBacktrack's validity check — built by
+ * KillerBoardState.cageConstraints(); plain BoardState has none (null).
+ */
+export interface CageConstraints {
+  readonly cageOf: number[][];
+  readonly cageTotal: ReadonlyMap<number, number>;
+  readonly cageCells: ReadonlyMap<number, readonly Cell[]>;
+}
+
 // ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
@@ -40,26 +50,18 @@ const PEERS: readonly (readonly Cell[])[][] = Array.from({length: 9}, (_, r) =>
 /**
  * Find a solution via MRV backtracking from a partially-solved BoardState.
  *
- * Extracts cage constraints, copies current candidate sets, and searches for
- * a valid completion. Forward checking keeps the branching factor small.
+ * Asks the board for its cage constraints (null for a plain classic board —
+ * search() then degrades to pure row/col/box backtracking), copies current
+ * candidate sets, and searches for a valid completion. Forward checking keeps
+ * the branching factor small.
  *
  * Returns a 9×9 grid of placed digits, or null if unsolvable from this state.
  */
 export function mrvBacktrack(board: BoardState): number[][] | null {
-  const cageOf  = Array.from({length: 9}, () => new Array<number>(9).fill(0));
-  const cageTotal = new Map<number, number>();
-  const cageCells = new Map<number, Cell[]>();
-
-  for (let r = 0; r < 9; r++) {
-    for (let c = 0; c < 9; c++) {
-      const cid = board.spec.regions[r]![c]!; // 1-based
-      cageOf[r]![c] = cid;
-      if (!cageCells.has(cid)) cageCells.set(cid, []);
-      cageCells.get(cid)!.push([r, c] as Cell);
-      const t = board.spec.cageTotals[r]![c]!;
-      if (t !== 0) cageTotal.set(cid, t);
-    }
-  }
+  const constraints = board.cageConstraints();
+  const cageOf: number[][] = constraints?.cageOf ?? Array.from({length: 9}, () => new Array<number>(9).fill(0));
+  const cageTotal: ReadonlyMap<number, number> = constraints?.cageTotal ?? new Map();
+  const cageCells: ReadonlyMap<number, readonly Cell[]> = constraints?.cageCells ?? new Map();
 
   const cands: Set<number>[][] = Array.from({length: 9}, (_, r) =>
     Array.from({length: 9}, (__, c) => new Set(board.cands(r, c))));
@@ -113,8 +115,8 @@ function gridValid(grid: number[][]): boolean {
 function cageValid(
   cands: Set<number>[][],
   cid: number,
-  cageTotal: Map<number, number>,
-  cageCells: Map<number, Cell[]>,
+  cageTotal: ReadonlyMap<number, number>,
+  cageCells: ReadonlyMap<number, readonly Cell[]>,
 ): boolean {
   const total = cageTotal.get(cid);
   if (total === undefined) return true;
@@ -149,8 +151,8 @@ function assign(
   c: number,
   d: number,
   cageOf: number[][],
-  cageTotal: Map<number, number>,
-  cageCells: Map<number, Cell[]>,
+  cageTotal: ReadonlyMap<number, number>,
+  cageCells: ReadonlyMap<number, readonly Cell[]>,
 ): boolean {
   cands[r]![c] = new Set([d]);
   const queue: Array<[number, number, number]> = [[r, c, d]];
@@ -186,8 +188,8 @@ const MAX_BACKTRACK_NODES = 100_000;
 function search(
   cands: Set<number>[][],
   cageOf: number[][],
-  cageTotal: Map<number, number>,
-  cageCells: Map<number, Cell[]>,
+  cageTotal: ReadonlyMap<number, number>,
+  cageCells: ReadonlyMap<number, readonly Cell[]>,
   counter: { n: number },
 ): number[][] | null {
   if (++counter.n > MAX_BACKTRACK_NODES) return null;

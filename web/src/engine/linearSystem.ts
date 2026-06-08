@@ -64,7 +64,7 @@ type SparseRow = Map<string, Frac>;
 /**
  * A cage derived from the linear system.
  *
- * `precomputedSolns === null` → `BoardState` calls `solSums` at construction time.
+ * `precomputedSolns === null` → `KillerBoardState` calls `solSums` at construction time.
  * `precomputedSolns !== null` → use the provided list directly (non-burb derivation).
  */
 export interface VirtualCage {

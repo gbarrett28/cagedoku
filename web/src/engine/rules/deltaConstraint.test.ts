@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { DeltaConstraint } from './deltaConstraint.js';
 import type { RuleContext } from '../rule.js';
 import { cellKey, Trigger } from '../types.js';
@@ -12,7 +12,7 @@ import { makeTrivialSpec } from '../fixtures.js';
 
 describe('DeltaConstraint', () => {
   it('narrows candidates using an injected delta pair (0,0)-(0,1) delta=2', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     bs.candidates[0]![0]! = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     bs.candidates[0]![1]! = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
@@ -56,7 +56,7 @@ describe('DeltaConstraint', () => {
   });
 
   it('asHints: returns a hint with correct shape for a delta pair', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     bs.candidates[0]![0]! = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     bs.candidates[0]![1]! = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
 

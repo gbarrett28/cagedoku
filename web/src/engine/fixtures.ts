@@ -46,13 +46,13 @@ export function makeTrivialSpec(): PuzzleSpec {
 }
 
 /**
- * Return a PuzzleSpec where BoardState cells (0,0) and (0,1) form one cage.
+ * Return a PuzzleSpec where KillerBoardState cells (0,0) and (0,1) form one cage.
  *
  * All other cells remain as single-cell cages.
  * Cage total = 8 (KNOWN_SOLUTION[0][0] + KNOWN_SOLUTION[0][1] = 5 + 3).
  *
  * Border removal: borderX[col=0][rowGap=0] = false removes the wall between
- * validation (col=0, row=0) and (col=0, row=1), which equals BoardState cells
+ * validation (col=0, row=0) and (col=0, row=1), which equals KillerBoardState cells
  * (0,0) and (0,1).
  */
 export function makeTwoCellCageSpec(): PuzzleSpec {
@@ -153,7 +153,7 @@ export function makeTrivialBorderY(): boolean[][] {
 }
 
 /**
- * Return a PuzzleSpec where BoardState cells (0,0), (0,1), (0,2) form one cage.
+ * Return a PuzzleSpec where KillerBoardState cells (0,0), (0,1), (0,2) form one cage.
  *
  * All other cells remain as single-cell cages.
  * Cage total = 12 (KNOWN_SOLUTION[0][0]+[0][1]+[0][2] = 5+3+4).

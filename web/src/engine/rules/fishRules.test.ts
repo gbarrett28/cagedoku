@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { XWing } from './xWing.js';
 import { Swordfish } from './swordfish.js';
 import { Jellyfish } from './jellyfish.js';
@@ -11,19 +11,19 @@ import type { RuleContext } from '../rule.js';
 import { Trigger } from '../types.js';
 import { makeTrivialSpec } from '../fixtures.js';
 
-function globalCtx(bs: BoardState): RuleContext {
+function globalCtx(bs: KillerBoardState): RuleContext {
   return { unit: null, cell: null, board: bs, hint: Trigger.GLOBAL, hintDigit: null };
 }
 
 /** Clear digit d from every cell, then add it back only at the given (r,c) pairs. */
-function setDigitCells(bs: BoardState, d: number, cells: [number, number][]): void {
+function setDigitCells(bs: KillerBoardState, d: number, cells: [number, number][]): void {
   for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.cands(r, c).delete(d);
   for (const [r, c] of cells) bs.cands(r, c).add(d);
 }
 
 describe('XWing', () => {
   it('row variant: eliminates digit from cover-column cells outside the two base rows', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     // Digit 3: rows 0 and 4 have it in exactly columns 2 and 7
     setDigitCells(bs, 3, [[0, 2], [0, 7], [4, 2], [4, 7], [2, 2], [6, 7]]);
 
@@ -35,7 +35,7 @@ describe('XWing', () => {
   });
 
   it('column variant: eliminates digit from cover-row cells outside the two base columns', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     // Digit 5: cols 1 and 6 have it in exactly rows 2 and 7
     setDigitCells(bs, 5, [[2, 1], [7, 1], [2, 6], [7, 6], [3, 1], [5, 6]]);
 
@@ -47,7 +47,7 @@ describe('XWing', () => {
 
   it('asHints: highlightCells contains only the 4 pivot cells, not elimination targets (issue #144)', () => {
     // Regression for bug #144: elimination cells must not appear in highlightCells.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     setDigitCells(bs, 3, [[0, 2], [0, 7], [4, 2], [4, 7], [2, 2], [6, 7]]);
     const ctx = globalCtx(bs);
     const rule = new XWing();
@@ -64,7 +64,7 @@ describe('XWing', () => {
   });
 
   it('returns empty when the two rows do not share the same column pair', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     // Row 0: d in cols 2,7; Row 4: d in cols 3,8 — different column sets
     setDigitCells(bs, 3, [[0, 2], [0, 7], [4, 3], [4, 8]]);
     expect(new XWing().apply(globalCtx(bs)).eliminations).toHaveLength(0);
@@ -73,7 +73,7 @@ describe('XWing', () => {
   it('near-miss: only row has d in 3 cols → size=3 fails cols.size===2 guard → no X-Wing', () => {
     // Only row 0 has d (in cols 1, 4, 7 — size=3 > 2). Row-variant guard cols.size===2 fails.
     // Each col has d in exactly 1 row → column-variant also finds nothing.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     setDigitCells(bs, 4, [[0, 1], [0, 4], [0, 7]]);
     expect(new XWing().apply(globalCtx(bs)).eliminations.filter(e => e.digit === 4)).toHaveLength(0);
   });
@@ -81,7 +81,7 @@ describe('XWing', () => {
 
 describe('Swordfish', () => {
   it('row variant: eliminates digit from cover columns outside the three base rows', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     // Digit 2 in rows 0,3,6 covering exactly cols 1,4,7
     setDigitCells(bs, 2, [
       [0, 1], [0, 4],       // row 0: cols 1,4
@@ -101,7 +101,7 @@ describe('Swordfish', () => {
     // Rows 0,3,6 each qualify (sizes 2,2,3) but their union is {1,2,3,4,5} — size=5 > 3.
     // Row-variant guard coverCols.size===3 fails for the only possible triple.
     // Only 2 cols (1 and 3) appear in 2 rows each; the rest appear in 1 row → no qualifying col-triple.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     setDigitCells(bs, 6, [
       [0, 1], [0, 2],
       [3, 3], [3, 4],
@@ -113,7 +113,7 @@ describe('Swordfish', () => {
 
 describe('Swordfish.asHints', () => {
   it('returns a hint with correct shape when swordfish pattern exists', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     setDigitCells(bs, 2, [
       [0, 1], [0, 4],
       [3, 1], [3, 7],
@@ -136,7 +136,7 @@ describe('Swordfish.asHints', () => {
 describe('Jellyfish', () => {
   it('row variant: eliminates digit from cover columns outside the four base rows', () => {
 
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     // Digit 7 in rows 0,2,5,7 covering exactly cols 1,3,6,8
     setDigitCells(bs, 7, [
       [0, 1], [0, 3],     // row 0: cols 1,3
@@ -158,7 +158,7 @@ describe('Jellyfish', () => {
     // Rows 0,2,5,7 each qualify (size=2) but their union is {1,2,3,4,5,6} — size=6 > 4.
     // Row-variant guard coverCols.size===4 fails for the only possible quad.
     // Only 2 cols (1 and 5) appear in 2 rows each → column-variant cannot form a qualifying quad.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     setDigitCells(bs, 8, [
       [0, 1], [0, 2],
       [2, 3], [2, 4],
@@ -169,7 +169,7 @@ describe('Jellyfish', () => {
   });
 
   it('asHints: returns a hint with correct shape when jellyfish pattern exists', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     setDigitCells(bs, 7, [
       [0, 1], [0, 3],
       [2, 1], [2, 6],

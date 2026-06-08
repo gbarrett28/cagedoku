@@ -9,7 +9,8 @@
  */
 
 import type { HintResult } from '../hint.js';
-import type { RuleContext } from '../rule.js';
+import { KillerOnlyRule } from '../rule.js';
+import type { KillerRuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { cellLabel, unitLabel } from './_labels.js';
 
@@ -20,9 +21,8 @@ interface _Match {
   eliminations: Elimination[];
 }
 
-export class CageIntersection {
+export class CageIntersection extends KillerOnlyRule {
   readonly name = 'CageIntersection';
-  readonly killerOnly = true;
   readonly displayName = 'Cage Intersection';
   readonly description = `
 Cage Intersection — cage must-contain digit confined to one unit.
@@ -41,7 +41,7 @@ Guards:
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED, Trigger.SOLUTION_PRUNED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.CAGE]);
 
-  private _iterMatches(ctx: RuleContext): _Match[] {
+  private _iterMatches(ctx: KillerRuleContext): _Match[] {
     if (!ctx.unit?.distinctDigits) return [];
     const board = ctx.board;
     const cageCells = ctx.unit.cells as Cell[];
@@ -78,7 +78,7 @@ Guards:
     return matches;
   }
 
-  apply(ctx: RuleContext): RuleResult {
+  applyKiller(ctx: KillerRuleContext): RuleResult {
     const seen = new Set<string>();
     const elims: Elimination[] = [];
     for (const m of this._iterMatches(ctx)) {
@@ -90,7 +90,7 @@ Guards:
     return { ...emptyResult(), eliminations: elims };
   }
 
-  asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
+  asHintsKiller(ctx: KillerRuleContext, eliminations: readonly Elimination[]): HintResult[] {
     if (!eliminations.length) return [];
     const seen = new Set<string>();
     const hints: HintResult[] = [];

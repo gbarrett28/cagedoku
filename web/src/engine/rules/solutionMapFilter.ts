@@ -10,7 +10,8 @@
  */
 
 import type { HintResult } from '../hint.js';
-import type { RuleContext } from '../rule.js';
+import { KillerOnlyRule } from '../rule.js';
+import type { KillerRuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { cellLabel } from './_labels.js';
 
@@ -36,9 +37,8 @@ function perCellPossible(
   return result;
 }
 
-export class SolutionMapFilter {
+export class SolutionMapFilter extends KillerOnlyRule {
   readonly name = 'SolutionMapFilter';
-  readonly killerOnly = true;
   readonly displayName = 'Solution Map Filter';
   readonly description = `
 Solution Map Filter — per-cell feasibility filter for cage solutions.
@@ -56,7 +56,7 @@ Guards:
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED, Trigger.SOLUTION_PRUNED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.CAGE]);
 
-  apply(ctx: RuleContext): RuleResult {
+  applyKiller(ctx: KillerRuleContext): RuleResult {
     if (!ctx.unit?.distinctDigits) return emptyResult();
     const board = ctx.board;
     const cageIdx = ctx.unit.unitId - 27;
@@ -95,7 +95,7 @@ Guards:
     return { ...emptyResult(), eliminations: elims };
   }
 
-  asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
+  asHintsKiller(ctx: KillerRuleContext, eliminations: readonly Elimination[]): HintResult[] {
     if (!eliminations.length || !ctx.unit) return [];
     const board = ctx.board;
     const cageIdx = ctx.unit.unitId - 27;

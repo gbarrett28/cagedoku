@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { BoardState } from './boardState.js';
+import { KillerBoardState } from './boardState.js';
 import { SolverEngine } from './solverEngine.js';
 import { makeTrivialSpec } from './fixtures.js';
 import { KNOWN_SOLUTION } from './fixtures.js';
@@ -23,7 +23,7 @@ import type { Cell } from './types.js';
 // ---------------------------------------------------------------------------
 
 /** Remove all candidates except `keep` from board cell (r, c) via a no-rule engine. */
-function makeSingleton(board: BoardState, r: number, c: number, keep: number): void {
+function makeSingleton(board: KillerBoardState, r: number, c: number, keep: number): void {
   const engine = new SolverEngine(board, [], {});
   const toRemove = [...board.cands(r, c)].filter(d => d !== keep);
   engine.applyEliminations(toRemove.map(d => ({ cell: [r, c] as Cell, digit: d })));
@@ -50,7 +50,7 @@ function stubGlobalRule(name: string, eliminations: Array<{ cell: Cell; digit: n
 
 describe('findTriggerMisses — misses', () => {
   it('detects a NakedSingle miss when a singleton cell has peers still carrying the digit', () => {
-    const board = new BoardState(makeTrivialSpec());
+    const board = new KillerBoardState(makeTrivialSpec());
     // Make [0,0] a singleton {5}; all peers in row 0 / col 0 / box 0 still have {1..9}.
     makeSingleton(board, 0, 0, 5);
 
@@ -65,7 +65,7 @@ describe('findTriggerMisses — misses', () => {
   });
 
   it('returns empty misses after a full solve (no remaining actionable eliminations)', () => {
-    const board = new BoardState(makeTrivialSpec());
+    const board = new KillerBoardState(makeTrivialSpec());
     const rules = [new NakedSingle()];
     new SolverEngine(board, rules, {}).solve();
 
@@ -74,7 +74,7 @@ describe('findTriggerMisses — misses', () => {
   });
 
   it('returns empty misses when the rule result has only already-absent digits', () => {
-    const board = new BoardState(makeTrivialSpec());
+    const board = new KillerBoardState(makeTrivialSpec());
     makeSingleton(board, 0, 0, 5); // incidentally removes 9
 
     const staleRule = stubGlobalRule('StaleRule', [{ cell: [0, 0] as Cell, digit: 9 }]);
@@ -83,7 +83,7 @@ describe('findTriggerMisses — misses', () => {
   });
 
   it('detects a miss when a valid (non-golden) elimination has not been applied', () => {
-    const board = new BoardState(makeTrivialSpec());
+    const board = new KillerBoardState(makeTrivialSpec());
     const validRule = stubGlobalRule('ValidRule', [{ cell: [0, 0] as Cell, digit: 9 }]);
 
     const { misses } = findTriggerMisses(board, [validRule], KNOWN_SOLUTION);
@@ -93,7 +93,7 @@ describe('findTriggerMisses — misses', () => {
   });
 
   it('returns empty misses and no violations when no golden solution is provided and digit is present', () => {
-    const board = new BoardState(makeTrivialSpec());
+    const board = new KillerBoardState(makeTrivialSpec());
     // Without golden we cannot classify digit 5 as a violation — it is reported as a miss.
     const rule = stubGlobalRule('AnyRule', [{ cell: [0, 0] as Cell, digit: 5 }]);
 
@@ -103,7 +103,7 @@ describe('findTriggerMisses — misses', () => {
   });
 
   it('handles unit-scoped rules: calls the rule for every matching unit', () => {
-    const board = new BoardState(makeTrivialSpec());
+    const board = new KillerBoardState(makeTrivialSpec());
     let callCount = 0;
     const unitScopedRule: SolverRule = {
       name: 'UnitScopedRule',
@@ -128,7 +128,7 @@ describe('findTriggerMisses — misses', () => {
 
 describe('findTriggerMisses — brute-force violations', () => {
   it('reports a violation when the brute-force finds a golden-digit elimination', () => {
-    const board = new BoardState(makeTrivialSpec());
+    const board = new KillerBoardState(makeTrivialSpec());
     // Digit 5 is the golden solution for [0,0].
     const wrongRule = stubGlobalRule('WrongRule', [{ cell: [0, 0] as Cell, digit: 5 }]);
 
@@ -141,7 +141,7 @@ describe('findTriggerMisses — brute-force violations', () => {
   });
 
   it('reports a violation (not a miss) when the context is tainted by a golden violation', () => {
-    const board = new BoardState(makeTrivialSpec());
+    const board = new KillerBoardState(makeTrivialSpec());
     // Mixed: eliminate both 9 (valid) and 5 (golden violation) from [0,0].
     const mixedRule = stubGlobalRule('MixedRule', [
       { cell: [0, 0] as Cell, digit: 9 }, // valid
@@ -155,7 +155,7 @@ describe('findTriggerMisses — brute-force violations', () => {
   });
 
   it('does not report a violation when the golden digit is already absent from the board', () => {
-    const board = new BoardState(makeTrivialSpec());
+    const board = new KillerBoardState(makeTrivialSpec());
     // Remove the golden digit 5 from [0,0] first — the rule can no longer do harm.
     makeSingleton(board, 0, 0, 3); // leaves {3}, so 5 is gone
 
@@ -165,7 +165,7 @@ describe('findTriggerMisses — brute-force violations', () => {
   });
 
   it('returns empty violations when no golden solution is provided', () => {
-    const board = new BoardState(makeTrivialSpec());
+    const board = new KillerBoardState(makeTrivialSpec());
     const rule = stubGlobalRule('Rule', [{ cell: [0, 0] as Cell, digit: 5 }]);
 
     const { violations } = findTriggerMisses(board, [rule]); // no golden

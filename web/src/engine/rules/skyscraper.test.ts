@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Skyscraper } from './skyscraper.js';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { SolverEngine } from '../solverEngine.js';
 import { makeTrivialSpec } from '../fixtures.js';
 import { Trigger } from '../types.js';
@@ -17,8 +17,8 @@ import { Trigger } from '../types.js';
  *
  * Rows 3–8 have no 7 at all.
  */
-function makeSkyscraperBoard(): BoardState {
-  const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+function makeSkyscraperBoard(): KillerBoardState {
+  const board = new KillerBoardState(makeTrivialSpec(), { includeVirtualCages: false });
   const engine = new SolverEngine(board, [], {});
 
   // Row 0: keep 7 only in cols 0 and 1
@@ -34,7 +34,7 @@ function makeSkyscraperBoard(): BoardState {
   return board;
 }
 
-const GLOBAL_CTX = (board: BoardState) =>
+const GLOBAL_CTX = (board: KillerBoardState) =>
   ({ board, unit: null, cell: null, hint: Trigger.GLOBAL, hintDigit: null } as const);
 
 describe('Skyscraper', () => {
@@ -105,7 +105,7 @@ describe('Skyscraper', () => {
   });
 
   it('returns empty on a fresh unconstrained board', () => {
-    const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+    const board = new KillerBoardState(makeTrivialSpec(), { includeVirtualCages: false });
     const ctx = GLOBAL_CTX(board);
     // Every row has 9 cells with every digit — no row has d in exactly 2 cells
     expect(rule.apply(ctx).eliminations).toHaveLength(0);
@@ -115,7 +115,7 @@ describe('Skyscraper', () => {
   it('near-miss: two rows with d in 2 cells each but no shared column → no Skyscraper', () => {
     // Row 0: d in cols 1 and 3; Row 1: d in cols 5 and 7.
     // No column is shared between the two rows → the "else continue" guard fires for every pair.
-    const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+    const board = new KillerBoardState(makeTrivialSpec(), { includeVirtualCages: false });
     const engine = new SolverEngine(board, [], {});
     for (const c of [0, 2, 4, 5, 6, 7, 8]) engine.applyEliminations([{ cell: [0, c], digit: 2 }]);
     for (const c of [0, 1, 2, 3, 4, 6, 8]) engine.applyEliminations([{ cell: [1, c], digit: 2 }]);

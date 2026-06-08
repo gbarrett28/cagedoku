@@ -10,13 +10,13 @@
  */
 
 import type { HintResult } from '../hint.js';
-import type { RuleContext } from '../rule.js';
+import { KillerOnlyRule } from '../rule.js';
+import type { KillerRuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { cellLabel, unitLabel } from './_labels.js';
 
-export class MustContain {
+export class MustContain extends KillerOnlyRule {
   readonly name = 'MustContain';
-  readonly killerOnly = true;
   readonly displayName = 'Must Contain';
   readonly description = `
 Must Contain — cage must-contain digit confined to overlap with a unit.
@@ -35,7 +35,7 @@ Guards:
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX, UnitKind.CAGE]);
 
-  private _iterMatches(ctx: RuleContext): Array<{unit: typeof ctx.unit; cageUnitId: number; overlap: Cell[]; confinedDigits: Set<number>; eliminations: Elimination[]}> {
+  private _iterMatches(ctx: KillerRuleContext): Array<{unit: typeof ctx.unit; cageUnitId: number; overlap: Cell[]; confinedDigits: Set<number>; eliminations: Elimination[]}> {
     if (!ctx.unit?.distinctDigits) return [];
     const board = ctx.board;
     const unitCells = ctx.unit.cells as Cell[];
@@ -77,12 +77,12 @@ Guards:
     return matches;
   }
 
-  apply(ctx: RuleContext): RuleResult {
+  applyKiller(ctx: KillerRuleContext): RuleResult {
     const elims = this._iterMatches(ctx).flatMap(m => m.eliminations);
     return { ...emptyResult(), eliminations: elims };
   }
 
-  asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
+  asHintsKiller(ctx: KillerRuleContext, eliminations: readonly Elimination[]): HintResult[] {
     if (!eliminations.length) return [];
     const seen = new Set<string>();
     const hints: HintResult[] = [];

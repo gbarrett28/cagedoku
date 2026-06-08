@@ -9,6 +9,7 @@
  */
 
 import type { HintResult } from '../hint.js';
+import { KillerBoardState } from '../boardState.js';
 import type { RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { cellLabel, unitLabel } from './_labels.js';
@@ -43,7 +44,7 @@ Guards:
     if (!ctx.unit || ctx.hintDigit === null) return emptyResult();
     const d = ctx.hintDigit;
 
-    if (ctx.unit.kind === UnitKind.CAGE) {
+    if (ctx.unit.kind === UnitKind.CAGE && ctx.board instanceof KillerBoardState) {
       if (!ctx.unit.distinctDigits) return emptyResult();
       const cageIdx = ctx.unit.unitId - 27;
       const solns = ctx.board.cageSolns[cageIdx]!;

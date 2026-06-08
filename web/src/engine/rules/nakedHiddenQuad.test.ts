@@ -3,13 +3,13 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { NakedHiddenQuad } from './nakedHiddenQuad.js';
 import type { RuleContext } from '../rule.js';
 import { Trigger } from '../types.js';
 import { makeTrivialSpec } from '../fixtures.js';
 
-function makeCtx(bs: BoardState, row: number): RuleContext {
+function makeCtx(bs: KillerBoardState, row: number): RuleContext {
   const rowUid = bs.rowUnitId(row);
   for (let d = 1; d <= 9; d++) {
     bs.counts[rowUid]![d] = Array.from({ length: 9 }, (_, c) => c)
@@ -26,7 +26,7 @@ function makeCtx(bs: BoardState, row: number): RuleContext {
 
 describe('NakedHiddenQuad', () => {
   it('naked quad: eliminates quad digits from other row cells', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
 
     // Four cells forming a naked quad: union = {1,2,3,4}
     bs.candidates[0]![0]! = new Set([1, 2]);
@@ -48,7 +48,7 @@ describe('NakedHiddenQuad', () => {
   });
 
   it('asHints: naked quad returns hint with correct shape', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     bs.candidates[0]![0]! = new Set([1, 2]);
     bs.candidates[0]![1]! = new Set([2, 3]);
     bs.candidates[0]![2]! = new Set([3, 4]);
@@ -68,7 +68,7 @@ describe('NakedHiddenQuad', () => {
   });
 
   it('asHints: hidden quad returns hint with correct shape', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     bs.candidates[0]![0]! = new Set([1, 2, 5]);
     bs.candidates[0]![1]! = new Set([2, 3, 6]);
     bs.candidates[0]![2]! = new Set([3, 4, 7]);
@@ -91,7 +91,7 @@ describe('NakedHiddenQuad', () => {
     // Cell (0,0) has {1} — a naked single. Cells (0,0),(0,1),(0,2),(0,3) have union {1,2,3,4} (size 4),
     // satisfying union.size===4. But including a naked single is degenerate.
     // The fix: size<2 guard prevents this from being treated as a naked quad.
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     bs.candidates[0]![0]! = new Set([1]);       // singleton — naked single
     bs.candidates[0]![1]! = new Set([1, 2]);
     bs.candidates[0]![2]! = new Set([2, 3]);
@@ -105,7 +105,7 @@ describe('NakedHiddenQuad', () => {
   });
 
   it('near-miss naked quad: one cell has 5th candidate (union.size=5) → no naked quad', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     // Union across 4 cells = {1,2,3,4,5} — size 5, not 4 → naked-quad branch skipped
     bs.candidates[0]![0]! = new Set([1, 2]);
     bs.candidates[0]![1]! = new Set([2, 3]);
@@ -120,7 +120,7 @@ describe('NakedHiddenQuad', () => {
   });
 
   it('near-miss hidden quad: one digit appears in a 5th cell → no hidden quad', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     // Digits 1,2,3,4 should form a hidden quad in cells 0-3.
     // But digit 1 also appears in cell 4 → cellsWith.size===5, not 4 → guard fails.
     bs.candidates[0]![0]! = new Set([1, 2, 5]);
@@ -136,7 +136,7 @@ describe('NakedHiddenQuad', () => {
   });
 
   it('hidden quad: restricts four cells to only the quad digits', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
 
     // Digits 1,2,3,4 appear only in cells 0-3 — hidden quad
     bs.candidates[0]![0]! = new Set([1, 2, 5]);

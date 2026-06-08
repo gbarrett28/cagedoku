@@ -13,7 +13,7 @@
  * cage-specific rules become no-ops naturally.
  */
 
-import { BoardState, CAGE_UNIT_OFFSET } from './boardState.js';
+import { BoardState, CAGE_UNIT_OFFSET, KillerBoardState } from './boardState.js';
 import type { HintResult } from './hint.js';
 import type { RuleContext, RuleStats, SolverRule } from './rule.js';
 import { makeRuleStats } from './rule.js';
@@ -158,6 +158,21 @@ function dedupHints(hints: HintResult[]): HintResult[] {
 // SolverEngine
 // ---------------------------------------------------------------------------
 
+/** Options shared by SolverEngine and KillerSolverEngine. */
+export interface SolverEngineOptions {
+  hintRules?: ReadonlySet<string>;
+  /** When provided, each rule application is checked: no rule may eliminate
+   *  the correct solution digit from a cell where it is still a candidate.
+   *  When `onViolation` is also provided, violations call it and suppress the
+   *  rule result instead of throwing. When `onViolation` is null, violations
+   *  throw NoSolnError (backward-compatible). */
+  goldenSolution?: readonly (readonly number[])[] | null;
+  /** Called when a rule produces an elimination that contradicts the golden
+   *  solution. The engine suppresses the entire rule result (no board mutation)
+   *  and continues. Only has effect when `goldenSolution` is also set. */
+  onViolation?: ((ruleName: string, offending: readonly Elimination[]) => void) | null;
+}
+
 export class SolverEngine {
   readonly board: BoardState;
   readonly queue: SolverQueue;
@@ -168,10 +183,9 @@ export class SolverEngine {
   appliedPlacements: Placement[] = [];
   appliedVirtualCages: VirtualCageAddition[] = [];
 
-  private readonly _triggerMap: Map<Trigger, SolverRule[]>;
-  private readonly _ruleIndex: Map<SolverRule, number>;
+  protected readonly _triggerMap: Map<Trigger, SolverRule[]>;
+  protected readonly _ruleIndex: Map<SolverRule, number>;
   private readonly _hintRules: ReadonlySet<string>;
-  private readonly _linearSystemActive: boolean;
   private readonly _goldenSolution: readonly (readonly number[])[] | null;
   private readonly _onViolation: ((ruleName: string, offending: readonly Elimination[]) => void) | null;
   /** True once a violation has been reported in the current solve() pass. Only the
@@ -183,27 +197,13 @@ export class SolverEngine {
   constructor(
     board: BoardState,
     rules: SolverRule[],
-    { linearSystemActive = true, hintRules = new Set<string>(), goldenSolution = null, onViolation = null }: {
-      linearSystemActive?: boolean;
-      hintRules?: ReadonlySet<string>;
-      /** When provided, each rule application is checked: no rule may eliminate
-       *  the correct solution digit from a cell where it is still a candidate.
-       *  When `onViolation` is also provided, violations call it and suppress the
-       *  rule result instead of throwing. When `onViolation` is null, violations
-       *  throw NoSolnError (backward-compatible). */
-      goldenSolution?: readonly (readonly number[])[] | null;
-      /** Called when a rule produces an elimination that contradicts the golden
-       *  solution. The engine suppresses the entire rule result (no board mutation)
-       *  and continues. Only has effect when `goldenSolution` is also set. */
-      onViolation?: ((ruleName: string, offending: readonly Elimination[]) => void) | null;
-    } = {},
+    { hintRules = new Set<string>(), goldenSolution = null, onViolation = null }: SolverEngineOptions = {},
   ) {
     this.board = board;
     this.queue = new SolverQueue();
     this._ruleIndex = new Map(rules.map((r, i) => [r, i]));
     this.stats = new Map(rules.map(r => [r.name, makeRuleStats()]));
     this._hintRules = hintRules;
-    this._linearSystemActive = linearSystemActive;
     this._goldenSolution = goldenSolution;
     this._onViolation = onViolation;
 
@@ -214,6 +214,11 @@ export class SolverEngine {
       for (const trigger of rule.triggers)
         this._triggerMap.get(trigger)!.push(rule);
   }
+
+  /** Linear-system propagation for a just-determined cell. No-op on a board
+   *  with no LinearSystem; KillerSolverEngine overrides it to substitute the
+   *  cell into the cage-sum equations and narrow live virtual-cage constraints. */
+  protected _onCellDetermined(_cell: Cell, _val: number): void {}
 
   applyEliminations(eliminations: readonly Elimination[]): void {
     for (const elim of eliminations) {
@@ -238,25 +243,7 @@ export class SolverEngine {
       if (event.trigger === Trigger.CELL_DETERMINED) {
         const cell = event.payload as Cell;
         const val = event.hintDigit!;
-        if (this._linearSystemActive) {
-          const newElims = this.board.linearSystem.substituteCell(cell, val);
-          if (newElims.length > 0) this.applyEliminations(newElims);
-          const newConstraints = this.board.linearSystem.substituteLiveRows(cell, val);
-          for (const [vcells, vtotal, distinct] of newConstraints) {
-            const cellList = [...vcells];
-            if (cellList.length === 1) {
-              const [lr, lc] = cellList[0]!;
-              for (let d = 1; d <= 9; d++) {
-                if (d !== vtotal && this.board.cands(lr, lc).has(d))
-                  this.applyEliminations([{ cell: cellList[0]!, digit: d }]);
-              }
-            } else if (distinct) {
-              this.applyEliminations(filterSumConstraint(cellList as Cell[], vtotal, this.board.candidates));
-            } else {
-              this.applyEliminations(filterSumRange(cellList as Cell[], vtotal, this.board.candidates));
-            }
-          }
-        }
+        this._onCellDetermined(cell, val);
         for (const rule of this._triggerMap.get(Trigger.CELL_DETERMINED) ?? [])
           this.queue.enqueueCell(0, rule, this._ruleIndex.get(rule)!, cell, Trigger.CELL_DETERMINED, val);
         for (const rule of this._triggerMap.get(Trigger.CELL_SOLVED) ?? [])
@@ -294,20 +281,11 @@ export class SolverEngine {
     }
   }
 
-  private _applyGlobalRuleDefault(se: SolutionElimination, ruleName: string): void {
-    const solns = this.board.cageSolns[se.cageIdx]!;
-    const idx = solns.findIndex(s => s.length === se.solution.length && s.every((d, i) => d === se.solution[i]));
-    if (idx < 0) return;
-    solns.splice(idx, 1);
-    const cageUnitId = CAGE_UNIT_OFFSET + se.cageIdx;
-    this.board.unitVersions[cageUnitId]!++;
-    this.appliedMutations.push({ ruleName, type: 'solution_eliminated', cageIdx: se.cageIdx });
-    for (const rule of this._triggerMap.get(Trigger.SOLUTION_PRUNED) ?? [])
-      this.queue.enqueueUnit(rule.priority, rule, this._ruleIndex.get(rule)!, cageUnitId,
-        this.board.unitVersions[cageUnitId]! - 1, Trigger.SOLUTION_PRUNED, null);
-    for (const rule of this._triggerMap.get(Trigger.GLOBAL) ?? [])
-      this.queue.enqueueGlobal(rule.priority, rule, this._ruleIndex.get(rule)!);
-  }
+  /** Cage-solution pruning for a rule's `solutionEliminations`. No-op on a board
+   *  with no cage solutions; KillerSolverEngine overrides it to splice the pruned
+   *  solution out of `cageSolns`, bump the cage's unit version, and enqueue
+   *  SOLUTION_PRUNED/GLOBAL follow-ups. */
+  protected _onSolutionElimination(_se: SolutionElimination, _ruleName: string): void {}
 
   /**
    * Run the rule engine to a fixed point and return the (mutated) board.
@@ -410,7 +388,7 @@ export class SolverEngine {
             row: p.cell[0], col: p.cell[1], digit: p.digit });
         }
         for (const se of result.solutionEliminations)
-          this._applyGlobalRuleDefault(se, item.rule.name);
+          this._onSolutionElimination(se, item.rule.name);
         for (const vca of result.virtualCageAdditions) {
           this.appliedVirtualCages.push(vca);
           this.appliedMutations.push({ ruleName: item.rule.name, type: 'virtual_cage_added' });
@@ -457,5 +435,53 @@ export class SolverEngine {
       eliminations,
       placements,
     };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// KillerSolverEngine — owns linear-system propagation and cage-solution pruning
+// ---------------------------------------------------------------------------
+
+export class KillerSolverEngine extends SolverEngine {
+  override readonly board: KillerBoardState;
+
+  constructor(board: KillerBoardState, rules: SolverRule[], opts: SolverEngineOptions = {}) {
+    super(board, rules, opts);
+    this.board = board;
+  }
+
+  protected override _onCellDetermined(cell: Cell, val: number): void {
+    const newElims = this.board.linearSystem.substituteCell(cell, val);
+    if (newElims.length > 0) this.applyEliminations(newElims);
+    const newConstraints = this.board.linearSystem.substituteLiveRows(cell, val);
+    for (const [vcells, vtotal, distinct] of newConstraints) {
+      const cellList = [...vcells];
+      if (cellList.length === 1) {
+        const [lr, lc] = cellList[0]!;
+        for (let d = 1; d <= 9; d++) {
+          if (d !== vtotal && this.board.cands(lr, lc).has(d))
+            this.applyEliminations([{ cell: cellList[0]!, digit: d }]);
+        }
+      } else if (distinct) {
+        this.applyEliminations(filterSumConstraint(cellList as Cell[], vtotal, this.board.candidates));
+      } else {
+        this.applyEliminations(filterSumRange(cellList as Cell[], vtotal, this.board.candidates));
+      }
+    }
+  }
+
+  protected override _onSolutionElimination(se: SolutionElimination, ruleName: string): void {
+    const solns = this.board.cageSolns[se.cageIdx]!;
+    const idx = solns.findIndex(s => s.length === se.solution.length && s.every((d, i) => d === se.solution[i]));
+    if (idx < 0) return;
+    solns.splice(idx, 1);
+    const cageUnitId = CAGE_UNIT_OFFSET + se.cageIdx;
+    this.board.unitVersions[cageUnitId]!++;
+    this.appliedMutations.push({ ruleName, type: 'solution_eliminated', cageIdx: se.cageIdx });
+    for (const rule of this._triggerMap.get(Trigger.SOLUTION_PRUNED) ?? [])
+      this.queue.enqueueUnit(rule.priority, rule, this._ruleIndex.get(rule)!, cageUnitId,
+        this.board.unitVersions[cageUnitId]! - 1, Trigger.SOLUTION_PRUNED, null);
+    for (const rule of this._triggerMap.get(Trigger.GLOBAL) ?? [])
+      this.queue.enqueueGlobal(rule.priority, rule, this._ruleIndex.get(rule)!);
   }
 }

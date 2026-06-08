@@ -2,7 +2,7 @@
  * Tests for the rule-by-rule auto-apply session helpers:
  *   - applyAutoApplyStep
  *   - getNextAutoApplyStep
- *   - buildEngine applying autoRemovedCandidates
+ *   - buildEngine applying userRemovedCandidates
  *
  * All tests are RED until the feature is implemented.
  */
@@ -37,7 +37,7 @@ function makeBaseState(): PuzzleState {
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
-    autoRemovedCandidates: [],
+    userRemovedCandidates: [],
   };
 }
 
@@ -58,29 +58,29 @@ function makeAlmostCompleteState(): PuzzleState {
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
-    autoRemovedCandidates: [],
+    userRemovedCandidates: [],
   };
 }
 
 // ---------------------------------------------------------------------------
-// buildEngine — autoRemovedCandidates
+// buildEngine — userRemovedCandidates
 // ---------------------------------------------------------------------------
 
-describe('buildEngine with autoRemovedCandidates', () => {
-  it('applies autoRemovedCandidates as candidate eliminations before solve', () => {
+describe('buildEngine with userRemovedCandidates', () => {
+  it('applies userRemovedCandidates as candidate eliminations before solve', () => {
     const state: PuzzleState = {
       ...makeBaseState(),
-      autoRemovedCandidates: [[0, 0, 5]] as [number, number, number][],
+      userRemovedCandidates: [[0, 0, 5]] as [number, number, number][],
     };
     const { board } = buildEngine(state);
     expect(board.candidates[0]![0]!.has(5)).toBe(false);
   });
 
-  it('does not affect the board when autoRemovedCandidates is empty', () => {
+  it('does not affect the board when userRemovedCandidates is empty', () => {
     const { board: boardEmpty } = buildEngine(makeBaseState());
     const { board: boardDefault } = buildEngine({
       ...makeBaseState(),
-      autoRemovedCandidates: [],
+      userRemovedCandidates: [],
     });
     expect(boardEmpty.candidates[0]![0]!.size).toBe(boardDefault.candidates[0]![0]!.size);
   });
@@ -104,7 +104,7 @@ describe('applyAutoApplyStep', () => {
     expect(next.userGrid![0]![0]).toBe(5);
   });
 
-  it('accumulates eliminations in autoRemovedCandidates', () => {
+  it('accumulates eliminations in userRemovedCandidates', () => {
     const state = makeBaseState();
     const step = {
       ruleName: 'TestRule',
@@ -114,13 +114,13 @@ describe('applyAutoApplyStep', () => {
       placements: [],
     };
     const next = applyAutoApplyStep(state, step);
-    expect(next.autoRemovedCandidates).toContainEqual([1, 2, 7]);
+    expect(next.userRemovedCandidates).toContainEqual([1, 2, 7]);
   });
 
-  it('appends to existing autoRemovedCandidates', () => {
+  it('appends to existing userRemovedCandidates', () => {
     const state: PuzzleState = {
       ...makeBaseState(),
-      autoRemovedCandidates: [[3, 4, 9]] as [number, number, number][],
+      userRemovedCandidates: [[3, 4, 9]] as [number, number, number][],
     };
     const step = {
       ruleName: 'TestRule',
@@ -130,8 +130,8 @@ describe('applyAutoApplyStep', () => {
       placements: [],
     };
     const next = applyAutoApplyStep(state, step);
-    expect(next.autoRemovedCandidates).toContainEqual([3, 4, 9]);
-    expect(next.autoRemovedCandidates).toContainEqual([1, 1, 5]);
+    expect(next.userRemovedCandidates).toContainEqual([3, 4, 9]);
+    expect(next.userRemovedCandidates).toContainEqual([1, 1, 5]);
   });
 
   it('does not mutate the original state', () => {
@@ -192,7 +192,7 @@ describe('getNextAutoApplyStep', () => {
     expect(getNextAutoApplyStep(state)).toBeNull();
   });
 
-  it('never re-produces a step whose eliminations are already in autoRemovedCandidates', () => {
+  it('never re-produces a step whose eliminations are already in userRemovedCandidates', () => {
     // Each applyAutoApplyStep accumulates eliminations. The next solver run must
     // see them via buildEngine → not re-produce them as a new step.
     let state = makeAlmostCompleteState();
