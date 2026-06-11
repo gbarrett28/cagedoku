@@ -25,7 +25,7 @@ if (typeof globalThis.localStorage === 'undefined') {
     configurable: true,
   });
 }
-import { setState, getState } from './store.js';
+import { setState, getState, getStateCandidates } from './store.js';
 import {
   buildCandidatesFromParseResult,
   confirmPuzzle,
@@ -46,6 +46,8 @@ import {
   getHints,
   solveAndValidateSpec,
   extractAndValidateSolution,
+  activeCandidate,
+  revertToOcr,
 } from './actions.js';
 import { findLastConsistentTurnIdx } from './engine.js';
 import { BoardState } from '../engine/index.js';
@@ -944,5 +946,39 @@ describe('buildCandidatesFromParseResult', () => {
       expect(candidate.userGrid).toEqual(blankGrid);
       expect(candidate.goldenSolution).toBeNull();
     }
+  });
+});
+
+describe('activeCandidate', () => {
+  const spec = classicSyntheticSpec();
+  const killerCandidate = PuzzleState.createKiller(specToData(spec), specToCageStates(spec), [], null, null);
+  const classicCandidate = PuzzleState.createClassic(null, [], null);
+
+  it('returns the killer candidate when selectedType is killer', () => {
+    expect(activeCandidate([killerCandidate, classicCandidate], 'killer')).toBe(killerCandidate);
+  });
+
+  it('returns the classic candidate when selectedType is classic', () => {
+    expect(activeCandidate([killerCandidate, classicCandidate], 'classic')).toBe(classicCandidate);
+  });
+
+  it('returns undefined when no candidate of the selected type exists', () => {
+    expect(activeCandidate([classicCandidate], 'killer')).toBeUndefined();
+  });
+});
+
+describe('revertToOcr', () => {
+  beforeEach(() => {
+    setState(PuzzleState.createClassic(null, [], null));
+  });
+
+  it('replaces the candidate list with the given OCR candidates', () => {
+    const spec = classicSyntheticSpec();
+    const killerCandidate = PuzzleState.createKiller(specToData(spec), specToCageStates(spec), [], null, null);
+    const classicCandidate = PuzzleState.createClassic(null, [], null);
+
+    revertToOcr([killerCandidate, classicCandidate]);
+
+    expect(getStateCandidates()).toEqual([killerCandidate, classicCandidate]);
   });
 });

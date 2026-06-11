@@ -109,6 +109,22 @@ function requireState(): PuzzleState {
   return state;
 }
 
+/**
+ * Replaces `prev` with `updated` within the candidate list, preserving any
+ * other OCR-review candidates (e.g. the Classic candidate alongside the
+ * active Killer candidate). Falls back to a singleton list if `prev` is not
+ * found (e.g. post-confirm, where the list already holds one element).
+ */
+function replaceCandidate(prev: PuzzleState, updated: PuzzleState): void {
+  const candidates = getStateCandidates();
+  const idx = candidates.indexOf(prev);
+  if (idx === -1) {
+    setState(updated);
+    return;
+  }
+  setStateCandidates(candidates.map((c, i) => (i === idx ? updated : c)));
+}
+
 function requireConfirmed(): PuzzleState {
   const s = requireState();
   if (s.goldenSolution === null) throw new Error('Session not yet confirmed');
@@ -366,7 +382,7 @@ export function patchCage(label: string, total: number): PuzzleState {
     c.label === upper ? { ...c, total } : c,
   );
   const updated = { ...state, cageStates: newCages };
-  setState(updated);
+  replaceCandidate(state, updated);
   return updated;
 }
 
@@ -475,7 +491,7 @@ export function applyDraftLayout(
     specData: specToData(spec),
     cageStates: specToCageStates(spec),
   };
-  setState(updated);
+  replaceCandidate(state, updated);
   return { state: updated, errorCells: new Set(), warnings };
 }
 
@@ -556,11 +572,24 @@ export function confirmPuzzle(board: BoardState, fixtureStalledCandidates?: numb
 }
 
 /**
- * Revert session state to a pre-confirm OCR snapshot.
- * Used by the Edit OCR button to let the user correct OCR digits after auto-confirm.
+ * Returns the OCR-review candidate matching the puzzle-type dropdown's
+ * current selection, or undefined if no candidate of that type was built
+ * (e.g. a Classic-detected scan never offers a Killer candidate).
  */
-export function revertToOcr(ocrState: PuzzleState): void {
-  setState(ocrState);
+export function activeCandidate(
+  candidates: readonly PuzzleState[],
+  selectedType: 'killer' | 'classic',
+): PuzzleState | undefined {
+  return candidates.find(c => PuzzleState.isKiller(c) === (selectedType === 'killer'));
+}
+
+/**
+ * Revert session state to a pre-confirm OCR snapshot, restoring the full
+ * candidate list. Used by the Edit OCR button to let the user correct OCR
+ * digits after auto-confirm.
+ */
+export function revertToOcr(candidates: readonly PuzzleState[]): void {
+  setStateCandidates(candidates);
 }
 
 /** Checks post-confirmation assertions about the golden solution.

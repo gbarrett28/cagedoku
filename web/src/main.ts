@@ -6,7 +6,7 @@
  * State lives in session/store.ts; no server required.
  */
 
-import { loadCV, loadRec, loadSplitRec, setCandidatesCache, setState } from './session/store.js';
+import { loadCV, loadRec, loadSplitRec, setCandidatesCache, setState, getStateCandidates, setStateCandidates } from './session/store.js';
 import { logAction, clearActionLog, formatActionLog, getActionLog } from './session/actionLog.js';
 import { loadSettings } from './session/settings.js';
 import { cellLabel } from './engine/rules/_labels.js';
@@ -42,6 +42,7 @@ import {
   saveSettingsData,
   checkSolutionAssertions,
   revertToOcr,
+  activeCandidate,
   extractAndValidateSolution,
 } from './session/actions.js';
 import { PuzzleState } from './session/types.js';
@@ -173,8 +174,8 @@ interface LaunchParams { readonly files: ReadonlyArray<FileSystemFileHandle>; }
 interface LaunchQueue { setConsumer(consumer: (params: LaunchParams) => void): void; }
 interface WindowWithLaunchQueue extends Window { launchQueue: LaunchQueue; }
 
-// OCR state preserved across auto-confirm for the Edit OCR button.
-let lastOcrState: PuzzleState | null = null;
+// OCR candidates preserved across auto-confirm for the Edit OCR button.
+let lastOcrCandidates: readonly PuzzleState[] = [];
 let lastWarpedUrl: string | null = null;
 
 // ---------------------------------------------------------------------------
@@ -1152,7 +1153,7 @@ async function handleProcess(file?: File): Promise<void> {
   clearActionLog();
   logAction('file_selected', `${f.name} (${(f.size / 1024).toFixed(0)} KB)`);
   el<HTMLButtonElement>('edit-ocr-btn').hidden = true;
-  lastOcrState = null;
+  lastOcrCandidates = [];
   lastWarpedUrl = null;
   // Reset solver result so stale data from a previous run is never read.
   (window as unknown as Record<string, unknown>)['__lastSolverResult'] = null;
@@ -1196,7 +1197,7 @@ async function handleProcess(file?: File): Promise<void> {
           for (let c = 0; c < 9 && boardComplete; c++)
             if (board.cands(r, c).size !== 1) boardComplete = false;
         if (boardComplete) {
-          lastOcrState = state;
+          lastOcrCandidates = getStateCandidates();
           lastWarpedUrl = warpedImageUrl;
           logAction('auto_confirmed');
           const playing = confirmPuzzle(board);
@@ -1269,7 +1270,7 @@ async function handleProcess(file?: File): Promise<void> {
           for (let c = 0; c < 9 && boardComplete; c++)
             if (classicBoard.cands(r, c).size !== 1) boardComplete = false;
         if (boardComplete) {
-          lastOcrState = state;
+          lastOcrCandidates = getStateCandidates();
           lastWarpedUrl = warpedImageUrl;
           logAction('auto_confirmed', 'classic');
           const classicPlaying = confirmPuzzle(classicBoard);
@@ -2084,24 +2085,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const state = currentState;
     if (state === null) return;
     const type = (e.target as HTMLSelectElement).value as 'killer' | 'classic';
+    const candidates = getStateCandidates();
+    const found = activeCandidate(candidates, type);
     let updated: PuzzleState;
-    if (type === 'killer') {
-      if (PuzzleState.isKiller(state)) {
-        updated = state;
-      } else {
-        const synthetic = classicSyntheticSpec();
-        updated = PuzzleState.createKiller(
-          specToData(synthetic), specToCageStates(synthetic),
-          state.alwaysApplyRules, state.originalImageUrl, null,
-        );
-      }
+    if (found !== undefined) {
+      updated = found;
+      setStateCandidates([found, ...candidates.filter(c => c !== found)]);
+    } else if (type === 'killer') {
+      const synthetic = classicSyntheticSpec();
+      updated = PuzzleState.createKiller(
+        specToData(synthetic), specToCageStates(synthetic),
+        state.alwaysApplyRules, state.originalImageUrl, null,
+      );
+      setState(updated);
     } else {
       const givenDigits = PuzzleState.isKiller(state)
         ? Array.from({ length: 9 }, () => new Array<number>(9).fill(0))
         : state.givenDigits;
       updated = PuzzleState.createClassic(givenDigits, state.alwaysApplyRules, state.originalImageUrl);
+      setState(updated);
     }
-    import('./session/store.js').then(m => m.setState(updated));
     currentState = updated;
     renderState(updated);
   });
@@ -2199,9 +2202,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   el<HTMLButtonElement>('edit-ocr-btn').addEventListener('click', () => {
-    const ocrState = lastOcrState;
-    if (ocrState === null) return;
-    revertToOcr(ocrState);
+    const candidates = lastOcrCandidates;
+    if (candidates.length === 0) return;
+    const ocrState = candidates[0]!;
+    revertToOcr(candidates);
     // Re-initialise draft borders from the saved OCR spec.
     if (PuzzleState.isKiller(ocrState)) {
       const ocrSpec = dataToSpec(ocrState.specData);
