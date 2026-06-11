@@ -44,7 +44,7 @@ import {
   virtualCageKeyFromCage,
   solutionKey,
 } from './specUtils.js';
-import { getState, setState, getStateCandidates, getCV, getRec, getSplitRec } from './store.js';
+import { getState, setState, getStateCandidates, setStateCandidates, getCV, getRec, getSplitRec } from './store.js';
 import { PuzzleState } from './types.js';
 import type {
   CandidatesResponse,
@@ -282,6 +282,29 @@ export function extractAndValidateSolution(board: BoardState): string | null {
   return validateSudokuSolution(grid);
 }
 
+/**
+ * Builds the OCR-review candidate list for a parsed puzzle image, per spec
+ * section 1: a Killer-detected scan offers both a Killer candidate (primary,
+ * the first element) and a Classic candidate built from the same
+ * readClassicDigits pass; a Classic-detected scan offers only the Classic
+ * candidate, since no cage signal was sought.
+ */
+export function buildCandidatesFromParseResult(
+  result: ParseResult,
+  spec: PuzzleSpec,
+  alwaysApplyRules: readonly string[],
+  originalImageUrl: string | null,
+  warpedImageUrl: string | null,
+): readonly PuzzleState[] {
+  const classicCandidate = PuzzleState.createClassic(result.givenDigits, alwaysApplyRules, originalImageUrl);
+  if (result.puzzleType !== 'killer') return [classicCandidate];
+
+  const killerCandidate = PuzzleState.createKiller(
+    specToData(spec), specToCageStates(spec), alwaysApplyRules, originalImageUrl, warpedImageUrl,
+  );
+  return [killerCandidate, classicCandidate];
+}
+
 async function buildStateFromParseResult(
   result: ParseResult,
   originalImageUrl: string | null,
@@ -323,12 +346,9 @@ async function buildStateFromParseResult(
     }
   }
 
-  const state: PuzzleState = result.puzzleType === 'killer'
-    ? PuzzleState.createKiller(specToData(spec), specToCageStates(spec), [...settings.alwaysApplyRules], originalImageUrl, warpedImageUrl)
-    : PuzzleState.createClassic(result.givenDigits, [...settings.alwaysApplyRules], originalImageUrl);
-
-  setState(state);
-  return { state, warpedImageUrl, warning };
+  const candidates = buildCandidatesFromParseResult(result, spec, [...settings.alwaysApplyRules], originalImageUrl, warpedImageUrl);
+  setStateCandidates(candidates);
+  return { state: candidates[0]!, warpedImageUrl, warning };
 }
 
 // ---------------------------------------------------------------------------

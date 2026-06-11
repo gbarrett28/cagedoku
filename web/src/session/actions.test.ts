@@ -27,6 +27,7 @@ if (typeof globalThis.localStorage === 'undefined') {
 }
 import { setState, getState } from './store.js';
 import {
+  buildCandidatesFromParseResult,
   confirmPuzzle,
   solveCurrentSpec,
   loadSpecDirect,
@@ -58,10 +59,11 @@ import {
   makeClassicGivenDigits,
   KNOWN_SOLUTION,
 } from '../engine/fixtures.js';
-import { specToData, specToCageStates } from './specUtils.js';
+import { specToData, specToCageStates, classicSyntheticSpec } from './specUtils.js';
 import { PuzzleState } from './types.js';
 import type { KillerPuzzleState, Turn, UserAction } from './types.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
+import type { ParseResult } from '../image/inpImage.js';
 import { hasMultipleCageTotals } from '../image/validation.js';
 
 // Tests that depend on NakedSingle being active are skipped when the rule is
@@ -884,5 +886,63 @@ describe('hasMultipleCageTotals', () => {
       ),
     };
     expect(hasMultipleCageTotals(corrupted)).not.toBeNull();
+  });
+});
+
+describe('buildCandidatesFromParseResult', () => {
+  const blankGivenDigits = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+  const spec = classicSyntheticSpec();
+
+  function makeParseResult(puzzleType: 'killer' | 'classic'): ParseResult {
+    return {
+      spec,
+      specError: null,
+      puzzleType,
+      givenDigits: blankGivenDigits,
+      warpedImageData: null,
+      cellThumbs: new Map(),
+      mergedThumbs: new Map(),
+    };
+  }
+
+  it('returns [killerCandidate, classicCandidate] when OCR detects killer', () => {
+    const result = makeParseResult('killer');
+    const candidates = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
+
+    expect(candidates).toHaveLength(2);
+    expect(PuzzleState.isKiller(candidates[0]!)).toBe(true);
+    expect(PuzzleState.isKiller(candidates[1]!)).toBe(false);
+  });
+
+  it('killer candidate has givenDigits: null (never a hybrid from OCR)', () => {
+    const result = makeParseResult('killer');
+    const candidates = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
+
+    expect(candidates[0]!.givenDigits).toBeNull();
+  });
+
+  it('classic candidate is built from result.givenDigits', () => {
+    const givenDigits = blankGivenDigits.map((row, r) => row.map((_, c) => (r === 0 && c === 0 ? 5 : 0)));
+    const result = { ...makeParseResult('killer'), givenDigits };
+    const candidates = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
+
+    expect(candidates[1]!.givenDigits).toEqual(givenDigits);
+  });
+
+  it('returns only [classicCandidate] when OCR detects classic', () => {
+    const result = makeParseResult('classic');
+    const candidates = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
+
+    expect(candidates).toHaveLength(1);
+    expect(PuzzleState.isKiller(candidates[0]!)).toBe(false);
+  });
+
+  it('all candidates start with a blank userGrid and no golden solution', () => {
+    const result = makeParseResult('killer');
+    const blankGrid = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    for (const candidate of buildCandidatesFromParseResult(result, spec, [], null, null)) {
+      expect(candidate.userGrid).toEqual(blankGrid);
+      expect(candidate.goldenSolution).toBeNull();
+    }
   });
 });
