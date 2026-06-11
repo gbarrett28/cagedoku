@@ -16,14 +16,14 @@ import {
   applyAutoApplyStep,
 } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
-import type { PuzzleState } from './types.js';
+import type { KillerPuzzleState, PuzzleState } from './types.js';
 import type { Cell } from '../engine/types.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
 
-function makeBaseState(): PuzzleState {
+function makeBaseState(): KillerPuzzleState {
   const spec = makeTrivialSpec();
   return {
     specData: specToData(spec),
@@ -33,7 +33,6 @@ function makeBaseState(): PuzzleState {
     turns: [],
     alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],
     goldenSolution: null,
-    puzzleType: 'killer',
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
@@ -42,7 +41,7 @@ function makeBaseState(): PuzzleState {
 }
 
 /** 80 cells placed; NakedSingle will deduce (0,0). */
-function makeAlmostCompleteState(): PuzzleState {
+function makeAlmostCompleteState(): KillerPuzzleState {
   const spec = makeTrivialSpec();
   const userGrid = KNOWN_SOLUTION.map(row => [...row]) as number[][];
   userGrid[0]![0] = 0;
@@ -54,7 +53,6 @@ function makeAlmostCompleteState(): PuzzleState {
     turns: [],
     alwaysApplyRules: ['NakedSingle', ...DEFAULT_ALWAYS_APPLY_RULES],
     goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
-    puzzleType: 'killer',
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
@@ -68,7 +66,7 @@ function makeAlmostCompleteState(): PuzzleState {
 
 describe('buildEngine with userRemovedCandidates', () => {
   it('applies userRemovedCandidates as candidate eliminations before solve', () => {
-    const state: PuzzleState = {
+    const state: KillerPuzzleState = {
       ...makeBaseState(),
       userRemovedCandidates: [[0, 0, 5]] as [number, number, number][],
     };
@@ -118,7 +116,7 @@ describe('applyAutoApplyStep', () => {
   });
 
   it('appends to existing userRemovedCandidates', () => {
-    const state: PuzzleState = {
+    const state: KillerPuzzleState = {
       ...makeBaseState(),
       userRemovedCandidates: [[3, 4, 9]] as [number, number, number][],
     };
@@ -169,7 +167,7 @@ describe('getNextAutoApplyStep', () => {
   it('eventually places the correct digit in (0,0) through step-by-step application', () => {
     // The trivial spec may require several rule steps before (0,0) is placed:
     // CageCandidateFilter narrows (0,0) first, then NakedSingle places it.
-    let state = makeAlmostCompleteState();
+    let state: PuzzleState = makeAlmostCompleteState();
     let placed = false;
     for (let iter = 0; iter < 20; iter++) {
       const step = getNextAutoApplyStep(state);
@@ -182,7 +180,7 @@ describe('getNextAutoApplyStep', () => {
   });
 
   it('terminates (returns null) after all deducible steps have been applied', () => {
-    let state = makeAlmostCompleteState();
+    let state: PuzzleState = makeAlmostCompleteState();
     for (let iter = 0; iter < 50; iter++) {
       const step = getNextAutoApplyStep(state);
       if (step === null) break;
@@ -195,7 +193,7 @@ describe('getNextAutoApplyStep', () => {
   it('never re-produces a step whose eliminations are already in userRemovedCandidates', () => {
     // Each applyAutoApplyStep accumulates eliminations. The next solver run must
     // see them via buildEngine → not re-produce them as a new step.
-    let state = makeAlmostCompleteState();
+    let state: PuzzleState = makeAlmostCompleteState();
     const seen = new Set<string>();
     for (let iter = 0; iter < 50; iter++) {
       const step = getNextAutoApplyStep(state);

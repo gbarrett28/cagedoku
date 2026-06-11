@@ -154,11 +154,16 @@ export namespace UserAction {
         newGrid[action.row]![action.col] = 0;
         return { ...state, userGrid: newGrid };
       }
-      case 'addVirtualCage':
-        return { ...state, virtualCages: [...state.virtualCages, action.cage] };
+      case 'addVirtualCage': {
+        if (!PuzzleState.isKiller(state)) throw new Error('addVirtualCage requires a killer puzzle state');
+        const updated = { ...state, virtualCages: [...state.virtualCages, action.cage] };
+        return updated;
+      }
       case 'removeVirtualCage': {
+        if (!PuzzleState.isKiller(state)) throw new Error('removeVirtualCage requires a killer puzzle state');
         const key = action.key;
-        return { ...state, virtualCages: state.virtualCages.filter(vc => virtualCageKeyFromCage(vc) !== key) };
+        const updated = { ...state, virtualCages: state.virtualCages.filter(vc => virtualCageKeyFromCage(vc) !== key) };
+        return updated;
       }
       case 'eliminateCandidate': {
         const prev = state.userRemovedCandidates ?? [];
@@ -233,39 +238,39 @@ export interface Turn {
 // ---------------------------------------------------------------------------
 
 export interface PuzzleState {
-  /** Raw puzzle layout. */
-  readonly specData: PuzzleSpecData;
-  /** Parsed cages (label + total + cells). */
-  readonly cageStates: readonly CageState[];
   /**
    * User-visible grid values.
    * userGrid[row][col] is the placed digit (1-9) or 0 if none.
    * Null before /confirm (OCR review phase).
    */
   readonly userGrid: number[][] | null;
-  /** User-entered virtual cages. */
-  readonly virtualCages: readonly VirtualCage[];
   /** Full turn history (oldest first). */
   readonly turns: readonly Turn[];
   /** Rule names that run automatically on every engine pass. */
   readonly alwaysApplyRules: readonly string[];
-
   /** 9×9 solver solution (0 = unsolvable cell); null before confirm. */
   readonly goldenSolution: number[][] | null;
-  /** 'killer' (cage overlay) or 'classic' (no cage overlay). */
-  readonly puzzleType: 'killer' | 'classic';
-  /** Pre-fixed digits for classic puzzles; null for killer. */
+  /** Pre-fixed digits for classic puzzles; null for pure killer. */
   readonly givenDigits: number[][] | null;
   /** Data URL of the original uploaded image, for display. */
   readonly originalImageUrl: string | null;
-  /** Data URL of the perspective-corrected grid image; null for killers. */
-  readonly warpedImageUrl: string | null;
   /**
    * [row, col, digit] triples explicitly eliminated by the user (via eliminateCandidate,
    * applyHint, etc.). Maintained by UserAction.apply() so buildEngine() can read a
    * consistent snapshot without replaying turns.
    */
   readonly userRemovedCandidates: readonly [number, number, number][];
+}
+
+export interface KillerPuzzleState extends PuzzleState {
+  /** Raw puzzle layout. */
+  readonly specData: PuzzleSpecData;
+  /** Parsed cages (label + total + cells). */
+  readonly cageStates: readonly CageState[];
+  /** User-entered virtual cages. */
+  readonly virtualCages: readonly VirtualCage[];
+  /** Data URL of the perspective-corrected grid image. */
+  readonly warpedImageUrl: string | null;
   /**
    * When non-null, buildEngine seeds the board from this candidate grid before
    * running rules. Used when loading stall fixtures so the board starts at the
@@ -276,8 +281,49 @@ export interface PuzzleState {
 }
 
 export namespace PuzzleState {
-  export function isKiller(state: PuzzleState): boolean {
-    return state.puzzleType !== 'classic';
+  /** Type guard: true for KillerPuzzleState (has cage data). */
+  export function isKiller(state: PuzzleState): state is KillerPuzzleState {
+    return 'specData' in state;
+  }
+
+  /** Builds a fresh classic PuzzleState for the OCR review phase (blank grid, no golden solution). */
+  export function createClassic(
+    givenDigits: number[][] | null,
+    alwaysApplyRules: readonly string[],
+    originalImageUrl: string | null,
+  ): PuzzleState {
+    return {
+      userGrid: null,
+      turns: [],
+      alwaysApplyRules,
+      goldenSolution: null,
+      givenDigits,
+      originalImageUrl,
+      userRemovedCandidates: [],
+    };
+  }
+
+  /** Builds a fresh killer PuzzleState for the OCR review phase (blank grid, no golden solution). */
+  export function createKiller(
+    specData: PuzzleSpecData,
+    cageStates: readonly CageState[],
+    alwaysApplyRules: readonly string[],
+    originalImageUrl: string | null,
+    warpedImageUrl: string | null,
+  ): KillerPuzzleState {
+    return {
+      specData,
+      cageStates,
+      virtualCages: [],
+      warpedImageUrl,
+      userGrid: null,
+      turns: [],
+      alwaysApplyRules,
+      goldenSolution: null,
+      givenDigits: null,
+      originalImageUrl,
+      userRemovedCandidates: [],
+    };
   }
 }
 

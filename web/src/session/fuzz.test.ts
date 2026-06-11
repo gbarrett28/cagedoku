@@ -27,7 +27,7 @@ import {
 } from './actions.js';
 import { rebuildUserGrid, applyAutoPlacements } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
-import type { PuzzleState } from './types.js';
+import type { KillerPuzzleState, PuzzleState } from './types.js';
 import { specToData, specToCageStates } from './specUtils.js';
 
 // ---------------------------------------------------------------------------
@@ -36,7 +36,7 @@ import { specToData, specToCageStates } from './specUtils.js';
 
 function makeConfirmedState(): PuzzleState {
   const spec = makeThreeCellCageSpec();
-  const pre: PuzzleState = {
+  const pre: KillerPuzzleState = {
     specData: specToData(spec),
     cageStates: specToCageStates(spec),
     userGrid: null,
@@ -44,7 +44,6 @@ function makeConfirmedState(): PuzzleState {
     turns: [],
     alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],
     goldenSolution: null,
-    puzzleType: 'killer',
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,

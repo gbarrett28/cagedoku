@@ -55,12 +55,12 @@ import {
   makeBoxCageSpec,
   makeTrivialSpec,
   makeTwoCellCageSpec,
-  makeRowCageSpec,
   makeClassicGivenDigits,
   KNOWN_SOLUTION,
 } from '../engine/fixtures.js';
 import { specToData, specToCageStates } from './specUtils.js';
-import type { PuzzleState, Turn, UserAction } from './types.js';
+import { PuzzleState } from './types.js';
+import type { KillerPuzzleState, Turn, UserAction } from './types.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import { hasMultipleCageTotals } from '../image/validation.js';
 
@@ -73,41 +73,16 @@ const itNS = DISABLED_RULES.includes('NakedSingle') ? it.skip : it;
 // ---------------------------------------------------------------------------
 
 function makeClassicState(givenDigits: number[][]): PuzzleState {
-  const spec = makeRowCageSpec();
-  const state: PuzzleState = {
-    specData: specToData(spec),
-    cageStates: specToCageStates(spec),
-    userGrid: null,
-    virtualCages: [],
-    turns: [],
-    alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],
-    goldenSolution: null,
-    puzzleType: 'classic',
-    givenDigits,
-    originalImageUrl: null,
-    warpedImageUrl: null,
-    userRemovedCandidates: [],
-  };
+  const state = PuzzleState.createClassic(givenDigits, [...DEFAULT_ALWAYS_APPLY_RULES], null);
   setState(state);
   return state;
 }
 
 function makeKillerConfirmed(): PuzzleState {
   const spec = makeBoxCageSpec();
-  const pre: PuzzleState = {
-    specData: specToData(spec),
-    cageStates: specToCageStates(spec),
-    userGrid: null,
-    virtualCages: [],
-    turns: [],
-    alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],
-    goldenSolution: null,
-    puzzleType: 'killer',
-    givenDigits: null,
-    originalImageUrl: null,
-    warpedImageUrl: null,
-    userRemovedCandidates: [],
-  };
+  const pre = PuzzleState.createKiller(
+    specToData(spec), specToCageStates(spec), [...DEFAULT_ALWAYS_APPLY_RULES], null, null,
+  );
   setState(pre);
   return confirmPuzzle(solveCurrentSpec().board);
 }
@@ -468,7 +443,7 @@ describe('findLastConsistentTurnIdx — bug #30: wrong fallback when no matching
     const correctDigit = goldenSolution[0]![0]!;
     userGrid[0]![0] = (correctDigit % 9) + 1; // deliberately wrong
 
-    const state: PuzzleState = {
+    const state: KillerPuzzleState = {
       specData: specToData(spec),
       cageStates: specToCageStates(spec),
       userGrid,
@@ -479,7 +454,6 @@ describe('findLastConsistentTurnIdx — bug #30: wrong fallback when no matching
       ],
       alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],
       goldenSolution,
-      puzzleType: 'killer',
       givenDigits: null,
       originalImageUrl: null,
       warpedImageUrl: null,
@@ -504,7 +478,7 @@ describe('findLastConsistentTurnIdx — bug #30: wrong fallback when no matching
     const wrongDigit = (goldenSolution[0]![0]! % 9) + 1;
     userGrid[0]![0] = wrongDigit;
 
-    const state: PuzzleState = {
+    const state: KillerPuzzleState = {
       specData: specToData(spec),
       cageStates: specToCageStates(spec),
       userGrid,
@@ -519,7 +493,6 @@ describe('findLastConsistentTurnIdx — bug #30: wrong fallback when no matching
       ],
       alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],
       goldenSolution,
-      puzzleType: 'killer',
       givenDigits: null,
       originalImageUrl: null,
       warpedImageUrl: null,
@@ -552,11 +525,11 @@ describe('Bug #60 regression — addVirtualCage triggers auto-placements', () =>
 
   function makeBox0WithPendingNakedSingle(): void {
     const spec = makeBoxCageSpec();
-    const pre: PuzzleState = {
+    const pre: KillerPuzzleState = {
       specData: specToData(spec), cageStates: specToCageStates(spec),
       userGrid: null, virtualCages: [], turns: [],
       alwaysApplyRules: ['NakedSingle', ...DEFAULT_ALWAYS_APPLY_RULES],
-      goldenSolution: null, puzzleType: 'killer',
+      goldenSolution: null,
       givenDigits: null, originalImageUrl: null, warpedImageUrl: null,
       userRemovedCandidates: [],
     };
@@ -748,19 +721,18 @@ describe('saveSettingsData', () => {
     // The simplest reliable approach: use a pre-confirm state (userGrid=null)
     // and verify saveSettingsData returns the updated state (not refresh()).
     const spec = makeBoxCageSpec();
-    const pre = {
+    const pre: KillerPuzzleState = {
       specData: specToData(spec),
       cageStates: specToCageStates(spec),
-      userGrid: null as number[][] | null,
-      virtualCages: [] as const,
-      turns: [] as const,
+      userGrid: null,
+      virtualCages: [],
+      turns: [],
       alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],
-      goldenSolution: null as number[][] | null,
-      puzzleType: 'killer' as const,
-      givenDigits: null as number[][] | null,
-      originalImageUrl: null as string | null,
-      warpedImageUrl: null as string | null,
-      userRemovedCandidates: [] as const,
+      goldenSolution: null,
+      givenDigits: null,
+      originalImageUrl: null,
+      warpedImageUrl: null,
+      userRemovedCandidates: [],
     };
     setState(pre);
 
@@ -804,7 +776,7 @@ describe('getHints — Rewind on wrong candidate elimination', () => {
     // excluded from alwaysApplyRules so (0,0) is NOT auto-placed after confirmPuzzle —
     // the test needs a blank cell to eliminate the correct candidate from.
     const spec = makeTrivialSpec();
-    const pre: PuzzleState = {
+    const pre: KillerPuzzleState = {
       specData: specToData(spec),
       cageStates: specToCageStates(spec),
       userGrid: null,
@@ -812,7 +784,6 @@ describe('getHints — Rewind on wrong candidate elimination', () => {
       turns: [],
       alwaysApplyRules: ['CageCandidateFilter'],
       goldenSolution: null,
-      puzzleType: 'killer',
       givenDigits: null,
       originalImageUrl: null,
       warpedImageUrl: null,

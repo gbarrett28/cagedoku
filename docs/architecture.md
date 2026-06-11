@@ -75,8 +75,9 @@ deliberate exception):
     *which engine class you have*, not a runtime flag that could drift out of sync
     with the board it was constructed against.
 - **The single canonical `PuzzleState.isKiller(state)` predicate**
-  (`session/types.ts`, a plain `boolean` — `state.puzzleType !== 'classic'`), consulted
-  once by `buildEngine` to decide which entire matching bundle to construct together:
+  (`session/types.ts`, a type guard — `'specData' in state`, narrowing to
+  `KillerPuzzleState`), consulted once by `buildEngine` to decide which entire
+  matching bundle to construct together:
   `KillerBoardState` + `KillerSolverEngine` + the full rule list, or `BoardState` +
   `SolverEngine` + `defaultRules().filter(r => !r.killerOnly)`. No other call site
   re-derives "is this killer" from `state` or from `board`.
@@ -91,8 +92,12 @@ question about the board's shape, not a "what kind of puzzle is this" dispatch �
 `buildEngine`'s `isKiller`-driven construction already guarantees the two always agree.
 This replaced a `state.puzzleType === 'classic'` proxy test (with a
 "cage solutions are always empty (dummy spec)" comment) that was testing the wrong
-thing, because every board used to carry cage fields regardless of puzzle type — the
-synthetic-spec fiction this hierarchy split removes.
+thing, because every board used to carry cage fields regardless of puzzle type. The
+`puzzleType` discriminant has since been removed entirely: `PuzzleState` is the base
+shape (no cage fields, `userGrid: number[][] | null`), and `KillerPuzzleState extends
+PuzzleState` adds `specData`, `cageStates`, `virtualCages`, and `warpedImageUrl`.
+Fresh states are built via `PuzzleState.createClassic(...)` and
+`PuzzleState.createKiller(...)` factories rather than synthetic specs.
 
 ---
 

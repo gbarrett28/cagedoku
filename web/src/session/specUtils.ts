@@ -122,6 +122,21 @@ export function cageStatesToSpec(cages: readonly CageState[], base: PuzzleSpecDa
   return dataToSpec({ regions, cageTotals });
 }
 
+/**
+ * Synthetic killer-style spec for classic puzzles: 9 row-cages, each summing to 45,
+ * with all internal vertical borders present (so the solver treats each row as one cage).
+ * Transient only — never stored on PuzzleState. Used by solveCurrentSpec/confirmPuzzle/
+ * checkSolutionAssertions to drive the cage-equation solver for classic puzzles.
+ */
+export function classicSyntheticSpec(): PuzzleSpec {
+  const borderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(true));
+  const borderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
+  const cageTotals = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+  for (let r = 0; r < 9; r++) cageTotals[r]![0] = 45;
+  const regions = Array.from({ length: 9 }, (_, r) => new Array<number>(9).fill(r + 1));
+  return { regions, cageTotals, borderX, borderY };
+}
+
 // ---------------------------------------------------------------------------
 // Solution key
 // ---------------------------------------------------------------------------

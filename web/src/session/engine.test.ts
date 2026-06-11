@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { makeTrivialSpec, KNOWN_SOLUTION, makeRowCageSpec } from '../engine/fixtures.js';
+import { makeTrivialSpec, KNOWN_SOLUTION } from '../engine/fixtures.js';
 import { specToData, specToCageStates, cageLabel } from './specUtils.js';
 import {
   buildEngine,
@@ -15,7 +15,7 @@ import {
 } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
 import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
-import { UserAction, PuzzleState, type Turn, type VirtualCage, type EliminateCandidateAction, type RestoreCandidateAction, type ResetCellCandidatesAction, type ApplyHintAction } from './types.js';
+import { UserAction, PuzzleState, type KillerPuzzleState, type Turn, type VirtualCage, type EliminateCandidateAction, type RestoreCandidateAction, type ResetCellCandidatesAction, type ApplyHintAction } from './types.js';
 import type { Cell } from '../engine/types.js';
 import { BoardState, KillerBoardState } from '../engine/boardState.js';
 import { SolverEngine, KillerSolverEngine } from '../engine/solverEngine.js';
@@ -26,7 +26,7 @@ const itNS = DISABLED_RULES.includes('NakedSingle') ? it.skip : it;
 // Fixtures
 // ---------------------------------------------------------------------------
 
-function makeState(): PuzzleState {
+function makeState(): KillerPuzzleState {
   const spec = makeTrivialSpec();
   return {
     specData: specToData(spec),
@@ -36,7 +36,6 @@ function makeState(): PuzzleState {
     turns: [],
     alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],
     goldenSolution: null,
-    puzzleType: 'killer',
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
@@ -152,7 +151,8 @@ describe('PuzzleState.isKiller', () => {
   });
 
   it('returns false for classic puzzles', () => {
-    expect(PuzzleState.isKiller({ ...makeState(), puzzleType: 'classic' })).toBe(false);
+    const classic = PuzzleState.createClassic(null, [], null);
+    expect(PuzzleState.isKiller(classic)).toBe(false);
   });
 });
 
@@ -191,7 +191,7 @@ describe('buildEngine', () => {
     // alwaysApplyRules is empty so without fixtureStalledCandidates the board
     // would keep all 9 candidates per cell. The stall seed must override that.
     const stalledCandidates = KNOWN_SOLUTION.map(row => row.map(d => [d!]));
-    const state: PuzzleState = {
+    const state: KillerPuzzleState = {
       ...makeState(),
       alwaysApplyRules: [],
       fixtureStalledCandidates: stalledCandidates,
@@ -209,7 +209,7 @@ describe('buildEngine', () => {
     // pendingHints. After seeding with fixtureStalledCandidates, the board must
     // still reflect those candidates even after buildEngine runs hint rules.
     const stalledCandidates = KNOWN_SOLUTION.map(row => row.map(d => [d!]));
-    const state: PuzzleState = {
+    const state: KillerPuzzleState = {
       ...makeState(),
       alwaysApplyRules: [],
       goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
@@ -230,7 +230,8 @@ describe('buildEngine', () => {
   });
 
   it('constructs a plain BoardState and SolverEngine (not Killer variants) for classic puzzles', () => {
-    const state: PuzzleState = { ...makeState(), puzzleType: 'classic' };
+    const base = makeState();
+    const state = PuzzleState.createClassic(null, base.alwaysApplyRules, null);
     const { board, engine } = buildEngine(state);
     expect(board).toBeInstanceOf(BoardState);
     expect(board).not.toBeInstanceOf(KillerBoardState);
@@ -348,7 +349,7 @@ describe('DEFAULT_ALWAYS_APPLY_RULES', () => {
 // ---------------------------------------------------------------------------
 
 /** State with 80 cells placed (KNOWN_SOLUTION minus (0,0)) and NakedSingle active. */
-function makeAlmostCompleteState(opts: { wrongAt?: [number, number] } = {}): PuzzleState {
+function makeAlmostCompleteState(opts: { wrongAt?: [number, number] } = {}): KillerPuzzleState {
   const spec = makeTrivialSpec();
   const userGrid = KNOWN_SOLUTION.map(row => [...row]) as number[][];
   userGrid[0]![0] = 0; // leave (0,0) blank — NakedSingle will deduce it
@@ -365,7 +366,6 @@ function makeAlmostCompleteState(opts: { wrongAt?: [number, number] } = {}): Puz
     turns: [],
     alwaysApplyRules: ['NakedSingle', ...DEFAULT_ALWAYS_APPLY_RULES],
     goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
-    puzzleType: 'killer',
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
@@ -374,7 +374,7 @@ function makeAlmostCompleteState(opts: { wrongAt?: [number, number] } = {}): Puz
 }
 
 /** State with duplicate digits in userGrid and no goldenSolution — soundness assertion inactive. */
-function makeInternallyInconsistentState(): PuzzleState {
+function makeInternallyInconsistentState(): KillerPuzzleState {
   const spec = makeTrivialSpec();
   const userGrid = KNOWN_SOLUTION.map(row => [...row]) as number[][];
   userGrid[0]![0] = 0; // leave (0,0) blank — NakedSingle would place something
@@ -388,7 +388,6 @@ function makeInternallyInconsistentState(): PuzzleState {
     turns: [],
     alwaysApplyRules: ['NakedSingle', ...DEFAULT_ALWAYS_APPLY_RULES],
     goldenSolution: null, // no golden → soundness assertion inactive
-    puzzleType: 'killer',
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
@@ -403,7 +402,7 @@ describe('applyAutoPlacements — NakedSingle applies placement and peer elimina
     const spec = makeTrivialSpec();
     const userGrid = KNOWN_SOLUTION.map(row => [...row]) as number[][];
     userGrid[0]![0] = 0;
-    const state: PuzzleState = {
+    const state: KillerPuzzleState = {
       specData: specToData(spec),
       cageStates: specToCageStates(spec),
       userGrid,
@@ -411,7 +410,6 @@ describe('applyAutoPlacements — NakedSingle applies placement and peer elimina
       turns: [],
       alwaysApplyRules: ['NakedSingle'],
       goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
-      puzzleType: 'killer',           // no classic override that would force CSE in
       givenDigits: null,
       originalImageUrl: null,
       warpedImageUrl: null,
@@ -452,7 +450,7 @@ describe('applyAutoPlacements — continues even with wrong placements', () => {
     // is intentional — some other digit gets forced via remaining constraints.
     const state = makeAlmostCompleteState();
     const gold = KNOWN_SOLUTION[0]![0]!;
-    const stateWithElim: PuzzleState = {
+    const stateWithElim: KillerPuzzleState = {
       ...state,
       userRemovedCandidates: [[0, 0, gold]],
     };
@@ -486,7 +484,7 @@ describe('applyNextAutoPlacement — continues even with wrong placements', () =
   itNS('places some non-golden digit in (0,0) when the golden candidate was eliminated', () => {
     const state = makeAlmostCompleteState();
     const gold = KNOWN_SOLUTION[0]![0]!;
-    const stateWithElim: PuzzleState = {
+    const stateWithElim: KillerPuzzleState = {
       ...state,
       userRemovedCandidates: [[0, 0, gold]],
     };
@@ -539,7 +537,6 @@ describe('buildEngine hints regression — issue #141', () => {
     // Classic puzzle from issue #141.  Cells (0,8) and (1,8) (0-indexed) both
     // have only {2,8} as candidates — a naked pair in col 9 and box 3,3.
     // The pair should generate col-level eliminations that appear in pendingHints.
-    const spec = makeRowCageSpec();
     const userGrid = [
       [0, 0, 0, 9, 6, 0, 7, 3, 0],
       [0, 0, 0, 1, 0, 3, 4, 0, 0],
@@ -551,20 +548,8 @@ describe('buildEngine hints regression — issue #141', () => {
       [9, 0, 0, 0, 1, 0, 0, 0, 0],
       [0, 8, 2, 0, 0, 0, 0, 0, 0],
     ];
-    const state: PuzzleState = {
-      specData: specToData(spec),
-      cageStates: specToCageStates(spec),
-      userGrid,
-      virtualCages: [],
-      turns: [],
-      alwaysApplyRules: ['NakedSingle'],
-      goldenSolution: null,
-      puzzleType: 'classic',
-      givenDigits: null,
-      originalImageUrl: null,
-      warpedImageUrl: null,
-      userRemovedCandidates: [],
-    };
+    const base = PuzzleState.createClassic(null, ['NakedSingle'], null);
+    const state: PuzzleState = { ...base, userGrid };
     const { engine } = buildEngine(state, { includeHints: true });
     const nakedPairHints = engine.pendingHints.filter(h => h.ruleName === 'NakedPair');
     expect(nakedPairHints.length).toBeGreaterThan(0);

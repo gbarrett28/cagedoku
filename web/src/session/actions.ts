@@ -39,16 +39,18 @@ import {
   specToCageStates,
   cageStatesToSpec,
   specToData,
+  classicSyntheticSpec,
   virtualCageKey,
   virtualCageKeyFromCage,
   solutionKey,
 } from './specUtils.js';
 import { getState, setState, getCV, getRec, getSplitRec } from './store.js';
+import { PuzzleState } from './types.js';
 import type {
   CandidatesResponse,
   HintItem,
   HintsResponse,
-  PuzzleState,
+  KillerPuzzleState,
   RuleInfo,
   SettingsResponse,
   SolveResponse,
@@ -133,21 +135,7 @@ export interface UploadResult {
  */
 export function loadSpecDirect(spec: PuzzleSpec): UploadResult {
   const settings = loadSettings();
-  const state: PuzzleState = {
-    specData: specToData(spec),
-    cageStates: specToCageStates(spec),
-    userGrid: null,
-    virtualCages: [],
-    turns: [],
-    alwaysApplyRules: [...settings.alwaysApplyRules],
-    goldenSolution: null,
-    puzzleType: 'killer',
-    givenDigits: null,
-    originalImageUrl: null,
-    warpedImageUrl: null,
-    userRemovedCandidates: [],
-    fixtureStalledCandidates: null,
-  };
+  const state = PuzzleState.createKiller(specToData(spec), specToCageStates(spec), [...settings.alwaysApplyRules], null, null);
   setState(state);
   return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map(), mergedThumbs: new Map() };
 }
@@ -156,35 +144,12 @@ export function loadSpecDirect(spec: PuzzleSpec): UploadResult {
  * Build a PuzzleState for a Classic puzzle, bypassing the image pipeline.
  *
  * Used in dev/test mode via the `__testLoad('classic')` hook. The caller
- * must pass a 9×9 given-digits grid (0 = blank cell). A trivial spec (all
- * borders present, no cage totals) is used for the layout; cage display is
- * suppressed because `puzzleType` is `'classic'`.
+ * must pass a 9×9 given-digits grid (0 = blank cell). The resulting state has
+ * no cage data at all, so cage display is naturally suppressed.
  */
 export function loadClassicDirect(givenDigits: readonly (readonly number[])[]): UploadResult {
-  // Build the spec directly without validateCageLayout. Use 9 row-cages (one per row,
-  // total=45) so cage-based rules operate on correct row units for Classic puzzles.
-  const borderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(true));
-  const borderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
-  const cageTotals = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-  for (let r = 0; r < 9; r++) cageTotals[r]![0] = 45;
-  const regions = Array.from({ length: 9 }, (_, r) => new Array<number>(9).fill(r + 1));
-  const spec: PuzzleSpec = { regions, cageTotals, borderX, borderY };
   const settings = loadSettings();
-  const state: PuzzleState = {
-    specData: specToData(spec),
-    cageStates: specToCageStates(spec),
-    userGrid: null,
-    virtualCages: [],
-    turns: [],
-    alwaysApplyRules: [...settings.alwaysApplyRules],
-    goldenSolution: null,
-    puzzleType: 'classic',
-    givenDigits: givenDigits.map(row => [...row]),
-    originalImageUrl: null,
-    warpedImageUrl: null,
-    userRemovedCandidates: [],
-    fixtureStalledCandidates: null,
-  };
+  const state = PuzzleState.createClassic(givenDigits.map(row => [...row]), [...settings.alwaysApplyRules], null);
   setState(state);
   return {
     state,
@@ -358,21 +323,9 @@ async function buildStateFromParseResult(
     }
   }
 
-  const state: PuzzleState = {
-    specData: specToData(spec),
-    cageStates: specToCageStates(spec),
-    userGrid: null,
-    virtualCages: [],
-    turns: [],
-    alwaysApplyRules: [...settings.alwaysApplyRules],
-    goldenSolution: null,
-    puzzleType: result.puzzleType,
-    givenDigits: result.givenDigits,
-    originalImageUrl,
-    warpedImageUrl,
-    userRemovedCandidates: [],
-    fixtureStalledCandidates: null,
-  };
+  const state: PuzzleState = result.puzzleType === 'killer'
+    ? PuzzleState.createKiller(specToData(spec), specToCageStates(spec), [...settings.alwaysApplyRules], originalImageUrl, warpedImageUrl)
+    : PuzzleState.createClassic(result.givenDigits, [...settings.alwaysApplyRules], originalImageUrl);
 
   setState(state);
   return { state, warpedImageUrl, warning };
@@ -387,11 +340,12 @@ async function buildStateFromParseResult(
  */
 export function patchCage(label: string, total: number): PuzzleState {
   const state = requireState();
+  if (!PuzzleState.isKiller(state)) throw new Error('patchCage requires a killer puzzle state');
   const upper = label.toUpperCase();
   const newCages = state.cageStates.map(c =>
     c.label === upper ? { ...c, total } : c,
   );
-  const updated: PuzzleState = { ...state, cageStates: newCages };
+  const updated = { ...state, cageStates: newCages };
   setState(updated);
   return updated;
 }
@@ -415,8 +369,9 @@ export function applyDraftLayout(
   borderX: readonly (readonly boolean[])[],    // [col][rowGap]
   borderY: readonly (readonly boolean[])[],    // [colGap][row]
   cellTotals: readonly (readonly number[])[],  // [row][col] — any cell may be non-zero
-): { state: PuzzleState; errorCells: Set<string>; warnings: string[] } {
+): { state: KillerPuzzleState; errorCells: Set<string>; warnings: string[] } {
   const state = requireState();
+  if (!PuzzleState.isKiller(state)) throw new Error('applyDraftLayout requires a killer puzzle state');
   if (state.userGrid !== null) throw new Error('Cannot edit layout after confirming');
 
   // Union-find: keys are "row,col" (cellKey format)
@@ -495,7 +450,7 @@ export function applyDraftLayout(
     ? [`Cage totals sum to ${totalSum} (expected ${GRID_TOTAL_SUM}) — please correct before confirming`]
     : [];
 
-  const updated: PuzzleState = {
+  const updated = {
     ...state,
     specData: specToData(spec),
     cageStates: specToCageStates(spec),
@@ -519,12 +474,14 @@ export function applyDraftLayout(
 export function solveCurrentSpec(): SolveResult {
   const state = requireState();
   if (state.userGrid !== null) throw new Error('Already confirmed');
-  const spec = cageStatesToSpec(state.cageStates, state.specData);
+  const spec = PuzzleState.isKiller(state)
+    ? cageStatesToSpec(state.cageStates, state.specData)
+    : classicSyntheticSpec();
   // givenDigits are only meaningful for classic puzzles (pre-filled cells).
   // For killer puzzles, readClassicDigits can produce false-positive detections
   // (e.g. a cage total digit near the cell centre). Passing them to solve()
   // would incorrectly force those cells, potentially producing invalid solutions.
-  const givenDigits = state.puzzleType === 'classic' ? (state.givenDigits ?? undefined) : undefined;
+  const givenDigits = PuzzleState.isKiller(state) ? undefined : (state.givenDigits ?? undefined);
   return solve(spec, givenDigits);
 }
 
@@ -570,13 +527,9 @@ export function confirmPuzzle(board: BoardState, fixtureStalledCandidates?: numb
   }
 
   // Preserve alwaysApplyRules from state (set from user settings in uploadPuzzle/loadSpecDirect).
-  let updated: PuzzleState = {
-    ...state,
-    goldenSolution,
-    userGrid,
-    turns: givenTurns,
-    fixtureStalledCandidates: fixtureStalledCandidates ?? null,
-  };
+  const confirmedKiller = { ...state, goldenSolution, userGrid, turns: givenTurns, fixtureStalledCandidates: fixtureStalledCandidates ?? null };
+  const confirmedClassic = { ...state, goldenSolution, userGrid, turns: givenTurns };
+  let updated: PuzzleState = PuzzleState.isKiller(state) ? confirmedKiller : confirmedClassic;
   updated = applyAutoPlacements(updated);
   setState(updated);
   return updated;
@@ -603,7 +556,7 @@ export function checkSolutionAssertions(state: PuzzleState): AssertionViolation 
     return new AssertionViolation({
       name: 'UnsolvedByRules',
       description: 'The rule-based solver could not fill every cell. This puzzle may require techniques the rule set does not yet cover.',
-      puzzleSpecJson: JSON.stringify(state.specData),
+      puzzleSpecJson: JSON.stringify(PuzzleState.isKiller(state) ? state.specData : null),
       solutionJson: JSON.stringify(sol),
       actionLog: formatActionLog(),
     });
@@ -615,7 +568,7 @@ export function checkSolutionAssertions(state: PuzzleState): AssertionViolation 
     return new AssertionViolation({
       name: 'InvalidSolution',
       description: `The solver produced an invalid solution: ${reason}`,
-      puzzleSpecJson: JSON.stringify(state.specData),
+      puzzleSpecJson: JSON.stringify(PuzzleState.isKiller(state) ? state.specData : null),
       solutionJson: JSON.stringify(sol),
       actionLog: formatActionLog(),
     });
@@ -665,13 +618,14 @@ export function candidatesFromBoard(board: BoardState, state: PuzzleState): Cand
 
   // Real cage info — allSolutions/autoImpossible/userEliminated match VirtualCageInfo shape.
   // A plain BoardState carries no cage data; cages/nRealCages are empty/zero for it.
+  const cageStates = PuzzleState.isKiller(state) ? state.cageStates : [];
   const nRealCages = board instanceof KillerBoardState ? Math.max(...board.regions.flat()) + 1 : 0;
   const cages = board instanceof KillerBoardState
     ? Array.from({ length: nRealCages }, (_, idx) => {
         const unit = board.units[27 + idx]!;
         // board.cageSolns[idx] has user-eliminated and engine-impossible both removed by buildEngine.
         const solns = board.cageSolns[idx]!;
-        const cageState = state.cageStates[idx]!;
+        const cageState = cageStates[idx]!;
         let total = 0;
         for (const [r, c] of unit.cells) {
           const v = board.spec.cageTotals[r]![c]!;
@@ -698,7 +652,8 @@ export function candidatesFromBoard(board: BoardState, state: PuzzleState): Cand
 
   // Virtual cage info — same SolutionCategorization shape as CageInfo.
   const diffSolnKey = (s: DiffSolution) => `${[...s.pos].join(',')}|${[...s.neg].join(',')}`;
-  const virtualCages = state.virtualCages.map((vc, i) => {
+  const virtualCageStates = PuzzleState.isKiller(state) ? state.virtualCages : [];
+  const virtualCages = virtualCageStates.map((vc, i) => {
     const isDiff = vc.negativeCells !== undefined && vc.negativeCells.length > 0;
     const key = virtualCageKeyFromCage(vc);
     if (isDiff) {
@@ -904,6 +859,7 @@ export function cycleCandidate(row1b: number, col1b: number, digit: number): Puz
  */
 export function solvePuzzle(): SolveResponse {
   const state = requireState();
+  if (!PuzzleState.isKiller(state)) throw new Error('solvePuzzle requires a killer puzzle state');
   const spec = cageStatesToSpec(state.cageStates, state.specData);
   try {
     const { board } = solve(spec);
@@ -929,11 +885,12 @@ export function solvePuzzle(): SolveResponse {
  */
 export function eliminateCageSolution(label: string, solution: number[]): PuzzleState {
   const state = requireConfirmed();
+  if (!PuzzleState.isKiller(state)) throw new Error('eliminateCageSolution requires a killer puzzle state');
   const upper = label.toUpperCase();
   const newCages = state.cageStates.map(c =>
     c.label !== upper ? c : { ...c, userEliminatedSolns: toggleSolution(c.userEliminatedSolns, solution) },
   );
-  const updated: PuzzleState = { ...state, cageStates: newCages };
+  const updated = { ...state, cageStates: newCages };
   setState(updated);
   return applyAutoPlacements(updated);
 }
@@ -946,10 +903,11 @@ export function eliminateCageSolution(label: string, solution: number[]): Puzzle
  */
 export function eliminateVirtualCageSolution(vcKey: string, solution: number[]): PuzzleState {
   const state = requireConfirmed();
+  if (!PuzzleState.isKiller(state)) throw new Error('eliminateVirtualCageSolution requires a killer puzzle state');
   const newVCs = state.virtualCages.map(vc =>
     virtualCageKeyFromCage(vc) !== vcKey ? vc : { ...vc, eliminatedSolns: toggleSolution(vc.eliminatedSolns, solution) },
   );
-  const updated: PuzzleState = { ...state, virtualCages: newVCs };
+  const updated = { ...state, virtualCages: newVCs };
   setState(updated);
   return applyAutoPlacements(updated);
 }
@@ -957,6 +915,7 @@ export function eliminateVirtualCageSolution(vcKey: string, solution: number[]):
 /** Toggle a DiffSolution as user-eliminated for a diff virtual cage identified by key. */
 export function eliminateVirtualCageDiffSolution(vcKey: string, solution: DiffSolution): PuzzleState {
   const state = requireConfirmed();
+  if (!PuzzleState.isKiller(state)) throw new Error('eliminateVirtualCageDiffSolution requires a killer puzzle state');
   const diffKey = (s: DiffSolution) => `${[...s.pos].join(',')}|${[...s.neg].join(',')}`;
   const newVCs = state.virtualCages.map(vc => {
     if (virtualCageKeyFromCage(vc) !== vcKey) return vc;
@@ -968,7 +927,7 @@ export function eliminateVirtualCageDiffSolution(vcKey: string, solution: DiffSo
       : [...current, solution];
     return { ...vc, eliminatedDiffSolns: newElims };
   });
-  const updated: PuzzleState = { ...state, virtualCages: newVCs };
+  const updated = { ...state, virtualCages: newVCs };
   setState(updated);
   return applyAutoPlacements(updated);
 }
@@ -1326,9 +1285,10 @@ export function getAutoPlacementDelay(): number {
 
 export function getSettingsData(): SettingsResponse {
   const settings = loadSettings();
-  const puzzleType = getState()?.puzzleType;
+  const state = getState();
+  const isKillerPuzzle = state !== null && PuzzleState.isKiller(state);
   const hintableRules: RuleInfo[] = defaultRules()
-    .filter(r => puzzleType !== 'classic' || !r.killerOnly)
+    .filter(r => isKillerPuzzle || !r.killerOnly)
     .map(r => ({
       name: r.name,
       displayName: r.displayName,
