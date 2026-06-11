@@ -57,7 +57,13 @@ The pre-confirm OCR-review phase is **not** represented by a single `PuzzleState
 
 **`revertToOcr`/"Edit OCR"** (`actions.ts:589`, `main.ts:177`'s `lastOcrState`) snapshots and restores the candidate list directly: `lastOcrState: PuzzleState | null` becomes `lastOcrCandidates: readonly PuzzleState[]`, and `revertToOcr(candidates)` replaces `currentState` wholesale — restoring both the available dropdown options and the prior selection.
 
-> **Status (Sprint 1c — ✅ shipped):** `web/src/session/store.ts` now backs the session with `_candidates: readonly PuzzleState[]` (`getStateCandidates`/`setStateCandidates`), replacing `_state: PuzzleState | null`. `getState`/`setState` remain as post-confirm convenience accessors over the singleton candidate, and `requireState()` reads from the candidate list with a non-empty assertion. This is purely an internal data-structure change — OCR still produces exactly one candidate, so `currentState.length` is always 0 or 1 today. **Remaining work (Sprint 1d):** dual Killer/Classic OCR candidates, `activeCandidate()`, dropdown rewiring, and `revertToOcr`/`lastOcrCandidates` are not yet implemented.
+> **Status (Sprint 1c — ✅ shipped):** `web/src/session/store.ts` now backs the session with `_candidates: readonly PuzzleState[]` (`getStateCandidates`/`setStateCandidates`), replacing `_state: PuzzleState | null`. `getState`/`setState` remain as post-confirm convenience accessors over the singleton candidate, and `requireState()` reads from the candidate list with a non-empty assertion. This is purely an internal data-structure change — OCR still produces exactly one candidate, so `currentState.length` is always 0 or 1 today.
+>
+> **Status (synthetic 9-row-cage placeholder — ✅ already shipped):** `loadClassicDirect` and the OCR classic path in `buildStateFromParseResult` already build Classic candidates via `PuzzleState.createClassic(...)` with no cage data — the synthetic placeholder described above no longer exists.
+>
+> **Remaining work, scoped into two further sprints:**
+> - **Sprint 1d — ✅ shipped:** `buildCandidatesFromParseResult` (`web/src/session/actions.ts`) builds `[killerCandidate, classicCandidate]` when OCR detects `'killer'` (Killer first, preserving today's default) and `[classicCandidate]` when OCR detects `'classic'`, stored via `setStateCandidates`. The Classic candidate uses `result.givenDigits` (already extracted on the killer path via `readClassicDigits`). No UI change — `getState()` returns `_candidates[0]`, identical to the prior single-candidate behaviour.
+> - **Sprint 1e (future):** `activeCandidate(candidates, selectedType)`, dropdown rewiring in `main.ts`, `revertToOcr`/`lastOcrCandidates` replacing `lastOcrState`, and making `main.ts`'s `currentState` itself a `readonly PuzzleState[]`.
 
 ### Removed: `autoRemovedCandidates` — ✅ already shipped (`bb78a43`)
 
