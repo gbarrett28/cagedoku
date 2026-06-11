@@ -95,6 +95,14 @@ User-eliminated candidates are now an explicit field on `PuzzleState`, maintaine
 
 ## 2. `RuleMutation` Type Hierarchy
 
+> **Status (Sprint 2a — ✅ shipped):** `RuleMutation` and the four concrete mutation
+> types (`PlaceDigitMutation`, `EliminateCandidateMutation`, `AddVirtualCageMutation`,
+> `EliminateCageSolutionMutation`) are implemented in `web/src/session/ruleMutation.ts`,
+> exactly as specified below, with full unit test coverage including JSON-round-trip
+> `revive()` tests. This is purely additive — nothing in `engine.ts`, `actions.ts`, or
+> `main.ts` references these types yet; integration begins in Sprint 2b
+> (`buildEngine()` contract: `baseBoard`, `ruleSteps`, `validationContext`).
+
 Rule effects are broader than eliminations — a rule firing can place a digit, eliminate a candidate, add a virtual cage, or eliminate a cage solution. Each is an open interface carrying its own `apply`, so dispatch lives on the value itself rather than in an external switch:
 
 ```typescript
