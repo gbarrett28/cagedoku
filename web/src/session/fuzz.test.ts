@@ -39,7 +39,7 @@ function makeConfirmedState(): PuzzleState {
   const pre: KillerPuzzleState = {
     specData: specToData(spec),
     cageStates: specToCageStates(spec),
-    userGrid: null,
+    userGrid: Array.from({ length: 9 }, () => new Array<number>(9).fill(0)),
     virtualCages: [],
     turns: [],
     alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],

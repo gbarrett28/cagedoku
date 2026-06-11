@@ -143,13 +143,13 @@ export namespace UserAction {
   export function apply(action: UserAction, state: PuzzleState): PuzzleState {
     switch (action.type) {
       case 'placeDigit': {
-        const g = state.userGrid ?? Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+        const g = state.userGrid;
         const newGrid = g.map(row => [...row]);
         newGrid[action.row]![action.col] = action.digit;
         return { ...state, userGrid: newGrid };
       }
       case 'removeDigit': {
-        const g = state.userGrid ?? Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+        const g = state.userGrid;
         const newGrid = g.map(row => [...row]);
         newGrid[action.row]![action.col] = 0;
         return { ...state, userGrid: newGrid };
@@ -241,9 +241,10 @@ export interface PuzzleState {
   /**
    * User-visible grid values.
    * userGrid[row][col] is the placed digit (1-9) or 0 if none.
-   * Null before /confirm (OCR review phase).
+   * All-zero before /confirm (OCR review phase); use `goldenSolution === null`
+   * to detect the unconfirmed state.
    */
-  readonly userGrid: number[][] | null;
+  readonly userGrid: number[][];
   /** Full turn history (oldest first). */
   readonly turns: readonly Turn[];
   /** Rule names that run automatically on every engine pass. */
@@ -293,7 +294,7 @@ export namespace PuzzleState {
     originalImageUrl: string | null,
   ): PuzzleState {
     return {
-      userGrid: null,
+      userGrid: Array.from({ length: 9 }, () => new Array<number>(9).fill(0)),
       turns: [],
       alwaysApplyRules,
       goldenSolution: null,
@@ -316,7 +317,7 @@ export namespace PuzzleState {
       cageStates,
       virtualCages: [],
       warpedImageUrl,
-      userGrid: null,
+      userGrid: Array.from({ length: 9 }, () => new Array<number>(9).fill(0)),
       turns: [],
       alwaysApplyRules,
       goldenSolution: null,

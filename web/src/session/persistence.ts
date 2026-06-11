@@ -50,7 +50,7 @@ export function loadSession(): {
     if (raw === null) return null;
     const payload = JSON.parse(raw) as Partial<PersistedSession>;
     // Only restore a confirmed (playing-mode) session
-    if (payload.version !== 1 || payload.state == null || payload.state.userGrid === null) return null;
+    if (payload.version !== 1 || payload.state == null || payload.state.goldenSolution === null) return null;
     return {
       state: payload.state,
       cellColours: new Map(Object.entries(payload.cellColours ?? {})) as Map<string, 'blue' | 'green'>,

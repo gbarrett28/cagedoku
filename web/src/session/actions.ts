@@ -111,7 +111,7 @@ function requireState(): PuzzleState {
 
 function requireConfirmed(): PuzzleState {
   const s = requireState();
-  if (s.userGrid === null) throw new Error('Session not yet confirmed');
+  if (s.goldenSolution === null) throw new Error('Session not yet confirmed');
   return s;
 }
 
@@ -372,7 +372,7 @@ export function applyDraftLayout(
 ): { state: KillerPuzzleState; errorCells: Set<string>; warnings: string[] } {
   const state = requireState();
   if (!PuzzleState.isKiller(state)) throw new Error('applyDraftLayout requires a killer puzzle state');
-  if (state.userGrid !== null) throw new Error('Cannot edit layout after confirming');
+  if (state.goldenSolution !== null) throw new Error('Cannot edit layout after confirming');
 
   // Union-find: keys are "row,col" (cellKey format)
   const rmap = new Map<string, string>();
@@ -473,7 +473,7 @@ export function applyDraftLayout(
  */
 export function solveCurrentSpec(): SolveResult {
   const state = requireState();
-  if (state.userGrid !== null) throw new Error('Already confirmed');
+  if (state.goldenSolution !== null) throw new Error('Already confirmed');
   const spec = PuzzleState.isKiller(state)
     ? cageStatesToSpec(state.cageStates, state.specData)
     : classicSyntheticSpec();
@@ -495,7 +495,7 @@ export function solveCurrentSpec(): SolveResult {
  */
 export function confirmPuzzle(board: BoardState, fixtureStalledCandidates?: number[][][]): PuzzleState {
   const state = requireState();
-  if (state.userGrid !== null) throw new Error('Session already confirmed');
+  if (state.goldenSolution !== null) throw new Error('Session already confirmed');
 
   // Extract golden solution — 0 for cells the solver could not determine
   const goldenSolution: number[][] = Array.from({ length: 9 }, (_, r) =>
@@ -1074,7 +1074,7 @@ function findMissingGoldenCandidate(
 
 export function getHints(): HintsResponse {
   let state = requireConfirmed();
-  if (state.userGrid === null) return { hints: [] };
+  if (state.goldenSolution === null) return { hints: [] };
 
   // ── Inconsistency detection ─────────────────────────────────────────────────
   // Three paths can put the board in a state inconsistent with goldenSolution:
@@ -1317,5 +1317,5 @@ export function saveSettingsData(
   if (s === null) return null;
   const updated: PuzzleState = { ...s, alwaysApplyRules };
   setState(updated);
-  return s.userGrid !== null ? refresh() : updated;
+  return s.goldenSolution !== null ? refresh() : updated;
 }

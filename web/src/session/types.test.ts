@@ -14,7 +14,7 @@ const cageStates: CageState[] = [
 describe('PuzzleState.createClassic', () => {
   it('builds a base PuzzleState with no cage data', () => {
     const state = PuzzleState.createClassic([[1, 0, 0, 0, 0, 0, 0, 0, 0]], ['nakedSingle'], null);
-    expect(state.userGrid).toBeNull();
+    expect(state.userGrid).toEqual(Array.from({ length: 9 }, () => new Array<number>(9).fill(0)));
     expect(state.goldenSolution).toBeNull();
     expect(state.givenDigits).toEqual([[1, 0, 0, 0, 0, 0, 0, 0, 0]]);
     expect(state.alwaysApplyRules).toEqual(['nakedSingle']);
@@ -31,7 +31,7 @@ describe('PuzzleState.createKiller', () => {
     expect(state.cageStates).toBe(cageStates);
     expect(state.virtualCages).toEqual([]);
     expect(state.givenDigits).toBeNull();
-    expect(state.userGrid).toBeNull();
+    expect(state.userGrid).toEqual(Array.from({ length: 9 }, () => new Array<number>(9).fill(0)));
     expect(PuzzleState.isKiller(state)).toBe(true);
   });
 });

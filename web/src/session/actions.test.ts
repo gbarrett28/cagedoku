@@ -527,7 +527,7 @@ describe('Bug #60 regression — addVirtualCage triggers auto-placements', () =>
     const spec = makeBoxCageSpec();
     const pre: KillerPuzzleState = {
       specData: specToData(spec), cageStates: specToCageStates(spec),
-      userGrid: null, virtualCages: [], turns: [],
+      userGrid: Array.from({ length: 9 }, () => new Array<number>(9).fill(0)), virtualCages: [], turns: [],
       alwaysApplyRules: ['NakedSingle', ...DEFAULT_ALWAYS_APPLY_RULES],
       goldenSolution: null,
       givenDigits: null, originalImageUrl: null, warpedImageUrl: null,
@@ -724,7 +724,7 @@ describe('saveSettingsData', () => {
     const pre: KillerPuzzleState = {
       specData: specToData(spec),
       cageStates: specToCageStates(spec),
-      userGrid: null,
+      userGrid: Array.from({ length: 9 }, () => new Array<number>(9).fill(0)),
       virtualCages: [],
       turns: [],
       alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],
@@ -779,7 +779,7 @@ describe('getHints — Rewind on wrong candidate elimination', () => {
     const pre: KillerPuzzleState = {
       specData: specToData(spec),
       cageStates: specToCageStates(spec),
-      userGrid: null,
+      userGrid: Array.from({ length: 9 }, () => new Array<number>(9).fill(0)),
       virtualCages: [],
       turns: [],
       alwaysApplyRules: ['CageCandidateFilter'],

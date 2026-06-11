@@ -359,9 +359,8 @@ function drawCageTotals(ctx: CanvasRenderingContext2D, state: PuzzleState): void
 }
 
 function drawDigits(ctx: CanvasRenderingContext2D, state: PuzzleState): void {
-  const digitGrid: number[][] | null =
-    state.userGrid !== null ? state.userGrid : (state.givenDigits ?? null);
-  if (digitGrid === null) return;
+  const digitGrid: number[][] =
+    state.goldenSolution !== null ? state.userGrid : (state.givenDigits ?? state.userGrid);
 
   const duplicateCells = findDuplicateCells(digitGrid);
   if (duplicateCells.size > 0) {
@@ -374,7 +373,7 @@ function drawDigits(ctx: CanvasRenderingContext2D, state: PuzzleState): void {
   }
 
   const givenCells = new Set<string>();
-  if (!PuzzleState.isKiller(state) && state.userGrid !== null && state.givenDigits !== null) {
+  if (!PuzzleState.isKiller(state) && state.goldenSolution !== null && state.givenDigits !== null) {
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
       if ((state.givenDigits[r]?.[c] ?? 0) > 0) givenCells.add(`${r},${c}`);
     }
@@ -386,7 +385,7 @@ function drawDigits(ctx: CanvasRenderingContext2D, state: PuzzleState): void {
       if (digit > 0) {
         const key = `${r},${c}`;
         ctx.fillStyle = duplicateCells.has(key) ? '#dc2626'
-          : (state.userGrid !== null && !givenCells.has(key)) ? '#2563eb'
+          : (state.goldenSolution !== null && !givenCells.has(key)) ? '#2563eb'
           : '#000';
         ctx.fillText(String(digit), MARGIN + c * CELL + CELL / 2, MARGIN + r * CELL + CELL / 2);
       }
@@ -523,7 +522,7 @@ function drawGrid(
   drawGridLines(ctx);
   if (PuzzleState.isKiller(state)) drawCageTotals(ctx, state);
   drawDigits(ctx, state);
-  if (showCands && candidatesData !== null && state.userGrid !== null) {
+  if (showCands && candidatesData !== null && state.goldenSolution !== null) {
     drawCandidates(ctx, state.userGrid, candidatesData, showEss);
     drawHintDigitMarkers(ctx, state.userGrid, candidatesData);
   }
@@ -531,7 +530,6 @@ function drawGrid(
 
 function isGridSolved(state: PuzzleState): boolean {
   const grid = state.userGrid;
-  if (grid === null) return false;
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
       if ((grid[r]?.[c] ?? 0) === 0) return false;
@@ -597,7 +595,7 @@ function redrawGrid(): void {
     currentCandidates,
     virtualCageSelection.size > 0 ? virtualCageSelection : null,
     showEssential,
-    currentState?.userGrid === null ? { borderX: draftBorderX, borderY: draftBorderY } : undefined,
+    currentState?.goldenSolution === null ? { borderX: draftBorderX, borderY: draftBorderY } : undefined,
     reviewErrorCells.size > 0 ? reviewErrorCells : undefined,
     reviewSuspectCells.size > 0 ? reviewSuspectCells : undefined,
     virtualCageNegCells.size > 0 ? virtualCageNegCells : undefined,
@@ -645,7 +643,7 @@ function renderState(state: PuzzleState): void {
   }
 
   el<HTMLElement>('classic-edit-hint').hidden =
-    puzzleType !== 'classic' || state.userGrid !== null;
+    puzzleType !== 'classic' || state.goldenSolution !== null;
 
   if (state.originalImageUrl !== null) {
     el<HTMLImageElement>('original-img').src = state.originalImageUrl;
@@ -734,7 +732,7 @@ function updateUndoButton(state: PuzzleState): void {
 
 function updateRevealButton(): void {
   el<HTMLButtonElement>('reveal-btn').hidden =
-    currentState === null || currentState.userGrid === null || selectedCell === null;
+    currentState === null || currentState.goldenSolution === null || selectedCell === null;
 }
 
 function setAutoApplyLock(locked: boolean): void {
@@ -1590,10 +1588,10 @@ function updateVcStatus(): void {
   const vcStatus = el<HTMLElement>('vc-selection-status');
   const posCount = virtualCageSelection.size - virtualCageNegCells.size;
   const negCount = virtualCageNegCells.size;
-  const allSolved = virtualCageSelection.size >= 2 && currentState?.userGrid !== null &&
+  const allSolved = virtualCageSelection.size >= 2 && currentState?.goldenSolution !== null &&
     [...virtualCageSelection].every(k => {
       const [kr, kc] = k.split(',').map(Number);
-      return (currentState!.userGrid![kr!]?.[kc!] ?? 0) !== 0;
+      return (currentState!.userGrid[kr!]?.[kc!] ?? 0) !== 0;
     });
   if (virtualCageSelection.size < 2) {
     vcStatus.textContent = 'Click to add positive cells, click again for negative';
@@ -1609,10 +1607,10 @@ function updateVcStatus(): void {
 
 async function submitVirtualCage(): Promise<void> {
   if (virtualCageSelection.size < 2) return;
-  if (currentState?.userGrid !== null) {
+  if (currentState?.goldenSolution !== null) {
     const allSolved = [...virtualCageSelection].every(k => {
       const [kr, kc] = k.split(',').map(Number);
-      return (currentState!.userGrid![kr!]?.[kc!] ?? 0) !== 0;
+      return (currentState!.userGrid[kr!]?.[kc!] ?? 0) !== 0;
     });
     if (allSolved) { setStatus('Cannot add virtual cage: all selected cells are already solved.', true); return; }
   }
@@ -1872,12 +1870,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // visibilitychange to 'hidden' is the reliable signal on iOS/Android PWAs where
   // beforeunload may not fire.
   window.addEventListener('beforeunload', () => {
-    if (currentState !== null && currentState.userGrid !== null) {
+    if (currentState !== null && currentState.goldenSolution !== null) {
       saveSession(currentState, cellColours);
     }
   });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden' && currentState !== null && currentState.userGrid !== null) {
+    if (document.visibilityState === 'hidden' && currentState !== null && currentState.goldenSolution !== null) {
       saveSession(currentState, cellColours);
     }
   });
@@ -2479,7 +2477,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Keyboard
   document.addEventListener('keydown', (e) => {
-    if (currentState === null || currentState.userGrid === null) {
+    if (currentState === null || currentState.goldenSolution === null) {
       // Pre-confirm: classic inline editing
       if (currentState !== null && !PuzzleState.isKiller(currentState) && selectedCell !== null) {
         if (e.key >= '1' && e.key <= '9') { void handleGivenDigitEdit(selectedCell.row, selectedCell.col, Number(e.key)); return; }
@@ -2526,7 +2524,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (c0 < 0 || c0 > 8 || r0 < 0 || r0 > 8) return;
 
     // ── Review-mode interaction (before confirm) ─────────────────────────────────────────────────────────────────────────────────────
-    if (currentState.userGrid === null && PuzzleState.isKiller(currentState)) {
+    if (currentState.goldenSolution === null && PuzzleState.isKiller(currentState)) {
       const state = currentState;
       // Review mode: borders always togglable; interior click handled by Chunk 2 (total overlay).
       const BORDER_ZONE = 7; // px
@@ -2608,7 +2606,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    if (inspectCageMode && currentState.userGrid !== null && PuzzleState.isKiller(currentState)) {
+    if (inspectCageMode && currentState.goldenSolution !== null && PuzzleState.isKiller(currentState)) {
       const state = currentState;
       const cageIdx = state.specData.regions[r0]?.[c0];
       if (cageIdx !== undefined) {
@@ -2631,7 +2629,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Digit buttons — pre-confirm Classic edits given digits; edit-candidates mode toggles a
   // candidate; otherwise places a digit in the playing grid.
   function handleDigitButton(d: number): void {
-    if (currentState !== null && currentState.userGrid === null && !PuzzleState.isKiller(currentState) && selectedCell !== null) {
+    if (currentState !== null && currentState.goldenSolution === null && !PuzzleState.isKiller(currentState) && selectedCell !== null) {
       void handleGivenDigitEdit(selectedCell.row, selectedCell.col, d);
     } else if (candidateEditMode && selectedCell !== null) {
       void handleCandidateCycle(selectedCell.row, selectedCell.col, d);

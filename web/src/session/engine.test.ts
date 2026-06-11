@@ -387,7 +387,9 @@ function makeInternallyInconsistentState(): KillerPuzzleState {
     virtualCages: [],
     turns: [],
     alwaysApplyRules: ['NakedSingle', ...DEFAULT_ALWAYS_APPLY_RULES],
-    goldenSolution: null, // no golden → soundness assertion inactive
+    // Real golden solution; the row-duplicate makes isUserCorrupted true,
+    // which makes buildEngine disable the soundness assertion internally.
+    goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,

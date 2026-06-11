@@ -151,9 +151,8 @@ describe('applyAutoApplyStep', () => {
 // ---------------------------------------------------------------------------
 
 describe('getNextAutoApplyStep', () => {
-  it('returns null when userGrid is null (unconfirmed state)', () => {
-    const state = { ...makeBaseState(), userGrid: null };
-    expect(getNextAutoApplyStep(state)).toBeNull();
+  it('returns null when goldenSolution is null (unconfirmed state)', () => {
+    expect(getNextAutoApplyStep(makeBaseState())).toBeNull();
   });
 
   it('returns a non-null step with real changes on a board that can deduce (0,0)', () => {
