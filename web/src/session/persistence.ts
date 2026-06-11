@@ -11,7 +11,7 @@
  * Schema version: bump STORAGE_KEY when PuzzleState changes incompatibly.
  */
 
-import type { PuzzleState } from './types.js';
+import { PuzzleState } from './types.js';
 
 const STORAGE_KEY = 'cagedoku:session:v1';
 
@@ -26,7 +26,9 @@ export function saveSession(
   state: PuzzleState,
   cellColours: Map<string, 'blue' | 'green'>,
 ): void {
-  const stripped = { ...state, originalImageUrl: null, warpedImageUrl: null } as PuzzleState;
+  const strippedKiller = { ...state, originalImageUrl: null, warpedImageUrl: null };
+  const strippedClassic = { ...state, originalImageUrl: null };
+  const stripped: PuzzleState = PuzzleState.isKiller(state) ? strippedKiller : strippedClassic;
   const payload: PersistedSession = {
     version: 1,
     state: stripped,

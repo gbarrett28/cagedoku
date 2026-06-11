@@ -14,6 +14,7 @@
 
 ```typescript
 interface PuzzleState {
+  /** Blank (all-zero) grid before /confirm — see "OCR-review representation" below. */
   readonly userGrid: number[][];
   readonly userRemovedCandidates: readonly [number, number, number][];
   readonly turns: readonly Turn[];
@@ -32,17 +33,39 @@ interface KillerPuzzleState extends PuzzleState {
 }
 ```
 
-**Hybrid killer** (killer with pre-given digits) is represented as `KillerPuzzleState` with `givenDigits !== null` — no new type needed.
+**Hybrid killer** (killer with pre-given digits) is represented as `KillerPuzzleState` with `givenDigits !== null` — no new type needed. OCR-driven candidate construction (below) never produces one: until a digit-correction UI exists for the Killer review screen, false-positive digit detections on a Killer scan would become uncorrectable givens. Hybrid killers remain constructible via direct API calls (e.g. fixture loading) — only the OCR path is restricted (see §8).
 
 **Future variants** (Big Apple, etc.) extend `PuzzleState` with their own constraint fields. Each adds a type guard to `namespace PuzzleState`. Existing callers are unaffected.
 
-### Removed: `autoRemovedCandidates`
+### OCR-review representation: `readonly PuzzleState[]`
+
+The pre-confirm OCR-review phase is **not** represented by a single `PuzzleState`/`KillerPuzzleState` — "we don't really have a puzzle until OCR is confirmed." Session state holds **`currentState: readonly PuzzleState[]`**, replacing the old `PuzzleState | null` and eliminating the `null` ground state entirely:
+
+- **Pre-confirm**, the list holds every *constructible candidate* — each a real `PuzzleState`/`KillerPuzzleState` built with a blank all-zero `userGrid` and `goldenSolution: null`. Constructibility is gated on OCR's own type verdict (`detectPuzzleType`), not on extraction success:
+  - **Killer candidate**: offered whenever OCR concluded `'killer'` — using the extracted spec, or the existing blank/draftable-grid fallback (`actions.ts:336-344`) when extraction failed. Always built with `givenDigits: null` (see Hybrid killer note above). Never offered when OCR concluded `'classic'`, since no cage signal was ever sought (a known pipeline asymmetry — see §8).
+  - **Classic candidate**: (almost) always offered, built from `givenDigits` (possibly all-zero) via `PuzzleState.createClassic(...)` with **no cage data at all**, consistent with `KillerPuzzleState extends PuzzleState`. The synthetic 9-row-cage placeholder that `loadClassicDirect` and the OCR classic path currently synthesize purely to satisfy the old flat type is deleted outright.
+  - The two candidate types never share editable data — cage fields matter only to Killer, `givenDigits` only to Classic — so editing one candidate never invalidates or affects the other.
+- **Post-confirm**, the list holds exactly **`[confirmedState]`**. `confirmPuzzle` is the pivot: it takes the active candidate and the solved board, and *replaces the whole list* with the singleton confirmed state — same extraction mechanics as today (golden solution, `userGrid` prefilled from `givenDigits` for Classic, `applyAutoPlacements`).
+
+**The "confirmed" signal moves from `userGrid` to `goldenSolution`.** Because `userGrid` is now always a real grid (never `null`), "has this session been confirmed?" becomes `state.goldenSolution !== null` — an existing field that is already `null` until `confirmPuzzle` populates it, so the invariant holds with no data-model change. The ~30 call sites across `main.ts`/`actions.ts`/`engine.ts` currently branching on `userGrid === null`/`!== null` split in two: phase-gating checks (`solveCurrentSpec`'s "Already confirmed", `applyDraftLayout`'s "Cannot edit layout after confirming", `revertToOcr`, etc.) switch to `goldenSolution`; plain data-access checks simply drop their now-unnecessary null guard.
+
+**Two accessors replace the single nullable `requireState`:**
+- **`requireState()`** is strictly post-confirm — asserts `currentState.length === 1` and returns the singleton. Every existing post-confirm operation (`placeDigit`, hints, undo, etc.) keeps calling it unchanged.
+- **A new active-candidate lookup** (e.g. `activeCandidate(candidates, selectedType)`) is strictly pre-confirm — a plain filter, not an assertion — returning the list member matching the puzzle-type dropdown's current selection. `patchCage`, `applyDraftLayout`, `solveCurrentSpec`, and the dropdown-change handler use this instead of `requireState`. "Several candidates, pick the selected one" is the *normal* pre-confirm state, not an edge case to guard against.
+
+**Editing mutates the active candidate directly** — `patchCage`/`applyDraftLayout` update the active Killer candidate's `specData`/`cageStates` in place (the same mechanics as today, just scoped to one list member instead of "the" state); digit correction updates the active Classic candidate's `givenDigits`. No projection step, no rebuild, no shared "artefacts" type — each candidate already *is* the data it needs.
+
+**`revertToOcr`/"Edit OCR"** (`actions.ts:589`, `main.ts:177`'s `lastOcrState`) snapshots and restores the candidate list directly: `lastOcrState: PuzzleState | null` becomes `lastOcrCandidates: readonly PuzzleState[]`, and `revertToOcr(candidates)` replaces `currentState` wholesale — restoring both the available dropdown options and the prior selection.
+
+### Removed: `autoRemovedCandidates` — ✅ already shipped (`bb78a43`)
 
 `autoRemovedCandidates` is removed from `PuzzleState` entirely. It was a mutable side-channel accumulating rule-generated eliminations during step-by-step animation. Its removal is the primary correctness fix.
 
-### Added: `userRemovedCandidates`
+### Added: `userRemovedCandidates` — ✅ already shipped (`bb78a43`)
 
 User-eliminated candidates are now an explicit field on `PuzzleState`, maintained directly by `UserAction.apply()` alongside `userGrid` and `virtualCages`. Previously this was derived by replaying `turns` — an implicit O(n) dependency that made `buildEngine()` history-dependent.
+
+> **Status:** landed on `master` as a standalone precursor commit (`bb78a43: feat: replace autoRemovedCandidates with userRemovedCandidates on PuzzleState`) before this redesign's implementation branch was created. No remaining work here — `userRemovedCandidates` already exists on the flat `PuzzleState` and is exercised throughout `actions.ts`/`engine.ts`. It carries forward unchanged onto the base `PuzzleState` in the new hierarchy (§1 type hierarchy below).
 
 ### `turns` is history only
 
@@ -190,15 +213,16 @@ namespace AnimationPlayer {
 Every user action follows a single shape. The three current divergent paths (`applyAutoPlacements`, `applyNextAutoPlacement`, `getNextAutoApplyStep`) are deleted.
 
 ```
-userAction(action, currentState):
-  baseState                                 = UserAction.apply(action, currentState)
+userAction(action):
+  state                                     = requireState()
+  baseState                                 = UserAction.apply(action, state)
   { board, baseBoard, ruleSteps,
     validationContext }                     = buildEngine(baseState, { skipValidation: true })
 
   if violation && rewindState === null:
-    rewindState = currentState
+    rewindState = state
 
-  pushSnapshot(currentState)                // rolling window
+  pushSnapshot(state)                       // rolling window
 
   if ruleSteps.length === 0:
     finalState = recordTurn(baseState, action, [])
@@ -217,8 +241,9 @@ userAction(action, currentState):
 
 ```
 user presses »:
+  state      = requireState()
   action     = ApplyHintAction { mutations: remaining ruleSteps' mutations }
-  newState   = UserAction.apply(action, currentState)   // folds each mutation via .apply()
+  newState   = UserAction.apply(action, state)          // folds each mutation via .apply()
   { board }  = buildEngine(newState)
   finalState = recordTurn(newState, action, [])
   render(board)
@@ -251,6 +276,8 @@ namespace PuzzleState {
   export function isKiller(state: PuzzleState): state is KillerPuzzleState
 }
 ```
+
+> **Status:** the predicate itself already shipped (`3706012: feat: add PuzzleState.isKiller as the canonical killer/classic predicate`) — but as a plain `boolean` (`state.puzzleType !== 'classic'`), since `KillerPuzzleState` doesn't exist yet to narrow to. Remaining work: once `KillerPuzzleState` exists (§1), widen `isKiller`'s return type to the `state is KillerPuzzleState` type guard shown above and remove the now-redundant `puzzleType` discriminant it currently reads.
 
 `isKiller` is used only inside the namespace. External callers never call it — they call a method that encapsulates the dispatch.
 
@@ -389,3 +416,5 @@ The following are deferred and not part of this redesign:
 - **Unified digit recogniser** — orthogonal to this refactor; continues independently on `feature/unified-digit-recogniser`
 - **LinearSystem API changes** — `LinearSystem` is constructed inside `buildEngine()` only when `PuzzleState.isKiller(state)` is true. The `linearSystemActive` flag on `SolverEngine` is removed. The classic code path never constructs or references a `LinearSystem`. The `LinearSystem` internals are otherwise unchanged.
 - **Rule refactoring** — rules keep their current structure; only the `killerOnly` filtering moves into `PuzzleState.rules()`
+- **OCR pipeline symmetry** — the classic OCR path (`inpImage.ts:213-232`) never attempts cage-border/total detection, so a misdetected-as-classic image can never offer a real Killer candidate (the reverse direction works today, since the killer path also runs `readClassicDigits`). Closing this gap would require running cage detection unconditionally — real pipeline scope, deferred alongside the broader "make the OCR review screen fully editable" idea.
+- **Hybrid-from-OCR candidate construction** — OCR-driven candidate construction always builds Killer candidates with `givenDigits: null` (§1), even when digit artefacts were detected (which can be false positives on a Killer image). Building a hybrid candidate from OCR requires a digit-correction UI for the Killer review screen first — deferred.

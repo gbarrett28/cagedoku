@@ -14,7 +14,7 @@ import { extractTrainingData } from './image/trainingExport.js';
 import type { TrainingExport } from './image/trainingExport.js';
 import { defaultImagePipelineConfig } from './image/config.js';
 import { initiateUpload, grantConsent, uploadTrainingData, submitStallReport, hasConsent } from './image/trainingUpload.js';
-import { dataToSpec } from './session/specUtils.js';
+import { dataToSpec, classicSyntheticSpec, specToData, specToCageStates } from './session/specUtils.js';
 import { analyseKernels } from './engine/kernelAnalysis.js';
 import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec, makeClassicGivenDigits, makeClassicPartialGivenDigits } from './engine/fixtures.js';
 import {
@@ -44,11 +44,11 @@ import {
   revertToOcr,
   extractAndValidateSolution,
 } from './session/actions.js';
+import { PuzzleState } from './session/types.js';
 import type {
   CandidatesResponse,
   DiffSolution,
   HintItem,
-  PuzzleState,
   SolutionCategorization,
 } from './session/types.js';
 import type { Cell } from './engine/types.js';
@@ -276,6 +276,7 @@ function drawCageBorders(
   state: PuzzleState,
   draft: { borderX: boolean[][], borderY: boolean[][] } | undefined,
 ): void {
+  if (!PuzzleState.isKiller(state)) return;
   ctx.strokeStyle = draft ? '#0055cc' : '#cc0000';
   ctx.lineWidth = 7.5;
   if (draft) {
@@ -335,6 +336,7 @@ function drawGridLines(ctx: CanvasRenderingContext2D): void {
 }
 
 function drawCageTotals(ctx: CanvasRenderingContext2D, state: PuzzleState): void {
+  if (!PuzzleState.isKiller(state)) return;
   const TOTAL_FONT_PX = Math.round(CELL * 0.36); // ~18px at CELL=50
   ctx.font = `bold ${TOTAL_FONT_PX}px sans-serif`;
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
@@ -372,7 +374,7 @@ function drawDigits(ctx: CanvasRenderingContext2D, state: PuzzleState): void {
   }
 
   const givenCells = new Set<string>();
-  if (state.puzzleType === 'classic' && state.userGrid !== null && state.givenDigits !== null) {
+  if (!PuzzleState.isKiller(state) && state.userGrid !== null && state.givenDigits !== null) {
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
       if ((state.givenDigits[r]?.[c] ?? 0) > 0) givenCells.add(`${r},${c}`);
     }
@@ -517,9 +519,9 @@ function drawGrid(
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, GRID_PX, GRID_PX);
   drawUnderlays(ctx, candidatesData, vcSelection, highlightKeys, selected, errorCells, suspectCells, vcNegSelection);
-  if (state.puzzleType !== 'classic') drawCageBorders(ctx, state, draft);
+  if (PuzzleState.isKiller(state)) drawCageBorders(ctx, state, draft);
   drawGridLines(ctx);
-  if (state.puzzleType !== 'classic') drawCageTotals(ctx, state);
+  if (PuzzleState.isKiller(state)) drawCageTotals(ctx, state);
   drawDigits(ctx, state);
   if (showCands && candidatesData !== null && state.userGrid !== null) {
     drawCandidates(ctx, state.userGrid, candidatesData, showEss);
@@ -551,7 +553,7 @@ function isGridSolved(state: PuzzleState): boolean {
       }
     }
   }
-  if (state.puzzleType !== 'classic') {
+  if (PuzzleState.isKiller(state)) {
     if (!isCageSumCorrect(grid, state.specData.regions, state.specData.cageTotals)) return false;
   }
   return true;
@@ -633,22 +635,24 @@ function renderState(state: PuzzleState): void {
   currentState = state;
   drawGrid(el<HTMLCanvasElement>('grid-canvas'), state);
 
+  const puzzleType = PuzzleState.isKiller(state) ? 'killer' : 'classic';
+
   const heading = document.getElementById('detected-layout-heading');
   if (heading !== null) {
-    heading.textContent = state.puzzleType === 'classic'
+    heading.textContent = puzzleType === 'classic'
       ? 'Detected Layout — Classic Sudoku'
       : 'Detected Layout — Killer Sudoku';
   }
 
   el<HTMLElement>('classic-edit-hint').hidden =
-    state.puzzleType !== 'classic' || state.userGrid !== null;
+    puzzleType !== 'classic' || state.userGrid !== null;
 
   if (state.originalImageUrl !== null) {
     el<HTMLImageElement>('original-img').src = state.originalImageUrl;
   }
 
-  el<HTMLSelectElement>('puzzle-type-select').value = state.puzzleType;
-  el<HTMLElement>('review-panel').dataset['puzzleType'] = state.puzzleType;
+  el<HTMLSelectElement>('puzzle-type-select').value = puzzleType;
+  el<HTMLElement>('review-panel').dataset['puzzleType'] = puzzleType;
 
   el<HTMLElement>('review-panel').hidden = false;
   el<HTMLElement>('solution-panel').hidden = true;
@@ -713,9 +717,9 @@ function renderPlayingMode(state: PuzzleState): void {
   updateUndoButton(state);
   updateRevealButton();
   el<HTMLButtonElement>('hints-btn').disabled = false;
-  const isKiller = state.puzzleType !== 'classic';
-  el<HTMLButtonElement>('inspect-cage-btn').hidden = !isKiller;
-  el<HTMLButtonElement>('virtual-cage-btn').hidden = !isKiller;
+  const isKillerPuzzle = PuzzleState.isKiller(state);
+  el<HTMLButtonElement>('inspect-cage-btn').hidden = !isKillerPuzzle;
+  el<HTMLButtonElement>('virtual-cage-btn').hidden = !isKillerPuzzle;
   el<HTMLButtonElement>('colour-btn').hidden = false;
   el<HTMLButtonElement>('mode-toggle').hidden = !showCandidates;
   el<HTMLButtonElement>('mode-toggle').classList.remove('active');
@@ -1127,7 +1131,7 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
   // For Classic puzzles, show the digit pad so the user can correct OCR digits
   // by clicking buttons (not just keyboard). The action-group (undo, hints, etc.)
   // stays hidden — those controls are only active in playing mode.
-  const isClassicReview = state.puzzleType === 'classic';
+  const isClassicReview = !PuzzleState.isKiller(state);
   el<HTMLElement>('completion-msg').hidden = true;
   el<HTMLElement>('playing-actions').hidden = !isClassicReview;
   if (isClassicReview) {
@@ -1161,24 +1165,24 @@ async function handleProcess(file?: File): Promise<void> {
     pendingMergedThumbs = new Map(mergedThumbs);
 
     // Initialise draft borders from the OCR result (used in both paths below).
-    const ocrSpec = dataToSpec(state.specData);
+    const ocrSpec = PuzzleState.isKiller(state) ? dataToSpec(state.specData) : classicSyntheticSpec();
     draftBorderX = ocrSpec.borderX.map(col => [...col]);
     draftBorderY = ocrSpec.borderY.map(row => [...row]);
     draftEdited = false;
     // Expose pipeline result for Playwright integration tests (app.spec.ts).
     (window as unknown as Record<string, unknown>)['__lastPipelineResult'] = {
-      cageTotals: state.specData.cageTotals,
+      cageTotals: ocrSpec.cageTotals,
       borderX: draftBorderX,
       borderY: draftBorderY,
     };
 
-    const nCages = Math.max(...state.specData.regions.flat()) + 1;
-    logAction('ocr_complete', `${state.puzzleType}, ${nCages} cage(s)${warning ? ', warning: ' + warning : ''}`);
+    const nCages = Math.max(...ocrSpec.regions.flat()) + 1;
+    logAction('ocr_complete', `${PuzzleState.isKiller(state) ? 'killer' : 'classic'}, ${nCages} cage(s)${warning ? ', warning: ' + warning : ''}`);
 
     // Attempt auto-confirm (Killer only): skip the review screen when OCR is clean,
     // the cage layout is valid, and the solver finds a complete solution.
     // Classic puzzles always go to the review screen so the user can verify digits.
-    if (warning === null && state.puzzleType !== 'classic') {
+    if (warning === null && PuzzleState.isKiller(state)) {
       const layoutResult = applyDraftLayout(draftBorderX, draftBorderY, state.specData.cageTotals);
       if (layoutResult.errorCells.size === 0 && layoutResult.warnings.length === 0) {
         // Yield to the browser so the loading indicator renders before the solve blocks.
@@ -1199,7 +1203,7 @@ async function handleProcess(file?: File): Promise<void> {
           logAction('auto_confirmed');
           const playing = confirmPuzzle(board);
           renderPlayingMode(playing);
-          appendCallouts(buildPlayingCallouts(playing.puzzleType !== 'classic'));
+          appendCallouts(buildPlayingCallouts(PuzzleState.isKiller(playing)));
           const autoViolation = checkSolutionAssertions(playing);
           if (autoViolation !== null) showAssertionModal(autoViolation);
           el<HTMLButtonElement>('edit-ocr-btn').hidden = false;
@@ -1207,7 +1211,7 @@ async function handleProcess(file?: File): Promise<void> {
           pendingMergedThumbs = new Map();
           setStatus('');
           if (usedBacktracking && stalledCandidates && state.originalImageUrl !== null) {
-            const stallReport = { puzzleType: layoutResult.state.puzzleType, stalledCandidates };
+            const stallReport = { puzzleType: 'killer' as const, stalledCandidates };
             if (hasConsent()) {
               submitStallReport(stallReport);
             } else {
@@ -1241,7 +1245,7 @@ async function handleProcess(file?: File): Promise<void> {
     // skip review and go straight to playing mode. When all 81 cells are filled we can give
     // specific feedback (duplicate highlights or solver-incomplete message) rather than the
     // generic review prompt — mirroring the Killer path's targeted error reporting.
-    if (warning === null && state.puzzleType === 'classic' && state.givenDigits !== null) {
+    if (warning === null && !PuzzleState.isKiller(state) && state.givenDigits !== null) {
       const allFilled = state.givenDigits.every(row => row.every(d => d > 0));
       if (allFilled) {
         const dupCells = findDuplicateCells(state.givenDigits);
@@ -1260,7 +1264,7 @@ async function handleProcess(file?: File): Promise<void> {
         (window as unknown as Record<string, unknown>)['__lastSolverResult'] = {
           usedBacktracking: classicUsedBt,
           stalledCandidates: classicStalled ?? null,
-          spec: dataToSpec(state.specData),
+          spec: classicSyntheticSpec(),
         };
         let boardComplete = true;
         for (let r = 0; r < 9 && boardComplete; r++)
@@ -1308,7 +1312,7 @@ async function handleProcess(file?: File): Promise<void> {
 
     // Reach here when: OCR produced a warning, Classic grid is incomplete/invalid,
     // or this is a Classic puzzle the user needs to review.
-    logAction('review_shown', state.puzzleType === 'classic' ? 'classic' : 'ocr warning');
+    logAction('review_shown', !PuzzleState.isKiller(state) ? 'classic' : 'ocr warning');
     applyUploadResult(state, warpedImageUrl, warning ?? 'Review the detected digits and press Confirm & Solve');
     appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
   } catch (e) {
@@ -1329,14 +1333,15 @@ async function handleProcess(file?: File): Promise<void> {
  */
 function validateCurrentReview(): string | null {
   if (currentState === null) return null;
-  if (currentState.puzzleType === 'classic') {
-    if (currentState.givenDigits !== null && hasDuplicateDigits(currentState.givenDigits)) {
+  const state = currentState;
+  if (!PuzzleState.isKiller(state)) {
+    if (state.givenDigits !== null && hasDuplicateDigits(state.givenDigits)) {
       return 'Fix the duplicate digits (highlighted in red) before confirming';
     }
     return null;
   }
   // Killer: validate cage layout, then check the sum advisory.
-  const result = applyDraftLayout(draftBorderX, draftBorderY, currentState.specData.cageTotals);
+  const result = applyDraftLayout(draftBorderX, draftBorderY, state.specData.cageTotals);
   if (result.errorCells.size > 0) {
     reviewErrorCells = result.errorCells;
     redrawGrid();
@@ -1361,6 +1366,7 @@ function clearAndUploadTrainingData(data: TrainingExport | null): void {
 
 async function handleConfirm(): Promise<void> {
   if (currentState === null) return;
+  const state = currentState;
   setLoading(true);
   try {
     const validationError = validateCurrentReview();
@@ -1391,8 +1397,8 @@ async function handleConfirm(): Promise<void> {
     // and if ≥50 cells are unsolved (corrupted totals / inherently ambiguous spec).
     const stalledCount = confirmStalledCandidates?.flat().filter(c => c.length > 1).length ?? 0;
     if (confirmUsedBacktracking && confirmStalledCandidates && !kernelWarningShown
-        && currentState.puzzleType !== 'classic' && stalledCount < 50) {
-      const spec = dataToSpec(currentState.specData);
+        && PuzzleState.isKiller(state) && stalledCount < 50) {
+      const spec = dataToSpec(state.specData);
       const solution: number[][] = Array.from({ length: 9 }, (_, r) =>
         Array.from({ length: 9 }, (_, c) => [...confirmedBoard.cands(r, c)][0]!),
       );
@@ -1413,16 +1419,16 @@ async function handleConfirm(): Promise<void> {
     }
 
     const playing = confirmPuzzle(confirmedBoard);
-    logAction('confirmed', currentState.puzzleType);
+    logAction('confirmed', PuzzleState.isKiller(state) ? 'killer' : 'classic');
     renderPlayingMode(playing);
-    appendCallouts(buildPlayingCallouts(playing.puzzleType !== 'classic'));
+    appendCallouts(buildPlayingCallouts(PuzzleState.isKiller(playing)));
     setStatus('');
     const assertionViolation = checkSolutionAssertions(playing);
     if (assertionViolation !== null) showAssertionModal(assertionViolation);
 
     // Upload puzzle spec when backtracking was needed (rules alone couldn't solve it).
-    if (confirmUsedBacktracking && confirmStalledCandidates && currentState.originalImageUrl !== null) {
-      const stallReport = { puzzleType: currentState.puzzleType, stalledCandidates: confirmStalledCandidates };
+    if (confirmUsedBacktracking && confirmStalledCandidates && state.originalImageUrl !== null) {
+      const stallReport = { puzzleType: PuzzleState.isKiller(state) ? 'killer' as const : 'classic' as const, stalledCandidates: confirmStalledCandidates };
       if (hasConsent()) {
         submitStallReport(stallReport);
       } else {
@@ -1432,18 +1438,18 @@ async function handleConfirm(): Promise<void> {
 
     // Upload training samples when the user confirmed a puzzle.
     // Thumbnails are captured before state replacement; clear them now regardless.
-    if (draftEdited && currentState.puzzleType !== 'classic') {
+    if (draftEdited && PuzzleState.isKiller(state)) {
       clearAndUploadTrainingData(extractTrainingData(
         pendingCellThumbs,
-        currentState.specData.cageTotals,
-        currentState.puzzleType,
+        state.specData.cageTotals,
+        'killer',
         defaultImagePipelineConfig().numberRecognition.subres,
         pendingMergedThumbs,
       ));
-    } else if (currentState.puzzleType === 'classic' && currentState.givenDigits !== null) {
+    } else if (!PuzzleState.isKiller(state) && state.givenDigits !== null) {
       clearAndUploadTrainingData(extractTrainingData(
         pendingCellThumbs,
-        currentState.givenDigits,
+        state.givenDigits,
         'classic',
         defaultImagePipelineConfig().numberRecognition.subres,
       ));
@@ -1659,9 +1665,9 @@ async function handleFeedbackSubmit(): Promise<void> {
   const expected = isBug ? el<HTMLTextAreaElement>('feedback-expected').value.trim() || undefined : undefined;
 
   const puzzleSpec = currentState !== null ? {
-    puzzleType: currentState.puzzleType,
-    regions: currentState.specData.regions,
-    cageTotals: currentState.specData.cageTotals,
+    puzzleType: PuzzleState.isKiller(currentState) ? 'killer' as const : 'classic' as const,
+    regions: PuzzleState.isKiller(currentState) ? currentState.specData.regions : classicSyntheticSpec().regions,
+    cageTotals: PuzzleState.isKiller(currentState) ? currentState.specData.cageTotals : classicSyntheticSpec().cageTotals,
     userGrid: currentState.userGrid,
     givenDigits: currentState.givenDigits,
   } : null;
@@ -1844,7 +1850,7 @@ function renderFixtureTable(fixtures: FixtureMeta[]): void {
           const playing = confirmPuzzle(board, fixture.stalledCandidates);
           el<HTMLElement>('fixture-panel').hidden = true;
           renderPlayingMode(playing);
-          appendCallouts(buildPlayingCallouts(playing.puzzleType !== 'classic', true));
+          appendCallouts(buildPlayingCallouts(PuzzleState.isKiller(playing), true));
         } catch (err) {
           console.error('[fixture-panel] Failed to load fixture:', err);
         }
@@ -1939,7 +1945,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Tutorial — show help modal on first visit, then walk through button callouts.
   initTutorial();
   appendCallouts(savedSession !== null
-    ? buildPlayingCallouts(savedSession.state.puzzleType !== 'classic')
+    ? buildPlayingCallouts(PuzzleState.isKiller(savedSession.state))
     : buildUploadCallouts());
 
   el<HTMLDivElement>('logo-k').addEventListener('click', () => {
@@ -1957,7 +1963,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const inPlaying = currentState !== null;
     const inReview  = !inPlaying && !el<HTMLElement>('review-panel').hidden;
     if (inPlaying) {
-      appendCallouts(buildPlayingCallouts(currentState!.puzzleType !== 'classic'));
+      appendCallouts(buildPlayingCallouts(PuzzleState.isKiller(currentState!)));
     } else if (inReview) {
       appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
     } else {
@@ -2077,9 +2083,26 @@ document.addEventListener('DOMContentLoaded', () => {
   el<HTMLButtonElement>('reveal-btn').addEventListener('click', () => { void handleReveal(); });
 
   el<HTMLSelectElement>('puzzle-type-select').addEventListener('change', (e) => {
-    if (currentState === null) return;
+    const state = currentState;
+    if (state === null) return;
     const type = (e.target as HTMLSelectElement).value as 'killer' | 'classic';
-    const updated = { ...currentState, puzzleType: type };
+    let updated: PuzzleState;
+    if (type === 'killer') {
+      if (PuzzleState.isKiller(state)) {
+        updated = state;
+      } else {
+        const synthetic = classicSyntheticSpec();
+        updated = PuzzleState.createKiller(
+          specToData(synthetic), specToCageStates(synthetic),
+          state.alwaysApplyRules, state.originalImageUrl, null,
+        );
+      }
+    } else {
+      const givenDigits = PuzzleState.isKiller(state)
+        ? Array.from({ length: 9 }, () => new Array<number>(9).fill(0))
+        : state.givenDigits;
+      updated = PuzzleState.createClassic(givenDigits, state.alwaysApplyRules, state.originalImageUrl);
+    }
     import('./session/store.js').then(m => m.setState(updated));
     currentState = updated;
     renderState(updated);
@@ -2090,13 +2113,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function commitTotalEdit(): void {
     if (totalEditCell === null || currentState === null) return;
+    const state = currentState;
+    if (!PuzzleState.isKiller(state)) return;
     const { row, col } = totalEditCell;
     const v = Number(cageTotalInput.value);
     const newTotal = Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
-    const newTotals = currentState.specData.cageTotals.map((r, ri) =>
+    const newTotals = state.specData.cageTotals.map((r, ri) =>
       ri === row ? r.map((val, ci) => (ci === col ? newTotal : val)) : [...r],
     );
-    currentState = { ...currentState, specData: { ...currentState.specData, cageTotals: newTotals } };
+    const updated = { ...state, specData: { ...state.specData, cageTotals: newTotals } };
+    currentState = updated;
     logAction('total_edited', `r${row}c${col}=${newTotal}`);
     draftEdited = true;
     totalEditCell = null;
@@ -2108,13 +2134,15 @@ document.addEventListener('DOMContentLoaded', () => {
   cageTotalInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); commitTotalEdit(); }
     if (e.key === 'Escape') {
-      if (totalEditCell !== null && currentState !== null) {
+      const state = currentState;
+      if (totalEditCell !== null && state !== null && PuzzleState.isKiller(state)) {
         const { row, col } = totalEditCell;
         const prev = totalEditPrev;
-        const newTotals = currentState.specData.cageTotals.map((r, ri) =>
+        const newTotals = state.specData.cageTotals.map((r, ri) =>
           ri === row ? r.map((val, ci) => (ci === col ? prev : val)) : [...r],
         );
-        currentState = { ...currentState, specData: { ...currentState.specData, cageTotals: newTotals } };
+        const updated = { ...state, specData: { ...state.specData, cageTotals: newTotals } };
+        currentState = updated;
       }
       totalEditCell = null;
       cageTotalInput.style.display = 'none';
@@ -2173,14 +2201,17 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   el<HTMLButtonElement>('edit-ocr-btn').addEventListener('click', () => {
-    if (lastOcrState === null) return;
-    revertToOcr(lastOcrState);
+    const ocrState = lastOcrState;
+    if (ocrState === null) return;
+    revertToOcr(ocrState);
     // Re-initialise draft borders from the saved OCR spec.
-    const ocrSpec = dataToSpec(lastOcrState.specData);
-    draftBorderX = ocrSpec.borderX.map(col => [...col]);
-    draftBorderY = ocrSpec.borderY.map(row => [...row]);
+    if (PuzzleState.isKiller(ocrState)) {
+      const ocrSpec = dataToSpec(ocrState.specData);
+      draftBorderX = ocrSpec.borderX.map(col => [...col]);
+      draftBorderY = ocrSpec.borderY.map(row => [...row]);
+    }
     draftEdited = false;
-    applyUploadResult(lastOcrState, lastWarpedUrl, null);
+    applyUploadResult(ocrState, lastWarpedUrl, null);
     appendCallouts([{ id: 'confirm-btn', text: 'Correct any OCR errors, then confirm to re-solve.' }]);
   });
 
@@ -2450,7 +2481,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', (e) => {
     if (currentState === null || currentState.userGrid === null) {
       // Pre-confirm: classic inline editing
-      if (currentState?.puzzleType === 'classic' && selectedCell !== null) {
+      if (currentState !== null && !PuzzleState.isKiller(currentState) && selectedCell !== null) {
         if (e.key >= '1' && e.key <= '9') { void handleGivenDigitEdit(selectedCell.row, selectedCell.col, Number(e.key)); return; }
         if (e.key === 'Backspace' || e.key === 'Delete') { void handleGivenDigitEdit(selectedCell.row, selectedCell.col, 0); return; }
       }
@@ -2495,7 +2526,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (c0 < 0 || c0 > 8 || r0 < 0 || r0 > 8) return;
 
     // ── Review-mode interaction (before confirm) ─────────────────────────────────────────────────────────────────────────────────────
-    if (currentState.userGrid === null && currentState.puzzleType !== 'classic') {
+    if (currentState.userGrid === null && PuzzleState.isKiller(currentState)) {
+      const state = currentState;
       // Review mode: borders always togglable; interior click handled by Chunk 2 (total overlay).
       const BORDER_ZONE = 7; // px
       for (let r = 1; r < 9; r++) {
@@ -2517,7 +2549,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // after mousedown on a non-focusable canvas, which would fire blur on the
       // input and immediately hide the overlay.
       e.preventDefault();
-      const existing = currentState.specData.cageTotals[r0]![c0]!;
+      const existing = state.specData.cageTotals[r0]![c0]!;
       totalEditCell = { row: r0, col: c0 };
       totalEditPrev = existing;
       const inp = el<HTMLInputElement>('cage-total-edit');
@@ -2576,10 +2608,11 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    if (inspectCageMode && currentState.userGrid !== null) {
-      const cageIdx = currentState.specData.regions[r0]?.[c0];
+    if (inspectCageMode && currentState.userGrid !== null && PuzzleState.isKiller(currentState)) {
+      const state = currentState;
+      const cageIdx = state.specData.regions[r0]?.[c0];
       if (cageIdx !== undefined) {
-        const cage = currentState.cageStates[cageIdx - 1];
+        const cage = state.cageStates[cageIdx - 1];
         if (cage) {
           selectedCell = { row: r0 + 1, col: c0 + 1 };
           renderCageInspector(cage.label);
@@ -2598,7 +2631,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Digit buttons — pre-confirm Classic edits given digits; edit-candidates mode toggles a
   // candidate; otherwise places a digit in the playing grid.
   function handleDigitButton(d: number): void {
-    if (currentState?.userGrid === null && currentState?.puzzleType === 'classic' && selectedCell !== null) {
+    if (currentState !== null && currentState.userGrid === null && !PuzzleState.isKiller(currentState) && selectedCell !== null) {
       void handleGivenDigitEdit(selectedCell.row, selectedCell.col, d);
     } else if (candidateEditMode && selectedCell !== null) {
       void handleCandidateCycle(selectedCell.row, selectedCell.col, d);

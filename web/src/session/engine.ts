@@ -47,7 +47,7 @@ function scheduleTriggerValidation(
   rules: readonly SolverRule[],
   golden: readonly (readonly number[])[],
   state: PuzzleState,
-  spec: PuzzleSpec,
+  spec: PuzzleSpec | null,
 ): void {
   if (_validationTimer !== null) clearTimeout(_validationTimer);
   _validationTimer = setTimeout(() => {
@@ -61,7 +61,7 @@ function runTriggerValidation(
   rules: readonly SolverRule[],
   golden: readonly (readonly number[])[],
   state: PuzzleState,
-  spec: PuzzleSpec,
+  spec: PuzzleSpec | null,
 ): void {
   const { misses, violations } = findTriggerMisses(board, rules, golden);
   if (misses.length === 0 && violations.length === 0) return;
@@ -81,9 +81,9 @@ function runTriggerValidation(
       missedEliminations: miss.eliminations.map(e => ({ cell: e.cell, digit: e.digit })),
       stalledCandidates,
       goldenSolution: golden as number[][],
-      puzzleType: state.puzzleType,
-      regions: spec.regions as number[][],
-      cageTotals: spec.cageTotals as number[][],
+      puzzleType: PuzzleState.isKiller(state) ? 'killer' : 'classic',
+      regions: (spec?.regions ?? []) as number[][],
+      cageTotals: (spec?.cageTotals ?? []) as number[][],
     });
   }
 
@@ -98,9 +98,9 @@ function runTriggerValidation(
       offendingEliminations: violation.offendingEliminations.map(e => ({ cell: e.cell, digit: e.digit })),
       goldenSolution: golden as number[][],
       stalledCandidates,
-      puzzleType: state.puzzleType,
-      regions: spec.regions as number[][],
-      cageTotals: spec.cageTotals as number[][],
+      puzzleType: PuzzleState.isKiller(state) ? 'killer' : 'classic',
+      regions: (spec?.regions ?? []) as number[][],
+      cageTotals: (spec?.cageTotals ?? []) as number[][],
     });
   }
 }
@@ -211,7 +211,7 @@ export function buildEngine(
   state: PuzzleState,
   { includeHints = false, skipSolve = false }: { includeHints?: boolean; skipSolve?: boolean } = {},
 ): { board: BoardState; engine: SolverEngine } {
-  const spec = dataToSpec(state.specData);
+  const spec: PuzzleSpec | null = PuzzleState.isKiller(state) ? dataToSpec(state.specData) : null;
 
   const _disabled = new Set(DISABLED_RULES);
   const allRules = defaultRules().filter(r => !_disabled.has(r.name));
@@ -247,16 +247,18 @@ export function buildEngine(
             offendingEliminations: offending.map(e => ({ cell: [e.cell[0], e.cell[1]] as [number, number], digit: e.digit })),
             goldenSolution: activeGolden,
             stalledCandidates,
-            puzzleType: state.puzzleType,
-            regions: spec.regions as number[][],
-            cageTotals: spec.cageTotals as number[][],
+            puzzleType: PuzzleState.isKiller(state) ? 'killer' : 'classic',
+            regions: (spec?.regions ?? []) as number[][],
+            cageTotals: (spec?.cageTotals ?? []) as number[][],
           });
         }
       : null;
 
   const { board, engine }: { board: BoardState; engine: SolverEngine } = PuzzleState.isKiller(state)
     ? (() => {
-        const board = new KillerBoardState(spec, { includeVirtualCages: false });
+        if (!PuzzleState.isKiller(state)) throw new Error('unreachable');
+        const killerSpec = dataToSpec(state.specData);
+        const board = new KillerBoardState(killerSpec, { includeVirtualCages: false });
 
         // Apply user-eliminated cage solutions for real cages before any rules run.
         for (let i = 0; i < state.cageStates.length; i++) {
@@ -327,7 +329,7 @@ export function buildEngine(
     // Fixture stall seed: bring the board to the documented all-rules-exhausted
     // state before running rules. Since the stall is a fixed point of all rules,
     // the subsequent engine.solve() finds nothing left to do.
-    if (state.fixtureStalledCandidates != null) {
+    if (PuzzleState.isKiller(state) && state.fixtureStalledCandidates != null) {
       const stallElims: Elimination[] = [];
       for (let r = 0; r < 9; r++) {
         for (let c = 0; c < 9; c++) {
@@ -439,6 +441,10 @@ export function rebuildUserGrid(state: PuzzleState): PuzzleState {
     UserAction.updateRemovedList(turn.action, removedList);
   }
 
+  if (!PuzzleState.isKiller(state)) {
+    return { ...state, userGrid: newGrid, userRemovedCandidates: removedList };
+  }
+
   // Rebuild virtualCages from the add/remove turn history, but preserve any
   // eliminatedSolns that were set via eliminateVirtualCageSolution (stored in
   // state.virtualCages, not in turns) for cages that still exist after replay.
@@ -451,7 +457,8 @@ export function rebuildUserGrid(state: PuzzleState): PuzzleState {
     return { ...vc, eliminatedSolns: existingElims.get(key) ?? vc.eliminatedSolns };
   });
 
-  return { ...state, userGrid: newGrid, virtualCages: mergedVCs, userRemovedCandidates: removedList };
+  const result = { ...state, userGrid: newGrid, virtualCages: mergedVCs, userRemovedCandidates: removedList };
+  return result;
 }
 
 // ---------------------------------------------------------------------------
