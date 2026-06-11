@@ -57,6 +57,8 @@ The pre-confirm OCR-review phase is **not** represented by a single `PuzzleState
 
 **`revertToOcr`/"Edit OCR"** (`actions.ts:589`, `main.ts:177`'s `lastOcrState`) snapshots and restores the candidate list directly: `lastOcrState: PuzzleState | null` becomes `lastOcrCandidates: readonly PuzzleState[]`, and `revertToOcr(candidates)` replaces `currentState` wholesale — restoring both the available dropdown options and the prior selection.
 
+> **Status (Sprint 1c — ✅ shipped):** `web/src/session/store.ts` now backs the session with `_candidates: readonly PuzzleState[]` (`getStateCandidates`/`setStateCandidates`), replacing `_state: PuzzleState | null`. `getState`/`setState` remain as post-confirm convenience accessors over the singleton candidate, and `requireState()` reads from the candidate list with a non-empty assertion. This is purely an internal data-structure change — OCR still produces exactly one candidate, so `currentState.length` is always 0 or 1 today. **Remaining work (Sprint 1d):** dual Killer/Classic OCR candidates, `activeCandidate()`, dropdown rewiring, and `revertToOcr`/`lastOcrCandidates` are not yet implemented.
+
 ### Removed: `autoRemovedCandidates` — ✅ already shipped (`bb78a43`)
 
 `autoRemovedCandidates` is removed from `PuzzleState` entirely. It was a mutable side-channel accumulating rule-generated eliminations during step-by-step animation. Its removal is the primary correctness fix.
