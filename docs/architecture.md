@@ -94,10 +94,15 @@ This replaced a `state.puzzleType === 'classic'` proxy test (with a
 "cage solutions are always empty (dummy spec)" comment) that was testing the wrong
 thing, because every board used to carry cage fields regardless of puzzle type. The
 `puzzleType` discriminant has since been removed entirely: `PuzzleState` is the base
-shape (no cage fields, `userGrid: number[][] | null`), and `KillerPuzzleState extends
+shape (no cage fields, `userGrid: number[][]`), and `KillerPuzzleState extends
 PuzzleState` adds `specData`, `cageStates`, `virtualCages`, and `warpedImageUrl`.
 Fresh states are built via `PuzzleState.createClassic(...)` and
 `PuzzleState.createKiller(...)` factories rather than synthetic specs.
+
+`userGrid` is always a real 9×9 grid — all-zero before `/confirm` (OCR review
+phase). The "has this session been confirmed?" signal is
+`state.goldenSolution === null` / `!== null` (an existing field that is `null`
+until `confirmPuzzle` populates it), not `userGrid`.
 
 ---
 
