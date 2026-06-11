@@ -19,18 +19,32 @@ type Cv = OpenCVModule;
 // Puzzle session state
 // ---------------------------------------------------------------------------
 
-let _state: PuzzleState | null = null;
+/**
+ * OCR-review candidate list. Pre-confirm, holds every constructible
+ * PuzzleState candidate (e.g. Killer + Classic interpretations of the
+ * same scan). Post-confirm, holds exactly one element (the confirmed
+ * state). Empty when there is no active session.
+ */
+let _candidates: readonly PuzzleState[] = [];
 let _candidatesCache: CandidatesResponse | null = null;
 const _sessionDisabledRules = new Set<string>();
 /** Keys of trigger-miss reports already submitted this session: "${ruleName}:${missedContext}". */
 const _reportedTriggerMisses = new Set<string>();
 
-export function getState(): PuzzleState | null { return _state; }
+export function getStateCandidates(): readonly PuzzleState[] { return _candidates; }
 
-export function setState(state: PuzzleState): void {
-  _state = state;
+export function setStateCandidates(candidates: readonly PuzzleState[]): void {
+  _candidates = candidates;
   // Invalidate candidates cache whenever state changes
   _candidatesCache = null;
+}
+
+/** Post-confirm convenience accessor: the single confirmed state, or null if no session. */
+export function getState(): PuzzleState | null { return _candidates[0] ?? null; }
+
+/** Post-confirm convenience accessor: replaces the candidate list with a single confirmed state. */
+export function setState(state: PuzzleState): void {
+  setStateCandidates([state]);
 }
 
 export function getCandidatesCache(): CandidatesResponse | null { return _candidatesCache; }
@@ -38,7 +52,7 @@ export function getCandidatesCache(): CandidatesResponse | null { return _candid
 export function setCandidatesCache(c: CandidatesResponse): void { _candidatesCache = c; }
 
 export function clearSession(): void {
-  _state = null;
+  _candidates = [];
   _candidatesCache = null;
   _sessionDisabledRules.clear();
   _reportedTriggerMisses.clear();

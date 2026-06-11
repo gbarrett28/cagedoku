@@ -44,7 +44,7 @@ import {
   virtualCageKeyFromCage,
   solutionKey,
 } from './specUtils.js';
-import { getState, setState, getCV, getRec, getSplitRec } from './store.js';
+import { getState, setState, getStateCandidates, getCV, getRec, getSplitRec } from './store.js';
 import { PuzzleState } from './types.js';
 import type {
   CandidatesResponse,
@@ -104,9 +104,9 @@ function toggleSolution(
 }
 
 function requireState(): PuzzleState {
-  const s = getState();
-  if (s === null) throw new Error('No active session');
-  return s;
+  const [state] = getStateCandidates();
+  if (state === undefined) throw new Error('No active session');
+  return state;
 }
 
 function requireConfirmed(): PuzzleState {
