@@ -139,8 +139,7 @@ export function userVirtualCages(state: PuzzleState): VirtualCage[] {
  * this function only contributes eliminations from explicit userGrid placements
  * that differ from what the engine would have deduced.
  */
-export function userEliminations(board: BoardState, userGrid: number[][] | null): Elimination[] {
-  if (userGrid === null) return [];
+export function userEliminations(board: BoardState, userGrid: number[][]): Elimination[] {
   const elims: Elimination[] = [];
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
@@ -171,13 +170,11 @@ export function isUserCorrupted(state: PuzzleState): boolean {
   const { goldenSolution, userGrid } = state;
   if (goldenSolution === null) return false;
 
-  if (userGrid !== null) {
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 9; c++) {
-        const placed = userGrid[r]![c]!;
-        const golden = goldenSolution[r]![c]!;
-        if (placed !== 0 && golden !== 0 && placed !== golden) return true;
-      }
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const placed = userGrid[r]![c]!;
+      const golden = goldenSolution[r]![c]!;
+      if (placed !== 0 && golden !== 0 && placed !== golden) return true;
     }
   }
 
@@ -315,16 +312,14 @@ export function buildEngine(
     // Eliminate each placed digit from row/col/box/cage peers unconditionally.
     // Applied after userRemoved so explicit user candidate removals take effect
     // first. This is a fundamental sudoku constraint independent of NakedSingle.
-    if (state.userGrid !== null) {
-      const peerElims: Elimination[] = [];
-      for (let r = 0; r < 9; r++) {
-        for (let c = 0; c < 9; c++) {
-          const d = state.userGrid[r]![c]!;
-          if (d > 0) peerElims.push(...board.peerEliminations(r, c, d));
-        }
+    const peerElims: Elimination[] = [];
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        const d = state.userGrid[r]![c]!;
+        if (d > 0) peerElims.push(...board.peerEliminations(r, c, d));
       }
-      if (peerElims.length > 0) engine.applyEliminations(peerElims);
     }
+    if (peerElims.length > 0) engine.applyEliminations(peerElims);
 
     // Fixture stall seed: bring the board to the documented all-rules-exhausted
     // state before running rules. Since the stall is a fixed point of all rules,
@@ -370,7 +365,7 @@ export function buildEngine(
  * updated PuzzleState with any newly placed digits committed to userGrid.
  */
 export function applyAutoPlacements(state: PuzzleState): PuzzleState {
-  if (state.userGrid === null) return state; // no-op before confirm
+  if (state.goldenSolution === null) return state; // no-op before confirm
   const { engine } = buildEngine(state); // engine.solve() called inside buildEngine
 
   let changed = false;
@@ -390,7 +385,7 @@ export function applyAutoPlacements(state: PuzzleState): PuzzleState {
  * Used by the UI animation loop when autoPlacementDelay > 0.
  */
 export function applyNextAutoPlacement(state: PuzzleState): PuzzleState | null {
-  if (state.userGrid === null) return null;
+  if (state.goldenSolution === null) return null;
   const { engine } = buildEngine(state);
   for (const p of engine.appliedPlacements) {
     const [r, c] = p.cell;
@@ -432,7 +427,7 @@ export function recordTurn(
  * Called after undo or when resynchronising state.
  */
 export function rebuildUserGrid(state: PuzzleState): PuzzleState {
-  if (state.userGrid === null) return state;
+  if (state.goldenSolution === null) return state;
   const newGrid: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
   const removedList: [number, number, number][] = [];
 
@@ -476,7 +471,7 @@ export function rebuildUserGrid(state: PuzzleState): PuzzleState {
  */
 export function findLastConsistentTurnIdx(state: PuzzleState): number | null {
   const { goldenSolution, userGrid } = state;
-  if (goldenSolution === null || userGrid === null) return null;
+  if (goldenSolution === null) return null;
 
   // Build map of currently-wrong cells: key → wrong digit placed there
   const wrongCells = new Map<string, number>();
@@ -528,7 +523,7 @@ function captureSnapshot(board: BoardState): BoardSnapshot {
  * the first consecutive group of mutations from the same rule.
  */
 export function getNextAutoApplyStep(state: PuzzleState): RuleStep | null {
-  if (state.userGrid === null) return null;
+  if (state.goldenSolution === null) return null;
   // skipSolve: we call engine.solve() manually so we can inspect appliedMutations.
   const { board, engine } = buildEngine(state, { skipSolve: true });
 
