@@ -7,6 +7,7 @@
 
 import type { Cell } from '../engine/types.js';
 import type { DiffSolution } from '../solver/equation.js';
+import type { RuleMutation, EliminateCandidateMutation } from './ruleMutation.js';
 export type { DiffSolution };
 
 // ---------------------------------------------------------------------------
@@ -126,7 +127,7 @@ export interface RemoveVirtualCageAction {
 }
 export interface ApplyHintAction {
   readonly type: 'applyHint';
-  readonly eliminations: readonly [number, number, number][];
+  readonly mutations: readonly RuleMutation[];
 }
 
 export type UserAction =
@@ -170,8 +171,7 @@ export namespace UserAction {
         return { ...state, userRemovedCandidates: [...prev, [action.row, action.col, action.digit]] };
       }
       case 'applyHint': {
-        const prev = state.userRemovedCandidates ?? [];
-        return { ...state, userRemovedCandidates: [...prev, ...action.eliminations] };
+        return action.mutations.reduce((s, m) => m.apply(s), state);
       }
       case 'restoreCandidate': {
         const list = [...(state.userRemovedCandidates ?? [])];
@@ -199,7 +199,12 @@ export namespace UserAction {
     if (action.type === 'eliminateCandidate') {
       list.push([action.row, action.col, action.digit]);
     } else if (action.type === 'applyHint') {
-      for (const [r, c, d] of action.eliminations) list.push([r, c, d]);
+      for (const m of action.mutations) {
+        if (m.type === 'eliminateCandidate') {
+          const elim = m as EliminateCandidateMutation;
+          list.push([elim.row, elim.col, elim.digit]);
+        }
+      }
     } else if (action.type === 'restoreCandidate') {
       const idx = [...list].reverse().findIndex(([r, c, d]) => r === action.row && c === action.col && d === action.digit);
       if (idx !== -1) list.splice(list.length - 1 - idx, 1);

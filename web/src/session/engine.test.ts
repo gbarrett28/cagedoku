@@ -17,6 +17,7 @@ import {
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
 import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
 import { UserAction, PuzzleState, type KillerPuzzleState, type Turn, type VirtualCage, type EliminateCandidateAction, type RestoreCandidateAction, type ResetCellCandidatesAction, type ApplyHintAction } from './types.js';
+import { RuleMutation } from './ruleMutation.js';
 import type { Cell } from '../engine/types.js';
 import { BoardState, KillerBoardState } from '../engine/boardState.js';
 import { SolverEngine, KillerSolverEngine } from '../engine/solverEngine.js';
@@ -508,10 +509,22 @@ describe('userRemovedCandidates in UserAction.apply', () => {
     expect(next.userRemovedCandidates).toEqual([[0, 0, 5]]);
   });
 
-  it('applyHint adds all eliminations to userRemovedCandidates', () => {
-    const action: ApplyHintAction = { type: 'applyHint', eliminations: [[0, 0, 3], [1, 2, 7]] };
+  it('applyHint folds eliminateCandidate mutations into userRemovedCandidates', () => {
+    const action: ApplyHintAction = {
+      type: 'applyHint',
+      mutations: [RuleMutation.eliminateCandidate(0, 0, 3), RuleMutation.eliminateCandidate(1, 2, 7)],
+    };
     const next = UserAction.apply(action, makeState());
     expect(next.userRemovedCandidates).toEqual([[0, 0, 3], [1, 2, 7]]);
+  });
+
+  it('applyHint folds a placeDigit mutation into userGrid', () => {
+    const action: ApplyHintAction = {
+      type: 'applyHint',
+      mutations: [RuleMutation.placeDigit(0, 0, 5)],
+    };
+    const next = UserAction.apply(action, makeState());
+    expect(next.userGrid[0]![0]).toBe(5);
   });
 
   it('restoreCandidate removes the most recent matching triple', () => {

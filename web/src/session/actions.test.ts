@@ -63,7 +63,8 @@ import {
 } from '../engine/fixtures.js';
 import { specToData, specToCageStates, classicSyntheticSpec } from './specUtils.js';
 import { PuzzleState } from './types.js';
-import type { KillerPuzzleState, Turn, UserAction } from './types.js';
+import type { ApplyHintAction, KillerPuzzleState, Turn, UserAction } from './types.js';
+import type { EliminateCandidateMutation } from './ruleMutation.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import type { ParseResult } from '../image/inpImage.js';
 import { hasMultipleCageTotals } from '../image/validation.js';
@@ -686,7 +687,7 @@ describe('DEFAULT_ALWAYS_APPLY_RULES', () => {
 });
 
 describe('applyHint', () => {
-  it('records hint eliminations as user-removed candidates and returns updated state', () => {
+  it('records hint eliminations as eliminateCandidate mutations and applies them to userRemovedCandidates', () => {
     const state = makeKillerConfirmed();
     setState(state);
     const [r, c] = [0, 0];
@@ -694,7 +695,14 @@ describe('applyHint', () => {
     if (candidates.length < 2) return; // guard: skip if cell already solved
     const digit = candidates[0]!;
     const result = applyHint([{ cell: [r, c], digit }]);
-    expect(result.turns.some(t => t.action.type === 'applyHint')).toBe(true);
+    const turn = result.turns.find(t => t.action.type === 'applyHint');
+    expect(turn).toBeDefined();
+    const action = turn!.action as ApplyHintAction;
+    expect(action.mutations).toHaveLength(1);
+    const mutation = action.mutations[0]! as EliminateCandidateMutation;
+    expect(mutation.type).toBe('eliminateCandidate');
+    expect([mutation.row, mutation.col, mutation.digit]).toEqual([r, c, digit]);
+    expect(result.userRemovedCandidates).toContainEqual([r, c, digit]);
   });
 });
 

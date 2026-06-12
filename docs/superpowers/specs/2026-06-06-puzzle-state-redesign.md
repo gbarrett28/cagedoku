@@ -14,19 +14,24 @@
   `puzzleType` discriminant. See "Board State Hierarchy" in `docs/architecture.md`.
 - **§2 `RuleMutation` type hierarchy** — `web/src/session/ruleMutation.ts`. See
   "Rule Mutations and Rule Steps" in `docs/architecture.md`.
-- **§3 `buildEngine()` contract (partial)** — `ruleSteps` and `validationContext`
-  added to `buildEngine()`'s return value. See "Rule Mutations and Rule Steps" in
+- **§3 `buildEngine()` contract** — `ruleSteps`, `validationContext`, and the
+  `skipValidation` option all shipped. See "Rule Mutations and Rule Steps" in
   `docs/architecture.md`. **`baseBoard` resolved as not needed:** the pre-solve
   board is already obtainable via `buildEngine(state, { skipSolve: true }).board`,
   which `AnimationPlayer.boardAtCursor` already uses for the cursor-0 frame (see
   "Animation Player" in `docs/architecture.md`). Adding a `baseBoard` field to
   `buildEngine`'s return would duplicate this at no benefit, so it is dropped from
-  the redesign. **Still not yet shipped from the original §3 design:** the
-  `skipValidation` option — a prerequisite for §5 below and should be added when
-  §5 is implemented.
+  the redesign. `recordTurn` now passes `{ skipValidation: true }` and schedules
+  validation itself against `finalState`.
 - **§4 Animation Player** — `web/src/session/animationPlayer.ts`, standalone and
   fully tested, no `main.ts` wiring yet. See "Animation Player" in
   `docs/architecture.md`.
+- **`ApplyHintAction.mutations`** — migrated from
+  `eliminations: readonly [number, number, number][]` to `readonly RuleMutation[]`.
+  `UserAction.apply`'s `'applyHint'` case now folds each mutation via `.apply()`,
+  generalizing it to any `RuleMutation` kind (not just eliminations).
+  `UserAction.updateRemovedList` and `findFirstElimTurnIdx` (`actions.ts`) updated
+  to read `eliminateCandidate`-typed mutations from `action.mutations`.
 
 **Deferred, low priority (from original §1):** making `main.ts`'s `currentState`
 itself a `readonly PuzzleState[]` (currently it remains `PuzzleState | null`,
@@ -36,10 +41,8 @@ met without this; revisit only if a concrete need arises.
 
 **Remaining work (this document):**
 - §5 Execution Path — replaces the three divergent auto-apply code paths with a
-  single shape built on `ruleSteps` + `AnimationPlayer`. Requires adding
-  `skipValidation` to `buildEngine()` (see above) and migrating
-  `ApplyHintAction.mutations` from `eliminations: readonly [number, number, number][]`
-  to `readonly RuleMutation[]`.
+  single shape built on `ruleSteps` + `AnimationPlayer`. Both prerequisites
+  (`skipValidation` and `ApplyHintAction.mutations`) are now shipped.
 - §6 `namespace PuzzleState` public API
 - §7 Serialization
 - §8 Out of scope (unchanged)
