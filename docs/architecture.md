@@ -410,6 +410,41 @@ and `findFirstElimTurnIdx` (`web/src/session/actions.ts`) read the
 `eliminateCandidate`-typed mutations out of `action.mutations` when replaying turn
 history.
 
+### `applyRuleSteps` and `recordTurn`'s contract
+
+`applyRuleSteps(state)` (`web/src/session/engine.ts`) is the single primitive for
+folding a `buildEngine()` solve pass onto state:
+
+```typescript
+export function applyRuleSteps(state: PuzzleState): { state: PuzzleState; ruleSteps: readonly RuleStep[] }
+```
+
+It runs `buildEngine(state, { skipValidation: true })` once and reduces every
+`ruleSteps[i].mutations` via `.apply()` onto `state` — placements, candidate
+eliminations, virtual cages, and cage-solution eliminations alike. Folding
+eliminations into `userRemovedCandidates` is what stops the *next* `buildEngine`
+call from re-deriving and re-presenting the same deductions as new rule steps.
+Calling `applyRuleSteps` again on its own output is a no-op (`ruleSteps` empty,
+`state` unchanged).
+
+`recordTurn(state, action)` returns
+`{ state: PuzzleState; ruleSteps: readonly RuleStep[]; baseState: PuzzleState }`:
+
+1. `baseState = UserAction.apply(action, state)`.
+2. `{ state: finalState, ruleSteps } = applyRuleSteps(baseState)` plus the new
+   turn appended to `finalState.turns` — this is the only `buildEngine` call for
+   the action.
+3. Trigger validation is scheduled against `finalState` as before.
+
+All `recordTurn`-based actions in `session/actions.ts` (`enterCell`,
+`cycleCandidate`, the `eliminate*` family, `addVirtualCage`, `applyHint`,
+`confirmPuzzle`, `refresh`) use `.state` directly — no separate
+auto-placement pass is layered on afterwards. History-rewrite actions (`undo`,
+`rewind`) call `applyRuleSteps(rebuildUserGrid(trimmed)).state`. `enterCellStep`
+(the animated entry point used by `main.ts`) returns the full
+`{ state, ruleSteps, baseState }` so the UI can drive an `AnimationPlayer` while
+`state` is already the final, committed result.
+
 ---
 
 ## Animation Player
@@ -449,9 +484,17 @@ interface AnimationPlayer {
   `cursor < ruleSteps.length`; at the end, sets `playing: false` without advancing
   (a pause point, not a close/commit action).
 
-The `»` (fold-remaining-and-commit) control and `main.ts` wiring are not yet
-implemented — `AnimationPlayer` is currently a standalone, fully-tested module with
-no integration into the existing animation loop.
+**`main.ts` wiring:** `handleCellEntry`'s animated branch (`autoPlacementDelay > 0`)
+calls `enterCellStep(row, col, digit)`, which both commits `finalState` via
+`setState` and returns `{ state: finalState, ruleSteps, baseState }`. The UI builds
+`{ baseState, ruleSteps, cursor: 0, playing: true }` and drives it with `tick()` in a
+loop: each iteration reads `currentStep(player)` for the hint pill
+(`displayName`), highlight cells, and eliminated-candidate cells, waits `delay` ms
+(or `0` ms if fast-forward was requested), then advances via `tick()` and redraws
+via `boardAtCursor(player)`. The loop is a pure visual replay — `finalState` was
+already committed before the loop starts, so the animation never feeds back into
+`currentState`. The `»` (fold-remaining-and-commit) control and manual
+`rewind`/`stepBack`/`stepForward`/`togglePlay` scrubbing UI remain future work.
 
 ---
 

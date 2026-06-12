@@ -23,9 +23,14 @@
   `buildEngine`'s return would duplicate this at no benefit, so it is dropped from
   the redesign. `recordTurn` now passes `{ skipValidation: true }` and schedules
   validation itself against `finalState`.
-- **§4 Animation Player** — `web/src/session/animationPlayer.ts`, standalone and
-  fully tested, no `main.ts` wiring yet. See "Animation Player" in
+- **§4 Animation Player** — `web/src/session/animationPlayer.ts`, now wired into
+  `main.ts`'s animated `handleCellEntry` path. See "Animation Player" in
   `docs/architecture.md`.
+- **§5 Execution Path** — `applyRuleSteps()` and `recordTurn`'s
+  `{ state, ruleSteps, baseState }` contract replace the three divergent
+  auto-apply paths; `main.ts` drives `AnimationPlayer` from `enterCellStep`'s
+  result. See "`applyRuleSteps` and `recordTurn`'s contract" and "Animation
+  Player" in `docs/architecture.md`.
 - **`ApplyHintAction.mutations`** — migrated from
   `eliminations: readonly [number, number, number][]` to `readonly RuleMutation[]`.
   `UserAction.apply`'s `'applyHint'` case now folds each mutation via `.apply()`,
@@ -40,69 +45,9 @@ where the full list is needed). The functional goal of dual-candidate OCR review
 met without this; revisit only if a concrete need arises.
 
 **Remaining work (this document):**
-- §5 Execution Path — replaces the three divergent auto-apply code paths with a
-  single shape built on `ruleSteps` + `AnimationPlayer`. Both prerequisites
-  (`skipValidation` and `ApplyHintAction.mutations`) are now shipped.
 - §6 `namespace PuzzleState` public API
 - §7 Serialization
 - §8 Out of scope (unchanged)
-
----
-
-## 5. Execution Path
-
-Every user action follows a single shape. The three current divergent paths (`applyAutoPlacements`, `applyNextAutoPlacement`, `getNextAutoApplyStep`) are deleted.
-
-```
-userAction(action):
-  state                                     = requireState()
-  baseState                                 = UserAction.apply(action, state)
-  { board, ruleSteps,
-    validationContext }                     = buildEngine(baseState, { skipValidation: true })
-
-  if violation && rewindState === null:
-    rewindState = state
-
-  pushSnapshot(state)                       // rolling window
-
-  if ruleSteps.length === 0:
-    finalState = recordTurn(baseState, action, [])
-    render(board)
-  else:
-    if validationContext !== null:
-      finalState = ruleSteps.flatMap(s => s.mutations).reduce((s, m) => m.apply(s), baseState)
-      scheduleTriggerValidation(board, validationContext.rules, validationContext.golden, finalState, validationContext.spec)
-
-    open animation player { baseState, ruleSteps, cursor: 0, playing: true }   // or apply instantly per settings
-```
-
-`buildEngine()` runs its full solve exactly once per user action. The only remaining branch is **instant vs animated**, driven by user preference, not by which code path was called. (The player's `boardAtCursor` makes additional `buildEngine(state, { skipSolve: true })` calls while scrubbing — these never run a full solve and never trigger validation; see "Background validation timing" below.)
-
-### Animation commit path
-
-```
-user presses »:
-  state      = requireState()
-  action     = ApplyHintAction { mutations: remaining ruleSteps' mutations }
-  newState   = UserAction.apply(action, state)          // folds each mutation via .apply()
-  { board }  = buildEngine(newState)
-  finalState = recordTurn(newState, action, [])
-  render(board)
-```
-
-`ApplyHintAction.mutations: readonly RuleMutation[]` replaces the old `eliminations: readonly [number, number, number][]`. Storing the actual mutation objects (revived from JSON via `RuleMutation.revive` on load) means undo/redo and `rebuildUserGrid` replay exactly what happened — placements, eliminations, virtual cages, cage-solution eliminations — uniformly via `.apply()`, regardless of kind.
-
-### Background validation timing
-
-The brute-force trigger-miss check (`scheduleTriggerValidation`/`runTriggerValidation`, gated on `golden !== null && !userCorrupted`) needs to run only once per turn, against the fully-deduced (fixpoint) board. `buildEngine(baseState)`'s `board` *is* that fixpoint board — re-solving from `finalState` would be a no-op pass producing the identical board, since the rules already ran to completion. So:
-
-- `buildEngine(baseState, { skipValidation: true })` suppresses the automatic schedule and returns `validationContext`, the inputs it would have used.
-- The execution path immediately folds all `ruleSteps` mutations to compute `finalState`, then calls `scheduleTriggerValidation(board, ...)` directly — reusing the already-solved `board` (no second solve), with `finalState` supplying `puzzleType` for report metadata (invariant between `baseState` and `finalState`).
-- This schedules the check exactly once per turn, immediately — i.e. concurrently with the animation, not after the user finishes watching it.
-- `AnimationPlayer.boardAtCursor` → `computeAnimationCandidates` → `buildEngine(state, { skipSolve: true })` never sets `_solveCompleted`, so scrubbing/rendering never re-triggers validation — mirroring how today's `getNextAutoApplyStep`/`computeAnimationCandidates` (`skipSolve: true`) avoid spamming the validator per animation frame.
-- `runTriggerValidation` additionally early-returns when `!hasConsent()`: the brute-force `findTriggerMisses` comparison is otherwise pure waste, since its only output (the reports) is dropped at the upload gate regardless of whether the computation ran.
-
-`getHints()` simplifies from up to 3 `buildEngine()` calls (for inconsistency detection) to one, since violation state is returned directly from `buildEngine()`.
 
 ---
 
