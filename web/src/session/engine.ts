@@ -471,46 +471,8 @@ function buildRuleSteps(
 }
 
 // ---------------------------------------------------------------------------
-// Auto-placement pass
+// Rule-step folding
 // ---------------------------------------------------------------------------
-
-/**
- * Runs the always-apply rules against the current state and returns an
- * updated PuzzleState with any newly placed digits committed to userGrid.
- */
-export function applyAutoPlacements(state: PuzzleState): PuzzleState {
-  if (state.goldenSolution === null) return state; // no-op before confirm
-  const { engine } = buildEngine(state); // engine.solve() called inside buildEngine
-
-  let changed = false;
-  const newGrid = state.userGrid.map(row => [...row]);
-  for (const p of engine.appliedPlacements) {
-    const [r, c] = p.cell;
-    if (newGrid[r]![c]! === 0) { newGrid[r]![c] = p.digit; changed = true; }
-  }
-
-  // Update userGrid only — no sentinel turn. Mirrors Python _apply_auto_placements.
-  return changed ? { ...state, userGrid: newGrid } : state;
-}
-
-/**
- * Applies exactly one pending auto-placement to userGrid and returns the
- * updated state, or null if there are no more cells to auto-place.
- * Used by the UI animation loop when autoPlacementDelay > 0.
- */
-export function applyNextAutoPlacement(state: PuzzleState): PuzzleState | null {
-  if (state.goldenSolution === null) return null;
-  const { engine } = buildEngine(state);
-  for (const p of engine.appliedPlacements) {
-    const [r, c] = p.cell;
-    if (state.userGrid[r]![c]! === 0) {
-      const newGrid = state.userGrid.map(row => [...row]);
-      newGrid[r]![c] = p.digit;
-      return { ...state, userGrid: newGrid };
-    }
-  }
-  return null;
-}
 
 /**
  * Runs buildEngine() once and folds every ruleStep mutation (placements,
@@ -539,17 +501,18 @@ export function applyRuleSteps(state: PuzzleState): { state: PuzzleState; ruleSt
 export function recordTurn(
   state: PuzzleState,
   action: UserAction,
-): PuzzleState {
-  const nextState = UserAction.apply(action, state);
-  const { board, engine, validationContext } = buildEngine(nextState, { skipValidation: true }); // engine.solve() called inside buildEngine
+): { state: PuzzleState; ruleSteps: readonly RuleStep[]; baseState: PuzzleState } {
+  const baseState = UserAction.apply(action, state);
+  const { ruleSteps, board, engine, validationContext } = buildEngine(baseState, { skipValidation: true }); // engine.solve() called inside buildEngine
+  const folded = ruleSteps.flatMap(s => s.mutations).reduce((s, m) => m.apply(s), baseState);
   const autoMutations: AutoMutation[] = [...engine.appliedMutations];
   const snapshot = captureSnapshot(board);
   const turn: Turn = { action, autoMutations, snapshot };
-  const finalState = { ...nextState, turns: [...nextState.turns, turn] };
+  const finalState = { ...folded, turns: [...baseState.turns, turn] };
   if (validationContext !== null) {
     scheduleTriggerValidation(board, validationContext.rules, validationContext.golden, finalState, validationContext.spec);
   }
-  return finalState;
+  return { state: finalState, ruleSteps, baseState };
 }
 
 // ---------------------------------------------------------------------------

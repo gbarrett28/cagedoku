@@ -26,8 +26,7 @@ import { validateCageLayout, hasMultipleCageTotals } from '../image/validation.j
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import {
   buildEngine,
-  applyAutoPlacements,
-  applyNextAutoPlacement,
+  applyRuleSteps,
   recordTurn,
   rebuildUserGrid,
   userRemoved,
@@ -60,7 +59,7 @@ import type {
   VirtualCageSuggestion,
 } from './types.js';
 import { RuleMutation } from './ruleMutation.js';
-import type { EliminateCandidateMutation } from './ruleMutation.js';
+import type { EliminateCandidateMutation, RuleStep } from './ruleMutation.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -568,7 +567,7 @@ export function confirmPuzzle(board: BoardState, fixtureStalledCandidates?: numb
   const confirmedKiller = { ...state, goldenSolution, userGrid, turns: givenTurns, fixtureStalledCandidates: fixtureStalledCandidates ?? null };
   const confirmedClassic = { ...state, goldenSolution, userGrid, turns: givenTurns };
   let updated: PuzzleState = PuzzleState.isKiller(state) ? confirmedKiller : confirmedClassic;
-  updated = applyAutoPlacements(updated);
+  updated = applyRuleSteps(updated).state;
   setState(updated);
   return updated;
 }
@@ -789,43 +788,26 @@ export function enterCell(row1b: number, col1b: number, digit: number): PuzzleSt
   const action: UserAction = digit !== 0
     ? { type: 'placeDigit', row: r, col: c, digit, source: 'user' }
     : { type: 'removeDigit', row: r, col: c };
-  let updated = recordTurn(state, action);
-  // Rebuild from turns so auto-placements are always derived from explicit user
-  // actions alone — mirrors undo/rewind. This keeps the round-trip invariant:
-  //   applyAutoPlacements(rebuildUserGrid(state)) === state.userGrid
-  updated = applyAutoPlacements(rebuildUserGrid(updated));
+  const { state: updated } = recordTurn(state, action);
   setState(updated);
   return updated;
 }
 
 /**
- * Records the user's digit placement without applying auto-placements.
- * Used by the animated path in the UI (autoPlacementDelay > 0) so the
- * animation loop can step through auto-placements one-by-one.
+ * Records the user's digit placement and returns the fully-folded committed
+ * state alongside ruleSteps/baseState so the UI can drive an animation
+ * showing the transition from baseState to state.
  */
-export function enterCellStep(row1b: number, col1b: number, digit: number): PuzzleState {
+export function enterCellStep(row1b: number, col1b: number, digit: number): { state: PuzzleState; ruleSteps: readonly RuleStep[]; baseState: PuzzleState } {
   const state = requireConfirmed();
   const r = row1b - 1;
   const c = col1b - 1;
   const action: UserAction = digit !== 0
     ? { type: 'placeDigit', row: r, col: c, digit, source: 'user' }
     : { type: 'removeDigit', row: r, col: c };
-  const updated = recordTurn(state, action);
-  setState(updated);
-  return updated;
-}
-
-/**
- * Applies exactly one pending auto-placement and persists it to the store.
- * Returns the updated state, or null if there are no more auto-placements.
- */
-export function stepAutoPlacement(): PuzzleState | null {
-  const state = getState();
-  if (state === null) return null;
-  const next = applyNextAutoPlacement(state);
-  if (next === null) return null;
-  setState(next);
-  return next;
+  const result = recordTurn(state, action);
+  setState(result.state);
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -843,8 +825,7 @@ export function undo(): PuzzleState {
   if (last.type === 'placeDigit' && last.source === 'given') throw new UserFacingError('Cannot undo given digits');
 
   const trimmed: PuzzleState = { ...state, turns: state.turns.slice(0, -1) };
-  let updated = rebuildUserGrid(trimmed);
-  updated = applyAutoPlacements(updated);
+  const updated = applyRuleSteps(rebuildUserGrid(trimmed)).state;
   setState(updated);
   return updated;
 }
@@ -855,8 +836,7 @@ export function undo(): PuzzleState {
 export function rewind(turnIdx: number): PuzzleState {
   const state = requireConfirmed();
   const trimmed: PuzzleState = { ...state, turns: state.turns.slice(0, turnIdx) };
-  let updated = rebuildUserGrid(trimmed);
-  updated = applyAutoPlacements(updated);
+  const updated = applyRuleSteps(rebuildUserGrid(trimmed)).state;
   setState(updated);
   return updated;
 }
@@ -892,10 +872,7 @@ export function cycleCandidate(row1b: number, col1b: number, digit: number): Puz
     }
   }
 
-  let updated = recordTurn(state, action);
-  // Rebuild from turns so auto-placements stay consistent with explicit user
-  // actions — same invariant as enterCell and undo.
-  updated = applyAutoPlacements(rebuildUserGrid(updated));
+  const { state: updated } = recordTurn(state, action);
   setState(updated);
   return updated;
 }
@@ -941,9 +918,10 @@ export function eliminateCageSolution(label: string, solution: number[]): Puzzle
   const newCages = state.cageStates.map(c =>
     c.label !== upper ? c : { ...c, userEliminatedSolns: toggleSolution(c.userEliminatedSolns, solution) },
   );
-  const updated = { ...state, cageStates: newCages };
+  const withCages = { ...state, cageStates: newCages };
+  const updated = applyRuleSteps(withCages).state;
   setState(updated);
-  return applyAutoPlacements(updated);
+  return updated;
 }
 
 /**
@@ -958,9 +936,10 @@ export function eliminateVirtualCageSolution(vcKey: string, solution: number[]):
   const newVCs = state.virtualCages.map(vc =>
     virtualCageKeyFromCage(vc) !== vcKey ? vc : { ...vc, eliminatedSolns: toggleSolution(vc.eliminatedSolns, solution) },
   );
-  const updated = { ...state, virtualCages: newVCs };
+  const withVCs = { ...state, virtualCages: newVCs };
+  const updated = applyRuleSteps(withVCs).state;
   setState(updated);
-  return applyAutoPlacements(updated);
+  return updated;
 }
 
 /** Toggle a DiffSolution as user-eliminated for a diff virtual cage identified by key. */
@@ -978,9 +957,10 @@ export function eliminateVirtualCageDiffSolution(vcKey: string, solution: DiffSo
       : [...current, solution];
     return { ...vc, eliminatedDiffSolns: newElims };
   });
-  const updated = { ...state, virtualCages: newVCs };
+  const withVCs = { ...state, virtualCages: newVCs };
+  const updated = applyRuleSteps(withVCs).state;
   setState(updated);
-  return applyAutoPlacements(updated);
+  return updated;
 }
 
 // ---------------------------------------------------------------------------
@@ -1045,8 +1025,7 @@ export function addVirtualCage(
     ...(isDiff && { negativeCells: typedNeg as Cell[], eliminatedDiffSolns: [] }),
   };
   const action: UserAction = { type: 'addVirtualCage', cage };
-  let updated = recordTurn(state, action);
-  updated = applyAutoPlacements(updated);
+  const { state: updated } = recordTurn(state, action);
   setState(updated);
   return updated;
 }
@@ -1303,8 +1282,7 @@ export function applyHint(eliminations: readonly { cell: [number, number]; digit
   const state = requireConfirmed();
   const mutations = eliminations.map(e => RuleMutation.eliminateCandidate(e.cell[0], e.cell[1], e.digit));
   const action: UserAction = { type: 'applyHint', mutations };
-  let updated = recordTurn(state, action);
-  updated = applyAutoPlacements(updated);
+  const { state: updated } = recordTurn(state, action);
   setState(updated);
   return updated;
 }
@@ -1319,7 +1297,7 @@ export function applyHint(eliminations: readonly { cell: [number, number]; digit
  */
 export function refresh(): PuzzleState {
   const state = requireConfirmed();
-  const updated = applyAutoPlacements(state);
+  const updated = applyRuleSteps(state).state;
   setState(updated);
   return updated;
 }

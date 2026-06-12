@@ -33,7 +33,6 @@ import {
   loadSpecDirect,
   enterCell,
   enterCellStep,
-  stepAutoPlacement,
   undo,
   computeCandidates,
   candidatesFromBoard,
@@ -509,7 +508,7 @@ describe('findLastConsistentTurnIdx — bug #30: wrong fallback when no matching
 });
 
 // ---------------------------------------------------------------------------
-// Bug #60 — addVirtualCage skips applyAutoPlacements
+// Bug #60 — addVirtualCage skips the rule-folding pass
 // ---------------------------------------------------------------------------
 
 describe('Bug #60 regression — addVirtualCage triggers auto-placements', () => {
@@ -518,11 +517,11 @@ describe('Bug #60 regression — addVirtualCage triggers auto-placements', () =>
   // any individual cell (every permutation of {1..9} satisfies each box cage).
   //
   // We then directly set 8 of 9 cells in box-0 via setState (bypassing enterCell
-  // so applyAutoPlacements doesn't run yet). This leaves (0,0) as the sole empty
-  // cell in its box — a naked single whose digit NakedSingle can determine.
+  // so recordTurn's rule-folding doesn't run yet). This leaves (0,0) as the sole
+  // empty cell in its box — a naked single whose digit NakedSingle can determine.
   //
-  // addVirtualCage must call applyAutoPlacements so NakedSingle fires and (0,0)
-  // is placed. Before the fix it was missing that call so (0,0) stayed 0.
+  // addVirtualCage must fold ruleSteps via recordTurn so NakedSingle fires and
+  // (0,0) is placed. Before the fix it was missing that call so (0,0) stayed 0.
   //
   // Cells are populated from goldenSolution (not KNOWN_SOLUTION) so that the
   // candidate-soundness assertion in the engine never fires.
@@ -554,7 +553,7 @@ describe('Bug #60 regression — addVirtualCage triggers auto-placements', () =>
     expect(getState()!.userGrid![0]![0]).toBe(0);
   });
 
-  itNS('addVirtualCage triggers applyAutoPlacements — NakedSingle places (0,0)', () => {
+  itNS('addVirtualCage triggers rule-folding — NakedSingle places (0,0)', () => {
     // Any valid VC triggers the auto-placement pass; use two unsolved cells
     // in box-3 so the VC itself plays no role in placing (0,0).
     const gs = baseState.goldenSolution!;
@@ -621,16 +620,16 @@ describe('undo after eliminateCandidate restores userRemovedCandidates', () => {
 });
 
 // ---------------------------------------------------------------------------
-// #78 – Fast-forward drain invariant
-// Draining stepAutoPlacement() iteratively after enterCellStep() must reach
-// the same final userGrid as enterCell() in a single call. This is the
-// session-level contract the main.ts fast-forward fix relies on.
+// #78 – Animated entry invariant
+// enterCellStep() must commit the same final userGrid as enterCell() in a
+// single call — the animated path folds the same ruleSteps via recordTurn,
+// it just also returns them for the UI to animate.
 // ---------------------------------------------------------------------------
 
-describe('fast-forward drain invariant (#78)', () => {
+describe('animated entry invariant (#78)', () => {
   beforeEach(() => { makeKillerConfirmed(); });
 
-  it('stepAutoPlacement loop reaches same userGrid as enterCell', () => {
+  it('enterCellStep commits the same userGrid as enterCell', () => {
     const snapshot = getState()!;
     const r = 1, c = 1, digit = KNOWN_SOLUTION[0]![0]!;
 
@@ -639,13 +638,12 @@ describe('fast-forward drain invariant (#78)', () => {
     enterCell(r, c, digit);
     const singleGrid = getState()!.userGrid;
 
-    // Iterative drain path — what the fast-forward fix does in handleCellEntry
+    // Animated entry point
     setState(snapshot);
-    enterCellStep(r, c, digit);
-    while (stepAutoPlacement() !== null) { /* drain */ }
-    const drainGrid = getState()!.userGrid;
+    const { state } = enterCellStep(r, c, digit);
+    expect(getState()!.userGrid).toEqual(state.userGrid);
 
-    expect(drainGrid).toEqual(singleGrid);
+    expect(state.userGrid).toEqual(singleGrid);
   });
 });
 

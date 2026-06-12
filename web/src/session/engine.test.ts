@@ -10,8 +10,7 @@ import {
   isUserCorrupted,
   userRemoved,
   userVirtualCages,
-  applyAutoPlacements,
-  applyNextAutoPlacement,
+  applyRuleSteps,
   recordTurn,
 } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
@@ -347,7 +346,7 @@ describe('DEFAULT_ALWAYS_APPLY_RULES', () => {
 });
 
 // ---------------------------------------------------------------------------
-// applyAutoPlacements / applyNextAutoPlacement — inconsistency guard
+// applyRuleSteps — inconsistency guard
 // ---------------------------------------------------------------------------
 
 /** State with 80 cells placed (KNOWN_SOLUTION minus (0,0)) and NakedSingle active. */
@@ -399,7 +398,7 @@ function makeInternallyInconsistentState(): KillerPuzzleState {
   };
 }
 
-describe('applyAutoPlacements — NakedSingle applies placement and peer eliminations', () => {
+describe('applyRuleSteps — NakedSingle applies placement and peer eliminations', () => {
   it('places (0,0) with NakedSingle as the only always-apply rule (no separate CSE needed)', () => {
     // NakedSingle now handles both placement and peer elimination in one rule, so the
     // cascade works correctly without any separate CellSolutionElimination rule.
@@ -419,16 +418,16 @@ describe('applyAutoPlacements — NakedSingle applies placement and peer elimina
       warpedImageUrl: null,
       userRemovedCandidates: [],
     };
-    const result = applyAutoPlacements(state);
+    const { state: result } = applyRuleSteps(state);
     // NakedSingle is in alwaysApplyRules, so the cascade runs and (0,0) is placed.
     expect(result.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
   });
 });
 
-describe('applyAutoPlacements — continues even with wrong placements', () => {
+describe('applyRuleSteps — continues even with wrong placements', () => {
   it('places the deducible digit when board is consistent', () => {
     const state = makeAlmostCompleteState();
-    const result = applyAutoPlacements(state);
+    const { state: result } = applyRuleSteps(state);
     expect(result.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
   });
 
@@ -437,7 +436,7 @@ describe('applyAutoPlacements — continues even with wrong placements', () => {
     // The trivial spec gives (0,0) a 1-cell cage with total = KNOWN_SOLUTION[0][0],
     // so the cage constraint uniquely forces (0,0) regardless of the row duplicate.
     const state = makeInternallyInconsistentState();
-    const result = applyAutoPlacements(state);
+    const { state: result } = applyRuleSteps(state);
     expect(result.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
   });
 
@@ -445,7 +444,7 @@ describe('applyAutoPlacements — continues even with wrong placements', () => {
     // Wrong digit at (0,1) — engine proceeds as if it were correct.
     // (0,0) is forced by its 1-cell cage constraint (total = KNOWN_SOLUTION[0][0]).
     const state = makeAlmostCompleteState({ wrongAt: [0, 1] });
-    const result = applyAutoPlacements(state);
+    const { state: result } = applyRuleSteps(state);
     expect(result.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
   });
 
@@ -458,43 +457,9 @@ describe('applyAutoPlacements — continues even with wrong placements', () => {
       ...state,
       userRemovedCandidates: [[0, 0, gold]],
     };
-    const result = applyAutoPlacements(stateWithElim);
+    const { state: result } = applyRuleSteps(stateWithElim);
     expect(result.userGrid![0]![0]).not.toBe(0); // some digit was placed
     expect(result.userGrid![0]![0]).not.toBe(gold); // not the golden digit
-  });
-});
-
-describe('applyNextAutoPlacement — continues even with wrong placements', () => {
-  it('places the next deducible digit when board is consistent', () => {
-    const state = makeAlmostCompleteState();
-    const result = applyNextAutoPlacement(state);
-    expect(result).not.toBeNull();
-    expect(result!.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
-  });
-
-  it('still places (0,0) when userGrid has a row-duplicate', () => {
-    const result = applyNextAutoPlacement(makeInternallyInconsistentState());
-    expect(result).not.toBeNull();
-    expect(result!.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
-  });
-
-  it('still places (0,0) when a wrong digit is present elsewhere', () => {
-    const state = makeAlmostCompleteState({ wrongAt: [0, 1] });
-    const result = applyNextAutoPlacement(state);
-    expect(result).not.toBeNull();
-    expect(result!.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]);
-  });
-
-  itNS('places some non-golden digit in (0,0) when the golden candidate was eliminated', () => {
-    const state = makeAlmostCompleteState();
-    const gold = KNOWN_SOLUTION[0]![0]!;
-    const stateWithElim: KillerPuzzleState = {
-      ...state,
-      userRemovedCandidates: [[0, 0, gold]],
-    };
-    const result = applyNextAutoPlacement(stateWithElim);
-    expect(result).not.toBeNull();
-    expect(result!.userGrid![0]![0]).not.toBe(gold);
   });
 });
 
@@ -590,6 +555,25 @@ describe('recordTurn — trigger validation scheduling', () => {
     recordTurn(state, action);
 
     expect(setTimeoutSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('recordTurn — { state, ruleSteps, baseState } contract', () => {
+  it('returns finalState with ruleSteps folded onto baseState, plus a recorded turn', () => {
+    const state = makeState();
+    const action: EliminateCandidateAction = { type: 'eliminateCandidate', row: 0, col: 0, digit: 1 };
+
+    const { state: finalState, ruleSteps, baseState } = recordTurn(state, action);
+
+    // baseState is UserAction.apply(action, state) — one more turn than the input.
+    expect(baseState.turns.length).toBe(state.turns.length);
+    expect(finalState.turns.length).toBe(baseState.turns.length + 1);
+    expect(finalState.turns[finalState.turns.length - 1]!.action).toEqual(action);
+
+    // finalState's board fields equal ruleSteps folded onto baseState.
+    const folded = ruleSteps.flatMap(s => s.mutations).reduce((s, m) => m.apply(s), baseState);
+    expect(finalState.userGrid).toEqual(folded.userGrid);
+    expect(finalState.userRemovedCandidates).toEqual(folded.userRemovedCandidates);
   });
 });
 

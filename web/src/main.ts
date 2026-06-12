@@ -1501,14 +1501,10 @@ async function handleCellEntry(digit: number): Promise<void> {
           }
         };
 
-        let state = enterCellStep(selectedCell.row, selectedCell.col, digit);
-        // Save the pre-animation userRemovedCandidates so animation-only eliminations
-        // (accumulated by applyAutoApplyStep) can be discarded at cleanup without
-        // losing candidates the user manually eliminated before this animation started.
-        const preAnimationRemoved = state.userRemovedCandidates;
-        currentState = state;
+        const { state: committedState, baseState } = enterCellStep(selectedCell.row, selectedCell.col, digit);
+        currentState = baseState;
         animRefresh(currentState);
-        updateUndoButton(state);
+        updateUndoButton(committedState);
         await new Promise<void>(resolve => { setTimeout(resolve, fastForwardRequested ? 0 : delay); });
         while (true) {
           const step = getNextAutoApplyStep(currentState);
@@ -1537,16 +1533,13 @@ async function handleCellEntry(digit: number): Promise<void> {
           hideHintPill(el('hint-pill'));
           animRefresh(currentState);
         }
-        // Final cleanup after all steps (or fast-forward drain).
-        // Commit the auto-placed digits in userGrid and restore userRemovedCandidates
-        // to the pre-animation snapshot, discarding the transient animation-only
-        // eliminations (buildEngine's full-solve pass will recompute them).
+        // Final cleanup after all steps (or fast-forward drain). enterCellStep already
+        // committed the fully-folded final state to the store via recordTurn —
+        // just resync currentState and redraw.
         hideHintPill(el('hint-pill'));
         hintHighlightCells = new Set();
         hintElimCells = new Set();
-        const finalState: PuzzleState = { ...currentState, userRemovedCandidates: preAnimationRemoved };
-        setState(finalState);
-        currentState = finalState;
+        currentState = committedState;
         refreshDisplay();
         updateUndoButton(currentState);
       } finally {
