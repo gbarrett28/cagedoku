@@ -349,6 +349,95 @@ The solver has no tunable thresholds — it is exact by construction.
 
 ---
 
+## Rule Mutations and Rule Steps
+
+`web/src/session/ruleMutation.ts` represents rule effects as data rather than as an
+external switch. Each concrete mutation type is an open interface carrying its own
+`apply(state: PuzzleState): PuzzleState`, so dispatch lives on the value itself —
+callers always write `mutation.apply(state)`:
+
+```typescript
+interface RuleMutation {
+  readonly type: string;
+  apply(state: PuzzleState): PuzzleState;
+}
+
+interface PlaceDigitMutation extends RuleMutation { readonly type: 'placeDigit'; readonly row: number; readonly col: number; readonly digit: number; }
+interface EliminateCandidateMutation extends RuleMutation { readonly type: 'eliminateCandidate'; readonly row: number; readonly col: number; readonly digit: number; }
+interface AddVirtualCageMutation extends RuleMutation { readonly type: 'addVirtualCage'; readonly cage: VirtualCage; }
+interface EliminateCageSolutionMutation extends RuleMutation { readonly type: 'eliminateCageSolution'; readonly cageId: string; readonly solution: readonly number[]; }
+```
+
+`namespace RuleMutation` provides one factory per mutation type (`placeDigit`,
+`eliminateCandidate`, `addVirtualCage`, `eliminateCageSolution`) plus `revive(data)`
+— the single type-keyed switch in the system, used to reconstruct a mutation after a
+JSON round-trip (`JSON.stringify` drops the `apply` closure a factory attaches).
+
+**`RuleStep`** groups the consecutive same-rule mutations produced by one rule firing
+during a solve pass:
+
+```typescript
+interface RuleStep {
+  readonly ruleName: string;
+  readonly displayName: string;
+  readonly highlightCells: readonly Cell[];
+  readonly mutations: readonly RuleMutation[];
+}
+```
+
+**`buildEngine(state, opts?)`** (`web/src/session/engine.ts`) returns
+`{ board, engine, ruleSteps, validationContext }`. `ruleSteps` is the ordered
+transcript of every always-apply rule firing computed during the engine's `solve()`
+pass, each wrapped as a `RuleStep`. `validationContext` is `null` unless a golden
+solution is present and the board is not user-corrupted; when non-null it carries
+`{ rules, golden, spec }` for the brute-force trigger-miss check. Folding every
+`ruleSteps[i].mutations` via `.apply()` onto the pre-solve state reproduces `board`.
+
+---
+
+## Animation Player
+
+`web/src/session/animationPlayer.ts` is a pure-data module for navigating a
+`buildEngine()`-produced `ruleSteps` list — the foundation for the rule-by-rule
+auto-apply animation. It is never persisted (UI-only state) and follows the
+namespace-merging pattern: `AnimationPlayer` is plain data, all behaviour lives in
+the same-named namespace.
+
+```typescript
+interface AnimationPlayer {
+  readonly baseState: PuzzleState;   // state right after the user's action, before any rule steps
+  readonly ruleSteps: readonly RuleStep[];
+  readonly cursor: number;            // 0..ruleSteps.length — steps fully applied so far
+  readonly playing: boolean;
+}
+```
+
+**Derivation:**
+- `stateAtCursor(player)` folds `ruleSteps[0..cursor)` mutations onto `baseState` via
+  `RuleMutation.apply`.
+- `boardAtCursor(player)` is `computeAnimationCandidates(stateAtCursor(player))` —
+  the existing lightweight board derivation (`session/actions.ts`), which calls
+  `buildEngine(state, { skipSolve: true })` so scrubbing never re-triggers a full
+  solve or validation.
+- `currentStep(player)` is `ruleSteps[cursor] ?? null` — the step about to be (or
+  being) animated, `null` once the cursor reaches the end.
+
+**VCR cursor transitions** (all pure, returning a new `AnimationPlayer`):
+- `rewind(player)` — if `cursor > 0`, resets to `{ cursor: 0, playing: false }`; if
+  `cursor === 0`, returns `null` (the caller closes the player with no commit).
+- `stepBack(player)` / `stepForward(player)` — move the cursor by one step, clamped
+  to `[0, ruleSteps.length]`, forcing `playing: false`.
+- `togglePlay(player)` — flips `playing`.
+- `tick(player)` — auto-play step: advances `cursor` by one while
+  `cursor < ruleSteps.length`; at the end, sets `playing: false` without advancing
+  (a pause point, not a close/commit action).
+
+The `»` (fold-remaining-and-commit) control and `main.ts` wiring are not yet
+implemented — `AnimationPlayer` is currently a standalone, fully-tested module with
+no integration into the existing animation loop.
+
+---
+
 ## Rule Contract
 
 All solver rules live in `web/src/engine/rules/`.  Every rule implements the
