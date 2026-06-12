@@ -39,4 +39,38 @@ export namespace AnimationPlayer {
   export function currentStep(player: AnimationPlayer): RuleStep | null {
     return player.ruleSteps[player.cursor] ?? null;
   }
+
+  /**
+   * « : if cursor > 0, reset to the start (paused). If cursor === 0, returns
+   * null — the caller closes the player with no commit.
+   */
+  export function rewind(player: AnimationPlayer): AnimationPlayer | null {
+    if (player.cursor === 0) return null;
+    return { ...player, cursor: 0, playing: false };
+  }
+
+  /** ‹ : step back one rule step, clamped at 0. Forces playing: false. */
+  export function stepBack(player: AnimationPlayer): AnimationPlayer {
+    return { ...player, cursor: Math.max(0, player.cursor - 1), playing: false };
+  }
+
+  /** › : step forward one rule step, clamped at ruleSteps.length. Forces playing: false. */
+  export function stepForward(player: AnimationPlayer): AnimationPlayer {
+    return { ...player, cursor: Math.min(player.ruleSteps.length, player.cursor + 1), playing: false };
+  }
+
+  /** ▶/⏸ : toggle playback. */
+  export function togglePlay(player: AnimationPlayer): AnimationPlayer {
+    return { ...player, playing: !player.playing };
+  }
+
+  /**
+   * Auto-play tick: advances the cursor by one step. If already at the end,
+   * stops playback (playing: false) without advancing — the end of the list
+   * is a pause point, not a close/commit action.
+   */
+  export function tick(player: AnimationPlayer): AnimationPlayer {
+    if (player.cursor >= player.ruleSteps.length) return { ...player, playing: false };
+    return { ...player, cursor: player.cursor + 1 };
+  }
 }

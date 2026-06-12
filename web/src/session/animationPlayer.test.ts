@@ -90,3 +90,73 @@ describe('AnimationPlayer.currentStep', () => {
     expect(AnimationPlayer.currentStep(player)).toBeNull();
   });
 });
+
+describe('AnimationPlayer.rewind', () => {
+  it('resets cursor to 0 and playing to false when cursor > 0', () => {
+    const { baseState, ruleSteps } = setup();
+    const player: AnimationPlayer = { baseState, ruleSteps, cursor: 1, playing: true };
+    expect(AnimationPlayer.rewind(player)).toEqual({ ...player, cursor: 0, playing: false });
+  });
+
+  it('returns null when cursor === 0', () => {
+    const { baseState, ruleSteps } = setup();
+    const player: AnimationPlayer = { baseState, ruleSteps, cursor: 0, playing: true };
+    expect(AnimationPlayer.rewind(player)).toBeNull();
+  });
+});
+
+describe('AnimationPlayer.stepBack', () => {
+  it('decrements cursor and sets playing to false', () => {
+    const { baseState, ruleSteps } = setup();
+    const player: AnimationPlayer = { baseState, ruleSteps, cursor: 1, playing: true };
+    expect(AnimationPlayer.stepBack(player)).toEqual({ ...player, cursor: 0, playing: false });
+  });
+
+  it('clamps at 0', () => {
+    const { baseState, ruleSteps } = setup();
+    const player: AnimationPlayer = { baseState, ruleSteps, cursor: 0, playing: true };
+    expect(AnimationPlayer.stepBack(player)).toEqual({ ...player, cursor: 0, playing: false });
+  });
+});
+
+describe('AnimationPlayer.stepForward', () => {
+  it('increments cursor and sets playing to false', () => {
+    const { baseState, ruleSteps } = setup();
+    const player: AnimationPlayer = { baseState, ruleSteps, cursor: 0, playing: true };
+    expect(AnimationPlayer.stepForward(player)).toEqual({ ...player, cursor: 1, playing: false });
+  });
+
+  it('clamps at ruleSteps.length', () => {
+    const { baseState, ruleSteps } = setup();
+    const player: AnimationPlayer = { baseState, ruleSteps, cursor: ruleSteps.length, playing: true };
+    expect(AnimationPlayer.stepForward(player)).toEqual({ ...player, cursor: ruleSteps.length, playing: false });
+  });
+});
+
+describe('AnimationPlayer.togglePlay', () => {
+  it('flips playing from false to true', () => {
+    const { baseState, ruleSteps } = setup();
+    const player: AnimationPlayer = { baseState, ruleSteps, cursor: 0, playing: false };
+    expect(AnimationPlayer.togglePlay(player)).toEqual({ ...player, playing: true });
+  });
+
+  it('flips playing from true to false', () => {
+    const { baseState, ruleSteps } = setup();
+    const player: AnimationPlayer = { baseState, ruleSteps, cursor: 0, playing: true };
+    expect(AnimationPlayer.togglePlay(player)).toEqual({ ...player, playing: false });
+  });
+});
+
+describe('AnimationPlayer.tick', () => {
+  it('advances cursor by one while cursor < ruleSteps.length', () => {
+    const { baseState, ruleSteps } = setup();
+    const player: AnimationPlayer = { baseState, ruleSteps, cursor: 0, playing: true };
+    expect(AnimationPlayer.tick(player)).toEqual({ ...player, cursor: 1 });
+  });
+
+  it('stops playback without advancing cursor at the end', () => {
+    const { baseState, ruleSteps } = setup();
+    const player: AnimationPlayer = { baseState, ruleSteps, cursor: ruleSteps.length, playing: true };
+    expect(AnimationPlayer.tick(player)).toEqual({ ...player, playing: false });
+  });
+});
