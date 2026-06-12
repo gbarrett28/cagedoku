@@ -512,6 +512,22 @@ export function applyNextAutoPlacement(state: PuzzleState): PuzzleState | null {
   return null;
 }
 
+/**
+ * Runs buildEngine() once and folds every ruleStep mutation (placements,
+ * candidate eliminations, virtual cages, cage-solution eliminations) onto
+ * state via RuleMutation.apply(), using the same machinery
+ * AnimationPlayer.stateAtCursor uses for per-step animation.
+ *
+ * Calling this on its own output is a no-op: buildEngine on the folded state
+ * produces an empty ruleSteps list (the deductions are now reflected in
+ * userGrid/userRemovedCandidates, so preCands no longer contains them).
+ */
+export function applyRuleSteps(state: PuzzleState): { state: PuzzleState; ruleSteps: readonly RuleStep[] } {
+  const { ruleSteps } = buildEngine(state, { skipValidation: true });
+  const folded = ruleSteps.flatMap(s => s.mutations).reduce((s, m) => m.apply(s), state);
+  return { state: folded, ruleSteps };
+}
+
 // ---------------------------------------------------------------------------
 // Turn recording
 // ---------------------------------------------------------------------------

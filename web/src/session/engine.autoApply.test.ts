@@ -14,6 +14,7 @@ import {
   buildEngine,
   getNextAutoApplyStep,
   applyAutoApplyStep,
+  applyRuleSteps,
 } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
 import { RuleMutation } from './ruleMutation.js';
@@ -158,6 +159,33 @@ describe('buildEngine with userRemovedCandidates', () => {
       userRemovedCandidates: [],
     });
     expect(boardEmpty.candidates[0]![0]!.size).toBe(boardDefault.candidates[0]![0]!.size);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyRuleSteps
+// ---------------------------------------------------------------------------
+
+describe('applyRuleSteps', () => {
+  it('folds all ruleStep mutations onto state and is idempotent', () => {
+    const state = makeAlmostCompleteState();
+    const { state: once, ruleSteps: firstSteps } = applyRuleSteps(state);
+    expect(firstSteps.length).toBeGreaterThan(0);
+    expect(once.userGrid[0]![0]).toBe(KNOWN_SOLUTION[0]![0]!);
+
+    const { state: twice, ruleSteps: secondSteps } = applyRuleSteps(once);
+    expect(secondSteps).toEqual([]);
+    expect(twice).toEqual(once);
+  });
+
+  it('on a base state, folding CageCandidateFilter eliminations is idempotent', () => {
+    const state = makeBaseState();
+    const { state: once, ruleSteps: firstSteps } = applyRuleSteps(state);
+    expect(firstSteps.length).toBeGreaterThan(0);
+
+    const { state: twice, ruleSteps: secondSteps } = applyRuleSteps(once);
+    expect(secondSteps).toEqual([]);
+    expect(twice).toEqual(once);
   });
 });
 
