@@ -16,9 +16,14 @@
   "Rule Mutations and Rule Steps" in `docs/architecture.md`.
 - **§3 `buildEngine()` contract (partial)** — `ruleSteps` and `validationContext`
   added to `buildEngine()`'s return value. See "Rule Mutations and Rule Steps" in
-  `docs/architecture.md`. **Not yet shipped from the original §3 design:**
-  `baseBoard` and the `skipValidation` option — these are prerequisites for §5 below
-  and should be added when §5 is implemented.
+  `docs/architecture.md`. **`baseBoard` resolved as not needed:** the pre-solve
+  board is already obtainable via `buildEngine(state, { skipSolve: true }).board`,
+  which `AnimationPlayer.boardAtCursor` already uses for the cursor-0 frame (see
+  "Animation Player" in `docs/architecture.md`). Adding a `baseBoard` field to
+  `buildEngine`'s return would duplicate this at no benefit, so it is dropped from
+  the redesign. **Still not yet shipped from the original §3 design:** the
+  `skipValidation` option — a prerequisite for §5 below and should be added when
+  §5 is implemented.
 - **§4 Animation Player** — `web/src/session/animationPlayer.ts`, standalone and
   fully tested, no `main.ts` wiring yet. See "Animation Player" in
   `docs/architecture.md`.
@@ -31,8 +36,8 @@ met without this; revisit only if a concrete need arises.
 
 **Remaining work (this document):**
 - §5 Execution Path — replaces the three divergent auto-apply code paths with a
-  single shape built on `ruleSteps` + `AnimationPlayer`. Requires adding `baseBoard`
-  and `skipValidation` to `buildEngine()` (see above) and migrating
+  single shape built on `ruleSteps` + `AnimationPlayer`. Requires adding
+  `skipValidation` to `buildEngine()` (see above) and migrating
   `ApplyHintAction.mutations` from `eliminations: readonly [number, number, number][]`
   to `readonly RuleMutation[]`.
 - §6 `namespace PuzzleState` public API
@@ -49,7 +54,7 @@ Every user action follows a single shape. The three current divergent paths (`ap
 userAction(action):
   state                                     = requireState()
   baseState                                 = UserAction.apply(action, state)
-  { board, baseBoard, ruleSteps,
+  { board, ruleSteps,
     validationContext }                     = buildEngine(baseState, { skipValidation: true })
 
   if violation && rewindState === null:
