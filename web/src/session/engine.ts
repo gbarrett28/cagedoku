@@ -610,22 +610,3 @@ function captureSnapshot(board: BoardState): BoardSnapshot {
   return { candidates };
 }
 
-// ---------------------------------------------------------------------------
-// Rule-by-rule auto-apply animation helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Returns the next rule step to be animated, or null when no more rules fire.
- * Builds the engine from scratch (applying userRemovedCandidates) and returns
- * the first ruleStep produced by `buildEngine`.
- */
-export function getNextAutoApplyStep(state: PuzzleState): RuleStep | null {
-  if (state.goldenSolution === null) return null;
-  const { ruleSteps } = buildEngine(state);
-  return ruleSteps[0] ?? null;
-}
-
-/** Applies every mutation in a RuleStep to the state, in order. */
-export function applyAutoApplyStep(state: PuzzleState, step: RuleStep): PuzzleState {
-  return step.mutations.reduce((s, mutation) => mutation.apply(s), state);
-}

@@ -1,10 +1,7 @@
 /**
- * Tests for the rule-by-rule auto-apply session helpers:
- *   - applyAutoApplyStep
- *   - getNextAutoApplyStep
+ * Tests for the rule-step folding helpers:
+ *   - applyRuleSteps
  *   - buildEngine applying userRemovedCandidates
- *
- * All tests are RED until the feature is implemented.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -12,14 +9,10 @@ import { makeTrivialSpec, KNOWN_SOLUTION } from '../engine/fixtures.js';
 import { specToData, specToCageStates } from './specUtils.js';
 import {
   buildEngine,
-  getNextAutoApplyStep,
-  applyAutoApplyStep,
   applyRuleSteps,
 } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
-import { RuleMutation } from './ruleMutation.js';
 import type { KillerPuzzleState, PuzzleState } from './types.js';
-import type { Cell } from '../engine/types.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -189,120 +182,3 @@ describe('applyRuleSteps', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// applyAutoApplyStep
-// ---------------------------------------------------------------------------
-
-describe('applyAutoApplyStep', () => {
-  it('places a digit in userGrid for a placement in the step', () => {
-    const state = makeBaseState();
-    const step = {
-      ruleName: 'TestRule',
-      displayName: 'Test Rule',
-      highlightCells: [[0, 0]] as Cell[],
-      mutations: [RuleMutation.placeDigit(0, 0, 5)],
-    };
-    const next = applyAutoApplyStep(state, step);
-    expect(next.userGrid![0]![0]).toBe(5);
-  });
-
-  it('accumulates eliminations in userRemovedCandidates', () => {
-    const state = makeBaseState();
-    const step = {
-      ruleName: 'TestRule',
-      displayName: 'Test Rule',
-      highlightCells: [[1, 2]] as Cell[],
-      mutations: [RuleMutation.eliminateCandidate(1, 2, 7)],
-    };
-    const next = applyAutoApplyStep(state, step);
-    expect(next.userRemovedCandidates).toContainEqual([1, 2, 7]);
-  });
-
-  it('appends to existing userRemovedCandidates', () => {
-    const state: KillerPuzzleState = {
-      ...makeBaseState(),
-      userRemovedCandidates: [[3, 4, 9]] as [number, number, number][],
-    };
-    const step = {
-      ruleName: 'TestRule',
-      displayName: 'Test Rule',
-      highlightCells: [],
-      mutations: [RuleMutation.eliminateCandidate(1, 1, 5)],
-    };
-    const next = applyAutoApplyStep(state, step);
-    expect(next.userRemovedCandidates).toContainEqual([3, 4, 9]);
-    expect(next.userRemovedCandidates).toContainEqual([1, 1, 5]);
-  });
-
-  it('does not mutate the original state', () => {
-    const state = makeBaseState();
-    const original = state.userGrid![0]![0];
-    applyAutoApplyStep(state, {
-      ruleName: 'R',
-      displayName: 'R',
-      highlightCells: [],
-      mutations: [RuleMutation.placeDigit(0, 0, 7)],
-    });
-    expect(state.userGrid![0]![0]).toBe(original);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// getNextAutoApplyStep
-// ---------------------------------------------------------------------------
-
-describe('getNextAutoApplyStep', () => {
-  it('returns null when goldenSolution is null (unconfirmed state)', () => {
-    expect(getNextAutoApplyStep(makeBaseState())).toBeNull();
-  });
-
-  it('returns a non-null step with real changes on a board that can deduce (0,0)', () => {
-    const state = makeAlmostCompleteState();
-    const step = getNextAutoApplyStep(state);
-    expect(step).not.toBeNull();
-    // The step must have at least one real change (placement or elimination)
-    expect(step!.mutations.length).toBeGreaterThan(0);
-  });
-
-  it('eventually places the correct digit in (0,0) through step-by-step application', () => {
-    // The trivial spec may require several rule steps before (0,0) is placed:
-    // CageCandidateFilter narrows (0,0) first, then NakedSingle places it.
-    let state: PuzzleState = makeAlmostCompleteState();
-    let placed = false;
-    for (let iter = 0; iter < 20; iter++) {
-      const step = getNextAutoApplyStep(state);
-      if (step === null) break;
-      state = applyAutoApplyStep(state, step);
-      if (state.userGrid![0]![0] !== 0) { placed = true; break; }
-    }
-    expect(placed).toBe(true);
-    expect(state.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]!);
-  });
-
-  it('terminates (returns null) after all deducible steps have been applied', () => {
-    let state: PuzzleState = makeAlmostCompleteState();
-    for (let iter = 0; iter < 50; iter++) {
-      const step = getNextAutoApplyStep(state);
-      if (step === null) break;
-      state = applyAutoApplyStep(state, step);
-    }
-    // After exhausting all steps, next call must return null
-    expect(getNextAutoApplyStep(state)).toBeNull();
-  });
-
-  it('never re-produces a step whose eliminations are already in userRemovedCandidates', () => {
-    // Each applyAutoApplyStep accumulates eliminations. The next solver run must
-    // see them via buildEngine → not re-produce them as a new step.
-    let state: PuzzleState = makeAlmostCompleteState();
-    const seen = new Set<string>();
-    for (let iter = 0; iter < 50; iter++) {
-      const step = getNextAutoApplyStep(state);
-      if (step === null) break;
-      // Encode the step to detect infinite loops
-      const key = `${step.ruleName}:${step.mutations.map(m => JSON.stringify(m)).join('|')}`;
-      expect(seen.has(key)).toBe(false);
-      seen.add(key);
-      state = applyAutoApplyStep(state, step);
-    }
-  });
-});

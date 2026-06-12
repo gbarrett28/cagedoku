@@ -23,7 +23,6 @@ import {
   loadClassicDirect,
   confirmPuzzle,
   computeCandidates,
-  computeAnimationCandidates,
   enterCell,
   enterCellStep,
   getAutoPlacementDelay,
@@ -57,7 +56,7 @@ import { GridNotFoundError } from './image/inpImage.js';
 import { UserFacingError } from './session/errors.js';
 import { applyAutoApplyLock } from './autoApplyLock.js';
 import { showHintPill, hideHintPill } from './hintPill.js';
-import { getNextAutoApplyStep, applyAutoApplyStep } from './session/engine.js';
+import { AnimationPlayer } from './session/animationPlayer.js';
 import type { EliminateCandidateMutation } from './session/ruleMutation.js';
 import { AssertionViolation, findDuplicateCells, hasDuplicateDigits, isCageSumCorrect } from './session/assertions.js';
 import { initTutorial, appendCallouts } from './tutorial.js';
@@ -1484,38 +1483,30 @@ async function handleCellEntry(digit: number): Promise<void> {
       refreshDisplay();
       updateUndoButton(state);
     } else {
-      // Animated path: show the user's placement first, then step through each rule.
+      // Animated path: enterCellStep already computed and persisted the final,
+      // fully-folded state. The loop below is a pure visual replay of ruleSteps
+      // for hint pills/highlights/eliminations — it never feeds back into
+      // currentState beyond what enterCellStep already committed.
       setAutoApplyLock(true);
       try {
-        // Synchronous display helper for use during animation.
-        // Uses buildEngine(skipSolve:true) so candidates narrow progressively
-        // one rule at a time, rather than collapsing to the solved state instantly.
-        const animRefresh = (animState: PuzzleState): void => {
+        const animRefresh = (player: AnimationPlayer): void => {
           if (showCandidates) {
-            const data = computeAnimationCandidates(animState);
+            const data = AnimationPlayer.boardAtCursor(player);
             currentCandidates = data;
             setCandidatesCache(data);
-            redrawGrid();
-          } else {
-            redrawGrid();
           }
+          redrawGrid();
         };
 
-        const { state: committedState, baseState } = enterCellStep(selectedCell.row, selectedCell.col, digit);
-        currentState = baseState;
-        animRefresh(currentState);
-        updateUndoButton(committedState);
-        await new Promise<void>(resolve => { setTimeout(resolve, fastForwardRequested ? 0 : delay); });
-        while (true) {
-          const step = getNextAutoApplyStep(currentState);
-          if (step === null) break;
+        const { state: finalState, ruleSteps, baseState } = enterCellStep(selectedCell.row, selectedCell.col, digit);
+        currentState = finalState;
+        updateUndoButton(finalState);
 
-          if (fastForwardRequested) {
-            currentState = applyAutoApplyStep(currentState, step);
-            continue;
-          }
+        let player: AnimationPlayer = { baseState, ruleSteps, cursor: 0, playing: true };
+        animRefresh(player);
 
-          // Show hint pill + highlight for this rule, then wait.
+        while (player.cursor < ruleSteps.length) {
+          const step = AnimationPlayer.currentStep(player)!;
           hintHighlightCells = new Set(step.highlightCells.map(([r, c]) => `${r},${c}`));
           hintElimCells = new Set(
             step.mutations
@@ -1523,25 +1514,16 @@ async function handleCellEntry(digit: number): Promise<void> {
               .map(m => `${m.row},${m.col}`),
           );
           showHintPill(el('hint-pill'), el('hint-pill-label'), step.displayName);
-          animRefresh(currentState);
-          await new Promise<void>(resolve => { setTimeout(resolve, delay); });
+          await new Promise<void>(resolve => { setTimeout(resolve, fastForwardRequested ? 0 : delay); });
 
-          // Apply the rule's changes and immediately show the result before next step.
-          currentState = applyAutoApplyStep(currentState, step);
+          player = AnimationPlayer.tick(player);
           hintHighlightCells = new Set();
           hintElimCells = new Set();
           hideHintPill(el('hint-pill'));
-          animRefresh(currentState);
+          animRefresh(player);
         }
-        // Final cleanup after all steps (or fast-forward drain). enterCellStep already
-        // committed the fully-folded final state to the store via recordTurn —
-        // just resync currentState and redraw.
-        hideHintPill(el('hint-pill'));
-        hintHighlightCells = new Set();
-        hintElimCells = new Set();
-        currentState = committedState;
-        refreshDisplay();
-        updateUndoButton(currentState);
+
+        refreshDisplay();   // final redraw from the already-committed finalState
       } finally {
         setAutoApplyLock(false);
       }
