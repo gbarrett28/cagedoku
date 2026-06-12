@@ -216,7 +216,7 @@ export interface ValidationContext {
 
 export function buildEngine(
   state: PuzzleState,
-  { includeHints = false, skipSolve = false }: { includeHints?: boolean; skipSolve?: boolean } = {},
+  { includeHints = false, skipSolve = false, skipValidation = false }: { includeHints?: boolean; skipSolve?: boolean; skipValidation?: boolean } = {},
 ): { board: BoardState; engine: SolverEngine; ruleSteps: readonly RuleStep[]; validationContext: ValidationContext | null } {
   const spec: PuzzleSpec | null = PuzzleState.isKiller(state) ? dataToSpec(state.specData) : null;
 
@@ -366,7 +366,9 @@ export function buildEngine(
   // a golden solution is present and the board is not user-corrupted, so we can
   // distinguish valid missed progress from wrong-rule bugs. Runs once per user
   // action (debounced); no UX impact since it executes after the current task.
-  if (_solveCompleted && !includeHints && activeGolden !== null) {
+  // Callers that need to schedule validation against a different state (e.g.
+  // recordTurn, using finalState) pass skipValidation and schedule it themselves.
+  if (_solveCompleted && !includeHints && !skipValidation && activeGolden !== null) {
     scheduleTriggerValidation(board, activeRules, activeGolden, state, spec);
   }
 
@@ -523,11 +525,15 @@ export function recordTurn(
   action: UserAction,
 ): PuzzleState {
   const nextState = UserAction.apply(action, state);
-  const { board, engine } = buildEngine(nextState); // engine.solve() called inside buildEngine
+  const { board, engine, validationContext } = buildEngine(nextState, { skipValidation: true }); // engine.solve() called inside buildEngine
   const autoMutations: AutoMutation[] = [...engine.appliedMutations];
   const snapshot = captureSnapshot(board);
   const turn: Turn = { action, autoMutations, snapshot };
-  return { ...nextState, turns: [...nextState.turns, turn] };
+  const finalState = { ...nextState, turns: [...nextState.turns, turn] };
+  if (validationContext !== null) {
+    scheduleTriggerValidation(board, validationContext.rules, validationContext.golden, finalState, validationContext.spec);
+  }
+  return finalState;
 }
 
 // ---------------------------------------------------------------------------

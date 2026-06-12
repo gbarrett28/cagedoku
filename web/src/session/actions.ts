@@ -59,6 +59,8 @@ import type {
   VirtualCage,
   VirtualCageSuggestion,
 } from './types.js';
+import { RuleMutation } from './ruleMutation.js';
+import type { EliminateCandidateMutation } from './ruleMutation.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1090,8 +1092,11 @@ function findFirstElimTurnIdx(
     const a = state.turns[i]!.action;
     if (a.type === 'eliminateCandidate' && a.row === r && a.col === c && a.digit === digit) return i;
     if (a.type === 'applyHint') {
-      for (const [er, ec, ed] of a.eliminations) {
-        if (er === r && ec === c && ed === digit) return i;
+      for (const m of a.mutations) {
+        if (m.type === 'eliminateCandidate') {
+          const elim = m as EliminateCandidateMutation;
+          if (elim.row === r && elim.col === c && elim.digit === digit) return i;
+        }
       }
     }
   }
@@ -1296,8 +1301,8 @@ export function getHints(): HintsResponse {
  */
 export function applyHint(eliminations: readonly { cell: [number, number]; digit: number }[]): PuzzleState {
   const state = requireConfirmed();
-  const triples: [number, number, number][] = eliminations.map(e => [e.cell[0], e.cell[1], e.digit]);
-  const action: UserAction = { type: 'applyHint', eliminations: triples };
+  const mutations = eliminations.map(e => RuleMutation.eliminateCandidate(e.cell[0], e.cell[1], e.digit));
+  const action: UserAction = { type: 'applyHint', mutations };
   let updated = recordTurn(state, action);
   updated = applyAutoPlacements(updated);
   setState(updated);

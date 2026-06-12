@@ -393,6 +393,23 @@ solution is present and the board is not user-corrupted; when non-null it carrie
 `{ rules, golden, spec }` for the brute-force trigger-miss check. Folding every
 `ruleSteps[i].mutations` via `.apply()` onto the pre-solve state reproduces `board`.
 
+`opts.skipValidation` (default `false`) suppresses `buildEngine`'s own scheduling
+of the brute-force trigger-miss check while still returning `validationContext`.
+`recordTurn` (`web/src/session/engine.ts`) passes `skipValidation: true` and
+schedules the check itself afterwards, against `finalState` (the state including
+the newly recorded turn) rather than the pre-turn state passed into `buildEngine` —
+`PuzzleState.isKiller`, the only state-derived field the check reads, is invariant
+between the two.
+
+**`ApplyHintAction`** (`web/src/session/types.ts`) carries
+`mutations: readonly RuleMutation[]` — the same mutation objects produced by
+`ruleSteps`. `UserAction.apply`'s `'applyHint'` case folds each mutation via
+`.apply()` onto state, so a hint can place a digit, eliminate a candidate, add a
+virtual cage, or eliminate a cage solution uniformly. `UserAction.updateRemovedList`
+and `findFirstElimTurnIdx` (`web/src/session/actions.ts`) read the
+`eliminateCandidate`-typed mutations out of `action.mutations` when replaying turn
+history.
+
 ---
 
 ## Animation Player
