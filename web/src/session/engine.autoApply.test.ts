@@ -7,7 +7,7 @@
  * All tests are RED until the feature is implemented.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeTrivialSpec, KNOWN_SOLUTION } from '../engine/fixtures.js';
 import { specToData, specToCageStates } from './specUtils.js';
 import {
@@ -112,6 +112,28 @@ describe('buildEngine — validationContext', () => {
     userGrid[0]![1] = wrong;
     const { validationContext } = buildEngine({ ...state, userGrid });
     expect(validationContext).toBeNull();
+  });
+});
+
+describe('buildEngine — skipValidation', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('does not schedule trigger validation when skipValidation is true', () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const state = makeAlmostCompleteState();
+    const { validationContext } = buildEngine(state, { skipValidation: true });
+    expect(validationContext).not.toBeNull();
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
+  });
+
+  it('schedules trigger validation by default when validationContext is non-null', () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const state = makeAlmostCompleteState();
+    const { validationContext } = buildEngine(state);
+    expect(validationContext).not.toBeNull();
+    expect(setTimeoutSpy).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -2,7 +2,7 @@
  * Tests for session/engine.ts helpers.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeTrivialSpec, KNOWN_SOLUTION } from '../engine/fixtures.js';
 import { specToData, specToCageStates, cageLabel } from './specUtils.js';
 import {
@@ -12,6 +12,7 @@ import {
   userVirtualCages,
   applyAutoPlacements,
   applyNextAutoPlacement,
+  recordTurn,
 } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
 import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
@@ -555,6 +556,27 @@ describe('buildEngine hints regression — issue #141', () => {
     const { engine } = buildEngine(state, { includeHints: true });
     const nakedPairHints = engine.pendingHints.filter(h => h.ruleName === 'NakedPair');
     expect(nakedPairHints.length).toBeGreaterThan(0);
+  });
+});
+
+describe('recordTurn — trigger validation scheduling', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('schedules trigger validation exactly once when goldenSolution is present', () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const state: PuzzleState = {
+      ...makeState(),
+      goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
+    };
+    const gold = KNOWN_SOLUTION[0]![0]!;
+    const nonGold = gold === 1 ? 2 : 1;
+    const action: EliminateCandidateAction = { type: 'eliminateCandidate', row: 0, col: 0, digit: nonGold };
+
+    recordTurn(state, action);
+
+    expect(setTimeoutSpy).toHaveBeenCalledTimes(1);
   });
 });
 
