@@ -186,7 +186,9 @@ describe('KillerSolverEngine solution eliminations', () => {
     engine.solve();
 
     expect(bs.cageSolns[cageIdx]!.length).toBe(initialSolns - 1);
-    expect(engine.appliedMutations.some(m => m.type === 'solution_eliminated')).toBe(true);
+    const mutation = engine.appliedMutations.find(m => m.type === 'solution_eliminated');
+    expect(mutation).toBeDefined();
+    expect(mutation!['solution']).toEqual(targetSoln);
     expect(prunedCalls.length).toBeGreaterThan(0); // line 282 was reached
   });
 });
@@ -215,7 +217,10 @@ describe('SolverEngine virtual cage additions', () => {
     engine.solve();
 
     expect(engine.appliedVirtualCages).toHaveLength(1);
-    expect(engine.appliedMutations.some(m => m.type === 'virtual_cage_added')).toBe(true);
+    const mutation = engine.appliedMutations.find(m => m.type === 'virtual_cage_added');
+    expect(mutation).toBeDefined();
+    expect(mutation!['cells']).toEqual(vca.cells);
+    expect(mutation!['total']).toBe(vca.total);
   });
 });
 

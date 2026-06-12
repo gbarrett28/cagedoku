@@ -8,10 +8,19 @@
 
 import { PuzzleState } from './types.js';
 import type { KillerPuzzleState, VirtualCage } from './types.js';
+import type { Cell } from '../engine/types.js';
 
 export interface RuleMutation {
   readonly type: string;
   apply(state: PuzzleState): PuzzleState;
+}
+
+/** One rule's worth of mutations shown and applied in the auto-apply animation. */
+export interface RuleStep {
+  readonly ruleName: string;
+  readonly displayName: string;
+  readonly highlightCells: readonly Cell[];
+  readonly mutations: readonly RuleMutation[];
 }
 
 // ---------------------------------------------------------------------------

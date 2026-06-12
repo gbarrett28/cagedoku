@@ -17,10 +17,11 @@
  */
 
 import { BoardState, KillerBoardState } from '../engine/boardState.js';
-import { SolverEngine, KillerSolverEngine } from '../engine/solverEngine.js';
+import { SolverEngine, KillerSolverEngine, toDisplayName } from '../engine/solverEngine.js';
 import { defaultRules } from '../engine/rules/index.js';
 import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
-import type { Cell, Elimination, Placement, RuleStep } from '../engine/types.js';
+import type { Cell, Elimination } from '../engine/types.js';
+import { cellKey } from '../engine/types.js';
 import type { SolverRule } from '../engine/rule.js';
 import { NoSolnError } from '../solver/errors.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
@@ -28,6 +29,8 @@ import { dataToSpec, virtualCageKeyFromCage, solutionKey } from './specUtils.js'
 import { disableRuleForSession, isRuleDisabledForSession, hasTriggerMissBeenReported, markTriggerMissReported } from './store.js';
 import { submitRuleBugReport, submitTriggerMissReport } from '../image/trainingUpload.js';
 import { findTriggerMisses } from '../engine/triggerValidator.js';
+import { RuleMutation } from './ruleMutation.js';
+import type { RuleStep } from './ruleMutation.js';
 import { UserAction, PuzzleState } from './types.js';
 import type { AutoMutation, BoardSnapshot, Turn, VirtualCage } from './types.js';
 
@@ -204,10 +207,17 @@ export function isUserCorrupted(state: PuzzleState): boolean {
  * @param state   Current puzzle state
  * @param includeHints  If true, all rules generate hints instead of applying changes
  */
+/** Context needed to brute-force validate the board against a golden solution. */
+export interface ValidationContext {
+  readonly rules: readonly SolverRule[];
+  readonly golden: readonly (readonly number[])[];
+  readonly spec: PuzzleSpec | null;
+}
+
 export function buildEngine(
   state: PuzzleState,
   { includeHints = false, skipSolve = false }: { includeHints?: boolean; skipSolve?: boolean } = {},
-): { board: BoardState; engine: SolverEngine } {
+): { board: BoardState; engine: SolverEngine; ruleSteps: readonly RuleStep[]; validationContext: ValidationContext | null } {
   const spec: PuzzleSpec | null = PuzzleState.isKiller(state) ? dataToSpec(state.specData) : null;
 
   const _disabled = new Set(DISABLED_RULES);
@@ -298,6 +308,7 @@ export function buildEngine(
   // the board should be returned as-is so the caller can detect the contradiction
   // and offer a Rewind hint.
   let _solveCompleted = false;
+  let preCands: Set<number>[][] = [];
   try {
     const placementElims = userEliminations(board, state.userGrid);
     if (placementElims.length > 0) engine.applyEliminations(placementElims);
@@ -337,6 +348,12 @@ export function buildEngine(
       if (stallElims.length > 0) engine.applyEliminations(stallElims);
     }
 
+    // Snapshot candidates before solve() — used to filter rule mutations down
+    // to those that change the pre-solve candidate set when building ruleSteps.
+    preCands = Array.from({ length: 9 }, (_, r) =>
+      Array.from({ length: 9 }, (__, c) => new Set(board.cands(r, c))),
+    );
+
     if (!skipSolve) engine.solve();
     _solveCompleted = true;
   } catch (e) {
@@ -353,7 +370,102 @@ export function buildEngine(
     scheduleTriggerValidation(board, activeRules, activeGolden, state, spec);
   }
 
-  return { board, engine };
+  const ruleSteps: readonly RuleStep[] = (_solveCompleted && !skipSolve)
+    ? buildRuleSteps(state, engine.appliedMutations, preCands)
+    : [];
+
+  const validationContext: ValidationContext | null = activeGolden !== null
+    ? { rules: activeRules, golden: activeGolden, spec }
+    : null;
+
+  return { board, engine, ruleSteps, validationContext };
+}
+
+// ---------------------------------------------------------------------------
+// Rule-step construction
+// ---------------------------------------------------------------------------
+
+/**
+ * Groups consecutive same-rule entries from `engine.appliedMutations` into
+ * `RuleStep`s, converting each mutation record into a `RuleMutation`.
+ *
+ * Filters out mutations that wouldn't actually change `state`:
+ *  - placements for cells already filled in `userGrid`
+ *  - eliminations for digits not present in `preCands` (the pre-solve
+ *    candidate snapshot) — already absent, so re-removing is a no-op
+ *
+ * A step is omitted entirely if all of its mutations are filtered out.
+ */
+function buildRuleSteps(
+  state: PuzzleState,
+  mutations: readonly AutoMutation[],
+  preCands: readonly (readonly Set<number>[])[],
+): RuleStep[] {
+  const steps: RuleStep[] = [];
+  let i = 0;
+  while (i < mutations.length) {
+    const ruleName = mutations[i]!.ruleName;
+    const ruleMutations: RuleMutation[] = [];
+    const highlightCells = new Map<string, Cell>();
+
+    while (i < mutations.length && mutations[i]!.ruleName === ruleName) {
+      const m = mutations[i]!;
+      i++;
+      switch (m.type) {
+        case 'placement': {
+          const r = m['row'] as number;
+          const c = m['col'] as number;
+          const d = m['digit'] as number;
+          if (state.userGrid[r]![c] === 0) {
+            ruleMutations.push(RuleMutation.placeDigit(r, c, d));
+            highlightCells.set(cellKey([r, c]), [r, c]);
+          }
+          break;
+        }
+        case 'candidate_removed': {
+          const r = m['row'] as number;
+          const c = m['col'] as number;
+          const d = m['digit'] as number;
+          if (preCands[r]![c]!.has(d)) {
+            ruleMutations.push(RuleMutation.eliminateCandidate(r, c, d));
+            highlightCells.set(cellKey([r, c]), [r, c]);
+          }
+          break;
+        }
+        case 'virtual_cage_added': {
+          if (PuzzleState.isKiller(state)) {
+            const cells = m['cells'] as readonly Cell[];
+            const total = m['total'] as number;
+            ruleMutations.push(RuleMutation.addVirtualCage({ cells, total, eliminatedSolns: [] }));
+            for (const cell of cells) highlightCells.set(cellKey(cell), cell);
+          }
+          break;
+        }
+        case 'solution_eliminated': {
+          if (PuzzleState.isKiller(state) && (m['cageIdx'] as number) < state.cageStates.length) {
+            const cageState = state.cageStates[m['cageIdx'] as number]!;
+            const solution = m['solution'] as readonly number[];
+            ruleMutations.push(RuleMutation.eliminateCageSolution(cageState.label, solution));
+            for (const pos of cageState.cells) {
+              const cell: Cell = [pos.row - 1, pos.col - 1];
+              highlightCells.set(cellKey(cell), cell);
+            }
+          }
+          break;
+        }
+      }
+    }
+
+    if (ruleMutations.length > 0) {
+      steps.push({
+        ruleName,
+        displayName: toDisplayName(ruleName),
+        highlightCells: [...highlightCells.values()],
+        mutations: ruleMutations,
+      });
+    }
+  }
+  return steps;
 }
 
 // ---------------------------------------------------------------------------
@@ -520,79 +632,15 @@ function captureSnapshot(board: BoardState): BoardSnapshot {
 /**
  * Returns the next rule step to be animated, or null when no more rules fire.
  * Builds the engine from scratch (applying userRemovedCandidates) and returns
- * the first consecutive group of mutations from the same rule.
+ * the first ruleStep produced by `buildEngine`.
  */
 export function getNextAutoApplyStep(state: PuzzleState): RuleStep | null {
   if (state.goldenSolution === null) return null;
-  // skipSolve: we call engine.solve() manually so we can inspect appliedMutations.
-  const { board, engine } = buildEngine(state, { skipSolve: true });
-
-  // Snapshot candidates before the solve mutates the board — used below to filter
-  // out eliminations the solver reports but that are already absent.
-  const preCands = Array.from({ length: 9 }, (_, r) =>
-    Array.from({ length: 9 }, (__, c) => new Set(board.cands(r, c))),
-  );
-
-  engine.solve();
-  const mutations = engine.appliedMutations;
-  if (mutations.length === 0) return null;
-
-  // Walk consecutive same-rule groups; return the first group that has at least
-  // one change that will actually modify PuzzleState:
-  //   placements — cell is currently empty in userGrid
-  //   eliminations — digit was present in the pre-solve candidate set
-  let i = 0;
-  while (i < mutations.length) {
-    const ruleName = mutations[i]!.ruleName;
-    const placements: Placement[] = [];
-    const eliminations: Elimination[] = [];
-
-    while (i < mutations.length && mutations[i]!.ruleName === ruleName) {
-      const m = mutations[i]!;
-      i++;
-      const r = m['row'] as number;
-      const c = m['col'] as number;
-      const d = m['digit'] as number;
-      if (m.type === 'placement') {
-        if (state.userGrid![r]![c] === 0)
-          placements.push({ cell: [r, c] as Cell, digit: d });
-      } else if (m.type === 'candidate_removed') {
-        if (preCands[r]![c]!.has(d))
-          eliminations.push({ cell: [r, c] as Cell, digit: d });
-      }
-    }
-
-    if (placements.length > 0 || eliminations.length > 0) {
-      const cellSet = new Map<string, Cell>();
-      for (const p of placements) cellSet.set(`${p.cell[0]},${p.cell[1]}`, p.cell);
-      for (const e of eliminations) cellSet.set(`${e.cell[0]},${e.cell[1]}`, e.cell);
-      return {
-        ruleName,
-        displayName: ruleName.replace(/([A-Z])/g, ' $1').trim(),
-        highlightCells: [...cellSet.values()],
-        eliminations,
-        placements,
-      };
-    }
-  }
-
-  return null;
+  const { ruleSteps } = buildEngine(state);
+  return ruleSteps[0] ?? null;
 }
 
-/**
- * Applies a RuleStep to the state: places digits in userGrid and accumulates
- * eliminations in userRemovedCandidates so subsequent solver calls do not
- * re-produce them.
- */
+/** Applies every mutation in a RuleStep to the state, in order. */
 export function applyAutoApplyStep(state: PuzzleState, step: RuleStep): PuzzleState {
-  const newGrid = state.userGrid!.map(row => [...row]);
-  for (const p of step.placements) newGrid[p.cell[0]]![p.cell[1]] = p.digit;
-  return {
-    ...state,
-    userGrid: newGrid,
-    userRemovedCandidates: [
-      ...state.userRemovedCandidates,
-      ...step.eliminations.map(e => [e.cell[0], e.cell[1], e.digit] as [number, number, number]),
-    ],
-  };
+  return step.mutations.reduce((s, mutation) => mutation.apply(s), state);
 }

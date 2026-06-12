@@ -58,6 +58,7 @@ import { UserFacingError } from './session/errors.js';
 import { applyAutoApplyLock } from './autoApplyLock.js';
 import { showHintPill, hideHintPill } from './hintPill.js';
 import { getNextAutoApplyStep, applyAutoApplyStep } from './session/engine.js';
+import type { EliminateCandidateMutation } from './session/ruleMutation.js';
 import { AssertionViolation, findDuplicateCells, hasDuplicateDigits, isCageSumCorrect } from './session/assertions.js';
 import { initTutorial, appendCallouts } from './tutorial.js';
 import { resolveDigitKey } from './resolveDigitKey.js';
@@ -1520,7 +1521,11 @@ async function handleCellEntry(digit: number): Promise<void> {
 
           // Show hint pill + highlight for this rule, then wait.
           hintHighlightCells = new Set(step.highlightCells.map(([r, c]) => `${r},${c}`));
-          hintElimCells = new Set(step.eliminations.map(({ cell: [r, c] }) => `${r},${c}`));
+          hintElimCells = new Set(
+            step.mutations
+              .filter((m): m is EliminateCandidateMutation => m.type === 'eliminateCandidate')
+              .map(m => `${m.row},${m.col}`),
+          );
           showHintPill(el('hint-pill'), el('hint-pill-label'), step.displayName);
           animRefresh(currentState);
           await new Promise<void>(resolve => { setTimeout(resolve, delay); });

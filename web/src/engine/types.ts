@@ -88,15 +88,6 @@ export interface RuleResult {
   readonly virtualCageAdditions: readonly VirtualCageAddition[];
 }
 
-/** One rule's worth of mutations shown and applied in the auto-apply animation. */
-export interface RuleStep {
-  readonly ruleName: string;
-  readonly displayName: string;
-  readonly highlightCells: readonly Cell[];
-  readonly eliminations: readonly Elimination[];
-  readonly placements: readonly Placement[];
-}
-
 /** Convenience constructor: empty RuleResult (no progress). */
 export function emptyResult(): RuleResult {
   return { eliminations: [], placements: [], solutionEliminations: [], virtualCageAdditions: [] };

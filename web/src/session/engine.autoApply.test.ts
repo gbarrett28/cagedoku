@@ -16,6 +16,7 @@ import {
   applyAutoApplyStep,
 } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
+import { RuleMutation } from './ruleMutation.js';
 import type { KillerPuzzleState, PuzzleState } from './types.js';
 import type { Cell } from '../engine/types.js';
 
@@ -61,6 +62,60 @@ function makeAlmostCompleteState(): KillerPuzzleState {
 }
 
 // ---------------------------------------------------------------------------
+// buildEngine — ruleSteps and validationContext
+// ---------------------------------------------------------------------------
+
+describe('buildEngine — ruleSteps', () => {
+  it('folding all ruleSteps mutations onto state places the deduced digit', () => {
+    const state = makeAlmostCompleteState();
+    const { ruleSteps } = buildEngine(state);
+    expect(ruleSteps.length).toBeGreaterThan(0);
+
+    let folded: PuzzleState = state;
+    for (const step of ruleSteps) {
+      expect(step.mutations.length).toBeGreaterThan(0);
+      for (const mutation of step.mutations) folded = mutation.apply(folded);
+    }
+    expect(folded.userGrid[0]![0]).toBe(KNOWN_SOLUTION[0]![0]!);
+  });
+
+  it('each ruleStep has a non-empty displayName and highlightCells', () => {
+    const state = makeAlmostCompleteState();
+    const { ruleSteps } = buildEngine(state);
+    expect(ruleSteps.length).toBeGreaterThan(0);
+    for (const step of ruleSteps) {
+      expect(step.displayName.length).toBeGreaterThan(0);
+      expect(step.highlightCells.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('buildEngine — validationContext', () => {
+  it('is null when goldenSolution is null', () => {
+    const { validationContext } = buildEngine(makeBaseState());
+    expect(validationContext).toBeNull();
+  });
+
+  it('carries rules/golden/spec when goldenSolution is present and board is not corrupted', () => {
+    const state = makeAlmostCompleteState();
+    const { validationContext } = buildEngine(state);
+    expect(validationContext).not.toBeNull();
+    expect(validationContext!.golden).toEqual(state.goldenSolution);
+    expect(validationContext!.rules.length).toBeGreaterThan(0);
+    expect(validationContext!.spec).not.toBeNull();
+  });
+
+  it('is null when the board is user-corrupted', () => {
+    const state = makeAlmostCompleteState();
+    const wrong = KNOWN_SOLUTION[0]![1]! === 1 ? 2 : 1;
+    const userGrid = state.userGrid.map(row => [...row]);
+    userGrid[0]![1] = wrong;
+    const { validationContext } = buildEngine({ ...state, userGrid });
+    expect(validationContext).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // buildEngine — userRemovedCandidates
 // ---------------------------------------------------------------------------
 
@@ -95,8 +150,7 @@ describe('applyAutoApplyStep', () => {
       ruleName: 'TestRule',
       displayName: 'Test Rule',
       highlightCells: [[0, 0]] as Cell[],
-      eliminations: [],
-      placements: [{ cell: [0, 0] as Cell, digit: 5 }],
+      mutations: [RuleMutation.placeDigit(0, 0, 5)],
     };
     const next = applyAutoApplyStep(state, step);
     expect(next.userGrid![0]![0]).toBe(5);
@@ -108,8 +162,7 @@ describe('applyAutoApplyStep', () => {
       ruleName: 'TestRule',
       displayName: 'Test Rule',
       highlightCells: [[1, 2]] as Cell[],
-      eliminations: [{ cell: [1, 2] as Cell, digit: 7 }],
-      placements: [],
+      mutations: [RuleMutation.eliminateCandidate(1, 2, 7)],
     };
     const next = applyAutoApplyStep(state, step);
     expect(next.userRemovedCandidates).toContainEqual([1, 2, 7]);
@@ -124,8 +177,7 @@ describe('applyAutoApplyStep', () => {
       ruleName: 'TestRule',
       displayName: 'Test Rule',
       highlightCells: [],
-      eliminations: [{ cell: [1, 1] as Cell, digit: 5 }],
-      placements: [],
+      mutations: [RuleMutation.eliminateCandidate(1, 1, 5)],
     };
     const next = applyAutoApplyStep(state, step);
     expect(next.userRemovedCandidates).toContainEqual([3, 4, 9]);
@@ -139,8 +191,7 @@ describe('applyAutoApplyStep', () => {
       ruleName: 'R',
       displayName: 'R',
       highlightCells: [],
-      eliminations: [],
-      placements: [{ cell: [0, 0] as Cell, digit: 7 }],
+      mutations: [RuleMutation.placeDigit(0, 0, 7)],
     });
     expect(state.userGrid![0]![0]).toBe(original);
   });
@@ -160,7 +211,7 @@ describe('getNextAutoApplyStep', () => {
     const step = getNextAutoApplyStep(state);
     expect(step).not.toBeNull();
     // The step must have at least one real change (placement or elimination)
-    expect(step!.placements.length + step!.eliminations.length).toBeGreaterThan(0);
+    expect(step!.mutations.length).toBeGreaterThan(0);
   });
 
   it('eventually places the correct digit in (0,0) through step-by-step application', () => {
@@ -198,7 +249,7 @@ describe('getNextAutoApplyStep', () => {
       const step = getNextAutoApplyStep(state);
       if (step === null) break;
       // Encode the step to detect infinite loops
-      const key = `${step.ruleName}:${step.eliminations.map(e => `${e.cell[0]},${e.cell[1]},${e.digit}`).join('|')}:${step.placements.map(p => `${p.cell[0]},${p.cell[1]},${p.digit}`).join('|')}`;
+      const key = `${step.ruleName}:${step.mutations.map(m => JSON.stringify(m)).join('|')}`;
       expect(seen.has(key)).toBe(false);
       seen.add(key);
       state = applyAutoApplyStep(state, step);
