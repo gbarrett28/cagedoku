@@ -975,3 +975,33 @@ newer revision, bump the pin in `web/package.json` to the matching
 update the `PLAYWRIGHT_BROWSERS_PATH` override if the path changes. Tracked
 in issue #134.
 
+---
+
+## Deferred Work
+
+Items considered during the §1-§7 puzzle-state redesign but deliberately not
+implemented as part of it:
+
+- **Big Apple puzzle type** — the extension point exists (`PuzzleState` is the
+  base type; `KillerPuzzleState` shows the pattern for extending it with
+  puzzle-type-specific fields and an `isX`-style guard), but no implementation
+  is planned yet.
+- **Performance monitoring** — `RuleStats` (`web/src/engine/`) already records
+  per-rule timing; surfacing it in a bug report or dev panel is separate,
+  not-yet-scoped work.
+- **OCR pipeline symmetry** — the classic OCR path (`inpImage.ts:213-232`)
+  never attempts cage-border/total detection, so a misdetected-as-classic
+  image can never offer a real Killer candidate (the reverse direction works
+  today, since the killer path also runs `readClassicDigits`). Closing this
+  gap would require running cage detection unconditionally — real pipeline
+  scope, deferred alongside the broader "make the OCR review screen fully
+  editable" idea.
+- **Hybrid-from-OCR candidate construction** — OCR-driven candidate
+  construction always builds Killer candidates with `givenDigits: null`, even
+  when digit artefacts were detected (which can be false positives on a Killer
+  image). Building a hybrid candidate from OCR requires a digit-correction UI
+  for the Killer review screen first — deferred.
+
+The unified digit recogniser continues independently on
+`feature/unified-digit-recogniser`, orthogonal to the puzzle-state redesign.
+
