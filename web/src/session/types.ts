@@ -302,6 +302,15 @@ export interface KillerPuzzleState extends PuzzleState {
   readonly fixtureStalledCandidates?: readonly number[][][] | null;
 }
 
+/**
+ * Wire format for a serialized `PuzzleState`/`KillerPuzzleState` snapshot
+ * (e.g. embedded in a bug report). `kind`/`version` exist only here — the
+ * runtime `PuzzleState`/`KillerPuzzleState` types remain untagged.
+ */
+export type SerializedPuzzleState =
+  | (PuzzleState & { readonly kind: 'classic'; readonly version: 1 })
+  | (KillerPuzzleState & { readonly kind: 'killer'; readonly version: 1 });
+
 /** UI commands whose availability depends on puzzle state. */
 export type Command = 'undo' | 'inspectCage' | 'virtualCage' | 'reveal';
 
@@ -445,6 +454,17 @@ export namespace PuzzleState {
       }
     }
     return labels;
+  }
+
+  /**
+   * A faithful, total snapshot of `state` for bug reports / debugging.
+   * Includes `originalImageUrl`/`warpedImageUrl` as-is — callers that need a
+   * smaller payload strip those fields from their own copy.
+   */
+  export function serialize(state: PuzzleState): SerializedPuzzleState {
+    return isKiller(state)
+      ? { kind: 'killer', version: 1, ...state }
+      : { kind: 'classic', version: 1, ...state };
   }
 
   /** Builds a fresh classic PuzzleState for the OCR review phase (blank grid, no golden solution). */

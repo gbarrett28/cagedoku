@@ -956,3 +956,32 @@ describe('PuzzleState.cageLabels', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// PuzzleState.serialize / PuzzleState.deserialize
+// ---------------------------------------------------------------------------
+
+describe('PuzzleState.serialize', () => {
+  it('tags a classic state with kind: "classic" and version: 1', () => {
+    const givenDigits = makeClassicGivenDigits();
+    const state = PuzzleState.createClassic(givenDigits, [], null);
+    const serialized = PuzzleState.serialize(state);
+    expect(serialized.kind).toBe('classic');
+    expect(serialized.version).toBe(1);
+    expect(serialized.userGrid).toEqual(state.userGrid);
+    expect(serialized.givenDigits).toEqual(givenDigits);
+  });
+
+  it('tags a killer state with kind: "killer" and version: 1, including killer-only fields', () => {
+    const state = makeState();
+    const serialized = PuzzleState.serialize(state);
+    expect(serialized.kind).toBe('killer');
+    expect(serialized.version).toBe(1);
+    if (serialized.kind === 'killer') {
+      expect(serialized.specData).toEqual(state.specData);
+      expect(serialized.cageStates).toEqual(state.cageStates);
+      expect(serialized.virtualCages).toEqual(state.virtualCages);
+      expect(serialized.warpedImageUrl).toEqual(state.warpedImageUrl);
+    }
+  });
+});
+
