@@ -282,7 +282,6 @@ function drawCageBorders(
   state: PuzzleState,
   draft: { borderX: boolean[][], borderY: boolean[][] } | undefined,
 ): void {
-  if (!PuzzleState.isKiller(state)) return;
   ctx.strokeStyle = draft ? '#0055cc' : '#cc0000';
   ctx.lineWidth = 7.5;
   if (draft) {
@@ -303,21 +302,13 @@ function drawCageBorders(
       }
     }
   } else {
-    const reg = state.specData.regions;
-    for (let r = 0; r < 8; r++) {
-      for (let c = 0; c < 9; c++) {
-        if ((reg[r]?.[c] ?? 0) !== (reg[r + 1]?.[c] ?? 0)) {
-          const y = MARGIN + (r + 1) * CELL;
-          ctx.beginPath(); ctx.moveTo(MARGIN + c * CELL, y); ctx.lineTo(MARGIN + (c + 1) * CELL, y); ctx.stroke();
-        }
-      }
-    }
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 8; c++) {
-        if ((reg[r]?.[c] ?? 0) !== (reg[r]?.[c + 1] ?? 0)) {
-          const x = MARGIN + (c + 1) * CELL;
-          ctx.beginPath(); ctx.moveTo(x, MARGIN + r * CELL); ctx.lineTo(x, MARGIN + (r + 1) * CELL); ctx.stroke();
-        }
+    for (const seg of PuzzleState.cageBoundaries(state)) {
+      if (seg.edge === 'bottom') {
+        const y = MARGIN + (seg.row + 1) * CELL;
+        ctx.beginPath(); ctx.moveTo(MARGIN + seg.col * CELL, y); ctx.lineTo(MARGIN + (seg.col + 1) * CELL, y); ctx.stroke();
+      } else {
+        const x = MARGIN + (seg.col + 1) * CELL;
+        ctx.beginPath(); ctx.moveTo(x, MARGIN + seg.row * CELL); ctx.lineTo(x, MARGIN + (seg.row + 1) * CELL); ctx.stroke();
       }
     }
   }
@@ -342,25 +333,19 @@ function drawGridLines(ctx: CanvasRenderingContext2D): void {
 }
 
 function drawCageTotals(ctx: CanvasRenderingContext2D, state: PuzzleState): void {
-  if (!PuzzleState.isKiller(state)) return;
   const TOTAL_FONT_PX = Math.round(CELL * 0.36); // ~18px at CELL=50
   ctx.font = `bold ${TOTAL_FONT_PX}px sans-serif`;
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  const totals = state.specData.cageTotals;
-  for (let r = 0; r < 9; r++) {
-    for (let c = 0; c < 9; c++) {
-      const total = totals[r]?.[c] ?? 0;
-      if (total === 0) continue;
-      const x = MARGIN + c * CELL + 2;
-      const y = MARGIN + r * CELL + 2;
-      const label = String(total);
-      const tw = ctx.measureText(label).width;
-      // White chip behind the number so it reads cleanly over grid lines.
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(x - 1, y - 1, tw + 2, TOTAL_FONT_PX + 1);
-      ctx.fillStyle = '#111';
-      ctx.fillText(label, x, y);
-    }
+  for (const label of PuzzleState.cageLabels(state)) {
+    const x = MARGIN + label.col * CELL + 2;
+    const y = MARGIN + label.row * CELL + 2;
+    const text = String(label.total);
+    const tw = ctx.measureText(text).width;
+    // White chip behind the number so it reads cleanly over grid lines.
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(x - 1, y - 1, tw + 2, TOTAL_FONT_PX + 1);
+    ctx.fillStyle = '#111';
+    ctx.fillText(text, x, y);
   }
 }
 
