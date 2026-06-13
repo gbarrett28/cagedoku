@@ -7,7 +7,7 @@
  * main.ts can call them as drop-in replacements.
  */
 
-import { solve, BoardState, KillerBoardState, SolveResult } from '../engine/index.js';
+import { solve, BoardState, KillerBoardState, intersectAll, SolveResult } from '../engine/index.js';
 import { mrvBacktrack } from '../engine/backtracker.js';
 import { solSums, solDiffs } from '../solver/equation.js';
 import type { DiffSolution } from '../solver/equation.js';
@@ -67,12 +67,6 @@ import type { EliminateCandidateMutation, RuleStep } from './ruleMutation.js';
 
 /** 1–9 each appear 9 times → the only valid sum for a full 9×9 sudoku grid. */
 const GRID_TOTAL_SUM = 405;
-
-/** Intersection of all sets, returned as a sorted array. */
-function intersectAll(sets: ReadonlySet<number>[]): number[] {
-  if (sets.length === 0) return [];
-  return [...sets[0]!].filter(d => sets.every(s => s.has(d))).sort((a, b) => a - b);
-}
 
 /** Lexicographic comparator for sorted digit arrays. */
 function lexCompare(a: readonly number[], b: readonly number[]): number {

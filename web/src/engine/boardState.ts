@@ -372,3 +372,9 @@ export function validateSolution(board: KillerBoardState): string[] {
   }
   return violations;
 }
+
+/** Intersection of all sets, returned as a sorted array. */
+export function intersectAll(sets: ReadonlySet<number>[]): number[] {
+  if (sets.length === 0) return [];
+  return [...sets[0]!].filter(d => sets.every(s => s.has(d))).sort((a, b) => a - b);
+}
