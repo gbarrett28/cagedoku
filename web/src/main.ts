@@ -716,24 +716,21 @@ function renderPlayingMode(state: PuzzleState): void {
   updateUndoButton(state);
   updateRevealButton();
   el<HTMLButtonElement>('hints-btn').disabled = false;
-  const isKillerPuzzle = PuzzleState.isKiller(state);
-  el<HTMLButtonElement>('inspect-cage-btn').hidden = !isKillerPuzzle;
-  el<HTMLButtonElement>('virtual-cage-btn').hidden = !isKillerPuzzle;
+  const commands = PuzzleState.availableCommands(state);
+  el<HTMLButtonElement>('inspect-cage-btn').hidden = !commands.has('inspectCage');
+  el<HTMLButtonElement>('virtual-cage-btn').hidden = !commands.has('virtualCage');
   el<HTMLButtonElement>('colour-btn').hidden = false;
   el<HTMLButtonElement>('mode-toggle').hidden = !showCandidates;
   el<HTMLButtonElement>('mode-toggle').classList.remove('active');
 }
 
 function updateUndoButton(state: PuzzleState): void {
-  const btn = el<HTMLButtonElement>('undo-btn');
-  if (state.turns.length === 0) { btn.disabled = true; return; }
-  const last = state.turns[state.turns.length - 1]!.action;
-  btn.disabled = last.type === 'placeDigit' && last.source === 'given';
+  el<HTMLButtonElement>('undo-btn').disabled = !PuzzleState.availableCommands(state).has('undo');
 }
 
 function updateRevealButton(): void {
   el<HTMLButtonElement>('reveal-btn').hidden =
-    currentState === null || currentState.goldenSolution === null || selectedCell === null;
+    currentState === null || !PuzzleState.availableCommands(currentState).has('reveal') || selectedCell === null;
 }
 
 function setAutoApplyLock(locked: boolean): void {
