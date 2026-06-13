@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { Miniflare } from 'miniflare';
 import worker from './index.js';
 import type { Env } from './index.js';
 
@@ -6,19 +7,18 @@ import type { Env } from './index.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeEnv(overrides: Partial<Env> = {}): Env {
-  return {
-    TRAINING_BUCKET: {
-      list: vi.fn().mockResolvedValue({ objects: [] }),
-      put: vi.fn().mockResolvedValue(undefined),
-    } as unknown as R2Bucket,
+let mf: Miniflare;
+
+function makeEnv(overrides: Partial<Env> = {}): Promise<Env> {
+  return mf.getR2Bucket('TRAINING_BUCKET').then((bucket) => ({
+    TRAINING_BUCKET: bucket,
     GITHUB_TOKEN: 'fake-token',
     GITHUB_REPO: 'test/repo',
     GITHUB_ISSUE_NUMBER: '1',
     MAX_PENDING_UPLOADS: '50',
     ENVIRONMENT: 'development',
     ...overrides,
-  };
+  }));
 }
 
 function makeRequest(options: {
@@ -79,34 +79,38 @@ const validFeedback = {
 
 describe('Worker fetch handler', () => {
   beforeEach(() => {
+    mf = new Miniflare({
+      modules: true,
+      script: 'export default { fetch() { return new Response("unused"); } };',
+      r2Buckets: ['TRAINING_BUCKET'],
+    });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('{}', { status: 201 }),
     );
   });
 
-  afterEach(() => { vi.restoreAllMocks(); });
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await mf.dispose();
+  });
 
   // --- Method -----------------------------------------------------------------
 
   it('returns 404 for GET requests to an unknown path', async () => {
-    const res = await worker.fetch(makeRequest({ method: 'GET' }), makeEnv());
+    const res = await worker.fetch(makeRequest({ method: 'GET' }), await makeEnv());
     expect(res.status).toBe(404);
   });
 
   it('GET /rule-fixtures/:ruleName returns 200 with JSON array', async () => {
-    const mockGet = vi.fn().mockResolvedValue({ json: vi.fn().mockResolvedValue({ name: 'fix-1' }) });
-    const env = makeEnv({
-      TRAINING_BUCKET: {
-        list: vi.fn().mockResolvedValue({ objects: [{ key: 'rule-fixtures/TwoStringKite/fix-1.json' }] }),
-        get: mockGet,
-        put: vi.fn(),
-      } as unknown as R2Bucket,
-    });
+    const env = await makeEnv();
+    await env.TRAINING_BUCKET.put('rule-fixtures/TwoStringKite/fix-1.json', JSON.stringify({ name: 'fix-1' }));
+
     const req = new Request('https://worker.example.com/rule-fixtures/TwoStringKite', { method: 'GET' });
     const res = await worker.fetch(req, env);
     expect(res.status).toBe(200);
     const body = await res.json() as unknown[];
     expect(body).toHaveLength(1);
+    expect(body[0]).toEqual({ name: 'fix-1' });
   });
 
   // --- CORS -------------------------------------------------------------------
@@ -114,7 +118,7 @@ describe('Worker fetch handler', () => {
   it('OPTIONS from allowed github.io origin returns 204 with CORS headers', async () => {
     const res = await worker.fetch(
       makeRequest({ method: 'OPTIONS', origin: 'https://gbarrett28.github.io' }),
-      makeEnv(),
+      await makeEnv(),
     );
     expect(res.status).toBe(204);
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://gbarrett28.github.io');
@@ -123,7 +127,7 @@ describe('Worker fetch handler', () => {
   it('OPTIONS from disallowed origin returns 403', async () => {
     const res = await worker.fetch(
       makeRequest({ method: 'OPTIONS', origin: 'https://evil.example.com' }),
-      makeEnv({ ENVIRONMENT: 'production' }),
+      await makeEnv({ ENVIRONMENT: 'production' }),
     );
     expect(res.status).toBe(403);
   });
@@ -131,7 +135,7 @@ describe('Worker fetch handler', () => {
   it('POST from disallowed origin in production returns 403', async () => {
     const res = await worker.fetch(
       makeRequest({ method: 'POST', origin: 'https://evil.example.com', contentType: 'application/json', body: validExport }),
-      makeEnv({ ENVIRONMENT: 'production' }),
+      await makeEnv({ ENVIRONMENT: 'production' }),
     );
     expect(res.status).toBe(403);
   });
@@ -141,7 +145,7 @@ describe('Worker fetch handler', () => {
   it('returns 400 for non-JSON content type', async () => {
     const res = await worker.fetch(
       makeRequest({ contentType: 'text/plain', body: 'hello' }),
-      makeEnv(),
+      await makeEnv(),
     );
     expect(res.status).toBe(400);
   });
@@ -154,14 +158,14 @@ describe('Worker fetch handler', () => {
       headers: { 'Content-Type': 'application/json' },
       body: 'not json{{{',
     });
-    const res = await worker.fetch(req, makeEnv());
+    const res = await worker.fetch(req, await makeEnv());
     expect(res.status).toBe(400);
   });
 
   it('returns 400 for JSON that fails TrainingExport schema', async () => {
     const res = await worker.fetch(
       makeRequest({ contentType: 'application/json', body: { version: 99, samples: [] } }),
-      makeEnv(),
+      await makeEnv(),
     );
     expect(res.status).toBe(400);
   });
@@ -169,13 +173,10 @@ describe('Worker fetch handler', () => {
   // --- R2 cap -----------------------------------------------------------------
 
   it('returns 429 when pending upload count is at the cap', async () => {
-    const env = makeEnv({
-      MAX_PENDING_UPLOADS: '2',
-      TRAINING_BUCKET: {
-        list: vi.fn().mockResolvedValue({ objects: [{}, {}] }),
-        put: vi.fn(),
-      } as unknown as R2Bucket,
-    });
+    const env = await makeEnv({ MAX_PENDING_UPLOADS: '2' });
+    await env.TRAINING_BUCKET.put('training/existing-1.json', 'x');
+    await env.TRAINING_BUCKET.put('training/existing-2.json', 'x');
+
     const res = await worker.fetch(
       makeRequest({ contentType: 'application/json', body: validExport }),
       env,
@@ -186,18 +187,20 @@ describe('Worker fetch handler', () => {
   // --- Happy path -------------------------------------------------------------
 
   it('stores payload in R2 and posts GitHub comment on valid upload', async () => {
-    const env = makeEnv();
+    const env = await makeEnv();
     const res = await worker.fetch(
       makeRequest({ contentType: 'application/json', body: validExport }),
       env,
     );
     expect(res.status).toBe(200);
 
-    const bucket = env.TRAINING_BUCKET as unknown as { put: ReturnType<typeof vi.fn> };
-    expect(bucket.put).toHaveBeenCalledOnce();
-    const [key, body] = bucket.put.mock.calls[0] as [string, string, unknown];
+    const listed = await env.TRAINING_BUCKET.list({ prefix: 'training/' });
+    expect(listed.objects).toHaveLength(1);
+    const key = listed.objects[0]!.key;
     expect(key).toMatch(/^training\/2026-05-07T00:00:00\.000Z-[0-9a-f-]+\.json$/);
-    expect(JSON.parse(body)).toMatchObject({ reportType: 'training-export', sampleCount: 1 });
+    const obj = await env.TRAINING_BUCKET.get(key);
+    const body = JSON.parse(await obj!.text()) as Record<string, unknown>;
+    expect(body).toMatchObject({ reportType: 'training-export', sampleCount: 1 });
 
     expect(globalThis.fetch).toHaveBeenCalledOnce();
     const githubCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
@@ -209,7 +212,7 @@ describe('Worker fetch handler', () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('GitHub down'));
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    const env = makeEnv();
+    const env = await makeEnv();
     const res = await worker.fetch(
       makeRequest({ contentType: 'application/json', body: validExport }),
       env,
@@ -228,7 +231,7 @@ describe('Worker fetch handler', () => {
         body: validExport,
         origin: 'https://gbarrett28.github.io',
       }),
-      makeEnv({ ENVIRONMENT: 'production' }),
+      await makeEnv({ ENVIRONMENT: 'production' }),
     );
     expect(res.status).toBe(200);
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://gbarrett28.github.io');
@@ -237,18 +240,20 @@ describe('Worker fetch handler', () => {
   // --- Stall state path -------------------------------------------------------
 
   it('stores stall state in R2 and posts GitHub comment', async () => {
-    const env = makeEnv();
+    const env = await makeEnv();
     const res = await worker.fetch(
       makeRequest({ contentType: 'application/json', body: validStallState }),
       env,
     );
     expect(res.status).toBe(200);
 
-    const bucket = env.TRAINING_BUCKET as unknown as { put: ReturnType<typeof vi.fn> };
-    expect(bucket.put).toHaveBeenCalledOnce();
-    const [key, body] = bucket.put.mock.calls[0] as [string, string, unknown];
+    const listed = await env.TRAINING_BUCKET.list({ prefix: 'stall/' });
+    expect(listed.objects).toHaveLength(1);
+    const key = listed.objects[0]!.key;
     expect(key).toMatch(/^stall\/2026-05-21T10:00:00\.000Z-[0-9a-f-]+\.json$/);
-    expect(JSON.parse(body)).toMatchObject({ reportType: 'stall', puzzleType: 'classic' });
+    const obj = await env.TRAINING_BUCKET.get(key);
+    const body = JSON.parse(await obj!.text()) as Record<string, unknown>;
+    expect(body).toMatchObject({ reportType: 'stall', puzzleType: 'classic' });
 
     expect(globalThis.fetch).toHaveBeenCalledOnce();
     const githubCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
@@ -264,7 +269,7 @@ describe('Worker fetch handler', () => {
 
     const res = await worker.fetch(
       makeRequest({ contentType: 'application/json', body: validStallState }),
-      makeEnv(),
+      await makeEnv(),
     );
     expect(res.status).toBe(200);
     expect(consoleSpy).toHaveBeenCalledWith(
@@ -278,7 +283,7 @@ describe('Worker fetch handler', () => {
   it('creates GitHub issue on valid feedback report', async () => {
     const res = await worker.fetch(
       makeRequest({ contentType: 'application/json', body: validFeedback }),
-      makeEnv(),
+      await makeEnv(),
     );
     expect(res.status).toBe(200);
 
@@ -294,7 +299,7 @@ describe('Worker fetch handler', () => {
 
     const res = await worker.fetch(
       makeRequest({ contentType: 'application/json', body: validFeedback }),
-      makeEnv(),
+      await makeEnv(),
     );
     expect(res.status).toBe(200);
     expect(consoleSpy).toHaveBeenCalledWith(
