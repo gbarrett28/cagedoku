@@ -42,27 +42,29 @@ export type RenderColour = 'black' | 'blue' | 'red' | 'grey' | 'essential';
 
 export interface CandidateRender {
   readonly digit: number;          // 1-9
-  readonly visible: boolean;       // true if digit is a live candidate (board.cands has it)
-  readonly strikethrough: boolean; // true if user manually removed this candidate
   readonly colour: RenderColour;   // 'essential' if must-contain for its cage, else 'grey'
 }
 
 export interface CellRender {
   /** Non-null if this cell has a placed digit (given or user-entered). */
   readonly placed: { readonly digit: number; readonly colour: RenderColour; readonly locked: boolean } | null;
-  /** Empty if `placed !== null`. One entry per digit 1-9 that is either a live or user-removed candidate. */
+  /** Empty if `placed !== null`. One entry per digit 1-9 that is a live candidate (board.cands has it, not user-removed). */
   readonly candidates: readonly CandidateRender[];
 }
 ```
 
 Notes:
-- `CandidateRender[]` only includes digits that are either currently a
-  candidate (`visible: true`) or were user-removed (`strikethrough: true`,
-  `visible: false`). Digits eliminated by the solver (never user-removed, not
-  in `board.cands`) are omitted entirely — this matches current `drawCandidates`
-  behaviour, which only draws candidates or user-removed strikes, never solver
-  eliminations.
-- `colour: 'essential'` applies only to `visible` candidates whose digit is in
+- `CandidateRender[]` only includes digits that are currently live candidates
+  (`board.cands(r, c)` has the digit AND it's not in `state.userRemovedCandidates`).
+  Both solver-eliminated digits and user-removed candidates are omitted
+  entirely — **behaviour change from today**: user-removed candidates
+  currently render as a grey struck-through digit; this sprint removes that
+  strikethrough rendering entirely (too much visual clutter per user
+  feedback) — a removed candidate is simply blank, same as a solver-eliminated
+  one. There is no remaining UI way to distinguish "solver eliminated" from
+  "user removed" by looking at the grid (the candidates panel / undo history
+  remain the only ways to recover a user removal).
+- `colour: 'essential'` applies only to candidates whose digit is in
   the must-contain set for that cell's cage (from `board.cageConstraints()`).
   For classic puzzles (`board.cageConstraints() === null`), no candidate is
   ever `'essential'`.
@@ -134,15 +136,8 @@ function drawCandidates(
         const subRow = Math.floor((cand.digit - 1) / 3); const subCol = (cand.digit - 1) % 3;
         const cx = MARGIN + c * CELL + (subCol + 0.5) * SUB_W;
         const cy = MARGIN + r * CELL + CAND_TOP + (subRow + 0.5) * SUB_H;
-        if (cand.strikethrough) {
-          ctx.fillStyle = '#d1d5db'; ctx.fillText(String(cand.digit), cx, cy);
-          const hw = SUB_W * 0.35;
-          ctx.strokeStyle = '#6b7280'; ctx.lineWidth = 1;
-          ctx.beginPath(); ctx.moveTo(cx - hw, cy); ctx.lineTo(cx + hw, cy); ctx.stroke();
-        } else if (cand.visible) {
-          ctx.fillStyle = (cand.colour === 'essential' && showEss) ? '#cc5a45' : '#888';
-          ctx.fillText(String(cand.digit), cx, cy);
-        }
+        ctx.fillStyle = (cand.colour === 'essential' && showEss) ? '#cc5a45' : '#888';
+        ctx.fillText(String(cand.digit), cx, cy);
       }
     }
   }
@@ -170,8 +165,9 @@ using the fully-solved `currentBoard` (see below).
 New `describe('PuzzleState.candidateDisplay', ...)` block in
 `web/src/session/engine.test.ts`:
 - Empty cell with live candidates → `placed: null`, `candidates` includes
-  those digits with `visible: true, strikethrough: false`.
-- User-removed candidate → appears with `visible: false, strikethrough: true`.
+  those digits.
+- User-removed candidate → absent from `candidates` (same as a solver
+  eliminated digit).
 - Solver-eliminated digit (not in `board.cands`, not user-removed) → absent
   from `candidates`.
 - Given digit (classic) → `placed.locked === true`, `colour: 'black'`.
@@ -184,10 +180,11 @@ New `describe('PuzzleState.candidateDisplay', ...)` block in
 
 ## Resolved: `board` availability at `drawGrid` call sites
 
-`candidateDisplay(state, board)` always requires a `board` (for
-`candidates[].visible`/`strikethrough`/`'essential'`), but `drawDigits` only
-reads `.placed`, which depends solely on `state` (digits, duplicates,
-`goldenSolution`, `givenDigits`) — it is unaffected by which `board` is passed.
+`candidateDisplay(state, board)` always requires a `board` (to compute
+`candidates` — which live digits remain and which are `'essential'`), but
+`drawDigits` only reads `.placed`, which depends solely on `state` (digits,
+duplicates, `goldenSolution`, `givenDigits`) — it is unaffected by which
+`board` is passed.
 
 Two-tier approach, both via `buildEngine` (`session/engine.ts`):
 - **`drawDigits`** (called unconditionally from `drawGrid`): `drawGrid` computes
