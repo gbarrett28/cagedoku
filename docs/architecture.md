@@ -575,6 +575,47 @@ no separate `PuzzleState` methods were added for these.
 
 ---
 
+### `PuzzleState.serialize(state)` / `PuzzleState.deserialize(data)`
+
+`SerializedPuzzleState` is the wire format for a complete `PuzzleState`/
+`KillerPuzzleState` snapshot — used by bug reports (`FeedbackReport.puzzleSpec`)
+and by a dev-only replay hook.
+
+```typescript
+export type SerializedPuzzleState =
+  | (PuzzleState & { readonly kind: 'classic'; readonly version: 1 })
+  | (KillerPuzzleState & { readonly kind: 'killer'; readonly version: 1 });
+
+export function serialize(state: PuzzleState): SerializedPuzzleState
+export function deserialize(data: unknown): PuzzleState
+```
+
+- `serialize` is a total, structural transform: `{ kind: isKiller(state) ? 'killer'
+  : 'classic', version: 1, ...state }`. It includes `originalImageUrl`/
+  `warpedImageUrl` as-is — callers that need a smaller payload (e.g. the
+  feedback handler, to avoid embedding large data URLs in a GitHub issue body)
+  null those fields out on their own copy.
+- `deserialize` throws immediately if `data` is not an object, `kind` is not
+  `'classic' | 'killer'`, or `version !== 1` — no migration path; pre-redesign
+  reports and any future format change simply fail `deserialize`. It validates
+  gross shape (array dimensions, primitive element types) of each top-level
+  field at the same rigor as `shared/src/reports/*.ts`'s `is()` functions, but
+  does **not** recursively validate `turns`/`UserAction`/`RuleMutation`/
+  `AutoMutation` union variants — a malformed `turns` entry surfaces as a
+  runtime error inside `buildEngine`, an acceptable failure mode for this
+  debugging tool.
+- The `kind` dispatch inside `serialize`/`deserialize` is the only place that
+  knows about puzzle-type variants. `main.ts` and `shared/src/reports/` only
+  ever call `PuzzleState.serialize`/`deserialize`.
+
+`main.ts`'s `handleFeedbackSubmit` builds its `puzzleSpec` via
+`{ ...PuzzleState.serialize(currentState), originalImageUrl: null, ...(isKiller
+? { warpedImageUrl: null } : {}) }`. A dev-only `window.__loadSerializedState(data)`
+(same dead-code-elimination pattern as `window.__testLoad`) calls `deserialize`
+then `renderPlayingMode` to reproduce a reported state in the browser console.
+
+---
+
 ## Animation Player
 
 `web/src/session/animationPlayer.ts` is a pure-data module for navigating a

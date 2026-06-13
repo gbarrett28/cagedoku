@@ -70,9 +70,14 @@ met without this; revisit only if a concrete need arises.
   (`session/actions.ts`) — no separate methods added. See
   "`PuzzleState.cageBoundaries(state)` / `PuzzleState.cageLabels(state)`" in
   `docs/architecture.md`.
+- **§7 Serialization** — `PuzzleState.serialize(state)`/`PuzzleState.deserialize(data)`
+  and the `SerializedPuzzleState` type are shipped (`web/src/session/types.ts`).
+  `main.ts`'s `handleFeedbackSubmit` builds `FeedbackReport.puzzleSpec` via
+  `serialize`; a dev-only `window.__loadSerializedState` calls `deserialize` to
+  replay a reported state. See "`PuzzleState.serialize(state)` /
+  `PuzzleState.deserialize(data)`" in `docs/architecture.md`.
 
 **Remaining work (this document):**
-- §7 Serialization
 - §8 Out of scope (unchanged)
 
 ---

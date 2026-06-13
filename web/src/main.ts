@@ -1612,13 +1612,13 @@ async function handleFeedbackSubmit(): Promise<void> {
     : undefined;
   const expected = isBug ? el<HTMLTextAreaElement>('feedback-expected').value.trim() || undefined : undefined;
 
-  const puzzleSpec = currentState !== null ? {
-    puzzleType: PuzzleState.isKiller(currentState) ? 'killer' as const : 'classic' as const,
-    regions: PuzzleState.isKiller(currentState) ? currentState.specData.regions : classicSyntheticSpec().regions,
-    cageTotals: PuzzleState.isKiller(currentState) ? currentState.specData.cageTotals : classicSyntheticSpec().cageTotals,
-    userGrid: currentState.userGrid,
-    givenDigits: currentState.givenDigits,
-  } : null;
+  const puzzleSpec = currentState !== null
+    ? {
+        ...PuzzleState.serialize(currentState),
+        originalImageUrl: null,
+        ...(PuzzleState.isKiller(currentState) ? { warpedImageUrl: null } : {}),
+      }
+    : null;
 
   const settings = loadSettings();
 
@@ -2664,6 +2664,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // console) can inspect the active stall-fixture context — used by the
     // Task 3 feedback handler test to verify the fixture reference is captured.
     (window as unknown as Record<string, unknown>)['__activeFixture'] = activeFixtureContext;
+
+    // Exposes window.__loadSerializedState() so a developer triaging a
+    // reported bug can paste the "Puzzle spec" JSON from a GitHub issue
+    // into the browser console to reproduce the exact reported state —
+    // full turn history, removed candidates, virtual cages, golden solution.
+    (window as unknown as Record<string, unknown>)['__loadSerializedState'] = (data: unknown) => {
+      const state = PuzzleState.deserialize(data);
+      renderPlayingMode(state);
+      void fetchCandidates();
+    };
 
   }
 });
