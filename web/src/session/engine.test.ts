@@ -160,6 +160,30 @@ describe('PuzzleState.isKiller', () => {
 });
 
 // ---------------------------------------------------------------------------
+// PuzzleState.rules
+// ---------------------------------------------------------------------------
+
+describe('PuzzleState.rules', () => {
+  it('killer state yields killerOnly rules', () => {
+    const rules = [...PuzzleState.rules(makeState())];
+    expect(rules.some(r => r.killerOnly)).toBe(true);
+  });
+
+  it('classic state excludes killerOnly rules', () => {
+    const classic = PuzzleState.createClassic(null, [], null);
+    const rules = [...PuzzleState.rules(classic)];
+    expect(rules.some(r => r.killerOnly)).toBe(false);
+    expect(rules.length).toBeGreaterThan(0);
+  });
+
+  it('excludes rules in DISABLED_RULES', () => {
+    const rules = [...PuzzleState.rules(makeState())];
+    const disabled = new Set(DISABLED_RULES);
+    expect(rules.some(r => disabled.has(r.name))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // buildEngine
 // ---------------------------------------------------------------------------
 
