@@ -2,25 +2,29 @@
 
 ## Background
 
-The user saw a "protocol error" when pressing the feedback submit button on the
-**production site** (gbarrett28.github.io, talking to the deployed Cloudflare
-worker). "Protocol error" (e.g. Chrome's `ERR_HTTP2_PROTOCOL_ERROR`) is the
-classic symptom of a Cloudflare Worker throwing an uncaught exception mid-response
-— the connection is torn down instead of returning a clean 4xx/5xx.
+The user saw, on submitting feedback from the production site:
 
-The recently-merged serialization work (`PuzzleState.serialize`, commit 623a327)
-changed `handleFeedbackSubmit` (`web/src/main.ts`) to attach a full structural
-dump of the puzzle state — including the entire `turns` history (each turn
-carries a `BoardSnapshot` with a `9×9×N` candidates array) — as `puzzleSpec` in
-the feedback payload. This is a much larger and more complex payload than before,
-and it flows into `JSON.stringify(r.puzzleSpec, null, 2)` inside
-`FeedbackReport.buildIssue` (`shared/src/reports/FeedbackReport.ts`) on the
-worker. This is the prime suspect for an uncaught exception.
+```
+Submission failed (400): Bad request: unrecognised schema
+```
 
-We cannot reproduce the production error directly (no live worker URL/credentials
-in this environment), so the goal is to build test coverage that would catch this
-class of bug locally, and to cover **all feedback routes** (all `feedbackType` /
-`bugCategory` combinations, and the `new-rule` fixture-context path) end to end.
+**Root cause:** the payload built in `handleFeedbackSubmit`
+(`web/src/main.ts:1629-1648`) never sets `reportType: 'feedback'`.
+`FeedbackReport.is()` (`shared/src/reports/FeedbackReport.ts`) checks
+`v['reportType'] !== 'feedback'` first and returns `false` when the field is
+missing, so `parseAnyReport` returns `null` and the worker replies with the
+400 above. **Every feedback submission from the production app currently
+fails.** This is a standalone bug, unrelated to the recently-merged
+`PuzzleState.serialize` work — it appears `reportType` was simply omitted when
+this payload object was assembled.
+
+The goal is to (1) fix this bug, (2) add a regression test that would have
+caught it — i.e. assert the payload `handleFeedbackSubmit` builds actually
+satisfies `parseAnyReport(...)?.reportType === 'feedback'` — and (3) cover
+**all feedback routes** (all `feedbackType` / `bugCategory` combinations, and
+the `new-rule` fixture-context path) end to end, both on the frontend
+(payload construction + submission) and the worker (schema validation +
+`FeedbackReport.buildIssue` per-variant branches).
 
 ## Current coverage gaps
 
@@ -40,6 +44,13 @@ class of bug locally, and to cover **all feedback routes** (all `feedbackType` /
   untested.
 
 ## Design
+
+### 0. Fix the missing `reportType` bug
+
+Add `reportType: 'feedback' as const` to the payload object literal in
+`handleFeedbackSubmit` (`web/src/main.ts:1629`). This is the actual production
+fix; everything else in this spec is test coverage around it (including a test
+that fails without this one-line fix).
 
 ### 1. Frontend: extract `handleFeedbackSubmit`'s payload + submission logic
 
@@ -71,6 +82,13 @@ something errors" — into a unit-testable function.
 
 **Tests** (`web/src/session/feedbackSubmit.test.ts`, jsdom not required —
 pure fetch wrapper):
+- **Regression test for the `reportType` bug**: for every
+  `feedbackType`/`bugCategory` combination, build a `FeedbackReport` payload
+  (using a small helper that mirrors `handleFeedbackSubmit`'s assembly) and
+  assert `parseAnyReport(payload)?.reportType === 'feedback'` (importing
+  `parseAnyReport` from `../../../shared/src/reports/index.js`, as
+  `shared-reports.test.ts` already does). This fails today (returns `null`)
+  and passes once `reportType: 'feedback'` is added.
 - No worker URL configured → returns `{ kind: 'logged' }`, `fetch` not called.
 - `fetch` resolves with `res.ok === true` → `{ kind: 'success' }`.
 - `fetch` resolves with `res.ok === false` (e.g. 400) → `{ kind: 'http-error', status: 400, body: <text> }`.
