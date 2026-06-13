@@ -501,6 +501,45 @@ still calls `recordTurn` directly because it needs `baseState` for
   underlying state checks. UI-local concerns (e.g. `selectedCell` for the reveal button)
   remain in `main.ts`.
 
+### `PuzzleState.candidateDisplay(state, board)`
+
+Returns a 9×9 `readonly CellRender[][]` (row-major) of per-cell render
+attributes, consolidating the digit/candidate "case analysis" (killer vs
+classic, given vs user-placed, duplicate detection, must-contain
+highlighting) that `main.ts`'s `drawDigits`/`drawCandidates` previously
+computed themselves.
+
+```typescript
+export type RenderColour = 'black' | 'blue' | 'red' | 'grey' | 'essential';
+
+export interface CandidateRender {
+  readonly digit: number;        // 1-9
+  readonly colour: RenderColour; // 'essential' if must-contain for its cage, else 'grey'
+}
+
+export interface CellRender {
+  readonly placed: { readonly digit: number; readonly colour: RenderColour; readonly locked: boolean } | null;
+  readonly candidates: readonly CandidateRender[];
+}
+```
+
+- `candidates` only includes digits that are live candidates (`board.cands(r, c)`
+  has the digit AND it is not in `state.userRemovedCandidates`). Both
+  solver-eliminated and user-removed digits render blank — there is no
+  strikethrough rendering for removed candidates.
+- `placed.colour` is `'red'` for duplicate digits (row/col/box), `'blue'` for
+  non-given cells once `goldenSolution` is set, else `'black'`.
+- `placed.locked` is `true` only for classic given digits; always `false` for
+  killer (which has no givens).
+- `'essential'` candidates are digits in the must-contain set for their cage
+  (`intersectAll` over `board.cageSolns[cageIdx]`); classic boards
+  (`board.cageConstraints() === null`) never produce `'essential'`.
+
+`main.ts`'s `drawGrid` computes a cheap `buildEngine(state, { skipSolve: true }).board`
+for `drawDigits` (always called) and uses the fully-solved `currentBoard` (via
+`computeBoard(state)`, set in `fetchCandidates`) for `drawCandidates` (called only
+when `showCandidates` is on).
+
 ---
 
 ## Animation Player
