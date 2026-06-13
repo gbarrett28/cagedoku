@@ -757,6 +757,14 @@ export function computeCandidates(): CandidatesResponse {
 }
 
 /**
+ * Returns the fully-solved board for the current state, for callers that need
+ * the BoardState itself rather than a CandidatesResponse (e.g. candidateDisplay).
+ */
+export function computeBoard(state: PuzzleState): BoardState {
+  return buildEngine(state).board;
+}
+
+/**
  * Builds a partial CandidatesResponse for the rule-by-rule animation loop,
  * without running the full solver. Candidates reflect only what has been
  * eliminated so far (user placements + userRemovedCandidates), giving a
