@@ -467,6 +467,90 @@ export namespace PuzzleState {
       : { kind: 'classic', version: 1, ...state };
   }
 
+  /**
+   * Validates and reconstructs a `PuzzleState`/`KillerPuzzleState` from a
+   * `SerializedPuzzleState`. Throws immediately on any shape mismatch — no
+   * migration path, no recursive validation of `turns`/`UserAction`/
+   * `RuleMutation` variants (a malformed entry surfaces as a runtime error
+   * inside `buildEngine`, which is acceptable for this debugging tool).
+   */
+  export function deserialize(data: unknown): PuzzleState {
+    if (typeof data !== 'object' || data === null) {
+      throw new Error('PuzzleState.deserialize: data is not an object');
+    }
+    const v = data as Record<string, unknown>;
+
+    if (v['kind'] !== 'classic' && v['kind'] !== 'killer') {
+      throw new Error(`PuzzleState.deserialize: unrecognised kind ${JSON.stringify(v['kind'])}`);
+    }
+    if (v['version'] !== 1) {
+      throw new Error(`PuzzleState.deserialize: unsupported version ${JSON.stringify(v['version'])}`);
+    }
+    if (!is9x9NumberGrid(v['userGrid'])) {
+      throw new Error('PuzzleState.deserialize: userGrid must be a 9x9 number array');
+    }
+    if (!Array.isArray(v['turns'])) {
+      throw new Error('PuzzleState.deserialize: turns must be an array');
+    }
+    if (!isStringArray(v['alwaysApplyRules'])) {
+      throw new Error('PuzzleState.deserialize: alwaysApplyRules must be a string array');
+    }
+    if (v['goldenSolution'] !== null && !is9x9NumberGrid(v['goldenSolution'])) {
+      throw new Error('PuzzleState.deserialize: goldenSolution must be a 9x9 number array or null');
+    }
+    if (v['givenDigits'] !== null && !is9x9NumberGrid(v['givenDigits'])) {
+      throw new Error('PuzzleState.deserialize: givenDigits must be a 9x9 number array or null');
+    }
+    if (v['originalImageUrl'] !== null && typeof v['originalImageUrl'] !== 'string') {
+      throw new Error('PuzzleState.deserialize: originalImageUrl must be a string or null');
+    }
+    if (!isRemovedCandidatesArray(v['userRemovedCandidates'])) {
+      throw new Error('PuzzleState.deserialize: userRemovedCandidates must be an array of [row, col, digit] tuples');
+    }
+
+    const base: PuzzleState = {
+      userGrid: v['userGrid'] as number[][],
+      turns: v['turns'] as readonly Turn[],
+      alwaysApplyRules: v['alwaysApplyRules'] as readonly string[],
+      goldenSolution: v['goldenSolution'] as number[][] | null,
+      givenDigits: v['givenDigits'] as number[][] | null,
+      originalImageUrl: v['originalImageUrl'] as string | null,
+      userRemovedCandidates: v['userRemovedCandidates'] as readonly [number, number, number][],
+    };
+
+    if (v['kind'] === 'classic') return base;
+
+    const specData = v['specData'];
+    if (typeof specData !== 'object' || specData === null) {
+      throw new Error('PuzzleState.deserialize: specData is required for kind "killer"');
+    }
+    const sd = specData as Record<string, unknown>;
+    if (!is9x9NumberGrid(sd['regions'])) {
+      throw new Error('PuzzleState.deserialize: specData.regions must be a 9x9 number array');
+    }
+    if (!is9x9NumberGrid(sd['cageTotals'])) {
+      throw new Error('PuzzleState.deserialize: specData.cageTotals must be a 9x9 number array');
+    }
+    if (!Array.isArray(v['cageStates'])) {
+      throw new Error('PuzzleState.deserialize: cageStates must be an array');
+    }
+    if (!Array.isArray(v['virtualCages'])) {
+      throw new Error('PuzzleState.deserialize: virtualCages must be an array');
+    }
+    if (v['warpedImageUrl'] !== null && typeof v['warpedImageUrl'] !== 'string') {
+      throw new Error('PuzzleState.deserialize: warpedImageUrl must be a string or null');
+    }
+
+    const killerState: KillerPuzzleState = {
+      ...base,
+      specData: { regions: sd['regions'] as number[][], cageTotals: sd['cageTotals'] as number[][] },
+      cageStates: v['cageStates'] as readonly CageState[],
+      virtualCages: v['virtualCages'] as readonly VirtualCage[],
+      warpedImageUrl: v['warpedImageUrl'] as string | null,
+    };
+    return killerState;
+  }
+
   /** Builds a fresh classic PuzzleState for the OCR review phase (blank grid, no golden solution). */
   export function createClassic(
     givenDigits: number[][] | null,
@@ -506,6 +590,28 @@ export namespace PuzzleState {
       userRemovedCandidates: [],
     };
   }
+}
+
+function is9x9NumberGrid(value: unknown): value is number[][] {
+  if (!Array.isArray(value) || value.length !== 9) return false;
+  for (const row of value as unknown[]) {
+    if (!Array.isArray(row) || row.length !== 9) return false;
+    for (const cell of row as unknown[]) {
+      if (typeof cell !== 'number') return false;
+    }
+  }
+  return true;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(v => typeof v === 'string');
+}
+
+function isRemovedCandidatesArray(value: unknown): value is [number, number, number][] {
+  if (!Array.isArray(value)) return false;
+  return value.every(
+    entry => Array.isArray(entry) && entry.length === 3 && entry.every(n => typeof n === 'number'),
+  );
 }
 
 // ---------------------------------------------------------------------------

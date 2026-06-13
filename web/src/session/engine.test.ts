@@ -985,3 +985,65 @@ describe('PuzzleState.serialize', () => {
   });
 });
 
+describe('PuzzleState.deserialize', () => {
+  it('round-trips a classic state', () => {
+    const givenDigits = makeClassicGivenDigits();
+    const state = PuzzleState.createClassic(givenDigits, ['NakedSingle'], null);
+    const roundTripped = PuzzleState.deserialize(PuzzleState.serialize(state));
+    expect(roundTripped).toEqual(state);
+  });
+
+  it('round-trips a killer state with non-empty turns, userRemovedCandidates, and virtualCages', () => {
+    const vc: VirtualCage = {
+      cells: [[0, 0], [0, 1]] as Cell[],
+      total: 10,
+      eliminatedSolns: [],
+    };
+    const turns = [makeTurn({ type: 'placeDigit', row: 0, col: 0, digit: 5, source: 'user' })];
+    // deserialize does not reconstruct fixtureStalledCandidates (not in the
+    // validated field list) — omit it so toEqual doesn't compare makeState()'s
+    // `null` against a missing key.
+    const { fixtureStalledCandidates: _fixtureStalledCandidates, ...baseState } = makeState();
+    const state: KillerPuzzleState = {
+      ...baseState,
+      turns,
+      virtualCages: [vc],
+      userRemovedCandidates: [[1, 2, 3]],
+    };
+    const roundTripped = PuzzleState.deserialize(PuzzleState.serialize(state));
+    expect(roundTripped).toEqual(state);
+  });
+
+  it('throws on missing kind', () => {
+    const data = { ...PuzzleState.serialize(makeState()) } as Record<string, unknown>;
+    delete data['kind'];
+    expect(() => PuzzleState.deserialize(data)).toThrow();
+  });
+
+  it('throws on unrecognised kind', () => {
+    const data = { ...PuzzleState.serialize(makeState()), kind: 'bigApple' };
+    expect(() => PuzzleState.deserialize(data)).toThrow();
+  });
+
+  it('throws on wrong version', () => {
+    const data = { ...PuzzleState.serialize(makeState()), version: 2 };
+    expect(() => PuzzleState.deserialize(data)).toThrow();
+  });
+
+  it('throws on missing/malformed userGrid', () => {
+    const data = { ...PuzzleState.serialize(makeState()), userGrid: [[1, 2, 3]] };
+    expect(() => PuzzleState.deserialize(data)).toThrow();
+  });
+
+  it('throws on missing specData for kind "killer"', () => {
+    const data = { ...PuzzleState.serialize(makeState()) } as Record<string, unknown>;
+    delete data['specData'];
+    expect(() => PuzzleState.deserialize(data)).toThrow();
+  });
+
+  it('throws when data is not an object', () => {
+    expect(() => PuzzleState.deserialize(null)).toThrow();
+    expect(() => PuzzleState.deserialize('not an object')).toThrow();
+  });
+});
+
