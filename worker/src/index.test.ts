@@ -73,6 +73,58 @@ const validFeedback = {
   config: { alwaysApplyRules: [] as string[], autoPlacementDelay: 500 },
 };
 
+const validFeedbackInaccurate = {
+  ...validFeedback,
+  bugCategory: 'inaccurate-description' as const,
+};
+
+const validFeedbackEnhancement = (() => {
+  const { bugCategory: _b, expected: _e, ...rest } = validFeedback as typeof validFeedback & { expected?: string };
+  return { ...rest, feedbackType: 'enhancement' as const, description: 'Add a dark mode toggle' };
+})();
+
+const validFeedbackNewRule = (() => {
+  const { bugCategory: _b, expected: _e, ...rest } = validFeedback as typeof validFeedback & { expected?: string };
+  return {
+    ...rest,
+    feedbackType: 'new-rule' as const,
+    description: 'This puzzle needs a Skyscraper rule',
+    fixtureName: 'TwoStringKite-1',
+    unsolvedCells: 12,
+    totalCandidates: 34,
+  };
+})();
+
+function makeLargePuzzleSpec(turnCount: number): Record<string, unknown> {
+  const candidates = Array.from({ length: 9 }, () =>
+    Array.from({ length: 9 }, () => [1, 2, 3, 4, 5, 6, 7, 8, 9]));
+  const turns = Array.from({ length: turnCount }, (_, i) => ({
+    action: { type: 'placeDigit', row: i % 9, col: (i * 3) % 9, digit: (i % 9) + 1, source: 'user' as const },
+    autoMutations: [],
+    snapshot: { candidates },
+  }));
+  const grid9x9 = Array.from({ length: 9 }, (_, r) =>
+    Array.from({ length: 9 }, (_, c) => ((r * 3 + Math.floor(r / 3) + c) % 9) + 1));
+  const regions9x9 = Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, () => r + 1));
+  const cageTotals9x9 = Array.from({ length: 9 }, () => new Array<number>(9).fill(15));
+
+  return {
+    kind: 'killer',
+    version: 1,
+    specData: { regions: regions9x9, cageTotals: cageTotals9x9 },
+    cageStates: [],
+    userGrid: grid9x9,
+    virtualCages: [],
+    turns,
+    alwaysApplyRules: [],
+    goldenSolution: grid9x9,
+    givenDigits: null,
+    originalImageUrl: null,
+    warpedImageUrl: null,
+    userRemovedCandidates: [],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -306,6 +358,77 @@ describe('Worker fetch handler', () => {
       expect.stringContaining('[worker]'),
       expect.any(Error),
     );
+  });
+
+  it.each<[string, Record<string, unknown>, string, string[]]>([
+    ['bug / wrong-behaviour', validFeedback, '[Bug report]', ['feedback', 'bug']],
+    ['bug / inaccurate-description', validFeedbackInaccurate, '[Bug report]', ['feedback', 'bug', 'documentation']],
+    ['enhancement', validFeedbackEnhancement, '[Enhancement request]', ['feedback', 'enhancement']],
+    ['new-rule', validFeedbackNewRule, '[Rule suggestion]', ['feedback', 'new-rule']],
+  ])('creates a GitHub issue with the right title prefix and labels for %s', async (_label, body, titlePrefix, labels) => {
+    const env = await makeEnv();
+    const res = await worker.fetch(
+      makeRequest({ contentType: 'application/json', body }),
+      env,
+    );
+    expect(res.status).toBe(200);
+
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+    const githubCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(githubCall[0]).toMatch(/\/repos\/test\/repo\/issues$/);
+    const issue = JSON.parse(githubCall[1].body as string) as { title: string; body: string; labels: string[] };
+    expect(issue.title.startsWith(titlePrefix)).toBe(true);
+    expect(issue.labels).toEqual(labels);
+  });
+
+  it('includes the expected-behaviour section for bug reports with `expected` set', async () => {
+    const env = await makeEnv();
+    await worker.fetch(makeRequest({ contentType: 'application/json', body: validFeedback }), env);
+
+    const githubCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    const issue = JSON.parse(githubCall[1].body as string) as { body: string };
+    expect(issue.body).toContain('### Expected behaviour');
+    expect(issue.body).toContain(validFeedback.expected);
+  });
+
+  it('includes the fixture section and fixture name in the title for new-rule reports', async () => {
+    const env = await makeEnv();
+    await worker.fetch(makeRequest({ contentType: 'application/json', body: validFeedbackNewRule }), env);
+
+    const githubCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    const issue = JSON.parse(githubCall[1].body as string) as { title: string; body: string };
+    expect(issue.title).toContain('TwoStringKite-1');
+    expect(issue.body).toContain('**Fixture:** `TwoStringKite-1`');
+    expect(issue.body).toContain('**Unsolved cells:** 12');
+    expect(issue.body).toContain('**Total candidates:** 34');
+  });
+
+  it('includes an Exception section when `exception` is set', async () => {
+    const env = await makeEnv();
+    const body = { ...validFeedback, exception: 'TypeError: something broke\n  at foo (bar.ts:1:1)' };
+    await worker.fetch(makeRequest({ contentType: 'application/json', body }), env);
+
+    const githubCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    const issue = JSON.parse(githubCall[1].body as string) as { body: string };
+    expect(issue.body).toContain('## Exception');
+    expect(issue.body).toContain('TypeError: something broke');
+  });
+
+  it('handles a feedback report with a large, realistic puzzleSpec (full turn history) without error', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const env = await makeEnv();
+    const body = { ...validFeedback, puzzleSpec: makeLargePuzzleSpec(25) };
+
+    const res = await worker.fetch(makeRequest({ contentType: 'application/json', body }), env);
+
+    expect(res.status).toBe(200);
+    expect(consoleSpy).not.toHaveBeenCalled();
+
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+    const githubCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    const issue = JSON.parse(githubCall[1].body as string) as { body: string };
+    expect(issue.body).toContain('<summary>Puzzle spec</summary>');
+    expect(issue.body).toContain('"turns"');
   });
 });
 
