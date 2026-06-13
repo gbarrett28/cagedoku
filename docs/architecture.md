@@ -215,6 +215,7 @@ Key files:
 |---|---|
 | `web/src/image/trainingExport.ts` | `TrainingExport`, `PuzzleSpecExport`, `StallStateExport`, `extractTrainingData`, `buildPuzzleSpecExport`, `buildStallStateExport` |
 | `web/src/image/trainingUpload.ts` | `hasConsent`, `grantConsent`, `uploadTrainingData`, `uploadPuzzleSpec`, `uploadStallState`, `initiateUpload`, `initiateStallUpload` |
+| `web/src/session/feedbackSubmit.ts` | `buildFeedbackPayload`, `submitFeedback` — feedback payload construction and POST |
 | `web/src/engine/rules/stall-fixtures.ts` | Known stall states as named `candidates` arrays |
 | `web/src/engine/rules/stall-fixtures.test.ts` | Forward-failing replay tests (skipped until rule added) |
 | `worker/src/index.ts` | Cloudflare Worker fetch handler — routes by schema version |
@@ -265,6 +266,12 @@ a failure Issue on regression. Requires `CLOUDFLARE_API_TOKEN` and
 | Worker secrets | `GITHUB_TOKEN` (issues:write PAT) |
 | GitHub Actions secrets | `TRAINING_WORKER_URL`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` |
 
+**Worker tests:** `worker/src/index.test.ts` exercises the real worker `fetch`
+handler against a `miniflare`-backed `R2Bucket` (in-memory, fresh per test —
+no persistence/cleanup needed) rather than a hand-rolled mock, so R2 `put`/
+`get`/`list` behaviour is real. `globalThis.fetch` (the GitHub API call)
+remains mocked — tests never create real GitHub issues or comments.
+
 See **`docs/classic-sudoku.md`** for the classic sudoku recognition feature design
 (puzzle type detection, center digit reading, locked given digits, cage-structure
 suppression in the UI).
@@ -298,7 +305,7 @@ Four tiers applied consistently across all production code:
 
 **Prohibited:** Bare `catch {}` or `catch (e) { /* comment */ }` with no log and no rethrow. Every catch must contain at least one of: a log call, a rethrow, or a `setStatus` call.
 
-**Bug reporting:** `reportBug(e, context)` (in `main.ts`) stores the exception for the next feedback modal open. When the user submits feedback via the Feedback button, the exception string is included in the worker payload and appears in the generated GitHub issue.
+**Bug reporting:** `reportBug(e, context)` (in `main.ts`) stores the exception for the next feedback modal open. When the user submits feedback via the Feedback button, `handleFeedbackSubmit` reads the form fields and calls `buildFeedbackPayload()` (`session/feedbackSubmit.ts`) to construct a `FeedbackReport` — including `reportType: 'feedback'`, the exception string (if any), and (for `new-rule` suggestions with an active fixture) `fixtureName`/`unsolvedCells`/`totalCandidates`. `submitFeedback()` POSTs the payload to the training worker, which opens a GitHub issue via `FeedbackReport.githubAction()`.
 
 **Assertion violations:** `checkSolutionAssertions()` (in `session/actions.ts`) validates the `goldenSolution` after every confirm. If the solution is incomplete or fails `validateSudokuSolution()`, an `AssertionViolation` is raised and shown in the assertion modal. The modal's "Submit bug report" button pre-fills `exceptionForSubmission` with the violation details and programmatically opens the feedback modal — no GitHub login required.
 
