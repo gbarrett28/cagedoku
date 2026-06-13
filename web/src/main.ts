@@ -9,6 +9,7 @@
 import { loadCV, loadRec, loadSplitRec, setCandidatesCache, setState, getStateCandidates, setStateCandidates } from './session/store.js';
 import { logAction, clearActionLog, formatActionLog, getActionLog } from './session/actionLog.js';
 import { loadSettings } from './session/settings.js';
+import { buildFeedbackPayload, submitFeedback } from './session/feedbackSubmit.js';
 import { cellLabel } from './engine/rules/_labels.js';
 import { extractTrainingData } from './image/trainingExport.js';
 import type { TrainingExport } from './image/trainingExport.js';
@@ -1596,7 +1597,6 @@ async function submitVirtualCage(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function handleFeedbackSubmit(): Promise<void> {
-  const workerUrl = import.meta.env['VITE_TRAINING_WORKER_URL'] as string | undefined;
   const description = el<HTMLTextAreaElement>('feedback-description').value.trim();
   if (!description) {
     el<HTMLElement>('feedback-status').textContent = 'Please enter a description.';
@@ -1626,26 +1626,20 @@ async function handleFeedbackSubmit(): Promise<void> {
   // the fixture reference so it lands in the GitHub issue body.
   const fixtureCtx = isNewRule ? activeFixtureContext() : null;
 
-  const payload = {
-    version: 3 as const,
-    reportedAt: new Date().toISOString(),
-    appVersion: __BUILD_TIME__,
+  const payload = buildFeedbackPayload({
     feedbackType,
-    bugCategory,
     description,
-    expected,
     actionLog: formatActionLog(),
     puzzleSpec,
-    userAgent: navigator.userAgent,
     viewport: `${window.innerWidth}×${window.innerHeight}`,
     config: { alwaysApplyRules: settings.alwaysApplyRules, autoPlacementDelay: settings.autoPlacementDelay },
-    exception: exceptionForSubmission ?? undefined,
-    ...(fixtureCtx !== null && {
-      fixtureName: fixtureCtx.name,
-      unsolvedCells: fixtureCtx.unsolvedCells,
-      totalCandidates: fixtureCtx.totalCandidates,
-    }),
-  };
+    appVersion: __BUILD_TIME__,
+    userAgent: navigator.userAgent,
+    ...(bugCategory !== undefined && { bugCategory }),
+    ...(expected !== undefined && { expected }),
+    ...(exceptionForSubmission !== null && { exception: exceptionForSubmission }),
+    ...(fixtureCtx !== null && { fixtureContext: fixtureCtx }),
+  });
 
   const statusEl = el<HTMLElement>('feedback-status');
   const submitBtn = el<HTMLButtonElement>('feedback-submit-btn');
@@ -1653,35 +1647,26 @@ async function handleFeedbackSubmit(): Promise<void> {
   statusEl.textContent = 'Sending…';
   statusEl.className = 'status';
 
-  if (!workerUrl) {
-    // Dev fallback: log to console
-    console.log('[Feedback]', payload);
-    statusEl.textContent = 'Feedback logged to console (no worker URL configured).';
-    submitBtn.disabled = false;
-    return;
-  }
-
-  try {
-    const res = await fetch(workerUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
+  const result = await submitFeedback(payload);
+  switch (result.kind) {
+    case 'logged':
+      statusEl.textContent = 'Feedback logged to console (no worker URL configured).';
+      break;
+    case 'success':
       exceptionForSubmission = null;
       statusEl.textContent = 'Thank you — feedback submitted.';
       setTimeout(() => { el<HTMLDialogElement>('feedback-modal').close(); }, 1500);
-    } else {
-      const text = await res.text();
-      statusEl.textContent = `Submission failed (${res.status}): ${text}`;
+      break;
+    case 'http-error':
+      statusEl.textContent = `Submission failed (${result.status}): ${result.body}`;
       statusEl.className = 'status error';
-    }
-  } catch (e) {
-    statusEl.textContent = `Submission failed: ${String(e)}`;
-    statusEl.className = 'status error';
-  } finally {
-    submitBtn.disabled = false;
+      break;
+    case 'network-error':
+      statusEl.textContent = `Submission failed: ${result.message}`;
+      statusEl.className = 'status error';
+      break;
   }
+  submitBtn.disabled = false;
 }
 
 // ---------------------------------------------------------------------------
