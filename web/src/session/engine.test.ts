@@ -47,6 +47,11 @@ function makeState(): KillerPuzzleState {
   };
 }
 
+/** A KillerPuzzleState with a hand-crafted cage layout, for cageBoundaries/cageLabels tests. */
+function makeCageLayoutState(regions: number[][], cageTotals: number[][]): KillerPuzzleState {
+  return { ...makeState(), specData: { regions, cageTotals } };
+}
+
 function makeTurn(action: UserAction): Turn {
   return {
     action,
@@ -891,6 +896,63 @@ describe('PuzzleState.candidateDisplay', () => {
     for (const row of display) for (const cell of row) {
       for (const cand of cell.candidates) expect(cand.colour).not.toBe('essential');
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PuzzleState.cageBoundaries
+// ---------------------------------------------------------------------------
+
+describe('PuzzleState.cageBoundaries', () => {
+  it('classic puzzle returns empty array', () => {
+    const givenDigits = makeClassicGivenDigits();
+    const state = PuzzleState.createClassic(givenDigits, [], null);
+    expect(PuzzleState.cageBoundaries(state)).toEqual([]);
+  });
+
+  it('killer puzzle: emits bottom/right segments at region boundaries', () => {
+    const regions = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    regions[0]![1] = 1; // cell (0,1) is region 1; all other cells are region 0
+    const cageTotals = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    const state = makeCageLayoutState(regions, cageTotals);
+    const segments = PuzzleState.cageBoundaries(state);
+
+    // (0,0)|(0,1) differ -> right edge at (0,0)
+    expect(segments).toContainEqual({ row: 0, col: 0, edge: 'right' });
+    // (0,1)|(1,1) differ (1 vs 0) -> bottom edge at (0,1)
+    expect(segments).toContainEqual({ row: 0, col: 1, edge: 'bottom' });
+    // (0,1)|(0,2) differ (1 vs 0) -> right edge at (0,1)
+    expect(segments).toContainEqual({ row: 0, col: 1, edge: 'right' });
+    // (1,0)|(1,1) are both region 0 -> no right edge at (1,0)
+    expect(segments).not.toContainEqual({ row: 1, col: 0, edge: 'right' });
+    // Exactly the three boundary edges of the single region-1 cell
+    // (right of (0,0); bottom and right of (0,1) itself).
+    expect(segments).toHaveLength(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PuzzleState.cageLabels
+// ---------------------------------------------------------------------------
+
+describe('PuzzleState.cageLabels', () => {
+  it('classic puzzle returns empty array', () => {
+    const givenDigits = makeClassicGivenDigits();
+    const state = PuzzleState.createClassic(givenDigits, [], null);
+    expect(PuzzleState.cageLabels(state)).toEqual([]);
+  });
+
+  it('killer puzzle: emits a label for each non-zero cageTotals cell, in row-major order', () => {
+    const regions = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    const cageTotals = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    cageTotals[0]![0] = 17;
+    cageTotals[2]![3] = 9;
+    const state = makeCageLayoutState(regions, cageTotals);
+
+    expect(PuzzleState.cageLabels(state)).toEqual([
+      { row: 0, col: 0, total: 17 },
+      { row: 2, col: 3, total: 9 },
+    ]);
   });
 });
 

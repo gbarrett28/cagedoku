@@ -540,6 +540,39 @@ for `drawDigits` (always called) and uses the fully-solved `currentBoard` (via
 `computeBoard(state)`, set in `fetchCandidates`) for `drawCandidates` (called only
 when `showCandidates` is on).
 
+### `PuzzleState.cageBoundaries(state)` / `PuzzleState.cageLabels(state)`
+
+Two more pure `PuzzleState` functions consolidating killer-cage geometry,
+previously computed inline (with `isKiller`/`specData` checks) in `main.ts`'s
+`drawCageBorders`/`drawCageTotals`. Both return `[]` for classic puzzles.
+
+```typescript
+export interface BorderSegment {
+  readonly row: number;    // 0-8
+  readonly col: number;    // 0-8
+  readonly edge: 'bottom' | 'right'; // boundary on this cell's bottom or right edge
+}
+
+export interface CageLabelRender {
+  readonly row: number;  // 0-8, head cell of the cage
+  readonly col: number;  // 0-8
+  readonly total: number;
+}
+```
+
+- `cageBoundaries` compares `state.specData.regions[r][c]` against its bottom
+  and right neighbours; a mismatch emits a `BorderSegment` for that edge.
+- `cageLabels` emits one entry per non-zero `state.specData.cageTotals[r][c]`.
+- `main.ts`'s `drawCageBorders`/`drawCageTotals` iterate these and draw; no
+  `isKiller`/`specData` access remains in either drawing function (the empty
+  array for classic makes the loop body a no-op).
+
+`cageDisplay`/`virtualCageDisplay` from the original redesign spec are
+satisfied by `candidatesFromBoard`'s existing `cages`/`virtualCages` output
+(`session/actions.ts`), which already returns the same shape (label, cells,
+total, solutions, allSolutions, autoImpossible, userEliminated, mustContain) —
+no separate `PuzzleState` methods were added for these.
+
 ---
 
 ## Animation Player

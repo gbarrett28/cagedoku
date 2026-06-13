@@ -61,10 +61,17 @@ met without this; revisit only if a concrete need arises.
   (`web/src/session/types.ts`). `main.ts`'s `drawDigits`/`drawCandidates` consume it;
   no puzzle-type or duplicate/essential logic remains in `main.ts` for cell
   rendering. See "`PuzzleState.candidateDisplay`" in `docs/architecture.md`.
+- **§6 `cageBoundaries`/`cageLabels`** — `PuzzleState.cageBoundaries(state)` and
+  `PuzzleState.cageLabels(state)`, plus the `BorderSegment`/`CageLabelRender`
+  types, are shipped (`web/src/session/types.ts`). `main.ts`'s
+  `drawCageBorders`/`drawCageTotals` consume them; no `isKiller`/`specData`
+  access remains in either function. `cageDisplay`/`virtualCageDisplay` are
+  satisfied by `candidatesFromBoard`'s existing `cages`/`virtualCages` output
+  (`session/actions.ts`) — no separate methods added. See
+  "`PuzzleState.cageBoundaries(state)` / `PuzzleState.cageLabels(state)`" in
+  `docs/architecture.md`.
 
 **Remaining work (this document):**
-- §6 Display methods (`cageBoundaries`, `cageLabels`, `cageDisplay`,
-  `virtualCageDisplay`) extraction — `candidateDisplay` shipped, see above
 - §7 Serialization
 - §8 Out of scope (unchanged)
 

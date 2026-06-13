@@ -327,6 +327,20 @@ export interface CellRender {
   readonly candidates: readonly CandidateRender[];
 }
 
+/** A single edge of the grid where a cage boundary should be drawn. */
+export interface BorderSegment {
+  readonly row: number;    // 0-8
+  readonly col: number;    // 0-8
+  readonly edge: 'bottom' | 'right'; // boundary on this cell's bottom or right edge
+}
+
+/** A cage-total label anchored at a cage's head cell. */
+export interface CageLabelRender {
+  readonly row: number;  // 0-8, head cell of the cage
+  readonly col: number;  // 0-8
+  readonly total: number;
+}
+
 export namespace PuzzleState {
   /** Type guard: true for KillerPuzzleState (has cage data). */
   export function isKiller(state: PuzzleState): state is KillerPuzzleState {
@@ -393,6 +407,44 @@ export namespace PuzzleState {
         return { placed: null, candidates };
       }),
     );
+  }
+
+  /**
+   * Cage-boundary edges for drawing killer cage outlines. Empty for classic
+   * (no `specData`). Ported from main.ts's drawCageBorders non-draft branch.
+   */
+  export function cageBoundaries(state: PuzzleState): readonly BorderSegment[] {
+    if (!isKiller(state)) return [];
+    const regions = state.specData.regions;
+    const segments: BorderSegment[] = [];
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        if (r < 8 && regions[r]![c] !== regions[r + 1]![c]) {
+          segments.push({ row: r, col: c, edge: 'bottom' });
+        }
+        if (c < 8 && regions[r]![c] !== regions[r]![c + 1]) {
+          segments.push({ row: r, col: c, edge: 'right' });
+        }
+      }
+    }
+    return segments;
+  }
+
+  /**
+   * Cage-total labels anchored at each cage's head cell. Empty for classic
+   * (no `specData`). Ported from main.ts's drawCageTotals.
+   */
+  export function cageLabels(state: PuzzleState): readonly CageLabelRender[] {
+    if (!isKiller(state)) return [];
+    const totals = state.specData.cageTotals;
+    const labels: CageLabelRender[] = [];
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        const total = totals[r]?.[c] ?? 0;
+        if (total !== 0) labels.push({ row: r, col: c, total });
+      }
+    }
+    return labels;
   }
 
   /** Builds a fresh classic PuzzleState for the OCR review phase (blank grid, no golden solution). */
