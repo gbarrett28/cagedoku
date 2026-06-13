@@ -9,6 +9,9 @@ import type { Cell } from '../engine/types.js';
 import type { BoardState } from '../engine/boardState.js';
 import type { DiffSolution } from '../solver/equation.js';
 import type { RuleMutation, EliminateCandidateMutation, RuleStep } from './ruleMutation.js';
+import { defaultRules } from '../engine/rules/index.js';
+import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
+import type { SolverRule } from '../engine/rule.js';
 export type { DiffSolution };
 
 // ---------------------------------------------------------------------------
@@ -297,10 +300,33 @@ export interface KillerPuzzleState extends PuzzleState {
   readonly fixtureStalledCandidates?: readonly number[][][] | null;
 }
 
+/** UI commands whose availability depends on puzzle state. */
+export type Command = 'undo' | 'inspectCage' | 'virtualCage' | 'reveal';
+
 export namespace PuzzleState {
   /** Type guard: true for KillerPuzzleState (has cage data). */
   export function isKiller(state: PuzzleState): state is KillerPuzzleState {
     return 'specData' in state;
+  }
+
+  /** Enabled rules for this puzzle's type: killer yields all; classic excludes `killerOnly`. */
+  export function* rules(state: PuzzleState): Iterable<SolverRule> {
+    const disabled = new Set(DISABLED_RULES);
+    const allRules = defaultRules().filter(r => !disabled.has(r.name));
+    yield* isKiller(state) ? allRules : allRules.filter(r => !r.killerOnly);
+  }
+
+  /** Commands available to the UI given the current state. */
+  export function availableCommands(state: PuzzleState): ReadonlySet<Command> {
+    const commands = new Set<Command>();
+    const { turns } = state;
+    if (turns.length > 0) {
+      const last = turns[turns.length - 1]!.action;
+      if (!(last.type === 'placeDigit' && last.source === 'given')) commands.add('undo');
+    }
+    if (isKiller(state)) { commands.add('inspectCage'); commands.add('virtualCage'); }
+    if (state.goldenSolution !== null) commands.add('reveal');
+    return commands;
   }
 
   /** Builds a fresh classic PuzzleState for the OCR review phase (blank grid, no golden solution). */

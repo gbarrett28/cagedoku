@@ -160,6 +160,77 @@ describe('PuzzleState.isKiller', () => {
 });
 
 // ---------------------------------------------------------------------------
+// PuzzleState.rules
+// ---------------------------------------------------------------------------
+
+describe('PuzzleState.rules', () => {
+  it('killer state yields killerOnly rules', () => {
+    const rules = [...PuzzleState.rules(makeState())];
+    expect(rules.some(r => r.killerOnly)).toBe(true);
+  });
+
+  it('classic state excludes killerOnly rules', () => {
+    const classic = PuzzleState.createClassic(null, [], null);
+    const rules = [...PuzzleState.rules(classic)];
+    expect(rules.some(r => r.killerOnly)).toBe(false);
+    expect(rules.length).toBeGreaterThan(0);
+  });
+
+  it('excludes rules in DISABLED_RULES', () => {
+    const rules = [...PuzzleState.rules(makeState())];
+    const disabled = new Set(DISABLED_RULES);
+    expect(rules.some(r => disabled.has(r.name))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PuzzleState.availableCommands
+// ---------------------------------------------------------------------------
+
+describe('PuzzleState.availableCommands', () => {
+  it('excludes undo when there are no turns', () => {
+    const commands = PuzzleState.availableCommands(makeState());
+    expect(commands.has('undo')).toBe(false);
+  });
+
+  it('includes undo after a user placement', () => {
+    const turns = [makeTurn({ type: 'placeDigit', row: 0, col: 0, digit: 5, source: 'user' })];
+    const commands = PuzzleState.availableCommands({ ...makeState(), turns });
+    expect(commands.has('undo')).toBe(true);
+  });
+
+  it('excludes undo when the last turn is a given placement', () => {
+    const turns = [makeTurn({ type: 'placeDigit', row: 0, col: 0, digit: 5, source: 'given' })];
+    const commands = PuzzleState.availableCommands({ ...makeState(), turns });
+    expect(commands.has('undo')).toBe(false);
+  });
+
+  it('includes inspectCage and virtualCage for killer states', () => {
+    const commands = PuzzleState.availableCommands(makeState());
+    expect(commands.has('inspectCage')).toBe(true);
+    expect(commands.has('virtualCage')).toBe(true);
+  });
+
+  it('excludes inspectCage and virtualCage for classic states', () => {
+    const classic = PuzzleState.createClassic(null, [], null);
+    const commands = PuzzleState.availableCommands(classic);
+    expect(commands.has('inspectCage')).toBe(false);
+    expect(commands.has('virtualCage')).toBe(false);
+  });
+
+  it('includes reveal only when goldenSolution is set', () => {
+    const withoutSolution = PuzzleState.availableCommands(makeState());
+    expect(withoutSolution.has('reveal')).toBe(false);
+
+    const withSolution = PuzzleState.availableCommands({
+      ...makeState(),
+      goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
+    });
+    expect(withSolution.has('reveal')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // buildEngine
 // ---------------------------------------------------------------------------
 
