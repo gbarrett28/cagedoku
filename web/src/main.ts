@@ -23,6 +23,7 @@ import {
   loadClassicDirect,
   confirmPuzzle,
   computeCandidates,
+  computeBoard,
   enterCell,
   enterCellStep,
   getAutoPlacementDelay,
@@ -49,8 +50,11 @@ import type {
   CandidatesResponse,
   DiffSolution,
   HintItem,
+  RenderColour,
   SolutionCategorization,
 } from './session/types.js';
+import { buildEngine } from './session/engine.js';
+import type { BoardState } from './engine/index.js';
 import type { Cell } from './engine/types.js';
 import { GridNotFoundError } from './image/inpImage.js';
 import { UserFacingError } from './session/errors.js';
@@ -104,6 +108,7 @@ const GRID_PX = MARGIN * 2 + 9 * CELL;
 
 let currentState: PuzzleState | null = null;
 let currentCandidates: CandidatesResponse | null = null;
+let currentBoard: BoardState | null = null;
 let selectedCell: { row: number; col: number } | null = null;  // 1-based
 let showCandidates = false;
 let showEssential = true;
@@ -359,76 +364,56 @@ function drawCageTotals(ctx: CanvasRenderingContext2D, state: PuzzleState): void
   }
 }
 
-function drawDigits(ctx: CanvasRenderingContext2D, state: PuzzleState): void {
-  const digitGrid: number[][] =
-    state.goldenSolution !== null ? state.userGrid : (state.givenDigits ?? state.userGrid);
+function colourToCss(c: RenderColour): string {
+  switch (c) {
+    case 'black': return '#000';
+    case 'blue': return '#2563eb';
+    case 'red': return '#dc2626';
+    default: return '#000';
+  }
+}
 
-  const duplicateCells = findDuplicateCells(digitGrid);
-  if (duplicateCells.size > 0) {
-    ctx.fillStyle = 'rgba(220, 38, 38, 0.15)';
-    for (const key of duplicateCells) {
-      const parts = key.split(',').map(Number);
-      const r = parts[0]!, c = parts[1]!;
-      ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
+function drawDigits(ctx: CanvasRenderingContext2D, state: PuzzleState, board: BoardState): void {
+  const display = PuzzleState.candidateDisplay(state, board);
+
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      if (display[r]![c]!.placed?.colour === 'red') {
+        ctx.fillStyle = 'rgba(220, 38, 38, 0.15)';
+        ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
+      }
     }
   }
 
-  const givenCells = new Set<string>();
-  if (!PuzzleState.isKiller(state) && state.goldenSolution !== null && state.givenDigits !== null) {
-    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
-      if ((state.givenDigits[r]?.[c] ?? 0) > 0) givenCells.add(`${r},${c}`);
-    }
-  }
   ctx.font = 'bold 28px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
-      const digit = digitGrid[r]?.[c] ?? 0;
-      if (digit > 0) {
-        const key = `${r},${c}`;
-        ctx.fillStyle = duplicateCells.has(key) ? '#dc2626'
-          : (state.goldenSolution !== null && !givenCells.has(key)) ? '#2563eb'
-          : '#000';
-        ctx.fillText(String(digit), MARGIN + c * CELL + CELL / 2, MARGIN + r * CELL + CELL / 2);
-      }
+      const { placed } = display[r]![c]!;
+      if (placed === null) continue;
+      ctx.fillStyle = colourToCss(placed.colour);
+      ctx.fillText(String(placed.digit), MARGIN + c * CELL + CELL / 2, MARGIN + r * CELL + CELL / 2);
     }
   }
 }
 
 function drawCandidates(
   ctx: CanvasRenderingContext2D,
-  userGrid: number[][],
-  candidatesData: CandidatesResponse,
+  state: PuzzleState,
+  board: BoardState,
   showEss: boolean,
 ): void {
-  const mustContainByCell = new Map<string, Set<number>>();
-  for (const cage of candidatesData.cages) {
-    const mc = new Set(cage.mustContain);
-    for (const [r, c] of cage.cells) mustContainByCell.set(`${r},${c}`, mc);
-  }
+  const display = PuzzleState.candidateDisplay(state, board);
   const CAND_TOP = 13;
   const SUB_W = CELL / 3; const SUB_H = (CELL - CAND_TOP) / 3;
   ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
-      if ((userGrid[r]?.[c] ?? 0) !== 0) continue;
-      const cell = candidatesData.cells[r]?.[c];
-      if (cell === undefined) continue;
-      const candSet = new Set(cell.candidates);
-      const removedSet = new Set(cell.userRemoved);
-      const essSet = mustContainByCell.get(`${r},${c}`) ?? new Set<number>();
-      for (let n = 1; n <= 9; n++) {
-        const subRow = Math.floor((n - 1) / 3); const subCol = (n - 1) % 3;
+      for (const cand of display[r]![c]!.candidates) {
+        const subRow = Math.floor((cand.digit - 1) / 3); const subCol = (cand.digit - 1) % 3;
         const cx = MARGIN + c * CELL + (subCol + 0.5) * SUB_W;
         const cy = MARGIN + r * CELL + CAND_TOP + (subRow + 0.5) * SUB_H;
-        if (removedSet.has(n)) {
-          ctx.fillStyle = '#d1d5db'; ctx.fillText(String(n), cx, cy);
-          const hw = SUB_W * 0.35;
-          ctx.strokeStyle = '#6b7280'; ctx.lineWidth = 1;
-          ctx.beginPath(); ctx.moveTo(cx - hw, cy); ctx.lineTo(cx + hw, cy); ctx.stroke();
-        } else if (candSet.has(n)) {
-          ctx.fillStyle = (essSet.has(n) && showEss) ? '#cc5a45' : '#888';
-          ctx.fillText(String(n), cx, cy);
-        }
+        ctx.fillStyle = (cand.colour === 'essential' && showEss) ? '#cc5a45' : '#888';
+        ctx.fillText(String(cand.digit), cx, cy);
       }
     }
   }
@@ -522,9 +507,10 @@ function drawGrid(
   if (PuzzleState.isKiller(state)) drawCageBorders(ctx, state, draft);
   drawGridLines(ctx);
   if (PuzzleState.isKiller(state)) drawCageTotals(ctx, state);
-  drawDigits(ctx, state);
-  if (showCands && candidatesData !== null && state.goldenSolution !== null) {
-    drawCandidates(ctx, state.userGrid, candidatesData, showEss);
+  const cheapBoard = buildEngine(state, { skipSolve: true }).board;
+  drawDigits(ctx, state, cheapBoard);
+  if (showCands && currentBoard !== null && candidatesData !== null && state.goldenSolution !== null) {
+    drawCandidates(ctx, state, currentBoard, showEss);
     drawHintDigitMarkers(ctx, state.userGrid, candidatesData);
   }
 }
@@ -609,6 +595,7 @@ async function fetchCandidates(): Promise<void> {
   try {
     const data = computeCandidates();
     currentCandidates = data;
+    currentBoard = computeBoard(currentState);
     setCandidatesCache(data);
     redrawGrid();
     renderVirtualCagePanel();
@@ -2133,7 +2120,7 @@ document.addEventListener('DOMContentLoaded', () => {
     logAction('new_puzzle');
     clearActionLog();
     clearPersistedSession();
-    currentState = null; currentCandidates = null; selectedCell = null;
+    currentState = null; currentCandidates = null; currentBoard = null; selectedCell = null;
     showCandidates = false; candidateEditMode = false;
     virtualCageMode = false; virtualCageSelection = new Set(); virtualCageNegCells = new Set();
     hintHighlightCells = new Set(); hintElimCells = new Set(); hintColourGroups = []; activeHintItem = null;
