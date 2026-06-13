@@ -51,9 +51,15 @@ met without this; revisit only if a concrete need arises.
   and `namespace PuzzleStateOps`" in `docs/architecture.md`. Implemented as a
   separate `namespace PuzzleStateOps` in `engine.ts` rather than merged into
   `namespace PuzzleState` (`types.ts`) — see that section for why.
+- **§6 `rules()` iterator and `availableCommands`** — `PuzzleState.rules()` and the new
+  `Command` type / `PuzzleState.availableCommands()` (`web/src/session/types.ts`) are
+  shipped. `buildEngine` consumes `rules()`; `main.ts`'s `updateUndoButton`,
+  `renderPlayingMode`, and `updateRevealButton` consume `availableCommands()`. See
+  "`PuzzleState.rules()` and `Command` / `availableCommands`" in `docs/architecture.md`.
 
 **Remaining work (this document):**
-- §6 Display methods, `availableCommands`, and `rules()` iterator extraction
+- §6 Display methods (`candidateDisplay`, `cageBoundaries`, `cageLabels`, `cageDisplay`,
+  `virtualCageDisplay`) extraction
 - §7 Serialization
 - §8 Out of scope (unchanged)
 

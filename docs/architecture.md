@@ -79,8 +79,9 @@ deliberate exception):
   `KillerPuzzleState`), consulted once by `buildEngine` to decide which entire
   matching bundle to construct together:
   `KillerBoardState` + `KillerSolverEngine` + the full rule list, or `BoardState` +
-  `SolverEngine` + `defaultRules().filter(r => !r.killerOnly)`. No other call site
-  re-derives "is this killer" from `state` or from `board`.
+  `SolverEngine` + `PuzzleState.rules(state)` (which excludes `killerOnly` rules for
+  classic puzzles — see "`PuzzleState.rules()` and `Command` / `availableCommands`"
+  below). No other call site re-derives "is this killer" from `state` or from `board`.
 
 **`KillerOnlyRule`** (`web/src/engine/rule.ts`) is the one place a runtime
 `instanceof KillerBoardState` narrow exists for rules — see Rule Contract below.
@@ -484,6 +485,21 @@ but are available for future callers that need to render without a follow-up
 `buildEngine` call. `enterCellStep` and `rewind` are unchanged — `enterCellStep`
 still calls `recordTurn` directly because it needs `baseState` for
 `AnimationPlayer`, which `SessionResult` doesn't carry.
+
+### `PuzzleState.rules()` and `Command` / `availableCommands`
+
+`namespace PuzzleState` (`session/types.ts`) provides two additional members:
+
+- `rules(state): Iterable<SolverRule>` — yields the enabled rule set for `state`'s puzzle
+  type (killer yields all non-`DISABLED_RULES` rules; classic additionally excludes
+  `killerOnly` rules). `buildEngine` consumes this directly: `const rules = [...PuzzleState.rules(state)]`.
+- `Command = 'undo' | 'inspectCage' | 'virtualCage' | 'reveal'` and
+  `availableCommands(state): ReadonlySet<Command>` — centralizes the UI-gating conditions
+  for these four commands (turn history / `source: 'given'` for undo, `isKiller` for the
+  cage commands, `goldenSolution !== null` for reveal). `main.ts`'s `updateUndoButton`,
+  `renderPlayingMode`, and `updateRevealButton` consume this instead of repeating the
+  underlying state checks. UI-local concerns (e.g. `selectedCell` for the reveal button)
+  remain in `main.ts`.
 
 ---
 
