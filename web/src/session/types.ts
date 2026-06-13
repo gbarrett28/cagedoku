@@ -303,6 +303,28 @@ export interface KillerPuzzleState extends PuzzleState {
 /** UI commands whose availability depends on puzzle state. */
 export type Command = 'undo' | 'inspectCage' | 'virtualCage' | 'reveal';
 
+/** Visual colour category for a rendered digit or candidate. */
+export type RenderColour = 'black' | 'blue' | 'red' | 'grey' | 'essential';
+
+export interface CandidateRender {
+  /** 1-9 */
+  readonly digit: number;
+  /** 'essential' if this digit is in the must-contain set for its cage, else 'grey'. */
+  readonly colour: RenderColour;
+}
+
+export interface CellRender {
+  /** Non-null if this cell has a placed digit (given or user-entered). */
+  readonly placed: { readonly digit: number; readonly colour: RenderColour; readonly locked: boolean } | null;
+  /**
+   * Empty if `placed !== null`. One entry per digit 1-9 that is a live
+   * candidate (board.cands has it, not user-removed). Solver-eliminated and
+   * user-removed digits are both omitted — a removed candidate renders blank,
+   * same as a solver-eliminated one.
+   */
+  readonly candidates: readonly CandidateRender[];
+}
+
 export namespace PuzzleState {
   /** Type guard: true for KillerPuzzleState (has cage data). */
   export function isKiller(state: PuzzleState): state is KillerPuzzleState {
