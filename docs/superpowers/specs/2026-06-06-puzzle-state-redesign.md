@@ -44,8 +44,16 @@ tracking the active/selected candidate — `getStateCandidates()` is queried dir
 where the full list is needed). The functional goal of dual-candidate OCR review is
 met without this; revisit only if a concrete need arises.
 
+- **§6 Operations** — `SessionResult` type and `namespace PuzzleStateOps`
+  (`web/src/session/engine.ts`) provide the 9 `SessionResult`-returning operations;
+  `session/actions.ts` wrappers (`enterCell`, `cycleCandidate`, `addVirtualCage`,
+  `applyHint`, `undo`, `removeVirtualCage`) delegate to them. See "`SessionResult`
+  and `namespace PuzzleStateOps`" in `docs/architecture.md`. Implemented as a
+  separate `namespace PuzzleStateOps` in `engine.ts` rather than merged into
+  `namespace PuzzleState` (`types.ts`) — see that section for why.
+
 **Remaining work (this document):**
-- §6 `namespace PuzzleState` public API
+- §6 Display methods, `availableCommands`, and `rules()` iterator extraction
 - §7 Serialization
 - §8 Out of scope (unchanged)
 
@@ -100,7 +108,9 @@ namespace PuzzleState {
 }
 ```
 
-Each operation handles `UserAction.apply + buildEngine + recordTurn` internally. The UI constructs no `UserAction` objects. **Not yet shipped** — `actions.ts` still exposes separate functions rather than this unified namespace; this is part of the §5 execution-path migration.
+Each operation handles `UserAction.apply + buildEngine + recordTurn` internally. The UI constructs no `UserAction` objects.
+
+> **Status:** shipped as `namespace PuzzleStateOps` (`web/src/session/engine.ts`) — a separate namespace from `namespace PuzzleState` (`types.ts`), since TS only merges a `namespace` with a same-named `interface`/`class` declared in the *same file*. `session/actions.ts` exposes thin wrappers over each method (signatures unchanged from before). See "`SessionResult` and `namespace PuzzleStateOps`" in `docs/architecture.md`.
 
 ### Rules iterator (used by `buildEngine` internally)
 

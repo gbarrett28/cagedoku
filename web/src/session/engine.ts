@@ -32,7 +32,8 @@ import { findTriggerMisses } from '../engine/triggerValidator.js';
 import { RuleMutation } from './ruleMutation.js';
 import type { RuleStep } from './ruleMutation.js';
 import { UserAction, PuzzleState } from './types.js';
-import type { AutoMutation, BoardSnapshot, Turn, VirtualCage } from './types.js';
+import type { AutoMutation, BoardSnapshot, KillerPuzzleState, SessionResult, Turn, VirtualCage } from './types.js';
+import { UserFacingError } from './errors.js';
 
 // ---------------------------------------------------------------------------
 // Background trigger-miss validation
@@ -484,10 +485,10 @@ function buildRuleSteps(
  * produces an empty ruleSteps list (the deductions are now reflected in
  * userGrid/userRemovedCandidates, so preCands no longer contains them).
  */
-export function applyRuleSteps(state: PuzzleState): { state: PuzzleState; ruleSteps: readonly RuleStep[] } {
-  const { ruleSteps } = buildEngine(state, { skipValidation: true });
+export function applyRuleSteps(state: PuzzleState): { state: PuzzleState; ruleSteps: readonly RuleStep[]; board: BoardState } {
+  const { ruleSteps, board } = buildEngine(state, { skipValidation: true });
   const folded = ruleSteps.flatMap(s => s.mutations).reduce((s, m) => m.apply(s), state);
-  return { state: folded, ruleSteps };
+  return { state: folded, ruleSteps, board };
 }
 
 // ---------------------------------------------------------------------------
@@ -501,7 +502,7 @@ export function applyRuleSteps(state: PuzzleState): { state: PuzzleState; ruleSt
 export function recordTurn(
   state: PuzzleState,
   action: UserAction,
-): { state: PuzzleState; ruleSteps: readonly RuleStep[]; baseState: PuzzleState } {
+): { state: PuzzleState; ruleSteps: readonly RuleStep[]; baseState: PuzzleState; board: BoardState } {
   const baseState = UserAction.apply(action, state);
   const { ruleSteps, board, engine, validationContext } = buildEngine(baseState, { skipValidation: true }); // engine.solve() called inside buildEngine
   const folded = ruleSteps.flatMap(s => s.mutations).reduce((s, m) => m.apply(s), baseState);
@@ -512,7 +513,7 @@ export function recordTurn(
   if (validationContext !== null) {
     scheduleTriggerValidation(board, validationContext.rules, validationContext.golden, finalState, validationContext.spec);
   }
-  return { state: finalState, ruleSteps, baseState };
+  return { state: finalState, ruleSteps, baseState, board };
 }
 
 // ---------------------------------------------------------------------------
@@ -608,5 +609,74 @@ function captureSnapshot(board: BoardState): BoardSnapshot {
     Array.from({ length: 9 }, (__, c) => [...board.cands(r, c)].sort((a, b) => a - b)),
   );
   return { candidates };
+}
+
+// ---------------------------------------------------------------------------
+// PuzzleStateOps — SessionResult-returning operations
+// ---------------------------------------------------------------------------
+
+function requireConfirmed(state: PuzzleState): void {
+  if (state.goldenSolution === null) throw new Error('Session not yet confirmed');
+}
+
+export namespace PuzzleStateOps {
+  export function placeDigit(state: PuzzleState, row: number, col: number, digit: number): SessionResult {
+    requireConfirmed(state);
+    const { state: finalState, ruleSteps, board } = recordTurn(state, { type: 'placeDigit', row, col, digit, source: 'user' });
+    return { state: finalState, board, ruleSteps };
+  }
+
+  export function removeDigit(state: PuzzleState, row: number, col: number): SessionResult {
+    requireConfirmed(state);
+    const { state: finalState, ruleSteps, board } = recordTurn(state, { type: 'removeDigit', row, col });
+    return { state: finalState, board, ruleSteps };
+  }
+
+  export function eliminateCandidate(state: PuzzleState, row: number, col: number, digit: number): SessionResult {
+    requireConfirmed(state);
+    const { state: finalState, ruleSteps, board } = recordTurn(state, { type: 'eliminateCandidate', row, col, digit });
+    return { state: finalState, board, ruleSteps };
+  }
+
+  export function restoreCandidate(state: PuzzleState, row: number, col: number, digit: number): SessionResult {
+    requireConfirmed(state);
+    const { state: finalState, ruleSteps, board } = recordTurn(state, { type: 'restoreCandidate', row, col, digit });
+    return { state: finalState, board, ruleSteps };
+  }
+
+  export function resetCellCandidates(state: PuzzleState, row: number, col: number): SessionResult {
+    requireConfirmed(state);
+    const { state: finalState, ruleSteps, board } = recordTurn(state, { type: 'resetCellCandidates', row, col });
+    return { state: finalState, board, ruleSteps };
+  }
+
+  export function addVirtualCage(state: KillerPuzzleState, cage: VirtualCage): SessionResult {
+    requireConfirmed(state);
+    const { state: finalState, ruleSteps, board } = recordTurn(state, { type: 'addVirtualCage', cage });
+    return { state: finalState, board, ruleSteps };
+  }
+
+  export function removeVirtualCage(state: KillerPuzzleState, key: string): SessionResult {
+    requireConfirmed(state);
+    const { state: finalState, ruleSteps, board } = recordTurn(state, { type: 'removeVirtualCage', key });
+    return { state: finalState, board, ruleSteps };
+  }
+
+  export function applyHint(state: PuzzleState, eliminations: readonly { cell: readonly [number, number]; digit: number }[]): SessionResult {
+    requireConfirmed(state);
+    const mutations = eliminations.map(e => RuleMutation.eliminateCandidate(e.cell[0], e.cell[1], e.digit));
+    const { state: finalState, ruleSteps, board } = recordTurn(state, { type: 'applyHint', mutations });
+    return { state: finalState, board, ruleSteps };
+  }
+
+  export function undo(state: PuzzleState): SessionResult {
+    requireConfirmed(state);
+    if (state.turns.length === 0) throw new UserFacingError('Nothing to undo');
+    const last = state.turns[state.turns.length - 1]!.action;
+    if (last.type === 'placeDigit' && last.source === 'given') throw new UserFacingError('Cannot undo given digits');
+    const trimmed: PuzzleState = { ...state, turns: state.turns.slice(0, -1) };
+    const { state: folded, ruleSteps, board } = applyRuleSteps(rebuildUserGrid(trimmed));
+    return { state: folded, board, ruleSteps };
+  }
 }
 

@@ -6,8 +6,9 @@
  */
 
 import type { Cell } from '../engine/types.js';
+import type { BoardState } from '../engine/boardState.js';
 import type { DiffSolution } from '../solver/equation.js';
-import type { RuleMutation, EliminateCandidateMutation } from './ruleMutation.js';
+import type { RuleMutation, EliminateCandidateMutation, RuleStep } from './ruleMutation.js';
 export type { DiffSolution };
 
 // ---------------------------------------------------------------------------
@@ -55,6 +56,16 @@ export interface VirtualCage {
   readonly negativeCells?: readonly Cell[];
   /** DiffSolutions the user has explicitly marked as impossible (diff cages only). */
   readonly eliminatedDiffSolns?: readonly DiffSolution[];
+}
+
+/**
+ * Unified return type for PuzzleStateOps operations: the resulting state, its
+ * rendered board, and any rule steps that fired as a result of the action.
+ */
+export interface SessionResult {
+  readonly state: PuzzleState;
+  readonly board: BoardState;
+  readonly ruleSteps: readonly RuleStep[];
 }
 
 /** Builds a stable string key for a virtual cage (moved here from specUtils to avoid circular dep). */

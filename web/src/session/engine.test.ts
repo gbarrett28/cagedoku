@@ -12,11 +12,13 @@ import {
   userVirtualCages,
   applyRuleSteps,
   recordTurn,
+  rebuildUserGrid,
+  PuzzleStateOps,
 } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
 import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
-import { UserAction, PuzzleState, type KillerPuzzleState, type Turn, type VirtualCage, type EliminateCandidateAction, type RestoreCandidateAction, type ResetCellCandidatesAction, type ApplyHintAction } from './types.js';
-import { RuleMutation } from './ruleMutation.js';
+import { UserAction, PuzzleState, type KillerPuzzleState, type SessionResult, type Turn, type VirtualCage, type EliminateCandidateAction, type RestoreCandidateAction, type ResetCellCandidatesAction, type ApplyHintAction } from './types.js';
+import { RuleMutation, type RuleStep } from './ruleMutation.js';
 import type { Cell } from '../engine/types.js';
 import { BoardState, KillerBoardState } from '../engine/boardState.js';
 import { SolverEngine, KillerSolverEngine } from '../engine/solverEngine.js';
@@ -574,6 +576,141 @@ describe('recordTurn — { state, ruleSteps, baseState } contract', () => {
     const folded = ruleSteps.flatMap(s => s.mutations).reduce((s, m) => m.apply(s), baseState);
     expect(finalState.userGrid).toEqual(folded.userGrid);
     expect(finalState.userRemovedCandidates).toEqual(folded.userRemovedCandidates);
+  });
+});
+
+describe('applyRuleSteps / recordTurn — board field', () => {
+  it('applyRuleSteps returns a board alongside state and ruleSteps', () => {
+    const state = makeState();
+    const { board } = applyRuleSteps(state);
+    expect(board).toBeDefined();
+    expect(typeof board.cands).toBe('function');
+  });
+
+  it('recordTurn returns a board alongside state, ruleSteps, and baseState', () => {
+    const state = makeState();
+    const action: EliminateCandidateAction = { type: 'eliminateCandidate', row: 0, col: 0, digit: 1 };
+    const { board } = recordTurn(state, action);
+    expect(board).toBeDefined();
+    expect(typeof board.cands).toBe('function');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PuzzleStateOps
+// ---------------------------------------------------------------------------
+
+describe('PuzzleStateOps', () => {
+  function confirmedState(): KillerPuzzleState {
+    return { ...makeState(), goldenSolution: KNOWN_SOLUTION.map(row => [...row]) };
+  }
+
+  // RuleMutation objects carry a per-call `apply` closure, so two independently
+  // computed SessionResults are never reference- or toEqual-identical. Compare
+  // their serialisable data shape instead.
+  function expectMatches(result: SessionResult, expected: { state: PuzzleState; ruleSteps: readonly RuleStep[]; board: BoardState }): void {
+    expect(JSON.stringify(result.state)).toEqual(JSON.stringify(expected.state));
+    expect(JSON.stringify(result.ruleSteps)).toEqual(JSON.stringify(expected.ruleSteps));
+    expect(result.board).toBeInstanceOf(BoardState);
+  }
+
+  it('placeDigit returns a SessionResult matching recordTurn', () => {
+    const state = confirmedState();
+    const expected = recordTurn(state, { type: 'placeDigit', row: 0, col: 0, digit: 1, source: 'user' });
+    const result = PuzzleStateOps.placeDigit(state, 0, 0, 1);
+    expectMatches(result, expected);
+  });
+
+  it('placeDigit throws when the session is not confirmed', () => {
+    const state = makeState();
+    expect(() => PuzzleStateOps.placeDigit(state, 0, 0, 1)).toThrow('Session not yet confirmed');
+  });
+
+  it('removeDigit returns a SessionResult matching recordTurn', () => {
+    const state = { ...confirmedState(), userGrid: KNOWN_SOLUTION.map(row => [...row]) as number[][] };
+    const expected = recordTurn(state, { type: 'removeDigit', row: 0, col: 0 });
+    const result = PuzzleStateOps.removeDigit(state, 0, 0);
+    expectMatches(result, expected);
+  });
+
+  it('eliminateCandidate returns a SessionResult matching recordTurn', () => {
+    const state = confirmedState();
+    const gold = KNOWN_SOLUTION[0]![0]!;
+    const nonGold = gold === 1 ? 2 : 1;
+    const expected = recordTurn(state, { type: 'eliminateCandidate', row: 0, col: 0, digit: nonGold });
+    const result = PuzzleStateOps.eliminateCandidate(state, 0, 0, nonGold);
+    expectMatches(result, expected);
+  });
+
+  it('restoreCandidate returns a SessionResult matching recordTurn', () => {
+    const gold = KNOWN_SOLUTION[0]![0]!;
+    const nonGold = gold === 1 ? 2 : 1;
+    const state = { ...confirmedState(), userRemovedCandidates: [[0, 0, nonGold]] as [number, number, number][] };
+    const expected = recordTurn(state, { type: 'restoreCandidate', row: 0, col: 0, digit: nonGold });
+    const result = PuzzleStateOps.restoreCandidate(state, 0, 0, nonGold);
+    expectMatches(result, expected);
+  });
+
+  it('resetCellCandidates returns a SessionResult matching recordTurn', () => {
+    const state = confirmedState();
+    const expected = recordTurn(state, { type: 'resetCellCandidates', row: 0, col: 0 });
+    const result = PuzzleStateOps.resetCellCandidates(state, 0, 0);
+    expectMatches(result, expected);
+  });
+
+  it('addVirtualCage returns a SessionResult matching recordTurn', () => {
+    const state = confirmedState();
+    const cage: VirtualCage = { cells: [[0, 0], [0, 1]] as Cell[], total: 10, eliminatedSolns: [] };
+    const expected = recordTurn(state, { type: 'addVirtualCage', cage });
+    const result = PuzzleStateOps.addVirtualCage(state, cage);
+    expectMatches(result, expected);
+  });
+
+  it('removeVirtualCage returns a SessionResult matching recordTurn', () => {
+    const cage: VirtualCage = { cells: [[0, 0], [0, 1]] as Cell[], total: 10, eliminatedSolns: [] };
+    const withCage: KillerPuzzleState = {
+      ...confirmedState(),
+      turns: [makeTurn({ type: 'addVirtualCage', cage })],
+    };
+    const key = '0,0:0,1:10';
+    const expected = recordTurn(withCage, { type: 'removeVirtualCage', key });
+    const result = PuzzleStateOps.removeVirtualCage(withCage, key);
+    expectMatches(result, expected);
+  });
+
+  it('applyHint returns a SessionResult matching recordTurn', () => {
+    const state = confirmedState();
+    const gold = KNOWN_SOLUTION[0]![0]!;
+    const nonGold = gold === 1 ? 2 : 1;
+    const eliminations = [{ cell: [0, 0] as readonly [number, number], digit: nonGold }];
+    const mutations = eliminations.map(e => RuleMutation.eliminateCandidate(e.cell[0], e.cell[1], e.digit));
+    const expected = recordTurn(state, { type: 'applyHint', mutations });
+    const result = PuzzleStateOps.applyHint(state, eliminations);
+    expectMatches(result, expected);
+  });
+
+  it('undo returns a SessionResult matching applyRuleSteps(rebuildUserGrid(trimmed))', () => {
+    const state = confirmedState();
+    const action: EliminateCandidateAction = { type: 'eliminateCandidate', row: 0, col: 0, digit: 1 };
+    const afterTurn = recordTurn(state, action).state;
+
+    const trimmed: PuzzleState = { ...afterTurn, turns: afterTurn.turns.slice(0, -1) };
+    const expected = applyRuleSteps(rebuildUserGrid(trimmed));
+    const result = PuzzleStateOps.undo(afterTurn);
+    expectMatches(result, expected);
+  });
+
+  it('undo throws "Nothing to undo" when there are no turns', () => {
+    const state = confirmedState();
+    expect(() => PuzzleStateOps.undo(state)).toThrow('Nothing to undo');
+  });
+
+  it('undo throws "Cannot undo given digits" for a given placeDigit turn', () => {
+    const state = {
+      ...confirmedState(),
+      turns: [makeTurn({ type: 'placeDigit', row: 0, col: 0, digit: 1, source: 'given' })],
+    };
+    expect(() => PuzzleStateOps.undo(state)).toThrow('Cannot undo given digits');
   });
 });
 

@@ -416,7 +416,7 @@ history.
 folding a `buildEngine()` solve pass onto state:
 
 ```typescript
-export function applyRuleSteps(state: PuzzleState): { state: PuzzleState; ruleSteps: readonly RuleStep[] }
+export function applyRuleSteps(state: PuzzleState): { state: PuzzleState; ruleSteps: readonly RuleStep[]; board: BoardState }
 ```
 
 It runs `buildEngine(state, { skipValidation: true })` once and reduces every
@@ -425,15 +425,18 @@ eliminations, virtual cages, and cage-solution eliminations alike. Folding
 eliminations into `userRemovedCandidates` is what stops the *next* `buildEngine`
 call from re-deriving and re-presenting the same deductions as new rule steps.
 Calling `applyRuleSteps` again on its own output is a no-op (`ruleSteps` empty,
-`state` unchanged).
+`state` unchanged). The returned `board` is `buildEngine`'s board for the
+pre-fold `state` — by the no-op invariant above, this is identical to the board
+`buildEngine(folded state)` would produce, so callers get a renderable `board`
+for free.
 
 `recordTurn(state, action)` returns
-`{ state: PuzzleState; ruleSteps: readonly RuleStep[]; baseState: PuzzleState }`:
+`{ state: PuzzleState; ruleSteps: readonly RuleStep[]; baseState: PuzzleState; board: BoardState }`:
 
 1. `baseState = UserAction.apply(action, state)`.
-2. `{ state: finalState, ruleSteps } = applyRuleSteps(baseState)` plus the new
-   turn appended to `finalState.turns` — this is the only `buildEngine` call for
-   the action.
+2. `{ state: finalState, ruleSteps, board } = applyRuleSteps(baseState)` plus the
+   new turn appended to `finalState.turns` — this is the only `buildEngine` call
+   for the action.
 3. Trigger validation is scheduled against `finalState` as before.
 
 All `recordTurn`-based actions in `session/actions.ts` (`enterCell`,
@@ -444,6 +447,43 @@ auto-placement pass is layered on afterwards. History-rewrite actions (`undo`,
 (the animated entry point used by `main.ts`) returns the full
 `{ state, ruleSteps, baseState }` so the UI can drive an `AnimationPlayer` while
 `state` is already the final, committed result.
+
+### `SessionResult` and `namespace PuzzleStateOps`
+
+`SessionResult` (`web/src/session/types.ts`) is the unified return type for
+user-facing puzzle operations:
+
+```typescript
+export interface SessionResult {
+  readonly state: PuzzleState;
+  readonly board: BoardState;
+  readonly ruleSteps: readonly RuleStep[];
+}
+```
+
+`namespace PuzzleStateOps` (`web/src/session/engine.ts`, a separate namespace from
+`namespace PuzzleState` in `types.ts` — TS only merges a `namespace` with a
+same-named `interface`/`class` in the *same file*, and the two live in different
+files for dependency-cycle reasons) provides one `SessionResult`-returning method
+per user action: `placeDigit`, `removeDigit`, `eliminateCandidate`,
+`restoreCandidate`, `resetCellCandidates`, `addVirtualCage`, `removeVirtualCage`,
+`applyHint`, `undo`. Each calls a private `requireConfirmed(state)` guard (throws
+`Error('Session not yet confirmed')` if `state.goldenSolution === null`), then
+delegates to `recordTurn`/`applyRuleSteps` and repackages the result as a
+`SessionResult`. `undo` additionally throws `UserFacingError('Nothing to undo')` if
+`state.turns` is empty, and `UserFacingError('Cannot undo given digits')` if the
+last turn is a given-digit `placeDigit`.
+
+`session/actions.ts` wraps each `PuzzleStateOps` method in a thin function
+(`enterCell`, `cycleCandidate`, `addVirtualCage`, `applyHint`, `undo`,
+`removeVirtualCage`) that resolves the current `PuzzleState` via
+`requireConfirmed()`, calls the corresponding `PuzzleStateOps` method, calls
+`setState(result.state)`, and returns `result.state` — the `board` and
+`ruleSteps` fields of the `SessionResult` are currently unused by these wrappers
+but are available for future callers that need to render without a follow-up
+`buildEngine` call. `enterCellStep` and `rewind` are unchanged — `enterCellStep`
+still calls `recordTurn` directly because it needs `baseState` for
+`AnimationPlayer`, which `SessionResult` doesn't carry.
 
 ---
 

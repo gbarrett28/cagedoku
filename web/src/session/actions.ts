@@ -16,7 +16,6 @@ import { defaultRules } from '../engine/rules/index.js';
 import { cageSumRange, cellKey, keyToCell } from '../engine/types.js';
 import type { Cell } from '../engine/types.js';
 import { parsePuzzleImage, ImageDecodeError, GridNotFoundError } from '../image/inpImage.js';
-import { UserFacingError } from './errors.js';
 import { AssertionViolation, validateSudokuSolution } from './assertions.js';
 import { formatActionLog } from './actionLog.js';
 
@@ -32,6 +31,7 @@ import {
   userRemoved,
   userVirtualCages,
   findLastConsistentTurnIdx,
+  PuzzleStateOps,
 } from './engine.js';
 import { loadSettings, saveSettings } from './settings.js';
 import {
@@ -51,6 +51,7 @@ import type {
   HintsResponse,
   KillerPuzzleState,
   RuleInfo,
+  SessionResult,
   SettingsResponse,
   SolveResponse,
   Turn,
@@ -58,7 +59,6 @@ import type {
   VirtualCage,
   VirtualCageSuggestion,
 } from './types.js';
-import { RuleMutation } from './ruleMutation.js';
 import type { EliminateCandidateMutation, RuleStep } from './ruleMutation.js';
 
 // ---------------------------------------------------------------------------
@@ -785,12 +785,11 @@ export function enterCell(row1b: number, col1b: number, digit: number): PuzzleSt
   const state = requireConfirmed();
   const r = row1b - 1;
   const c = col1b - 1;
-  const action: UserAction = digit !== 0
-    ? { type: 'placeDigit', row: r, col: c, digit, source: 'user' }
-    : { type: 'removeDigit', row: r, col: c };
-  const { state: updated } = recordTurn(state, action);
-  setState(updated);
-  return updated;
+  const result = digit !== 0
+    ? PuzzleStateOps.placeDigit(state, r, c, digit)
+    : PuzzleStateOps.removeDigit(state, r, c);
+  setState(result.state);
+  return result.state;
 }
 
 /**
@@ -820,14 +819,9 @@ export function enterCellStep(row1b: number, col1b: number, digit: number): { st
  */
 export function undo(): PuzzleState {
   const state = requireConfirmed();
-  if (state.turns.length === 0) throw new UserFacingError('Nothing to undo');
-  const last = state.turns[state.turns.length - 1]!.action;
-  if (last.type === 'placeDigit' && last.source === 'given') throw new UserFacingError('Cannot undo given digits');
-
-  const trimmed: PuzzleState = { ...state, turns: state.turns.slice(0, -1) };
-  const updated = applyRuleSteps(rebuildUserGrid(trimmed)).state;
-  setState(updated);
-  return updated;
+  const result = PuzzleStateOps.undo(state);
+  setState(result.state);
+  return result.state;
 }
 
 /**
@@ -854,27 +848,26 @@ export function cycleCandidate(row1b: number, col1b: number, digit: number): Puz
   const r = row1b - 1;
   const c = col1b - 1;
 
-  let action: UserAction;
+  let result: SessionResult;
   if (digit === 0) {
-    action = { type: 'resetCellCandidates', row: r, col: c };
+    result = PuzzleStateOps.resetCellCandidates(state, r, c);
   } else {
     const cellRemoved = new Set(
       userRemoved(state).filter(([rr, cc]) => rr === r && cc === c).map(([,, d]) => d),
     );
     const { board } = buildEngine(state);
     if (cellRemoved.has(digit)) {
-      action = { type: 'restoreCandidate', row: r, col: c, digit };
+      result = PuzzleStateOps.restoreCandidate(state, r, c, digit);
     } else if (board.cands(r, c).has(digit)) {
-      action = { type: 'eliminateCandidate', row: r, col: c, digit };
+      result = PuzzleStateOps.eliminateCandidate(state, r, c, digit);
     } else {
       // auto-impossible and not user-removed — no-op
       return state;
     }
   }
 
-  const { state: updated } = recordTurn(state, action);
-  setState(updated);
-  return updated;
+  setState(result.state);
+  return result.state;
 }
 
 // ---------------------------------------------------------------------------
@@ -1024,10 +1017,19 @@ export function addVirtualCage(
     eliminatedSolns: [],
     ...(isDiff && { negativeCells: typedNeg as Cell[], eliminatedDiffSolns: [] }),
   };
-  const action: UserAction = { type: 'addVirtualCage', cage };
-  const { state: updated } = recordTurn(state, action);
-  setState(updated);
-  return updated;
+  if (!PuzzleState.isKiller(state)) throw new Error('addVirtualCage requires a killer puzzle state');
+  const result = PuzzleStateOps.addVirtualCage(state, cage);
+  setState(result.state);
+  return result.state;
+}
+
+
+export function removeVirtualCage(key: string): PuzzleState {
+  const state = requireConfirmed();
+  if (!PuzzleState.isKiller(state)) throw new Error('removeVirtualCage requires a killer puzzle state');
+  const result = PuzzleStateOps.removeVirtualCage(state, key);
+  setState(result.state);
+  return result.state;
 }
 
 // ---------------------------------------------------------------------------
@@ -1280,11 +1282,9 @@ export function getHints(): HintsResponse {
  */
 export function applyHint(eliminations: readonly { cell: [number, number]; digit: number }[]): PuzzleState {
   const state = requireConfirmed();
-  const mutations = eliminations.map(e => RuleMutation.eliminateCandidate(e.cell[0], e.cell[1], e.digit));
-  const action: UserAction = { type: 'applyHint', mutations };
-  const { state: updated } = recordTurn(state, action);
-  setState(updated);
-  return updated;
+  const result = PuzzleStateOps.applyHint(state, eliminations);
+  setState(result.state);
+  return result.state;
 }
 
 // ---------------------------------------------------------------------------

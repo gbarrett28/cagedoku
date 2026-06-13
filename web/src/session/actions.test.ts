@@ -38,6 +38,7 @@ import {
   candidatesFromBoard,
   cycleCandidate,
   addVirtualCage,
+  removeVirtualCage,
   getSettingsData,
   saveSettingsData,
   getAutoPlacementDelay,
@@ -560,6 +561,29 @@ describe('Bug #60 regression — addVirtualCage triggers auto-placements', () =>
     const vcTotal = gs[3]![0]! + gs[3]![1]!;
     const state = addVirtualCage([[3, 0], [3, 1]], vcTotal);
     expect(state.userGrid![0]![0]).toBe(gs[0]![0]!);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// removeVirtualCage wrapper
+// ---------------------------------------------------------------------------
+
+describe('removeVirtualCage', () => {
+  it('removes a previously-added virtual cage', () => {
+    makeKillerConfirmed();
+    const state = addVirtualCage([[0, 0], [0, 1]], 10);
+    const key = '0,0:0,1:10';
+    expect(state.turns.some(t => t.action.type === 'addVirtualCage')).toBe(true);
+
+    const updated = removeVirtualCage(key);
+    const lastAction = updated.turns[updated.turns.length - 1]!.action;
+    expect(lastAction.type).toBe('removeVirtualCage');
+    if (lastAction.type === 'removeVirtualCage') expect(lastAction.key).toBe(key);
+  });
+
+  it('throws when not a killer puzzle', () => {
+    makeClassicConfirmed();
+    expect(() => removeVirtualCage('0,0:0,1:10')).toThrow('removeVirtualCage requires a killer puzzle state');
   });
 });
 
