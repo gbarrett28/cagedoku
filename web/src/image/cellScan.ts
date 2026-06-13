@@ -19,6 +19,40 @@ type Cv = OpenCVModule;
 const DOMINANT_TO_ROT90_K: readonly number[] = [0, 1, 3, 2];
 
 /**
+ * Decide whether a contour found in a cell's top-left quadrant represents a
+ * cage-total digit glyph, as opposed to a thin dashed cage-border-line segment.
+ *
+ * Both pass the bounding-box size heuristic, but a digit glyph fills a much
+ * larger fraction of its bounding box than a thin dash does. A dash segment
+ * (e.g. width=11, height=52, area=84) has fillRatio ~0.15, while real digit
+ * contours observed in practice have fillRatio 0.50-0.81. `minFillRatio`
+ * separates the two.
+ *
+ * @param width - Contour bounding-box width.
+ * @param height - Contour bounding-box height.
+ * @param area - Contour area (from `cv.contourArea`).
+ * @param subres - Pixels per cell side.
+ * @param minFillRatio - Minimum area / (width * height) to count as a digit.
+ */
+export function isCageTotalContour(
+  width: number,
+  height: number,
+  area: number,
+  subres: number,
+  minFillRatio: number,
+): boolean {
+  const minW = subres >> 4;
+  const maxW = subres >> 1;
+  const minH = subres >> 3;
+  const maxH = subres >> 1;
+
+  if (width < minW || width >= maxW || height < minH || height >= maxH) return false;
+
+  const fillRatio = area / (width * height);
+  return fillRatio >= minFillRatio;
+}
+
+/**
  * Scan all 81 cells for cage totals and classic pre-filled digits.
  *
  * For each cell, checks for small contours in the top-left quadrant (cage
@@ -28,6 +62,7 @@ const DOMINANT_TO_ROT90_K: readonly number[] = [0, 1, 3, 2];
  * @param warpedGry - Perspective-corrected grayscale Mat, (9*subres × 9*subres).
  * @param subres - Pixels per cell side.
  * @param classicMinSizeFraction - Min contour dimension fraction for classic digits.
+ * @param cageTotalMinFillRatio - Min contour fill ratio for cage-total digits.
  * @returns [cageTotalConfidence, classicDigitConfidence], each (9×9) [row][col]
  *   with values in {0.0, 1.0}.
  */
@@ -36,15 +71,12 @@ export function scanCells(
   warpedGry: OpenCVMat,
   subres: number,
   classicMinSizeFraction: number,
+  cageTotalMinFillRatio: number,
 ): [number[][], number[][]] {
   const cageConf: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
   const classicConf: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
 
   const half = subres >> 1;
-  const minW = subres >> 4;
-  const maxW = subres >> 1;
-  const minH = subres >> 3;
-  const maxH = subres >> 1;
   const blockSize = Math.max(3, (half >> 2) | 1);
 
   const classicMin = Math.floor(subres * classicMinSizeFraction);
@@ -74,8 +106,10 @@ export function scanCells(
       hierTL.delete();
 
       for (let i = 0; i < contoursTL.size(); i++) {
-        const br = cv.boundingRect(contoursTL.get(i));
-        if (br.width >= minW && br.width < maxW && br.height >= minH && br.height < maxH) {
+        const contour = contoursTL.get(i);
+        const br = cv.boundingRect(contour);
+        const area = cv.contourArea(contour);
+        if (isCageTotalContour(br.width, br.height, area, subres, cageTotalMinFillRatio)) {
           cageConf[row]![col] = 1.0;
           break;
         }

@@ -206,7 +206,7 @@ export async function parsePuzzleImage(
 
   // --- Stage 3: Puzzle type detection ---
   const [cageConf, classicConf] = scanCells(
-    cv, warpedGryMat, subres, config.cellScan.classicMinSizeFraction,
+    cv, warpedGryMat, subres, config.cellScan.classicMinSizeFraction, config.cellScan.cageTotalMinFillRatio,
   );
   const puzzleType = detectPuzzleType(warpedGryMat, subres, config.cellScan.tlFractionThreshold);
 
