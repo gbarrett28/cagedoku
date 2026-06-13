@@ -7,11 +7,13 @@
 
 import type { Cell } from '../engine/types.js';
 import type { BoardState } from '../engine/boardState.js';
+import { KillerBoardState, intersectAll } from '../engine/boardState.js';
 import type { DiffSolution } from '../solver/equation.js';
 import type { RuleMutation, EliminateCandidateMutation, RuleStep } from './ruleMutation.js';
 import { defaultRules } from '../engine/rules/index.js';
 import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
 import type { SolverRule } from '../engine/rule.js';
+import { findDuplicateCells } from './assertions.js';
 export type { DiffSolution };
 
 // ---------------------------------------------------------------------------
@@ -349,6 +351,48 @@ export namespace PuzzleState {
     if (isKiller(state)) { commands.add('inspectCage'); commands.add('virtualCage'); }
     if (state.goldenSolution !== null) commands.add('reveal');
     return commands;
+  }
+
+  /**
+   * Per-cell render attributes for digits and candidates — consolidates the
+   * killer/classic, given/user-placed, duplicate-detection, and must-contain
+   * highlighting logic that was previously spread across main.ts's drawDigits
+   * and drawCandidates.
+   */
+  export function candidateDisplay(state: PuzzleState, board: BoardState): readonly CellRender[][] {
+    const digitGrid: number[][] =
+      state.goldenSolution !== null ? state.userGrid : (state.givenDigits ?? state.userGrid);
+
+    const duplicateCells = findDuplicateCells(digitGrid);
+
+    const removedSet = new Set(state.userRemovedCandidates.map(([r, c, d]) => `${r},${c},${d}`));
+
+    return Array.from({ length: 9 }, (_, r) =>
+      Array.from({ length: 9 }, (_, c): CellRender => {
+        const digit = digitGrid[r]?.[c] ?? 0;
+        if (digit > 0) {
+          const isDuplicate = duplicateCells.has(`${r},${c}`);
+          const isGiven = !isKiller(state) && (state.givenDigits?.[r]?.[c] ?? 0) > 0;
+          const colour: RenderColour = isDuplicate ? 'red'
+            : (state.goldenSolution !== null && !isGiven) ? 'blue'
+            : 'black';
+          const locked = !isKiller(state) && isGiven;
+          return { placed: { digit, colour, locked }, candidates: [] };
+        }
+
+        const mustContain: ReadonlySet<number> = board instanceof KillerBoardState
+          ? new Set(intersectAll(board.cageSolns[board.regions[r]![c]!]!.map(s => new Set(s))))
+          : new Set();
+
+        const candidates: CandidateRender[] = [];
+        for (let d = 1; d <= 9; d++) {
+          if (!board.cands(r, c).has(d)) continue;
+          if (removedSet.has(`${r},${c},${d}`)) continue;
+          candidates.push({ digit: d, colour: mustContain.has(d) ? 'essential' : 'grey' });
+        }
+        return { placed: null, candidates };
+      }),
+    );
   }
 
   /** Builds a fresh classic PuzzleState for the OCR review phase (blank grid, no golden solution). */

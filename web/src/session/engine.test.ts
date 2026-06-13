@@ -3,7 +3,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { makeTrivialSpec, KNOWN_SOLUTION } from '../engine/fixtures.js';
+import { makeTrivialSpec, makeClassicGivenDigits, KNOWN_SOLUTION } from '../engine/fixtures.js';
 import { specToData, specToCageStates, cageLabel } from './specUtils.js';
 import {
   buildEngine,
@@ -782,6 +782,115 @@ describe('PuzzleStateOps', () => {
       turns: [makeTurn({ type: 'placeDigit', row: 0, col: 0, digit: 1, source: 'given' })],
     };
     expect(() => PuzzleStateOps.undo(state)).toThrow('Cannot undo given digits');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PuzzleState.candidateDisplay
+// ---------------------------------------------------------------------------
+
+describe('PuzzleState.candidateDisplay', () => {
+  it('empty cell with live candidates: placed is null, candidates includes those digits', () => {
+    const state = { ...makeState(), alwaysApplyRules: [] };
+    const { board } = buildEngine(state, { skipSolve: true });
+    const display = PuzzleState.candidateDisplay(state, board);
+    const cell = display[1]![1]!;
+    expect(cell.placed).toBeNull();
+    const digits = cell.candidates.map(c => c.digit);
+    expect(digits).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+
+  it('user-removed candidate is absent from candidates', () => {
+    const state: KillerPuzzleState = {
+      ...makeState(),
+      alwaysApplyRules: [],
+      userRemovedCandidates: [[1, 1, 5]],
+    };
+    const { board } = buildEngine(state, { skipSolve: true });
+    const display = PuzzleState.candidateDisplay(state, board);
+    const digits = display[1]![1]!.candidates.map(c => c.digit);
+    expect(digits).not.toContain(5);
+  });
+
+  it('solver-eliminated digit (not in board.cands) is absent from candidates', () => {
+    const state = { ...makeState(), alwaysApplyRules: [] };
+    const { board } = buildEngine(state, { skipSolve: true });
+    board.removeCandidate(1, 1, 7);
+    const display = PuzzleState.candidateDisplay(state, board);
+    const digits = display[1]![1]!.candidates.map(c => c.digit);
+    expect(digits).not.toContain(7);
+  });
+
+  it('given digit (classic): placed.locked is true, colour is black', () => {
+    const givenDigits = makeClassicGivenDigits();
+    const state = PuzzleState.createClassic(givenDigits, [], null);
+    const { board } = buildEngine(state, { skipSolve: true });
+    const display = PuzzleState.candidateDisplay(state, board);
+    // (0,0) is blanked by makeClassicGivenDigits; pick a cell that is given, e.g. (0,1).
+    const cell = display[0]![1]!;
+    expect(cell.placed).toEqual({ digit: KNOWN_SOLUTION[0]![1]!, colour: 'black', locked: true });
+  });
+
+  it('user-placed digit, no golden solution: placed.locked is false, colour is black', () => {
+    // Killer puzzles have no givenDigits, so digitGrid falls back to userGrid
+    // even before goldenSolution is set.
+    const base = makeState();
+    const userGrid = base.userGrid.map(row => [...row]);
+    userGrid[0]![0] = KNOWN_SOLUTION[0]![0]!;
+    const state = { ...base, alwaysApplyRules: [], userGrid };
+    const { board } = buildEngine(state, { skipSolve: true });
+    const display = PuzzleState.candidateDisplay(state, board);
+    const cell = display[0]![0]!;
+    expect(cell.placed).toEqual({ digit: KNOWN_SOLUTION[0]![0]!, colour: 'black', locked: false });
+  });
+
+  it('user-placed digit with goldenSolution set, not a given: colour is blue', () => {
+    const givenDigits = makeClassicGivenDigits();
+    let state = PuzzleState.createClassic(givenDigits, [], null);
+    const userGrid = state.userGrid.map(row => [...row]);
+    userGrid[0]![0] = KNOWN_SOLUTION[0]![0]!;
+    state = { ...state, userGrid, goldenSolution: KNOWN_SOLUTION.map(row => [...row]) };
+    const { board } = buildEngine(state, { skipSolve: true });
+    const display = PuzzleState.candidateDisplay(state, board);
+    const cell = display[0]![0]!;
+    expect(cell.placed).toEqual({ digit: KNOWN_SOLUTION[0]![0]!, colour: 'blue', locked: false });
+  });
+
+  it('duplicate digit in a row: colour is red for both cells', () => {
+    // Killer puzzles have no givenDigits, so digitGrid is always userGrid.
+    const base = makeState();
+    const userGrid = base.userGrid.map(row => [...row]);
+    userGrid[0]![0] = KNOWN_SOLUTION[0]![1]!;
+    userGrid[0]![1] = KNOWN_SOLUTION[0]![1]!;
+    const state = { ...base, alwaysApplyRules: [], userGrid };
+    const { board } = buildEngine(state, { skipSolve: true });
+    const display = PuzzleState.candidateDisplay(state, board);
+    expect(display[0]![0]!.placed?.colour).toBe('red');
+    expect(display[0]![1]!.placed?.colour).toBe('red');
+  });
+
+  it('killer puzzle: candidate matching the cage must-contain digit is essential', () => {
+    const state = { ...makeState(), alwaysApplyRules: [] };
+    const { board } = buildEngine(state, { skipSolve: true });
+    const display = PuzzleState.candidateDisplay(state, board);
+    // makeTrivialSpec gives every cell its own single-cell cage, so the cage's
+    // only solution is KNOWN_SOLUTION[r][c] — that digit is essential.
+    const cell = display[0]![0]!;
+    const essential = KNOWN_SOLUTION[0]![0]!;
+    const essCand = cell.candidates.find(c => c.digit === essential);
+    const otherCand = cell.candidates.find(c => c.digit !== essential);
+    expect(essCand?.colour).toBe('essential');
+    expect(otherCand?.colour).toBe('grey');
+  });
+
+  it('classic puzzle: no candidate is ever essential', () => {
+    const givenDigits = makeClassicGivenDigits();
+    const state = PuzzleState.createClassic(givenDigits, [], null);
+    const { board } = buildEngine(state, { skipSolve: true });
+    const display = PuzzleState.candidateDisplay(state, board);
+    for (const row of display) for (const cell of row) {
+      for (const cand of cell.candidates) expect(cand.colour).not.toBe('essential');
+    }
   });
 });
 
