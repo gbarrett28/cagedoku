@@ -18,8 +18,6 @@
 
 import { BoardState, KillerBoardState } from '../engine/boardState.js';
 import { SolverEngine, KillerSolverEngine, toDisplayName } from '../engine/solverEngine.js';
-import { defaultRules } from '../engine/rules/index.js';
-import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
 import type { Cell, Elimination } from '../engine/types.js';
 import { cellKey } from '../engine/types.js';
 import type { SolverRule } from '../engine/rule.js';
@@ -221,11 +219,7 @@ export function buildEngine(
 ): { board: BoardState; engine: SolverEngine; ruleSteps: readonly RuleStep[]; validationContext: ValidationContext | null } {
   const spec: PuzzleSpec | null = PuzzleState.isKiller(state) ? dataToSpec(state.specData) : null;
 
-  const _disabled = new Set(DISABLED_RULES);
-  const allRules = defaultRules().filter(r => !_disabled.has(r.name));
-  const rules = PuzzleState.isKiller(state)
-    ? allRules
-    : allRules.filter(r => !r.killerOnly);
+  const rules = [...PuzzleState.rules(state)];
   const alwaysApplySet = new Set(state.alwaysApplyRules);
 
   // Non-hint mode: only always-apply rules run.
