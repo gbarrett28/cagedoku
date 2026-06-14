@@ -1,6 +1,6 @@
 # `_onCellDetermined` Refactor — Sprint 1 (LinearSystem/SolverEngine) Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make `KillerSolverEngine._onCellDetermined` pure bookkeeping (drop `substituteCell`,
 route `substituteLiveRows` results through a new `DerivedVirtualCage` rule and
@@ -24,7 +24,7 @@ which `solve()` now golden-checks and applies via `board.addVirtualCage`.
 - Modify: `web/src/engine/solverEngine.ts:185-194` (visibility + new method)
 - Test: `web/src/engine/solverEngine.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `web/src/engine/solverEngine.test.ts`, after the `KillerSolverEngine —
 _onCellDetermined override` describe block (around line 113):
@@ -73,12 +73,12 @@ describe('SolverEngine._checkAgainstGolden', () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd web && npx vitest run src/engine/solverEngine.test.ts -t _checkAgainstGolden`
 Expected: FAIL — `Property '_checkAgainstGolden' is private and only accessible within class 'SolverEngine'` (TS error) or `not a function`.
 
-- [ ] **Step 3: Make `_goldenSolution`/`_onViolation` protected and add `_checkAgainstGolden`**
+- [x] **Step 3: Make `_goldenSolution`/`_onViolation` protected and add `_checkAgainstGolden`**
 
 In `web/src/engine/solverEngine.ts`, change lines 188-189 from:
 
@@ -116,12 +116,12 @@ Then add a new method directly after the `_onCellDetermined` declaration (after 
   }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd web && npx vitest run src/engine/solverEngine.test.ts -t _checkAgainstGolden`
 Expected: PASS (4 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /home/user/cagedoku
@@ -139,7 +139,7 @@ git commit -m "feat: add protected _checkAgainstGolden helper to SolverEngine"
 - Modify: `web/src/engine/solverEngine.ts:417-418` (call site)
 - Modify: `web/src/engine/solverEngine.test.ts:99-113` (replace spy test)
 
-- [ ] **Step 1: Update the existing `_onCellDetermined` spy test**
+- [x] **Step 1: Update the existing `_onCellDetermined` spy test**
 
 In `web/src/engine/solverEngine.test.ts`, replace the `KillerSolverEngine —
 _onCellDetermined override` describe block (lines 99-113):
@@ -180,7 +180,7 @@ describe('KillerSolverEngine — _onCellDetermined override', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd web && npx vitest run src/engine/solverEngine.test.ts -t "delegates to LinearSystem.substituteLiveRows"`
 Expected: FAIL — `board.linearSystem.substituteCell is not a function` does NOT occur yet
@@ -189,7 +189,7 @@ this specific test should actually PASS already. This step instead confirms the 
 compiles and passes against the *current* code (sanity check before removing `substituteCell`).
 Expected: PASS.
 
-- [ ] **Step 3: Add `pendingVirtualCages` field to `LinearSystem`**
+- [x] **Step 3: Add `pendingVirtualCages` field to `LinearSystem`**
 
 In `web/src/engine/linearSystem.ts`, change line 17 from:
 
@@ -213,7 +213,7 @@ Then add the field after `virtualCages: VirtualCage[] = [];` (line 94):
   pendingVirtualCages: VirtualCageAddition[] = [];
 ```
 
-- [ ] **Step 4: Delete `LinearSystem.substituteCell`**
+- [x] **Step 4: Delete `LinearSystem.substituteCell`**
 
 In `web/src/engine/linearSystem.ts`, delete the entire `substituteCell` method
 (lines 251-293, including the blank line before `substituteLiveRows`):
@@ -271,7 +271,7 @@ becomes:
   substituteLiveRows(cell: Cell, value: number): Array<readonly [readonly Cell[], number, boolean]> {
 ```
 
-- [ ] **Step 5: Remove the `substituteCell` call site in `KillerSolverEngine._onCellDetermined`**
+- [x] **Step 5: Remove the `substituteCell` call site in `KillerSolverEngine._onCellDetermined`**
 
 In `web/src/engine/solverEngine.ts`, lines 416-419 currently read:
 
@@ -289,14 +289,14 @@ Change to:
     const newConstraints = this.board.linearSystem.substituteLiveRows(cell, val);
 ```
 
-- [ ] **Step 6: Run the full test suite and tsc**
+- [x] **Step 6: Run the full test suite and tsc**
 
 Run: `cd web && npx vitest run src/engine/ && tsc --noEmit`
 Expected: PASS — all existing tests still pass (the `_onCellDetermined` body still
 processes `newConstraints` via `filterSumConstraint`/`filterSumRange`, unchanged
 in this task).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 cd /home/user/cagedoku
@@ -313,7 +313,7 @@ git commit -m "refactor: remove LinearSystem.substituteCell, add pendingVirtualC
 - Modify: `web/src/engine/solverEngine.ts` (imports, delete `filterSumRange`/`filterSumConstraint`, rewrite `_onCellDetermined`)
 - Test: `web/src/engine/solverEngine.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `web/src/engine/solverEngine.test.ts`, after the (now-updated)
 `KillerSolverEngine — _onCellDetermined override` describe block:
@@ -388,7 +388,7 @@ describe('KillerSolverEngine._onCellDetermined — bookkeeping only', () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd web && npx vitest run src/engine/solverEngine.test.ts -t "bookkeeping only"`
 Expected: FAIL — `pendingVirtualCages` stays empty in the multi-cell test (current
@@ -396,7 +396,7 @@ code routes through `filterSumConstraint`/`filterSumRange` and never pushes), an
 the golden-check tests don't report/throw (current code calls `filterSumConstraint`
 on `[[1,1]]` with the wrong total, which doesn't check golden at all).
 
-- [ ] **Step 3: Rewrite `_onCellDetermined` and remove dead helpers**
+- [x] **Step 3: Rewrite `_onCellDetermined` and remove dead helpers**
 
 In `web/src/engine/solverEngine.ts`:
 
@@ -469,17 +469,17 @@ import {
   }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd web && npx vitest run src/engine/solverEngine.test.ts`
 Expected: PASS (all tests in the file, including the new `bookkeeping only` block).
 
-- [ ] **Step 5: Run tsc to confirm no unused-import/dead-code errors**
+- [x] **Step 5: Run tsc to confirm no unused-import/dead-code errors**
 
 Run: `cd web && tsc --noEmit`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 cd /home/user/cagedoku
@@ -497,7 +497,7 @@ git commit -m "refactor: make _onCellDetermined bookkeeping-only, drop filterSum
 - Create: `web/src/engine/rules/derivedVirtualCage.test.ts`
 - Modify: `web/src/engine/rules/index.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `web/src/engine/rules/derivedVirtualCage.test.ts`:
 
@@ -556,12 +556,12 @@ describe('DerivedVirtualCage', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd web && npx vitest run src/engine/rules/derivedVirtualCage.test.ts`
 Expected: FAIL — `Cannot find module './derivedVirtualCage.js'`.
 
-- [ ] **Step 3: Create the rule**
+- [x] **Step 3: Create the rule**
 
 Create `web/src/engine/rules/derivedVirtualCage.ts`:
 
@@ -625,7 +625,7 @@ Guards:
 }
 ```
 
-- [ ] **Step 4: Register the rule**
+- [x] **Step 4: Register the rule**
 
 In `web/src/engine/rules/index.ts`:
 
@@ -656,12 +656,12 @@ import { DerivedVirtualCage } from './derivedVirtualCage.js';
     new DerivedVirtualCage(),
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `cd web && npx vitest run src/engine/rules/derivedVirtualCage.test.ts && tsc --noEmit`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 cd /home/user/cagedoku
@@ -678,7 +678,7 @@ git commit -m "feat: add DerivedVirtualCage rule to drain pendingVirtualCages"
 - Modify: `web/src/engine/solverEngine.ts:299-401` (`solve()`)
 - Test: `web/src/engine/solverEngine.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `web/src/engine/solverEngine.test.ts`, after the existing `SolverEngine virtual
 cage additions` describe block (currently ends around line 225):
@@ -778,13 +778,13 @@ describe('SolverEngine.solve — applies virtualCageAdditions', () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd web && npx vitest run src/engine/solverEngine.test.ts -t "applies virtualCageAdditions"`
 Expected: FAIL — `bs.units.length` unchanged (nothing calls `addVirtualCage` today),
 and the golden-check tests see no violations/throws.
 
-- [ ] **Step 3: Extend `solve()`**
+- [x] **Step 3: Extend `solve()`**
 
 In `web/src/engine/solverEngine.ts`, the main loop's `else` branch (currently
 lines 351-396) is:
@@ -951,19 +951,19 @@ Add `cellLabel` to the imports at the top of `web/src/engine/solverEngine.ts`:
 import { cellLabel } from './rules/_labels.js';
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd web && npx vitest run src/engine/solverEngine.test.ts && tsc --noEmit`
 Expected: PASS (all tests in the file).
 
-- [ ] **Step 5: Run the full engine test suite**
+- [x] **Step 5: Run the full engine test suite**
 
 Run: `cd web && npx vitest run src/engine/`
 Expected: PASS — fixture-based regression tests (`__fixtures__/index.ts`) continue
 to pass; only `distinct === false` derivations now produce fewer automatic
 eliminations (per spec, an acceptable bounded change).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 cd /home/user/cagedoku
@@ -979,7 +979,7 @@ git commit -m "feat: solve() applies virtualCageAdditions via addVirtualCage, go
 **Files:**
 - Modify: `web/src/engine/rules/sumPairConstraint.ts:10-12, 32, 42`
 
-- [ ] **Step 1: Update the module doc comment**
+- [x] **Step 1: Update the module doc comment**
 
 In `web/src/engine/rules/sumPairConstraint.ts`, lines 10-12:
 
@@ -1002,7 +1002,7 @@ becomes:
  */
 ```
 
-- [ ] **Step 2: Update the `description` guard line**
+- [x] **Step 2: Update the `description` guard line**
 
 Line 32:
 
@@ -1016,7 +1016,7 @@ becomes:
   ctx.hint !== CELL_DETERMINED   redundant with the COUNT_DECREASED pass already triggered for the cell's units when it was determined
 ```
 
-- [ ] **Step 3: Update the inline guard comment**
+- [x] **Step 3: Update the inline guard comment**
 
 Line 42:
 
@@ -1031,12 +1031,12 @@ becomes:
     // when it was determined — skip here.
 ```
 
-- [ ] **Step 4: Run tsc and the rule's tests**
+- [x] **Step 4: Run tsc and the rule's tests**
 
 Run: `cd web && npx vitest run src/engine/rules/sumPairConstraint.test.ts && tsc --noEmit`
 Expected: PASS — comment-only change.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /home/user/cagedoku
@@ -1051,22 +1051,22 @@ git commit -m "docs: update SumPairConstraint comments for substituteCell remova
 
 **Files:** none (verification only)
 
-- [ ] **Step 1: Run the full unit test suite**
+- [x] **Step 1: Run the full unit test suite**
 
 Run: `cd web && npx vitest run`
 Expected: PASS — including all `__fixtures__`-based regression tests.
 
-- [ ] **Step 2: Run tsc for both configs**
+- [x] **Step 2: Run tsc for both configs**
 
 Run: `cd web && tsc --noEmit && tsc -p tsconfig.node.json --noEmit`
 Expected: PASS.
 
-- [ ] **Step 3: Verify no remaining references to removed symbols**
+- [x] **Step 3: Verify no remaining references to removed symbols**
 
 Run: `cd web/src && grep -rn "substituteCell\|filterSumConstraint\|filterSumRange"`
 Expected: no matches (the grep itself should print nothing).
 
-- [ ] **Step 4: Commit (if any cleanup was needed)**
+- [x] **Step 4: Commit (if any cleanup was needed)**
 
 If steps 1-3 required additional fixes, stage and commit them with a descriptive
 message. If everything already passed, no commit is needed for this task.
