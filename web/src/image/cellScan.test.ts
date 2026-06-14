@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
   computeQuadSums, detectPuzzleType, detectRotation, isCageTotalContour,
   cageConfFromContours, thresholdMargin, pickBestThreshold, calibrateCageTotalThreshold,
+  contourFillRatios,
 } from './cellScan.js';
 import type { ContourMetrics, ThresholdCandidateResult } from './cellScan.js';
 import type { GrayImage } from './borderClustering.js';
@@ -301,6 +302,31 @@ describe('calibrateCageTotalThreshold', () => {
     expect(result.candidateResults.every(c => !c.valid)).toBe(true);
     // fillRatio 0.2 < 0.3 -> cageConf still all 0 at the fallback threshold too.
     for (const row of result.cageConf) for (const v of row) expect(v).toBe(0.0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// contourFillRatios
+// ---------------------------------------------------------------------------
+
+describe('contourFillRatios', () => {
+  it('returns an empty array when there are no contours', () => {
+    const contours: ContourMetrics[][][] = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => []));
+    expect(contourFillRatios(contours)).toEqual([]);
+  });
+
+  it('flattens fill ratios across cells, preserving multiple contours per cell', () => {
+    const contours: ContourMetrics[][][] = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => []));
+    contours[0]![0] = [{ width: 24, height: 30, area: 581 }]; // ~0.8069
+    contours[3]![4] = [
+      { width: 11, height: 52, area: 84 },  // ~0.1469
+      { width: 20, height: 20, area: 80 },  // 0.2
+    ];
+    const ratios = contourFillRatios(contours);
+    expect(ratios).toHaveLength(3);
+    expect(ratios[0]).toBeCloseTo(581 / (24 * 30), 5);
+    expect(ratios[1]).toBeCloseTo(84 / (11 * 52), 5);
+    expect(ratios[2]).toBeCloseTo(80 / (20 * 20), 5);
   });
 });
 

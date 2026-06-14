@@ -242,43 +242,36 @@ export function calibrateCageTotalThreshold(
 }
 
 /**
- * Scan all 81 cells for cage totals and classic pre-filled digits.
+ * Collect size-valid cage-total contour metrics for all 81 cells.
  *
- * For each cell, checks for small contours in the top-left quadrant (cage
- * total indicator) and large centred contours (classic sudoku pre-filled digit).
+ * Runs the adaptiveThreshold + findContours pass once per cell's top-left
+ * quadrant, applying only the bounding-box size heuristic
+ * (`isCageTotalContourSize`). The fill-ratio check is deferred to
+ * `cageConfFromContours`/`calibrateCageTotalThreshold`, which can be evaluated
+ * cheaply for many candidate thresholds without re-running OpenCV.
  *
  * @param cv - OpenCV.js module.
  * @param warpedGry - Perspective-corrected grayscale Mat, (9*subres × 9*subres).
  * @param subres - Pixels per cell side.
- * @param classicMinSizeFraction - Min contour dimension fraction for classic digits.
- * @param cageTotalMinFillRatio - Min contour fill ratio for cage-total digits.
- * @returns [cageTotalConfidence, classicDigitConfidence], each (9×9) [row][col]
- *   with values in {0.0, 1.0}.
+ * @returns (9, 9) array [row][col] of size-valid contour metrics (usually 0-2 per cell).
  */
-export function scanCells(
+export function collectCageTotalContours(
   cv: Cv,
   warpedGry: OpenCVMat,
   subres: number,
-  classicMinSizeFraction: number,
-  cageTotalMinFillRatio: number,
-): [number[][], number[][]] {
-  const cageConf: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-  const classicConf: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-
+): ContourMetrics[][][] {
   const half = subres >> 1;
   const blockSize = Math.max(3, (half >> 2) | 1);
 
-  const classicMin = Math.floor(subres * classicMinSizeFraction);
-  const margin = (subres / 6) | 0;
-  const patchSize = subres - 2 * margin;
-  const classicBlock = Math.max(3, (patchSize >> 2) | 1);
+  const result: ContourMetrics[][][] = Array.from({ length: 9 }, () =>
+    Array.from({ length: 9 }, (): ContourMetrics[] => []),
+  );
 
   for (let row = 0; row < 9; row++) {
     for (let col = 0; col < 9; col++) {
       const y0 = row * subres;
       const x0 = col * subres;
 
-      // --- Cage total detection (top-left quadrant) ---
       const patchTL = warpedGry.roi(new cv.Rect(x0, y0, half, half));
       const blkTL = new cv.Mat();
       cv.adaptiveThreshold(
@@ -294,18 +287,49 @@ export function scanCells(
       blkTL.delete();
       hierTL.delete();
 
+      const cellContours: ContourMetrics[] = [];
       for (let i = 0; i < contoursTL.size(); i++) {
         const contour = contoursTL.get(i);
         const br = cv.boundingRect(contour);
-        const area = cv.contourArea(contour);
-        if (isCageTotalContour(br.width, br.height, area, subres, cageTotalMinFillRatio)) {
-          cageConf[row]![col] = 1.0;
-          break;
+        if (isCageTotalContourSize(br.width, br.height, subres)) {
+          cellContours.push({ width: br.width, height: br.height, area: cv.contourArea(contour) });
         }
       }
       contoursTL.delete();
+      result[row]![col] = cellContours;
+    }
+  }
 
-      // --- Classic digit detection (central region) ---
+  return result;
+}
+
+/**
+ * Scan all 81 cells for large centred contours (classic sudoku pre-filled digit).
+ *
+ * @param cv - OpenCV.js module.
+ * @param warpedGry - Perspective-corrected grayscale Mat, (9*subres × 9*subres).
+ * @param subres - Pixels per cell side.
+ * @param classicMinSizeFraction - Min contour dimension fraction for classic digits.
+ * @returns (9, 9) array [row][col] with values in {0.0, 1.0}.
+ */
+export function scanClassicDigits(
+  cv: Cv,
+  warpedGry: OpenCVMat,
+  subres: number,
+  classicMinSizeFraction: number,
+): number[][] {
+  const classicConf: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+
+  const classicMin = Math.floor(subres * classicMinSizeFraction);
+  const margin = (subres / 6) | 0;
+  const patchSize = subres - 2 * margin;
+  const classicBlock = Math.max(3, (patchSize >> 2) | 1);
+
+  for (let row = 0; row < 9; row++) {
+    for (let col = 0; col < 9; col++) {
+      const y0 = row * subres;
+      const x0 = col * subres;
+
       const patchC = warpedGry.roi(new cv.Rect(x0 + margin, y0 + margin, patchSize, patchSize));
       const blkC = new cv.Mat();
       cv.adaptiveThreshold(
@@ -332,7 +356,26 @@ export function scanCells(
     }
   }
 
-  return [cageConf, classicConf];
+  return classicConf;
+}
+
+/**
+ * Flatten all size-valid contour fill ratios across the image, for the
+ * `contourFillRatios` field of `CageThresholdCalibrationReport` — the raw data
+ * needed to re-tune the candidate sweep or margin rule from real-world data.
+ *
+ * @param contours - (9, 9) array [row][col] of size-valid contour metrics.
+ */
+export function contourFillRatios(contours: ContourMetrics[][][]): number[] {
+  const ratios: number[] = [];
+  for (const rowContours of contours) {
+    for (const cellContours of rowContours) {
+      for (const c of cellContours) {
+        ratios.push(c.area / (c.width * c.height));
+      }
+    }
+  }
+  return ratios;
 }
 
 /**
