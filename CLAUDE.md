@@ -21,6 +21,15 @@ These three skills **must always** be invoked at the moments described — no ex
 Do **not** use git worktrees — not all tools work correctly inside them.
 Use a feature branch in the main working directory instead.
 
+## Document Review Requests
+
+Whenever a workflow step asks the user to review a committed document (a spec,
+plan, or other doc produced via `superpowers:brainstorming` /
+`superpowers:writing-plans` etc.), first `git push` the branch, then give the
+user the GitHub URL to the file on that branch
+(`https://github.com/gbarrett28/cagedoku/blob/<branch>/<path>`), not just the
+local path.
+
 ## Token Efficiency
 
 When there is a choice of approaches, always prefer the one that achieves the final
