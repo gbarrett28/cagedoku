@@ -39,14 +39,9 @@ function shuffle<T>(arr: readonly T[], rng: () => number): T[] {
   return a;
 }
 
-// NOTE: LinearSystem._deriveNonburbVirtualCages/_reduceDerive has unbounded
-// (apparently exponential) complexity for layouts with many 3+ cell cages —
-// see the OOM finding documented separately. Keep cages small/sparse here so
-// the reproducer can actually run; this still exercises real virtual-cage
-// derivation for pair cages.
-const MERGE_PASSES = 1;
-const MERGE_PROB = 0.08;
-const MAX_CAGE_SIZE = 2;
+const MERGE_PASSES = 3;
+const MERGE_PROB = 0.15;
+const MAX_CAGE_SIZE = 5;
 
 /**
  * Build a random valid killer cage layout over KNOWN_SOLUTION.
