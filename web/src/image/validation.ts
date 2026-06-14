@@ -77,6 +77,60 @@ function buildUnionFind(
   return { find, members };
 }
 
+
+/**
+ * Structural-only cage-geometry check: every cell belongs to exactly one
+ * connected component, every component has exactly one head cell (non-zero
+ * `cageHeadFlags`), and no component has more than one head.
+ *
+ * Unlike `validateCageLayout`, this does NOT check cage-total ranges (real
+ * digit values aren't known yet at calibration time) and returns `false` on
+ * failure instead of throwing — failure is an expected, common outcome during
+ * threshold search.
+ *
+ * @param cageHeadFlags - (9, 9) array [row][col]; non-zero marks a cage head.
+ * @param borderX - (9, 8) horizontal cage-wall flags [col][rowGap].
+ * @param borderY - (8, 9) vertical cage-wall flags [colGap][row].
+ */
+export function validateCageGeometry(
+  cageHeadFlags: number[][],
+  borderX: boolean[][],
+  borderY: boolean[][],
+): boolean {
+  const { find, members } = buildUnionFind(borderX, borderY);
+
+  const regions: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+  let reg = 0;
+
+  for (let row = 0; row < 9; row++) {
+    for (let col = 0; col < 9; col++) {
+      if (cageHeadFlags[row]![col]! !== 0) {
+        const repKey = find(cellKey([row, col]));
+        const component = members.get(repKey)!;
+
+        for (const k of component) {
+          const [r, c] = keyToCell(k);
+          if (regions[r]![c]! !== 0) return false; // region reassigned
+        }
+
+        reg += 1;
+        for (const k of component) {
+          const [r, c] = keyToCell(k);
+          regions[r]![c] = reg;
+        }
+      }
+    }
+  }
+
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      if (regions[r]![c]! === 0) return false; // unassigned region
+    }
+  }
+
+  return true;
+}
+
 /**
  * Returns a human-readable error string if any cage region contains more than
  * one cell with a non-zero cageTotals value (i.e. two declared cage-head cells

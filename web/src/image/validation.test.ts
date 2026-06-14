@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { validateCageLayout, repairCageTotals } from './validation.js';
+import { validateCageLayout, repairCageTotals, validateCageGeometry } from './validation.js';
 import { ProcessingError } from '../solver/errors.js';
 
 // ---------------------------------------------------------------------------
@@ -300,5 +300,52 @@ describe('repairCageTotals', () => {
     totals[1]![0] = 0;   // row=1, col=0 is merged — total 0 must stay 0
     const { repaired } = repairCageTotals(totals, borderX, allWallsBorderY());
     expect(repaired[1]![0]!).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateCageGeometry
+// ---------------------------------------------------------------------------
+
+describe('validateCageGeometry', () => {
+  it('accepts 81 single-cell cages, each with a head flag (trivial spec)', () => {
+    const heads = Array.from({ length: 9 }, () => new Array<number>(9).fill(1));
+    expect(validateCageGeometry(heads, allWallsBorderX(), allWallsBorderY())).toBe(true);
+  });
+
+  it('rejects when no cell has a head flag (unassigned region)', () => {
+    const heads = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    expect(validateCageGeometry(heads, allWallsBorderX(), allWallsBorderY())).toBe(false);
+  });
+
+  it('accepts a 2-cell cage spanning rows 0-1 in col 0 with one head flag', () => {
+    const borderX = allWallsBorderX();
+    borderX[0]![0] = false; // open wall between (0,0) and (1,0)
+
+    const heads = Array.from({ length: 9 }, () => new Array<number>(9).fill(1));
+    heads[1]![0] = 0; // merged cell has no head
+
+    expect(validateCageGeometry(heads, borderX, allWallsBorderY())).toBe(true);
+  });
+
+  it('rejects when two head flags fall in the same connected component', () => {
+    const borderX = allWallsBorderX();
+    borderX[0]![0] = false; // (0,0) and (1,0) are one component
+
+    const heads = Array.from({ length: 9 }, () => new Array<number>(9).fill(1));
+    // heads[0][0] and heads[1][0] both non-zero, but they're now one component.
+
+    expect(validateCageGeometry(heads, borderX, allWallsBorderY())).toBe(false);
+  });
+
+  it('rejects when a non-head cell is left unassigned (component has no head)', () => {
+    const borderX = allWallsBorderX();
+    borderX[0]![0] = false; // (0,0) and (1,0) are one component
+
+    const heads = Array.from({ length: 9 }, () => new Array<number>(9).fill(1));
+    heads[0]![0] = 0;
+    heads[1]![0] = 0; // neither cell in this component has a head
+
+    expect(validateCageGeometry(heads, borderX, allWallsBorderY())).toBe(false);
   });
 });
