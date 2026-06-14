@@ -68,12 +68,23 @@ deliberate exception):
     degrades to pure row/col/box backtracking when it gets `null` — it never asks
     what kind of board it has, the same way it already asks `board.cands(r, c)`.
   - `protected _onCellDetermined(cell, val)` on `SolverEngine` — a no-op hook;
-    `KillerSolverEngine` overrides it to delegate to
-    `board.linearSystem.substituteCell`/`substituteLiveRows`. This replaced a
-    `_linearSystemActive` boolean flag that gated the same block inline — the virtual
-    hook makes "does this engine propagate through a `LinearSystem`" a property of
-    *which engine class you have*, not a runtime flag that could drift out of sync
-    with the board it was constructed against.
+    `KillerSolverEngine` overrides it to call `board.linearSystem.substituteLiveRows(cell,
+    val)`, which is now **bookkeeping-only**: it returns derived `[cells, total,
+    distinct]` constraints without mutating the board. For each `distinct` constraint,
+    a single-cell result is golden-checked immediately via
+    `_checkAgainstGolden('DerivedVirtualCage', cell, total)` (catches a determined cell
+    whose value contradicts the golden solution as soon as it's derived, rather than
+    waiting for a rule to act on it); multi-cell results are deduplicated against the
+    cell-sets/totals of existing ROW/COL/BOX/CAGE units (ROW/COL/BOX always sum to 45)
+    and, if genuinely new, pushed onto `board.linearSystem.pendingVirtualCages` for the
+    `DerivedVirtualCage` rule to apply later. This replaced a `_linearSystemActive`
+    boolean flag that gated the same block inline — the virtual hook makes "does this
+    engine propagate through a `LinearSystem`" a property of *which engine class you
+    have*, not a runtime flag that could drift out of sync with the board it was
+    constructed against. `substituteCell` (which used to mutate candidates directly)
+    has been removed entirely — all candidate narrowing for derived constraints now
+    flows through `DerivedVirtualCage` + the existing cage rules (`SumPairConstraint`,
+    `CageCandidateFilter`, etc.) reacting to the new virtual cage unit.
 - **The single canonical `PuzzleState.isKiller(state)` predicate**
   (`session/types.ts`, a type guard — `'specData' in state`, narrowing to
   `KillerPuzzleState`), consulted once by `buildEngine` to decide which entire
@@ -381,6 +392,24 @@ superset of what the earlier cross-equation-narrowed values would have been,
 which is strictly safer (cannot cause a new incorrect elimination) at the cost of
 deriving fewer virtual cages / slightly less pruning power.
 
+**`pendingVirtualCages` and `DerivedVirtualCage`:** `_deriveNonburbVirtualCages` runs
+once at construction time from the puzzle's starting RREF. As the solve progresses,
+`KillerSolverEngine._onCellDetermined` calls `substituteLiveRows(cell, val)` to
+re-derive constraints against the *current* live rows (cells not yet determined) and
+appends genuinely-new `{ cells, total }` pairs to the public field
+`board.linearSystem.pendingVirtualCages: VirtualCageAddition[]` — a queue, not a
+side-effecting mutation. `web/src/engine/rules/derivedVirtualCage.ts`
+(`DerivedVirtualCage extends KillerOnlyRule`, GLOBAL trigger, priority 1) drains this
+queue one entry per firing, returning it as a `virtualCageAdditions` entry in its
+`RuleResult` (and surfacing every still-pending entry as a virtual-cage-suggestion
+hint via `asHintsKiller`). `SolverEngine.solve()` is the only place that actually
+applies a `virtualCageAdditions` entry: it golden-checks the cage's sum against
+`_goldenSolution` (throwing/reporting a violation on mismatch, the same as any other
+rule result), then calls `board.addVirtualCage(cells, total, [])`, shifts the entry off
+`pendingVirtualCages`, and seeds `COUNT_DECREASED`/`SOLUTION_PRUNED` for the new CAGE
+unit so cage rules (`SumPairConstraint`, `CageCandidateFilter`, etc.) react to it
+within the same pass.
+
 ---
 
 ## Rule Mutations and Rule Steps
@@ -481,6 +510,62 @@ auto-placement pass is layered on afterwards. History-rewrite actions (`undo`,
 (the animated entry point used by `main.ts`) returns the full
 `{ state, ruleSteps, baseState }` so the UI can drive an `AnimationPlayer` while
 `state` is already the final, committed result.
+
+### `checkPuzzleInvariant` and Rewind hints
+
+`checkPuzzleInvariant(state)` (`web/src/session/engine.ts`) is the single entry point
+`getHints()` (`web/src/session/actions.ts`) uses to detect that `state` has drifted
+from `state.goldenSolution`. It returns `null` if `state.goldenSolution === null` (not
+yet confirmed) or if no inconsistency is found, otherwise a
+`PuzzleInvariantViolation`:
+
+```typescript
+export interface PuzzleInvariantViolation {
+  readonly rewindTurnIdx: number | null;
+  readonly missingCell: { r: number; c: number; gold: number } | null;
+}
+```
+
+It runs three checks in order, returning on the first hit:
+
+0. **(killer only)** `findWrongVirtualCageTurnIdx(state)` scans `state.turns` for an
+   `addVirtualCage` action whose cage cells (accounting for `negativeCells`) don't sum
+   to `total` against `goldenSolution`. Gated by `PuzzleState.isKiller(state)` — a user
+   can only add virtual cages in a killer puzzle, so this check is meaningless (and
+   `state.virtualCages`/`negativeCells` don't exist) for classic puzzles. On a hit,
+   returns `{ rewindTurnIdx: <that turn's index>, missingCell: null }`.
+1. A placed `userGrid` digit that disagrees with `goldenSolution` →
+   `{ rewindTurnIdx: findLastConsistentTurnIdx(state), missingCell: null }`.
+2. `findMissingGoldenCandidate(state)` — a cell whose golden digit has been eliminated
+   from its candidate set → `{ rewindTurnIdx: findFirstElimTurnIdx(...), missingCell:
+   {r, c, gold} }`.
+
+`findFirstElimTurnIdx` and `findMissingGoldenCandidate` (moved here from
+`actions.ts`) are otherwise unchanged from their pre-refactor behaviour.
+
+**`getHints()`'s dispatch on the result** distinguishes Check 0 from Checks 1/2 by
+*shape*, not by a discriminant field on `PuzzleInvariantViolation` — per project
+convention (ask before adding a discriminant to a shared type; prefer deriving
+per-puzzle-type behaviour from existing predicates at the call site):
+
+```typescript
+const violation = checkPuzzleInvariant(state);
+if (violation !== null) {
+  const { rewindTurnIdx, missingCell } = violation;
+  if (missingCell === null && PuzzleState.isKiller(state) && findWrongVirtualCageTurnIdx(state) !== null) {
+    return { hints: [makeRewindHint(rewindTurnIdx ?? 0)] };
+  }
+  // missingCell !== null -> Check 2's alt-solution search (unchanged)
+  // missingCell === null, not a wrong-cage case -> Check 1's Rewind dispatch (unchanged)
+}
+```
+
+Check 0 is handled with an immediate `Rewind` hint rather than falling into Check 2's
+alt-solution search: that search assumes a wrong *placed or eliminated* digit and runs
+`mrvBacktrack` to look for an alternative consistent grid, but a wrong virtual-cage
+total leaves `userGrid` itself fully consistent with `goldenSolution` — `mrvBacktrack`
+would just return `goldenSolution` again, the search would conclude "multiple/no new
+solutions", and no hint would be produced at all.
 
 ### `SessionResult` and `namespace PuzzleStateOps`
 
