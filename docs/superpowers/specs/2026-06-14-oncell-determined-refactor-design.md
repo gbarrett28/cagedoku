@@ -282,7 +282,7 @@ earlier layer of defense-in-depth — it does not replace this check.
 - Verify via `find_referencing_symbols` that nothing else references
   `substituteCell`, `filterSumConstraint`, or `filterSumRange` before removal.
 
-### 6. User-added virtual cages — golden-sum check → Rewind (Check 0)
+### 6. Extract `checkPuzzleInvariant`, then add Check 0 (killer-only) for user-added virtual cages
 
 `addVirtualCage` (session/actions.ts:971) lets the user manually enter a
 virtual cage (cells + total, optionally a diff cage via `negativeCells`),
@@ -294,9 +294,92 @@ start — but today this surfaces only indirectly, several turns later, once
 cascade into a wrong placement or a bad candidate elimination (Checks 1-3
 in `getHints()`, lines 1131-1152).
 
-Add a **Check 0** to `getHints()`'s inconsistency-detection block, run
-*before* Checks 1-3, so the root cause is identified directly at the
-turn that introduced it:
+#### 6a. Extract the inconsistency-detection block into `checkPuzzleInvariant`
+
+`getHints()`'s inconsistency-detection block (lines 1126-1152) is currently
+inline: ~25 lines of `PuzzleState`-derived logic mixed into a session-layer
+function, with no way for a future puzzle type (or a future invariant check)
+to extend it without editing `getHints()` directly. Extract it into a
+standalone, puzzle-state-derived function — following the existing
+convention of `findLastConsistentTurnIdx` (engine.ts:564), which is a plain
+exported function taking `PuzzleState` and branching internally on
+`PuzzleState.isKiller()` (the pattern already used by `PuzzleState.availableRules`
+etc. in types.ts, e.g. line 374).
+
+New file location: `web/src/session/engine.ts`, alongside
+`findLastConsistentTurnIdx`. New type and function:
+
+```ts
+export interface PuzzleInvariantViolation {
+  readonly rewindTurnIdx: number | null;
+  readonly missingCell: { r: number; c: number; gold: number } | null;
+}
+
+/**
+ * Checks `state` against `state.goldenSolution` for any of the known
+ * inconsistency patterns (wrong placement, wrong candidate elimination,
+ * killer-only: wrong user-added virtual cage total). Returns the first
+ * violation found, or null if the state is consistent. Puzzle-type-specific
+ * checks (e.g. Check 0, killer-only) are gated internally via
+ * `PuzzleState.isKiller`.
+ */
+export function checkPuzzleInvariant(state: PuzzleState): PuzzleInvariantViolation | null {
+  const gs = state.goldenSolution;
+  if (gs === null) return null;
+
+  // Check 0 (killer-only): a user-added virtual cage's total contradicts
+  // goldenSolution — catches the root cause directly, before it cascades
+  // into Checks 1-3 below.
+  if (PuzzleState.isKiller(state)) {
+    const wrongCageIdx = findWrongVirtualCageTurnIdx(state);
+    if (wrongCageIdx !== null) return { rewindTurnIdx: wrongCageIdx, missingCell: null };
+  }
+
+  // Check 1 & 3: wrong digit anywhere in userGrid
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const placed = state.userGrid[r]![c]!;
+      const gold = gs[r]![c]!;
+      if (placed !== 0 && gold !== 0 && placed !== gold) {
+        return { rewindTurnIdx: findLastConsistentTurnIdx(state), missingCell: null };
+      }
+    }
+  }
+
+  // Check 2: correct golden candidate explicitly eliminated by user
+  const missingCell = findMissingGoldenCandidate(state);
+  if (missingCell !== null) {
+    return {
+      rewindTurnIdx: findFirstElimTurnIdx(state, missingCell.r, missingCell.c, missingCell.gold),
+      missingCell,
+    };
+  }
+
+  return null;
+}
+```
+
+`findFirstElimTurnIdx` (currently a local function in actions.ts:1068) and
+`findMissingGoldenCandidate` (currently local in actions.ts:1096) move to
+engine.ts as plain exported functions — they're pure `PuzzleState`-derived
+helpers with the same shape as `findLastConsistentTurnIdx`, just not
+previously needed outside `getHints()`.
+
+`getHints()` (actions.ts:1126-1152) becomes:
+
+```ts
+const violation = checkPuzzleInvariant(state);
+let inconsistent = violation !== null;
+let rewindTurnIdx = violation?.rewindTurnIdx ?? null;
+let missingCell = violation?.missingCell ?? null;
+```
+
+Lines 1154-1199 (the `if (inconsistent)` block: missingCell alt-solution
+check, Case A/B Rewind dispatch) are **unchanged** — they already consume
+`inconsistent`/`rewindTurnIdx`/`missingCell` as plain values, independent of
+how they were computed.
+
+#### 6b. Check 0: user-added virtual cage golden-sum check
 
 For each `vc` in `userVirtualCages(state)`, compute the golden sum:
 - standard cage: `goldSum = Σ gs[r][c]` over `vc.cells`
@@ -304,8 +387,8 @@ For each `vc` in `userVirtualCages(state)`, compute the golden sum:
   minus `Σ gs[r][c]` over `vc.negativeCells`
 
 If `goldSum !== vc.total` for any `vc`, the cage's user-entered total
-contradicts the golden solution. Add a helper alongside
-`findLastConsistentTurnIdx`/`findFirstElimTurnIdx`:
+contradicts the golden solution. New helper in engine.ts, alongside
+`findLastConsistentTurnIdx`/`findFirstElimTurnIdx`/`findMissingGoldenCandidate`:
 
 ```ts
 /**
@@ -328,26 +411,6 @@ function findWrongVirtualCageTurnIdx(state: PuzzleState): number | null {
     if (goldSum !== total) return i;
   }
   return null;
-}
-```
-
-Wire it in as Check 0, before Check 1 (lines 1131-1152):
-
-```ts
-if (gs !== null) {
-  // Check 0: a user-added virtual cage's total contradicts goldenSolution —
-  // catches the root cause directly, before it cascades into Checks 1-3.
-  const wrongCageIdx = findWrongVirtualCageTurnIdx(state);
-  if (wrongCageIdx !== null) {
-    inconsistent = true;
-    rewindTurnIdx = wrongCageIdx;
-  }
-
-  // Check 1 & 3: wrong digit anywhere in userGrid
-  for (let r = 0; r < 9 && !inconsistent; r++) {
-    ...
-  }
-  ...
 }
 ```
 
@@ -380,12 +443,19 @@ message is accurate for this case too; no new hint copy needed.
 - `linearSystem.test.ts`: test the eager golden-check path — a
   `substituteLiveRows` single-cell result that contradicts
   `goldenSolution` triggers `_onViolation`/throws before any queuing.
+- New `engine.test.ts` tests for §6a — `checkPuzzleInvariant`: returns `null`
+  for a consistent state; returns the existing Checks 1-3 results unchanged
+  for the corresponding fixtures (regression — same `rewindTurnIdx`/
+  `missingCell` as before extraction, just via the new function); for a
+  classic (non-killer) state, Check 0 is skipped entirely (no
+  `findWrongVirtualCageTurnIdx` call/effect).
+- New `engine.test.ts` tests for §6b — `findWrongVirtualCageTurnIdx`: returns
+  `null` when all virtual cages are consistent, and the correct turn index
+  for the earliest inconsistent one (including the diff-cage case).
 - `actions.test.ts`: new test for §6 — `addVirtualCage` with a total that
   doesn't match the golden-solution sum over its cells, followed by
   `getHints()`, returns a `Rewind` hint (`rewindToTurnIdx` equal to that
-  turn's index). Also test `findWrongVirtualCageTurnIdx` directly: returns
-  `null` when all virtual cages are consistent, and the correct turn index
-  for the earliest inconsistent one (including the diff-cage case).
+  turn's index).
 - Existing fixture-based regression tests (`__fixtures__/index.ts`) should
   continue to pass — this refactor should not change *which* eliminations are
   ultimately produced for `distinct === true` derivations (just *how*/*where*
