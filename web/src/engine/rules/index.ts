@@ -5,6 +5,7 @@
  *  0  NakedSingle             — CELL_DETERMINED (placement + peer eliminations)
  *  1  HiddenSingle            — COUNT_HIT_ONE
  *  1  LinearElimination       — GLOBAL
+ *  1  DerivedVirtualCage      — GLOBAL
  *  2  CageCandidateFilter     — SOLUTION_PRUNED
  *  2  CageIntersection        — COUNT_DECREASED / SOLUTION_PRUNED
  *  3  SolutionMapFilter       — COUNT_DECREASED / SOLUTION_PRUNED
@@ -37,6 +38,7 @@ import { CageCandidateFilter } from './cageCandidateFilter.js';
 import { CageConfinement } from './cageConfinement.js';
 import { CageIntersection } from './cageIntersection.js';
 import { DeltaConstraint } from './deltaConstraint.js';
+import { DerivedVirtualCage } from './derivedVirtualCage.js';
 import { HiddenPair } from './hiddenPair.js';
 import { HiddenSingle } from './hiddenSingle.js';
 import { Jellyfish } from './jellyfish.js';
@@ -67,6 +69,7 @@ export {
   CageConfinement,
   CageIntersection,
   DeltaConstraint,
+  DerivedVirtualCage,
   HiddenPair,
   HiddenSingle,
   Jellyfish,
@@ -103,6 +106,7 @@ export function defaultRules(): SolverRule[] {
     new NakedSingle(),
     new HiddenSingle(),
     new LinearElimination(),
+    new DerivedVirtualCage(),
     new CageCandidateFilter(),
     new CageIntersection(),
     new SolutionMapFilter(),

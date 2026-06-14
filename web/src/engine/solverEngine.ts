@@ -18,6 +18,7 @@ import type { HintResult } from './hint.js';
 import type { RuleContext, RuleStats, SolverRule } from './rule.js';
 import { makeRuleStats } from './rule.js';
 import { NoSolnError } from '../solver/errors.js';
+import { cellLabel } from './rules/_labels.js';
 import {
   BoardEvent,
   Cell,
@@ -287,6 +288,32 @@ export class SolverEngine {
         }
         this.pendingHints.push(...item.rule.asHints(ctx, result.eliminations));
       } else {
+        if (this._goldenSolution !== null && result.virtualCageAdditions.length > 0) {
+          const offending = result.virtualCageAdditions.find(vca => {
+            const goldSum = vca.cells.reduce((sum, [r, c]) => sum + this._goldenSolution![r]![c]!, 0);
+            return goldSum !== vca.total;
+          });
+          if (offending !== undefined) {
+            if (this._onViolation !== null) {
+              // Report only the first violation per solve() pass — subsequent
+              // violations may be cascades of the first bug.
+              if (!this._violationFired) {
+                this._onViolation(item.rule.name, []);
+                this._violationFired = true;
+              }
+              // Always suppress the entire rule result regardless of whether
+              // the violation was reported.
+              continue;
+            } else {
+              const goldSum = offending.cells.reduce((sum, [r, c]) => sum + this._goldenSolution![r]![c]!, 0);
+              throw new NoSolnError(
+                `${item.rule.name}: virtual cage ${offending.cells.map(c => cellLabel(c)).join('+')} = ${offending.total} ` +
+                `contradicts golden solution (sums to ${goldSum})`,
+              );
+            }
+          }
+        }
+
         if (result.eliminations.length > 0) {
           if (this._goldenSolution !== null) {
             const offending = result.eliminations.filter(e => {
@@ -327,6 +354,21 @@ export class SolverEngine {
         for (const se of result.solutionEliminations)
           this._onSolutionElimination(se, item.rule.name);
         for (const vca of result.virtualCageAdditions) {
+          if (!(this.board instanceof KillerBoardState)) continue;
+          this.board.addVirtualCage(vca.cells, vca.total, []);
+          this.board.linearSystem.pendingVirtualCages.shift();
+
+          // Seed COUNT_DECREASED/SOLUTION_PRUNED for the new unit, mirroring
+          // _seedInitialState, so cage rules evaluate it within this pass.
+          const newUnitId = this.board.units.length - 1;
+          for (const trigger of [Trigger.COUNT_DECREASED, Trigger.SOLUTION_PRUNED]) {
+            for (const rule of this._triggerMap.get(trigger) ?? []) {
+              if (rule.unitKinds.size === 0 || rule.unitKinds.has(UnitKind.CAGE))
+                this.queue.enqueueUnit(rule.priority, rule, this._ruleIndex.get(rule)!,
+                  newUnitId, -1, trigger, null);
+            }
+          }
+
           this.appliedVirtualCages.push(vca);
           this.appliedMutations.push({ ruleName: item.rule.name, type: 'virtual_cage_added',
             cells: vca.cells, total: vca.total });
@@ -355,9 +397,21 @@ export class KillerSolverEngine extends SolverEngine {
     const newConstraints = this.board.linearSystem.substituteLiveRows(cell, val);
     if (newConstraints.length === 0) return;
 
-    const existingCellSets = new Set(
-      this.board.units.map(u => u.cells.map(cellKey).slice().sort().join('|')),
-    );
+    // Cell-set -> total for existing units, so a derived constraint is only
+    // skipped as redundant when an existing unit covers the same cells *and*
+    // sums to the same total. A matching cell-set with a different total is a
+    // genuinely new constraint (e.g. it may contradict a corrupted cage total).
+    const existingTotals = new Map<string, number>();
+    for (const u of this.board.units) {
+      const key = u.cells.map(cellKey).slice().sort().join('|');
+      if (u.kind === UnitKind.CAGE) {
+        const solns = this.board.cageSolns[u.unitId - CAGE_UNIT_OFFSET];
+        if (solns && solns.length > 0) existingTotals.set(key, solns[0]!.reduce((a, b) => a + b, 0));
+      } else {
+        // Rows/cols/boxes always hold 1-9 exactly once, summing to 45.
+        existingTotals.set(key, 45);
+      }
+    }
     for (const [vcells, vtotal, distinct] of newConstraints) {
       if (!distinct) continue;
       const cells = [...vcells] as Cell[];
@@ -365,8 +419,8 @@ export class KillerSolverEngine extends SolverEngine {
         this._checkAgainstGolden('DerivedVirtualCage', cells[0]!, vtotal);
       }
       const key = cells.map(cellKey).slice().sort().join('|');
-      if (existingCellSets.has(key)) continue;
-      existingCellSets.add(key);
+      if (existingTotals.get(key) === vtotal) continue;
+      existingTotals.set(key, vtotal);
       this.board.linearSystem.pendingVirtualCages.push({ cells, total: vtotal });
     }
   }

@@ -332,6 +332,99 @@ describe('SolverEngine virtual cage additions', () => {
   });
 });
 
+describe('SolverEngine.solve — applies virtualCageAdditions', () => {
+  it('calls addVirtualCage, shifts pendingVirtualCages, and evaluates the new unit', () => {
+    const bs = new KillerBoardState(makeTrivialSpec());
+    const gold = KNOWN_SOLUTION;
+    const cells = [[0, 0], [0, 1]] as Cell[];
+    const total = gold[0]![0]! + gold[0]![1]!;
+    bs.linearSystem.pendingVirtualCages.push({ cells, total });
+
+    let fired = false;
+    const vca = { cells, total };
+    const rule: SolverRule = {
+      name: 'vcaStub', displayName: 'vcaStub', description: '', priority: 5,
+      killerOnly: false,
+      triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
+      apply(_ctx: RuleContext): RuleResult {
+        if (fired) return emptyResult();
+        fired = true;
+        return { ...emptyResult(), virtualCageAdditions: [vca] };
+      },
+      asHints() { return []; },
+    };
+
+    const unitsBefore = bs.units.length;
+    const engine = new KillerSolverEngine(bs, [rule], { goldenSolution: gold });
+    engine.solve();
+
+    expect(bs.units.length).toBe(unitsBefore + 1);
+    expect(bs.linearSystem.pendingVirtualCages).toEqual([]);
+    expect(engine.appliedVirtualCages).toEqual([vca]);
+    const mutation = engine.appliedMutations.find(m => m.type === 'virtual_cage_added');
+    expect(mutation).toBeDefined();
+  });
+
+  it('golden-check: a virtualCageAddition whose cells sum to the wrong total is not applied', () => {
+    const bs = new KillerBoardState(makeTrivialSpec());
+    const gold = KNOWN_SOLUTION;
+    const cells = [[0, 0], [0, 1]] as Cell[];
+    const wrongTotal = gold[0]![0]! + gold[0]![1]! + 1;
+    bs.linearSystem.pendingVirtualCages.push({ cells, total: wrongTotal });
+
+    let fired = false;
+    const vca = { cells, total: wrongTotal };
+    const rule: SolverRule = {
+      name: 'badVcaRule', displayName: 'badVcaRule', description: '', priority: 5,
+      killerOnly: false,
+      triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
+      apply(_ctx: RuleContext): RuleResult {
+        if (fired) return emptyResult();
+        fired = true;
+        return { ...emptyResult(), virtualCageAdditions: [vca] };
+      },
+      asHints() { return []; },
+    };
+
+    const unitsBefore = bs.units.length;
+    const violations: string[] = [];
+    const engine = new KillerSolverEngine(bs, [rule], {
+      goldenSolution: gold,
+      onViolation: (name) => violations.push(name),
+    });
+    engine.solve();
+
+    expect(violations).toEqual(['badVcaRule']);
+    expect(bs.units.length).toBe(unitsBefore);
+    expect(engine.appliedVirtualCages).toEqual([]);
+  });
+
+  it('golden-check: throws when no onViolation handler is set', () => {
+    const bs = new KillerBoardState(makeTrivialSpec());
+    const gold = KNOWN_SOLUTION;
+    const cells = [[0, 0], [0, 1]] as Cell[];
+    const wrongTotal = gold[0]![0]! + gold[0]![1]! + 1;
+    bs.linearSystem.pendingVirtualCages.push({ cells, total: wrongTotal });
+
+    let fired = false;
+    const vca = { cells, total: wrongTotal };
+    const rule: SolverRule = {
+      name: 'badVcaRule', displayName: 'badVcaRule', description: '', priority: 5,
+      killerOnly: false,
+      triggers: new Set([Trigger.GLOBAL]), unitKinds: new Set(),
+      apply(_ctx: RuleContext): RuleResult {
+        if (fired) return emptyResult();
+        fired = true;
+        return { ...emptyResult(), virtualCageAdditions: [vca] };
+      },
+      asHints() { return []; },
+    };
+
+    const engine = new KillerSolverEngine(bs, [rule], { goldenSolution: gold });
+    expect(() => engine.solve()).toThrow();
+  });
+});
+
 describe('SolverEngine candidate soundness assertion', () => {
   it('throws when a rule eliminates the correct solution digit from a cell', () => {
     const bs = new KillerBoardState(makeTrivialSpec());
