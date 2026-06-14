@@ -81,7 +81,6 @@ export interface VirtualCage {
 interface DeriveEq {
   cells: Set<string>;
   total: number;
-  solns: number[][];
 }
 
 // ---------------------------------------------------------------------------
@@ -426,7 +425,6 @@ export class LinearSystem {
     cageCellsMap: Map<number, Cell[]>,
     cageTotalsMap: Map<number, number>,
   ): void {
-    const nineSolns = solSums(9, 0, 45);
     const eqs: DeriveEq[] = [];
 
     const rowSets = Array.from({length: 9}, (_, r) =>
@@ -441,10 +439,9 @@ export class LinearSystem {
       return s;
     });
 
-    const cloneSolns = () => nineSolns.map(s => [...s]);
-    for (const r of rowSets) eqs.push({cells: r, total: 45, solns: cloneSolns()});
-    for (const c of colSets) eqs.push({cells: c, total: 45, solns: cloneSolns()});
-    for (const b of boxCellSets) eqs.push({cells: b, total: 45, solns: cloneSolns()});
+    for (const r of rowSets) eqs.push({cells: r, total: 45});
+    for (const c of colSets) eqs.push({cells: c, total: 45});
+    for (const b of boxCellSets) eqs.push({cells: b, total: 45});
 
     const cageOf  = new Map<string, Set<string>>();
     const totalOf = new Map<string, number>();
@@ -456,7 +453,7 @@ export class LinearSystem {
           cageOf.set(cellKey(cell as Cell), fc);
           totalOf.set(cellKey(cell as Cell), total);
         }
-        eqs.push({cells: fc, total, solns: solSums(cells.length, 0, total).map(s => [...s])});
+        eqs.push({cells: fc, total});
       }
     }
 
@@ -469,7 +466,7 @@ export class LinearSystem {
       if (seenSw.has(key) || realCageCellSets.has(key)) return;
       seenSw.add(key);
       const cells = [...fcvr].map(keyToCell) as Cell[];
-      eqs.push({cells: fcvr, total: sm, solns: solSums(cells.length, 0, sm).map(s => [...s])});
+      eqs.push({cells: fcvr, total: sm});
       this.virtualCages.push({ cells, total: sm, distinct: true, precomputedSolns: null });
     };
 
@@ -484,7 +481,7 @@ export class LinearSystem {
         if (!seenSw.has(key)) {
           seenSw.add(key);
           const fc = new Set(cells.map(c => cellKey(c as Cell)));
-          eqs.push({cells: fc, total: vtotal, solns: solSums(cells.length, 0, vtotal).map(s => [...s])});
+          eqs.push({cells: fc, total: vtotal});
         }
       }
     }
@@ -494,20 +491,22 @@ export class LinearSystem {
 
     const seen = new Set<string>([...initialCellSets, ...seenSw]);
     for (const eq of eqs) {
-      if (eq.cells.size === 0 || eq.solns.length === 0) continue;
+      if (eq.cells.size === 0) continue;
       const key = [...eq.cells].sort().join('|');
       if (seen.has(key)) continue;
       const cells = [...eq.cells].map(keyToCell) as Cell[];
       const distinct = isBurb(cells);
       if (!distinct) {
-        const must = eq.solns.reduce<Set<number> | null>((acc, s) => {
+        const solns = solSums(cells.length, 0, eq.total);
+        if (solns.length === 0) continue;
+        const must = solns.reduce<Set<number> | null>((acc, s) => {
           if (acc === null) return new Set(s);
           return new Set(s.filter(d => acc!.has(d)));
         }, null);
         if (!must || must.size === 0) continue;
       }
       seen.add(key);
-      this.virtualCages.push({ cells, total: eq.total, distinct, precomputedSolns: eq.solns.map(s => [...s]) });
+      this.virtualCages.push({ cells, total: eq.total, distinct, precomputedSolns: null });
     }
   }
 
@@ -593,12 +592,6 @@ export class LinearSystem {
           if (ei.cells.isSubsetOf(ej.cells)) {
             ej.cells = ej.cells.difference(ei.cells);
             ej.total -= ei.total;
-            const eiSets = ei.solns.map(s => new Set(s));
-            const newSolns: number[][] = [];
-            for (const os of eiSets)
-              for (const ss of ej.solns)
-                if ([...os].every(d => ss.includes(d))) newSolns.push(ss.filter(d => !os.has(d)));
-            ej.solns = newSolns;
             reduced = true;
           }
         }
