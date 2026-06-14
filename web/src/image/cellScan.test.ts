@@ -6,7 +6,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { computeQuadSums, detectPuzzleType, detectRotation, isCageTotalContour } from './cellScan.js';
+import { computeQuadSums, detectPuzzleType, detectRotation, isCageTotalContour, cageConfFromContours } from './cellScan.js';
+import type { ContourMetrics } from './cellScan.js';
 import type { OpenCVMat } from './opencv.js';
 
 // ---------------------------------------------------------------------------
@@ -92,6 +93,54 @@ describe('isCageTotalContour', () => {
   it('rejects a contour outside the size range regardless of fill ratio', () => {
     // width=5 is below minW (subres >> 4 = 8), even with a solid fill
     expect(isCageTotalContour(5, 20, 100, SUBRES_FULL, 0.3)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cageConfFromContours
+// ---------------------------------------------------------------------------
+
+describe('cageConfFromContours', () => {
+  /** Build a 9x9 grid of empty contour lists. */
+  function emptyContours(): ContourMetrics[][][] {
+    return Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => []));
+  }
+
+  it('returns all-zero when no cell has any contours', () => {
+    const result = cageConfFromContours(emptyContours(), SUBRES_FULL, 0.3);
+    for (const row of result) for (const v of row) expect(v).toBe(0);
+  });
+
+  it('returns 1.0 for a cell with a real-digit contour (fillRatio 0.81) at threshold 0.3', () => {
+    const contours = emptyContours();
+    contours[0]![0] = [{ width: 24, height: 30, area: 581 }]; // fillRatio ~0.81
+    const result = cageConfFromContours(contours, SUBRES_FULL, 0.3);
+    expect(result[0]![0]).toBe(1.0);
+    expect(result[0]![1]).toBe(0);
+  });
+
+  it('returns 0.0 for a cell with only a dash-segment contour (fillRatio 0.15) at threshold 0.3', () => {
+    const contours = emptyContours();
+    contours[0]![0] = [{ width: 11, height: 52, area: 84 }]; // fillRatio ~0.15
+    const result = cageConfFromContours(contours, SUBRES_FULL, 0.3);
+    expect(result[0]![0]).toBe(0);
+  });
+
+  it('returns 1.0 for the same dash-segment contour at threshold 0.10 (lower than its fillRatio)', () => {
+    const contours = emptyContours();
+    contours[0]![0] = [{ width: 11, height: 52, area: 84 }]; // fillRatio ~0.15
+    const result = cageConfFromContours(contours, SUBRES_FULL, 0.10);
+    expect(result[0]![0]).toBe(1.0);
+  });
+
+  it('returns 1.0 if any contour in a cell passes, even if others do not', () => {
+    const contours = emptyContours();
+    contours[3]![4] = [
+      { width: 11, height: 52, area: 84 },   // fillRatio ~0.15, fails at 0.3
+      { width: 24, height: 30, area: 581 },  // fillRatio ~0.81, passes at 0.3
+    ];
+    const result = cageConfFromContours(contours, SUBRES_FULL, 0.3);
+    expect(result[3]![4]).toBe(1.0);
   });
 });
 

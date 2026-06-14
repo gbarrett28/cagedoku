@@ -34,6 +34,40 @@ const DOMINANT_TO_ROT90_K: readonly number[] = [0, 1, 3, 2];
  * @param subres - Pixels per cell side.
  * @param minFillRatio - Minimum area / (width * height) to count as a digit.
  */
+/**
+ * Bounding-box size heuristic for a cage-total digit contour in a cell's
+ * top-left quadrant, independent of fill ratio. Both real digit glyphs and
+ * thin dashed cage-border-line segments can pass this check — `isCageTotalContour`
+ * additionally applies a fill-ratio threshold to distinguish them.
+ *
+ * @param width - Contour bounding-box width.
+ * @param height - Contour bounding-box height.
+ * @param subres - Pixels per cell side.
+ */
+export function isCageTotalContourSize(width: number, height: number, subres: number): boolean {
+  const minW = subres >> 4;
+  const maxW = subres >> 1;
+  const minH = subres >> 3;
+  const maxH = subres >> 1;
+
+  return width >= minW && width < maxW && height >= minH && height < maxH;
+}
+
+/**
+ * Decide whether a contour found in a cell's top-left quadrant represents a
+ * cage-total digit glyph, as opposed to a thin dashed cage-border-line segment.
+ *
+ * Both pass `isCageTotalContourSize`, but a digit glyph fills a much larger
+ * fraction of its bounding box than a thin dash does. A dash segment (e.g.
+ * width=11, height=52, area=84) has fillRatio ~0.15, while real digit contours
+ * observed in practice have fillRatio 0.50-0.81. `minFillRatio` separates the two.
+ *
+ * @param width - Contour bounding-box width.
+ * @param height - Contour bounding-box height.
+ * @param area - Contour area (from `cv.contourArea`).
+ * @param subres - Pixels per cell side.
+ * @param minFillRatio - Minimum area / (width * height) to count as a digit.
+ */
 export function isCageTotalContour(
   width: number,
   height: number,
@@ -41,15 +75,46 @@ export function isCageTotalContour(
   subres: number,
   minFillRatio: number,
 ): boolean {
-  const minW = subres >> 4;
-  const maxW = subres >> 1;
-  const minH = subres >> 3;
-  const maxH = subres >> 1;
-
-  if (width < minW || width >= maxW || height < minH || height >= maxH) return false;
+  if (!isCageTotalContourSize(width, height, subres)) return false;
 
   const fillRatio = area / (width * height);
   return fillRatio >= minFillRatio;
+}
+
+/**
+ * Bounding-box and area of a contour that passed `isCageTotalContourSize`,
+ * collected by `collectCageTotalContours` (Sprint 2) for later fill-ratio
+ * evaluation at any candidate threshold without re-running OpenCV.
+ */
+export interface ContourMetrics {
+  readonly width: number;
+  readonly height: number;
+  readonly area: number;
+}
+
+/**
+ * Per-cell cage-total confidence at a given fill-ratio threshold.
+ *
+ * Pure function: for each cell, returns `1.0` if any of its size-valid
+ * contours satisfies `isCageTotalContour`'s fill-ratio check at `minFillRatio`,
+ * else `0.0`.
+ *
+ * @param contours - (9, 9) array [row][col] of size-valid contour metrics,
+ *   as returned by `collectCageTotalContours`.
+ * @param subres - Pixels per cell side.
+ * @param minFillRatio - Minimum area / (width * height) to count as a digit.
+ * @returns (9, 9) array [row][col] with values in {0.0, 1.0}.
+ */
+export function cageConfFromContours(
+  contours: ContourMetrics[][][],
+  subres: number,
+  minFillRatio: number,
+): number[][] {
+  return contours.map(rowContours =>
+    rowContours.map(cellContours =>
+      cellContours.some(c => isCageTotalContour(c.width, c.height, c.area, subres, minFillRatio)) ? 1.0 : 0.0,
+    ),
+  );
 }
 
 /**
