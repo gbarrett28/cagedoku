@@ -14,7 +14,7 @@
 import { solSums } from '../solver/equation.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import { cellKey, keyToCell } from './types.js';
-import type { Cell, Elimination } from './types.js';
+import type { Cell, Elimination, VirtualCageAddition } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Exact rational arithmetic
@@ -92,6 +92,10 @@ export class LinearSystem {
   deltaPairs: Array<readonly [Cell, Cell, number]> = [];
   sumPairs:   Array<readonly [Cell, Cell, number]> = [];
   virtualCages: VirtualCage[] = [];
+
+  /** Cell-sets + totals derived by substituteLiveRows, awaiting application via
+   *  the DerivedVirtualCage rule. Consumed (shift()'d) by SolverEngine.solve(). */
+  pendingVirtualCages: VirtualCageAddition[] = [];
 
   private _pairsByCell:    Map<string, Array<readonly [Cell, Cell, number]>> = new Map();
   private _sumPairsByCell: Map<string, Array<readonly [Cell, Cell, number]>> = new Map();
@@ -246,49 +250,6 @@ export class LinearSystem {
 
   sumPairsForCell(cell: Cell): Array<readonly [Cell, Cell, number]> {
     return [...(this._sumPairsByCell.get(cellKey(cell)) ?? [])];
-  }
-
-  substituteCell(cell: Cell, value: number): Elimination[] {
-    const ck = cellKey(cell);
-    const eliminations: Elimination[] = [];
-
-    for (const pair of this._pairsByCell.get(ck) ?? []) {
-      const [p, q, delta] = pair;
-      const pk = cellKey(p);
-      const idx = this.deltaPairs.indexOf(pair);
-      if (idx >= 0) this.deltaPairs.splice(idx, 1);
-      const other = pk === ck ? q : p;
-      const otherKey = cellKey(other);
-      const otherPairs = this._pairsByCell.get(otherKey);
-      if (otherPairs) { const oi = otherPairs.indexOf(pair); if (oi >= 0) otherPairs.splice(oi, 1); }
-      const otherVal = pk === ck ? value - delta : value + delta;
-      if (otherVal >= 1 && otherVal <= 9) {
-        for (let d = 1; d <= 9; d++) {
-          if (d !== otherVal) eliminations.push({ cell: other, digit: d });
-        }
-      }
-    }
-    this._pairsByCell.delete(ck);
-
-    for (const pair of this._sumPairsByCell.get(ck) ?? []) {
-      const [a, , total] = pair;
-      const ak = cellKey(a);
-      const idx = this.sumPairs.indexOf(pair);
-      if (idx >= 0) this.sumPairs.splice(idx, 1);
-      const other = ak === ck ? pair[1] : a;
-      const otherKey = cellKey(other);
-      const otherPairs = this._sumPairsByCell.get(otherKey);
-      if (otherPairs) { const oi = otherPairs.indexOf(pair); if (oi >= 0) otherPairs.splice(oi, 1); }
-      const otherVal = total - value;
-      if (otherVal >= 1 && otherVal <= 9) {
-        for (let d = 1; d <= 9; d++) {
-          if (d !== otherVal) eliminations.push({ cell: other, digit: d });
-        }
-      }
-    }
-    this._sumPairsByCell.delete(ck);
-
-    return eliminations;
   }
 
   substituteLiveRows(cell: Cell, value: number): Array<readonly [readonly Cell[], number, boolean]> {

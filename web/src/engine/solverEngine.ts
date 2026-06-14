@@ -430,8 +430,6 @@ export class KillerSolverEngine extends SolverEngine {
   }
 
   protected override _onCellDetermined(cell: Cell, val: number): void {
-    const newElims = this.board.linearSystem.substituteCell(cell, val);
-    if (newElims.length > 0) this.applyEliminations(newElims);
     const newConstraints = this.board.linearSystem.substituteLiveRows(cell, val);
     for (const [vcells, vtotal, distinct] of newConstraints) {
       const cellList = [...vcells];
