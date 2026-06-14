@@ -923,6 +923,15 @@ is automatically detected and suppressed.  The lifecycle is:
 4. Run the bronze gate — all fixture tests must now be green.
 5. Commit on a feature branch, open a PR, verify CI passes, then merge.
 
+**`UniqueRectangle` is a deliberate, non-automated exception** to the above
+lifecycle: it is listed in `DISABLED_RULES` not because it produced a
+golden-contradicting elimination, but because its Type 1/2 proofs depend on "the
+puzzle has a unique solution" — a meta-assumption no other active rule makes. It
+uses the same `DISABLED_RULES` filter (so it's excluded from `defaultRules()`
+everywhere, including the config modal) and the same `it.skip` convention for its
+fixture-regression tests, but re-enabling it is a product decision, not a bugfix —
+there is no "fix the implementation" step.
+
 ---
 
 ## Stress-Test Tooling
