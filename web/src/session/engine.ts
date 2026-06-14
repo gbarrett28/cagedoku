@@ -643,6 +643,76 @@ export function findMissingGoldenCandidate(
   return null;
 }
 
+/**
+ * Returns the turn index of the earliest addVirtualCage action whose cage
+ * total contradicts goldenSolution, or null if all current virtual cages
+ * are consistent.
+ */
+export function findWrongVirtualCageTurnIdx(state: PuzzleState): number | null {
+  const gs = state.goldenSolution;
+  if (gs === null) return null;
+  for (let i = 0; i < state.turns.length; i++) {
+    const a = state.turns[i]!.action;
+    if (a.type !== 'addVirtualCage') continue;
+    const { cells, total, negativeCells } = a.cage;
+    const negKeys = new Set((negativeCells ?? []).map(([r, c]) => `${r},${c}`));
+    let goldSum = 0;
+    for (const [r, c] of cells) {
+      goldSum += negKeys.has(`${r},${c}`) ? -gs[r]![c]! : gs[r]![c]!;
+    }
+    if (goldSum !== total) return i;
+  }
+  return null;
+}
+
+export interface PuzzleInvariantViolation {
+  readonly rewindTurnIdx: number | null;
+  readonly missingCell: { r: number; c: number; gold: number } | null;
+}
+
+/**
+ * Checks `state` against `state.goldenSolution` for any of the known
+ * inconsistency patterns (wrong placement, wrong candidate elimination,
+ * killer-only: wrong user-added virtual cage total). Returns the first
+ * violation found, or null if the state is consistent. Puzzle-type-specific
+ * checks (e.g. Check 0, killer-only) are gated internally via
+ * `PuzzleState.isKiller`.
+ */
+export function checkPuzzleInvariant(state: PuzzleState): PuzzleInvariantViolation | null {
+  const gs = state.goldenSolution;
+  if (gs === null) return null;
+
+  // Check 0 (killer-only): a user-added virtual cage's total contradicts
+  // goldenSolution — catches the root cause directly, before it cascades
+  // into Checks 1-3 below.
+  if (PuzzleState.isKiller(state)) {
+    const wrongCageIdx = findWrongVirtualCageTurnIdx(state);
+    if (wrongCageIdx !== null) return { rewindTurnIdx: wrongCageIdx, missingCell: null };
+  }
+
+  // Check 1 & 3: wrong digit anywhere in userGrid
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const placed = state.userGrid[r]![c]!;
+      const gold = gs[r]![c]!;
+      if (placed !== 0 && gold !== 0 && placed !== gold) {
+        return { rewindTurnIdx: findLastConsistentTurnIdx(state), missingCell: null };
+      }
+    }
+  }
+
+  // Check 2: correct golden candidate explicitly eliminated by user
+  const missingCell = findMissingGoldenCandidate(state);
+  if (missingCell !== null) {
+    return {
+      rewindTurnIdx: findFirstElimTurnIdx(state, missingCell.r, missingCell.c, missingCell.gold),
+      missingCell,
+    };
+  }
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Snapshot helpers
 // ---------------------------------------------------------------------------
