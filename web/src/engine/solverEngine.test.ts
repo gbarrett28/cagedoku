@@ -110,6 +110,74 @@ describe('KillerSolverEngine — _onCellDetermined override', () => {
   });
 });
 
+describe('KillerSolverEngine._onCellDetermined — bookkeeping only', () => {
+  it('pushes a multi-cell distinct substituteLiveRows result onto pendingVirtualCages', () => {
+    const board = new KillerBoardState(makeTrivialSpec());
+    const engine = new KillerSolverEngine(board, []);
+    vi.spyOn(board.linearSystem, 'substituteLiveRows').mockReturnValue([
+      [[[1, 1], [1, 2]] as Cell[], 10, true],
+    ]);
+    const eliminations = [1, 2, 3, 4, 5, 6, 7, 8].map(d => ({ cell: [0, 0] as Cell, digit: d }));
+    engine.applyEliminations(eliminations);
+    expect(board.linearSystem.pendingVirtualCages).toEqual([
+      { cells: [[1, 1], [1, 2]], total: 10 },
+    ]);
+  });
+
+  it('drops a non-distinct substituteLiveRows result entirely', () => {
+    const board = new KillerBoardState(makeTrivialSpec());
+    const engine = new KillerSolverEngine(board, []);
+    vi.spyOn(board.linearSystem, 'substituteLiveRows').mockReturnValue([
+      [[[1, 1], [1, 2]] as Cell[], 10, false],
+    ]);
+    const eliminations = [1, 2, 3, 4, 5, 6, 7, 8].map(d => ({ cell: [0, 0] as Cell, digit: d }));
+    engine.applyEliminations(eliminations);
+    expect(board.linearSystem.pendingVirtualCages).toEqual([]);
+  });
+
+  it('skips a result whose cell-set already matches an existing unit', () => {
+    const board = new KillerBoardState(makeTrivialSpec());
+    const engine = new KillerSolverEngine(board, []);
+    // Row 1 (unitId 1) covers all of row index 1 — reuse its cell-set.
+    const rowCells = board.units[1]!.cells as Cell[];
+    vi.spyOn(board.linearSystem, 'substituteLiveRows').mockReturnValue([
+      [rowCells, 45, true],
+    ]);
+    const eliminations = [1, 2, 3, 4, 5, 6, 7, 8].map(d => ({ cell: [0, 0] as Cell, digit: d }));
+    engine.applyEliminations(eliminations);
+    expect(board.linearSystem.pendingVirtualCages).toEqual([]);
+  });
+
+  it('eager golden-check: a single-cell result contradicting golden reports a violation', () => {
+    const board = new KillerBoardState(makeTrivialSpec());
+    const violations: string[] = [];
+    const engine = new KillerSolverEngine(board, [], {
+      goldenSolution: KNOWN_SOLUTION,
+      onViolation: (name) => violations.push(name),
+    });
+    const gold = KNOWN_SOLUTION[1]![1]!;
+    const wrong = gold === 1 ? 2 : 1;
+    vi.spyOn(board.linearSystem, 'substituteLiveRows').mockReturnValue([
+      [[[1, 1]] as Cell[], wrong, true],
+    ]);
+    const eliminations = [1, 2, 3, 4, 5, 6, 7, 8].map(d => ({ cell: [0, 0] as Cell, digit: d }));
+    engine.applyEliminations(eliminations);
+    expect(violations).toEqual(['DerivedVirtualCage']);
+  });
+
+  it('eager golden-check: throws when no onViolation handler is set', () => {
+    const board = new KillerBoardState(makeTrivialSpec());
+    const engine = new KillerSolverEngine(board, [], { goldenSolution: KNOWN_SOLUTION });
+    const gold = KNOWN_SOLUTION[1]![1]!;
+    const wrong = gold === 1 ? 2 : 1;
+    vi.spyOn(board.linearSystem, 'substituteLiveRows').mockReturnValue([
+      [[[1, 1]] as Cell[], wrong, true],
+    ]);
+    const eliminations = [1, 2, 3, 4, 5, 6, 7, 8].map(d => ({ cell: [0, 0] as Cell, digit: d }));
+    expect(() => engine.applyEliminations(eliminations)).toThrow();
+  });
+});
+
 describe('SolverEngine._checkAgainstGolden', () => {
   class TestEngine extends KillerSolverEngine {
     checkGolden(ruleName: string, cell: Cell, digit: number): void {

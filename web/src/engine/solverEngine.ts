@@ -17,11 +17,11 @@ import { BoardState, CAGE_UNIT_OFFSET, KillerBoardState } from './boardState.js'
 import type { HintResult } from './hint.js';
 import type { RuleContext, RuleStats, SolverRule } from './rule.js';
 import { makeRuleStats } from './rule.js';
-import { solSums } from '../solver/equation.js';
 import { NoSolnError } from '../solver/errors.js';
 import {
   BoardEvent,
   Cell,
+  cellKey,
   Elimination,
   Placement,
   SolutionElimination,
@@ -45,84 +45,6 @@ function unitKindFromId(unitId: number): UnitKind {
   if (unitId < 18) return UnitKind.COL;
   if (unitId < 27) return UnitKind.BOX;
   return UnitKind.CAGE;
-}
-
-/**
- * Eliminate candidates that cannot participate in any valid sum assignment using a min/max range check.
- *
- * For each cell, computes the minimum and maximum possible contributions of all
- * other cells. A candidate `d` in cell `i` is eliminated if `total` falls outside
- * `[minOthers + d, maxOthers + d]`. This is a fast O(n²) pass; for an exact check
- * use `filterSumConstraint`.
- */
-function filterSumRange(
-  cells: readonly Cell[],
-  total: number,
-  candidates: Set<number>[][],
-): Elimination[] {
-  const c = (r: number, col: number): Set<number> => candidates[r]![col]!;
-  const elims: Elimination[] = [];
-  for (let i = 0; i < cells.length; i++) {
-    const others = cells.filter((_, j) => j !== i);
-    const minOthers = others.reduce((s, [r, col]) => s + Math.min(...c(r, col)), 0);
-    const maxOthers = others.reduce((s, [r, col]) => s + Math.max(...c(r, col)), 0);
-    const [r, col] = cells[i]!;
-    for (const d of c(r, col)) {
-      if (!(minOthers + d <= total && total <= maxOthers + d))
-        elims.push({ cell: cells[i]!, digit: d });
-    }
-  }
-  return elims;
-}
-
-/**
- * Eliminate candidates that cannot participate in any valid distinct-digit sum assignment.
- *
- * Enumerates every solution of `solSums(n, 0, total)` and uses backtracking to find
- * which candidates in each cell appear in at least one feasible assignment. Candidates
- * absent from all feasible assignments are eliminated. More precise than `filterSumRange`
- * but O(solutions × cells) in the worst case. Cells are ordered by fewest candidates
- * first (MRV) to prune the search early.
- */
-function filterSumConstraint(
-  cells: readonly Cell[],
-  total: number,
-  candidates: Set<number>[][],
-): Elimination[] {
-  const c = (r: number, col: number): Set<number> => candidates[r]![col]!;
-  const solns = solSums(cells.length, 0, total);
-  if (solns.length === 0) return [];
-
-  const candUnion = new Set(solns.flat());
-  const sortedCells = [...cells].sort(([r1, c1], [r2, c2]) => {
-    const a = [...c(r1, c1)].filter(d => candUnion.has(d)).length;
-    const b = [...c(r2, c2)].filter(d => candUnion.has(d)).length;
-    return a - b;
-  });
-
-  const perCellPossible = new Map<string, Set<number>>(cells.map(cell => [`${cell[0]},${cell[1]}`, new Set()]));
-
-  function bt(idx: number, remaining: Set<number>): boolean {
-    if (idx === sortedCells.length) return true;
-    const [r, col] = sortedCells[idx]!;
-    let found = false;
-    for (const d of [...c(r, col)].filter(d => remaining.has(d))) {
-      remaining.delete(d);
-      if (bt(idx + 1, remaining)) {
-        perCellPossible.get(`${r},${col}`)!.add(d);
-        found = true;
-      }
-      remaining.add(d);
-    }
-    return found;
-  }
-
-  for (const soln of solns) bt(0, new Set(soln));
-
-  return cells.flatMap(([r, col]) =>
-    [...c(r, col)].filter(d => !perCellPossible.get(`${r},${col}`)!.has(d))
-      .map(digit => ({ cell: [r, col] as Cell, digit }))
-  );
 }
 
 function dedupHints(hints: HintResult[]): HintResult[] {
@@ -431,19 +353,21 @@ export class KillerSolverEngine extends SolverEngine {
 
   protected override _onCellDetermined(cell: Cell, val: number): void {
     const newConstraints = this.board.linearSystem.substituteLiveRows(cell, val);
+    if (newConstraints.length === 0) return;
+
+    const existingCellSets = new Set(
+      this.board.units.map(u => u.cells.map(cellKey).slice().sort().join('|')),
+    );
     for (const [vcells, vtotal, distinct] of newConstraints) {
-      const cellList = [...vcells];
-      if (cellList.length === 1) {
-        const [lr, lc] = cellList[0]!;
-        for (let d = 1; d <= 9; d++) {
-          if (d !== vtotal && this.board.cands(lr, lc).has(d))
-            this.applyEliminations([{ cell: cellList[0]!, digit: d }]);
-        }
-      } else if (distinct) {
-        this.applyEliminations(filterSumConstraint(cellList as Cell[], vtotal, this.board.candidates));
-      } else {
-        this.applyEliminations(filterSumRange(cellList as Cell[], vtotal, this.board.candidates));
+      if (!distinct) continue;
+      const cells = [...vcells] as Cell[];
+      if (cells.length === 1) {
+        this._checkAgainstGolden('DerivedVirtualCage', cells[0]!, vtotal);
       }
+      const key = cells.map(cellKey).slice().sort().join('|');
+      if (existingCellSets.has(key)) continue;
+      existingCellSets.add(key);
+      this.board.linearSystem.pendingVirtualCages.push({ cells, total: vtotal });
     }
   }
 
