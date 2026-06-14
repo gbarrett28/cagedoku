@@ -30,9 +30,8 @@ import {
   rebuildUserGrid,
   userRemoved,
   userVirtualCages,
-  findLastConsistentTurnIdx,
-  findFirstElimTurnIdx,
-  findMissingGoldenCandidate,
+  checkPuzzleInvariant,
+  findWrongVirtualCageTurnIdx,
   PuzzleStateOps,
 } from './engine.js';
 import { loadSettings, saveSettings } from './settings.js';
@@ -1078,44 +1077,23 @@ export function getHints(): HintsResponse {
   if (state.goldenSolution === null) return { hints: [] };
 
   // ── Inconsistency detection ─────────────────────────────────────────────────
-  // Three paths can put the board in a state inconsistent with goldenSolution:
-  //   1. A wrong digit was placed (detectable via userGrid vs goldenSolution).
-  //      findLastConsistentTurnIdx also finds the responsible turn when it was
-  //      a user placeDigit action; wrong auto-placed digits fall back to turn 0.
-  //   2. The correct solution digit was explicitly eliminated from a cell's
-  //      candidates (cycleCandidate / applyHint) — detectable from turn history.
-  //   3. Wrong digits in userGrid that have no corresponding turn (legacy states
-  //      from pre-soundness-assertion auto-placement cascades) — detected as any
-  //      non-zero wrong cell in userGrid.
-  const gs = state.goldenSolution;
-  let inconsistent = false;
-  let rewindTurnIdx: number | null = null;
-  let missingCell: { r: number; c: number; gold: number } | null = null;
-
-  if (gs !== null) {
-    // Check 1 & 3: wrong digit anywhere in userGrid
-    for (let r = 0; r < 9 && !inconsistent; r++) {
-      for (let c = 0; c < 9 && !inconsistent; c++) {
-        const placed = state.userGrid[r]![c]!;
-        const gold = gs[r]![c]!;
-        if (placed !== 0 && gold !== 0 && placed !== gold) {
-          inconsistent = true;
-          rewindTurnIdx = findLastConsistentTurnIdx(state); // null if no turn
-        }
-      }
-    }
-
-    // Check 2: correct golden candidate explicitly eliminated by user
-    if (!inconsistent) {
-      missingCell = findMissingGoldenCandidate(state);
-      if (missingCell !== null) {
-        inconsistent = true;
-        rewindTurnIdx = findFirstElimTurnIdx(state, missingCell.r, missingCell.c, missingCell.gold);
-      }
-    }
-  }
+  // checkPuzzleInvariant compares state against goldenSolution and returns the
+  // first detected violation (wrong virtual cage total, wrong placed digit, or
+  // an explicitly-eliminated correct candidate), or null if consistent.
+  const violation = checkPuzzleInvariant(state);
+  const inconsistent = violation !== null;
+  const rewindTurnIdx = violation?.rewindTurnIdx ?? null;
+  const missingCell = violation?.missingCell ?? null;
 
   if (inconsistent) {
+    // Check 0 (killer-only): a user-added virtual cage's total contradicts
+    // goldenSolution. userGrid itself is consistent, so the alt-solution
+    // search below (which assumes a wrong placed/eliminated digit) doesn't
+    // apply — rewind immediately.
+    if (missingCell === null && PuzzleState.isKiller(state) && findWrongVirtualCageTurnIdx(state) !== null) {
+      return { hints: [makeRewindHint(rewindTurnIdx ?? 0)] };
+    }
+
     if (missingCell !== null) {
       // Golden candidate was explicitly eliminated. In a multi-solution puzzle the
       // cell may still have a remaining candidate that is correct for an alternative

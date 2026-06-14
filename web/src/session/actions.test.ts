@@ -862,6 +862,31 @@ describe('getHints — Rewind on wrong candidate elimination', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Rewind hint — wrong virtual cage total (Check 0)
+// ---------------------------------------------------------------------------
+
+describe('getHints — Rewind on wrong virtual cage total', () => {
+  it('returns a Rewind hint when a user-added virtual cage total contradicts goldenSolution', () => {
+    makeKillerConfirmed();
+    const state = getState()!;
+    const gs = state.goldenSolution!;
+
+    // Pick two cells and a total within cageSumRange(2) = [3, 17] but that
+    // doesn't match the golden sum for those two cells.
+    const goldSum = gs[0]![0]! + gs[0]![1]!;
+    const wrongTotal = goldSum === 17 ? goldSum - 1 : goldSum + 1;
+
+    addVirtualCage([[0, 0], [0, 1]], wrongTotal);
+
+    const { hints } = getHints();
+    const rewindHint = hints.find(h => h.rewindToTurnIdx !== null);
+    expect(rewindHint).toBeDefined();
+    expect(rewindHint!.displayName).toMatch(/[Rr]ewind/);
+    expect(rewindHint!.rewindToTurnIdx).toBe(getState()!.turns.length - 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // solveAndValidateSpec / extractAndValidateSolution
 // ---------------------------------------------------------------------------
 
