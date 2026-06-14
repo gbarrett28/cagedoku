@@ -8,8 +8,11 @@
  * candidate set, and vice versa.
  *
  * Sum pairs do not enforce digit distinctness — the cells are typically
- * non-burb so repeated digits are allowed. CELL_DETERMINED is handled by
- * LinearSystem.substituteCell; this rule handles COUNT_DECREASED filtering.
+ * non-burb so repeated digits are allowed. removeCandidate emits
+ * COUNT_DECREASED for a cell's units before CELL_DETERMINED, so by the time
+ * CELL_DETERMINED fires the COUNT_DECREASED-triggered pass for the same cell
+ * has already narrowed the partner cell; the CELL_DETERMINED-triggered pass
+ * is redundant and skipped.
  */
 
 import type { HintResult } from '../hint.js';
@@ -29,7 +32,7 @@ Setup: cells a and b satisfy a + b = T for a constant T derived from complementa
 Proof: if a = x then b must equal T − x. Any candidate x for a where (T − x) is not a current candidate of b, or T − x ∉ [1,9], is infeasible. Symmetrically for b.
 
 Guards:
-  ctx.hint !== CELL_DETERMINED   CELL_DETERMINED is handled by LinearSystem.substituteCell
+  ctx.hint !== CELL_DETERMINED   redundant with the COUNT_DECREASED pass already triggered for the cell's units when it was determined
   ctx.unit !== null   rule requires a unit context for cell iteration
   ctx.board.linearSystem.sumPairsForCell   only system-reported pairs are processed
   d >= 1 && d <= 9   computed partner value must be in digit range
@@ -39,7 +42,8 @@ Guards:
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX, UnitKind.CAGE]);
 
   applyKiller(ctx: KillerRuleContext): RuleResult {
-    // CELL_DETERMINED is handled by LinearSystem.substituteCell — skip here
+    // Redundant with the COUNT_DECREASED pass triggered for the cell's units
+    // when it was determined — skip here.
     if (ctx.hint === Trigger.CELL_DETERMINED || !ctx.unit) return emptyResult();
     const board = ctx.board;
     const elims: Elimination[] = [];
