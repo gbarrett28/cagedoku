@@ -31,6 +31,8 @@ import {
   userRemoved,
   userVirtualCages,
   findLastConsistentTurnIdx,
+  findFirstElimTurnIdx,
+  findMissingGoldenCandidate,
   PuzzleStateOps,
 } from './engine.js';
 import { loadSettings, saveSettings } from './settings.js';
@@ -59,7 +61,7 @@ import type {
   VirtualCage,
   VirtualCageSuggestion,
 } from './types.js';
-import type { EliminateCandidateMutation, RuleStep } from './ruleMutation.js';
+import type { RuleStep } from './ruleMutation.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1069,55 +1071,6 @@ function makeRewindHint(idx: number): HintItem {
     rewindToTurnIdx: idx,
     virtualCageSuggestion: null,
   };
-}
-
-/**
- * Scan turn history for the first turn that explicitly eliminated `digit` from
- * cell `(r,c)` — either via eliminateCandidate or via applyHint.
- * Returns the turn index, or null if not found (e.g. was eliminated by a rule).
- */
-function findFirstElimTurnIdx(
-  state: PuzzleState,
-  r: number,
-  c: number,
-  digit: number,
-): number | null {
-  for (let i = 0; i < state.turns.length; i++) {
-    const a = state.turns[i]!.action;
-    if (a.type === 'eliminateCandidate' && a.row === r && a.col === c && a.digit === digit) return i;
-    if (a.type === 'applyHint') {
-      for (const m of a.mutations) {
-        if (m.type === 'eliminateCandidate') {
-          const elim = m as EliminateCandidateMutation;
-          if (elim.row === r && elim.col === c && elim.digit === digit) return i;
-        }
-      }
-    }
-  }
-  return null;
-}
-
-/**
- * Checks the user's recorded eliminations (cycleCandidate, applyHint) against
- * goldenSolution.  Returns the first cell where the correct solution digit was
- * explicitly removed by the user, or null if all golden candidates are intact.
- *
- * State-based (no board build required) so it is safe to call before buildEngine.
- */
-function findMissingGoldenCandidate(
-  state: PuzzleState,
-): { r: number; c: number; gold: number } | null {
-  const gs = state.goldenSolution;
-  if (gs === null) return null;
-
-  // Check explicit eliminateCandidate actions via userRemoved()
-  for (const [r, c, d] of userRemoved(state)) {
-    const gold = gs[r]?.[c];
-    if (gold !== undefined && gold !== 0 && d === gold && state.userGrid![r]![c] === 0) {
-      return { r, c, gold };
-    }
-  }
-  return null;
 }
 
 export function getHints(): HintsResponse {
