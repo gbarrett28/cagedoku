@@ -167,17 +167,34 @@ export class DerivedVirtualCage extends KillerOnlyRule {
     return { ...emptyResult(), virtualCageAdditions: [pending[0]!] };
   }
 
-  asHintsKiller(_ctx, _eliminations): HintResult[] {
-    return []; // no hint surface; addition happens automatically via solve()
+  asHintsKiller(_ctx: KillerRuleContext, _eliminations: readonly Elimination[]): HintResult[] {
+    const pending = _ctx.board.linearSystem.pendingVirtualCages;
+    return pending.map(({ cells, total }) => {
+      const cellLabels = cells.map(cell => cellLabel(cell)).join(' + ');
+      return {
+        ruleName: this.name,
+        displayName: `Virtual cage: ${cells.length} cells = ${total}`,
+        explanation: `The cage-sum equations imply ${cellLabels} = ${total}. Adding this as a virtual cage will help narrow candidates.`,
+        highlightCells: cells,
+        eliminations: [],
+        placement: null,
+        virtualCageSuggestion: [cells, total],
+      };
+    });
   }
 }
 ```
 
 - Pure: only reads `pendingVirtualCages`, never mutates it.
-- Returns **at most one** `virtualCageAddition` per call — satisfies "only
-  adds one virtual cage at a time." Because it's `GLOBAL`-triggered (re-run
-  every pass), the next entry is picked up on a subsequent pass after
-  `solve()` consumes the first.
+- `applyKiller` returns **at most one** `virtualCageAddition` per call —
+  satisfies "only adds one virtual cage at a time." Because it's
+  `GLOBAL`-triggered (re-run every pass), the next entry is picked up on a
+  subsequent pass after `solve()` consumes the first.
+- `asHintsKiller` surfaces **every** entry currently in `pendingVirtualCages`
+  as a T3-style "add virtual cage" suggestion (same shape as
+  `LinearElimination._t3VirtualCageHints`), independent of how many
+  `applyKiller` has auto-applied so far — giving the user visibility into all
+  pending derivations, not just the one about to be auto-applied.
 - Registered in `web/src/engine/rules/index.ts` alongside the other killer
   rules.
 
