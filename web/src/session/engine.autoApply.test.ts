@@ -12,7 +12,14 @@ import {
   applyRuleSteps,
 } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
+import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
 import type { KillerPuzzleState, PuzzleState } from './types.js';
+
+// Skip while either cage-solution-feasibility rule is disabled (e.g. after
+// sync-rule-fixtures adds it to DISABLED_RULES) — this test depends on
+// CageCandidateFilter eliminations being produced.
+const itCageSolns = (DISABLED_RULES.includes('CageCandidateFilter') || DISABLED_RULES.includes('SolutionMapFilter'))
+  ? it.skip : it;
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -171,7 +178,7 @@ describe('applyRuleSteps', () => {
     expect(twice).toEqual(once);
   });
 
-  it('on a base state, folding CageCandidateFilter eliminations is idempotent', () => {
+  itCageSolns('on a base state, folding CageCandidateFilter eliminations is idempotent', () => {
     const state = makeBaseState();
     const { state: once, ruleSteps: firstSteps } = applyRuleSteps(state);
     expect(firstSteps.length).toBeGreaterThan(0);

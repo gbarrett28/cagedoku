@@ -25,6 +25,11 @@ import { SolverEngine, KillerSolverEngine } from '../engine/solverEngine.js';
 
 const itNS = DISABLED_RULES.includes('NakedSingle') ? it.skip : it;
 
+// Full-solve of the trivial spec depends on the cage-solution-feasibility rules;
+// skip while either is disabled (e.g. after sync-rule-fixtures adds it to DISABLED_RULES).
+const itCageSolns = (DISABLED_RULES.includes('CageCandidateFilter') || DISABLED_RULES.includes('SolutionMapFilter'))
+  ? it.skip : it;
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -246,7 +251,7 @@ describe('buildEngine', () => {
     expect(engine).toBeDefined();
   });
 
-  it('engine.solve() finds the known solution on trivial spec', () => {
+  itCageSolns('engine.solve() finds the known solution on trivial spec', () => {
     const { board, engine } = buildEngine(makeState());
     engine.solve();
     for (let r = 0; r < 9; r++)
