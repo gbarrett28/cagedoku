@@ -198,13 +198,45 @@ export class DerivedVirtualCage extends KillerOnlyRule {
 - Registered in `web/src/engine/rules/index.ts` alongside the other killer
   rules.
 
-### 4. `solve()` — actually apply `virtualCageAdditions`
+### 4. `solve()` — actually apply `virtualCageAdditions`, golden-checked
 
 Currently (solverEngine.ts:388-395), `result.virtualCageAdditions` is only
 recorded into `appliedVirtualCages`/`appliedMutations`; nothing calls
-`board.addVirtualCage`. Extend this block:
+`board.addVirtualCage`.
+
+The golden-consistency check in `solve()` (lines 332-378) currently covers
+only `result.eliminations`: it scans for eliminations that would remove the
+golden digit from its cell and, if found, reports via `_onViolation`/throws
+and suppresses the whole result. `virtualCageAdditions` get no such check —
+this is the gap the user flagged. **There is no efficiency exemption for
+"sound by construction" derivations: the consistency invariant is checked
+after every rule application, with no exceptions.** Extend the same
+golden-check pass to cover `virtualCageAdditions` alongside `eliminations`:
 
 ```ts
+// Alongside the existing eliminations golden-check, before applying anything:
+for (const vca of result.virtualCageAdditions) {
+  if (this._goldenSolution !== null) {
+    const goldSum = vca.cells.reduce(
+      (sum, [r, c]) => sum + this._goldenSolution![r]![c]!, 0);
+    if (goldSum !== vca.total) {
+      // Same violation path as an offending elimination: report/throw and
+      // suppress this rule's result entirely.
+      if (this._onViolation !== null) {
+        this._onViolation(item.rule.name, /* offending detail */ ...);
+      } else {
+        throw new NoSolnError(
+          `${item.rule.name}: virtual cage ${vca.cells.map(cellLabel).join('+')} = ${vca.total} ` +
+          `contradicts golden solution (sums to ${goldSum})`,
+        );
+      }
+      continue; // suppress this rule's result, as for eliminations
+    }
+  }
+}
+
+// ... existing eliminations application ...
+
 for (const vca of result.virtualCageAdditions) {
   this.board.addVirtualCage(vca.cells, vca.total, []);
   this.board.linearSystem.pendingVirtualCages.shift();
@@ -229,11 +261,15 @@ for (const vca of result.virtualCageAdditions) {
 Note: `linearSystem.pendingVirtualCages.shift()` removes the entry that
 `DerivedVirtualCage` returned (always the front entry, by construction).
 
-`addVirtualCage` itself needs no golden-check: the cage total is a sound
-linear combination of existing equations (every valid solution satisfies
-it), and `cageSolns` is freshly computed via `solSums`. Eliminations from the
-new unit (via `CageCandidateFilter`/`SolutionMapFilter` etc. on subsequent
-queue items) go through the normal golden-check path.
+This makes the golden-check uniform: `eliminations` are checked against the
+golden digit per-cell, `virtualCageAdditions` are checked by summing the
+golden digits over `vca.cells` and comparing to `vca.total` — both are
+instances of "does this rule's output remain consistent with the golden
+solution," checked identically after every rule application, before
+anything is applied to the board. The eager single-cell check in §2a
+(`_checkAgainstGolden`, called from `_onCellDetermined` at the point
+`substituteLiveRows`'s result is computed) remains as an *additional*,
+earlier layer of defense-in-depth — it does not replace this check.
 
 ### 5. Cleanup — dead code removal
 
@@ -259,6 +295,10 @@ queue items) go through the normal golden-check path.
   shifts `pendingVirtualCages` when a rule returns `virtualCageAdditions`,
   and that the new unit is evaluated within the same pass (e.g.
   `CageCandidateFilter` fires for it before `solve()` returns).
+- `solverEngine.test.ts`: test the §4 golden-check — a `virtualCageAddition`
+  whose `vca.cells` golden digits don't sum to `vca.total` triggers
+  `_onViolation`/throws and is not passed to `addVirtualCage`, mirroring the
+  existing `eliminations` golden-check test.
 - `linearSystem.test.ts`: test the eager golden-check path — a
   `substituteLiveRows` single-cell result that contradicts
   `goldenSolution` triggers `_onViolation`/throws before any queuing.
