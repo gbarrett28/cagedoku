@@ -8,9 +8,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeQuadSums, detectPuzzleType, detectRotation, isCageTotalContour,
-  cageConfFromContours, thresholdMargin, pickBestThreshold,
+  cageConfFromContours, thresholdMargin, pickBestThreshold, calibrateCageTotalThreshold,
 } from './cellScan.js';
 import type { ContourMetrics, ThresholdCandidateResult } from './cellScan.js';
+import type { GrayImage } from './borderClustering.js';
+import { defaultImagePipelineConfig, subres as cfgSubres } from './config.js';
 import type { OpenCVMat } from './opencv.js';
 
 // ---------------------------------------------------------------------------
@@ -215,6 +217,90 @@ describe('pickBestThreshold', () => {
       { threshold: 0.3, valid: false, margin: 0.99 },
     ];
     expect(pickBestThreshold(results)).toBe(0.1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// calibrateCageTotalThreshold
+// ---------------------------------------------------------------------------
+
+describe('calibrateCageTotalThreshold', () => {
+  const config = defaultImagePipelineConfig();
+  const subres = cfgSubres(config); // 128
+  const size = subres * 9;
+
+  /** All 81 cells have one contour with fillRatio ~0.2 (w=20,h=20,area=80). */
+  function uniformContours(): ContourMetrics[][][] {
+    return Array.from({ length: 9 }, () =>
+      Array.from({ length: 9 }, () => [{ width: 20, height: 20, area: 80 }]),
+    );
+  }
+
+  /**
+   * Image where every horizontal AND vertical inter-cell border band is dark
+   * (cage-border ink), everything else white.
+   */
+  function imageWithAllDarkBorders(): GrayImage {
+    const data = new Uint8Array(size * size).fill(255);
+    const halfBand = (subres / 2) | 0;
+    for (let g = 0; g < 8; g++) {
+      const boundary = (g + 1) * subres;
+      for (let i = boundary - halfBand; i < boundary + halfBand; i++) {
+        if (i < 0 || i >= size) continue;
+        for (let j = 0; j < size; j++) {
+          data[i * size + j] = 30; // horizontal band
+          data[j * size + i] = 30; // vertical band
+        }
+      }
+    }
+    return { data, size };
+  }
+
+  it('picks the lower candidate when it yields a valid 81-cage geometry and the higher does not', () => {
+    // At threshold 0.1, fillRatio 0.2 >= 0.1 -> cageConf all 1.0 -> every cell is
+    // its own cage head; with all borders dark and all anchors confident,
+    // clusterBorders should classify all inner borders as cage walls -> valid.
+    // At threshold 0.5, fillRatio 0.2 < 0.5 -> cageConf all 0.0 -> no cage heads
+    // at all -> validateCageGeometry returns false (unassigned regions).
+    const result = calibrateCageTotalThreshold(
+      uniformContours(),
+      imageWithAllDarkBorders(),
+      subres,
+      [0.1, 0.5],
+      config.borderClustering,
+      config.cellScan.anchorConfidenceThreshold,
+      0.3, // fallbackThreshold
+    );
+
+    expect(result.fallbackUsed).toBe(false);
+    expect(result.threshold).toBe(0.1);
+    expect(result.candidateResults).toHaveLength(2);
+    expect(result.candidateResults[0]!.threshold).toBe(0.1);
+    expect(result.candidateResults[0]!.valid).toBe(true);
+    expect(result.candidateResults[0]!.margin).toBeCloseTo(0.1, 5);
+    expect(result.candidateResults[1]!.valid).toBe(false);
+    for (const row of result.cageConf) for (const v of row) expect(v).toBe(1.0);
+  });
+
+  it('falls back to fallbackThreshold when no candidate is valid', () => {
+    // fillRatio 0.2 < both 0.4 and 0.5 -> cageConf all 0.0 for both candidates
+    // -> validateCageGeometry false for both -> fallback to 0.3.
+    const result = calibrateCageTotalThreshold(
+      uniformContours(),
+      imageWithAllDarkBorders(),
+      subres,
+      [0.4, 0.5],
+      config.borderClustering,
+      config.cellScan.anchorConfidenceThreshold,
+      0.3, // fallbackThreshold
+    );
+
+    expect(result.fallbackUsed).toBe(true);
+    expect(result.threshold).toBe(0.3);
+    expect(result.candidateResults).toHaveLength(2);
+    expect(result.candidateResults.every(c => !c.valid)).toBe(true);
+    // fillRatio 0.2 < 0.3 -> cageConf still all 0 at the fallback threshold too.
+    for (const row of result.cageConf) for (const v of row) expect(v).toBe(0.0);
   });
 });
 
