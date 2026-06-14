@@ -282,6 +282,84 @@ earlier layer of defense-in-depth — it does not replace this check.
 - Verify via `find_referencing_symbols` that nothing else references
   `substituteCell`, `filterSumConstraint`, or `filterSumRange` before removal.
 
+### 6. User-added virtual cages — golden-sum check → Rewind (Check 0)
+
+`addVirtualCage` (session/actions.ts:971) lets the user manually enter a
+virtual cage (cells + total, optionally a diff cage via `negativeCells`),
+recorded as an `addVirtualCage` turn via `PuzzleStateOps.addVirtualCage` →
+`recordTurn`. If the user mistypes or misreads the total from the puzzle
+image, the cage constraint contradicts `state.goldenSolution` from the
+start — but today this surfaces only indirectly, several turns later, once
+`CageCandidateFilter`/`SolutionMapFilter` eliminations on the bogus cage
+cascade into a wrong placement or a bad candidate elimination (Checks 1-3
+in `getHints()`, lines 1131-1152).
+
+Add a **Check 0** to `getHints()`'s inconsistency-detection block, run
+*before* Checks 1-3, so the root cause is identified directly at the
+turn that introduced it:
+
+For each `vc` in `userVirtualCages(state)`, compute the golden sum:
+- standard cage: `goldSum = Σ gs[r][c]` over `vc.cells`
+- diff cage: `goldSum = Σ gs[r][c]` over `vc.cells \ vc.negativeCells`,
+  minus `Σ gs[r][c]` over `vc.negativeCells`
+
+If `goldSum !== vc.total` for any `vc`, the cage's user-entered total
+contradicts the golden solution. Add a helper alongside
+`findLastConsistentTurnIdx`/`findFirstElimTurnIdx`:
+
+```ts
+/**
+ * Returns the turn index of the earliest addVirtualCage action whose cage
+ * total contradicts goldenSolution, or null if all current virtual cages
+ * are consistent.
+ */
+function findWrongVirtualCageTurnIdx(state: PuzzleState): number | null {
+  const gs = state.goldenSolution;
+  if (gs === null) return null;
+  for (let i = 0; i < state.turns.length; i++) {
+    const a = state.turns[i]!.action;
+    if (a.type !== 'addVirtualCage') continue;
+    const { cells, total, negativeCells } = a.cage;
+    const negKeys = new Set((negativeCells ?? []).map(([r, c]) => `${r},${c}`));
+    let goldSum = 0;
+    for (const [r, c] of cells) {
+      goldSum += negKeys.has(`${r},${c}`) ? -gs[r]![c]! : gs[r]![c]!;
+    }
+    if (goldSum !== total) return i;
+  }
+  return null;
+}
+```
+
+Wire it in as Check 0, before Check 1 (lines 1131-1152):
+
+```ts
+if (gs !== null) {
+  // Check 0: a user-added virtual cage's total contradicts goldenSolution —
+  // catches the root cause directly, before it cascades into Checks 1-3.
+  const wrongCageIdx = findWrongVirtualCageTurnIdx(state);
+  if (wrongCageIdx !== null) {
+    inconsistent = true;
+    rewindTurnIdx = wrongCageIdx;
+  }
+
+  // Check 1 & 3: wrong digit anywhere in userGrid
+  for (let r = 0; r < 9 && !inconsistent; r++) {
+    ...
+  }
+  ...
+}
+```
+
+`missingCell` stays `null` for Check 0, so the existing `if (inconsistent)`
+block (lines 1154-1199) requires **no new branching**: it skips the
+`missingCell !== null` branch, finds `rewindTurnIdx !== null` (always true —
+an `addVirtualCage` action is always a recorded turn), and falls into the
+existing Case A alt-solution check before offering `makeRewindHint(idx)` —
+identical handling to Check 1. The existing generic "A mistake has been
+detected. Rewinding will undo all moves back to the last correct state."
+message is accurate for this case too; no new hint copy needed.
+
 ## Testing
 
 - `solverEngine.test.ts`: remove/replace the `substituteCell` spy test;
@@ -302,6 +380,12 @@ earlier layer of defense-in-depth — it does not replace this check.
 - `linearSystem.test.ts`: test the eager golden-check path — a
   `substituteLiveRows` single-cell result that contradicts
   `goldenSolution` triggers `_onViolation`/throws before any queuing.
+- `actions.test.ts`: new test for §6 — `addVirtualCage` with a total that
+  doesn't match the golden-solution sum over its cells, followed by
+  `getHints()`, returns a `Rewind` hint (`rewindToTurnIdx` equal to that
+  turn's index). Also test `findWrongVirtualCageTurnIdx` directly: returns
+  `null` when all virtual cages are consistent, and the correct turn index
+  for the earliest inconsistent one (including the diff-cage case).
 - Existing fixture-based regression tests (`__fixtures__/index.ts`) should
   continue to pass — this refactor should not change *which* eliminations are
   ultimately produced for `distinct === true` derivations (just *how*/*where*
