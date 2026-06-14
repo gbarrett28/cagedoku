@@ -88,6 +88,22 @@ export interface CellScanConfig {
    * Minimum dominant-quadrant fraction to trigger orientation correction.
    */
   readonly rotationDominanceThreshold: number;
+  /**
+   * Minimum contour fill ratio (area / boundingBoxArea) for a top-left-quadrant
+   * contour to count as a cage-total digit. Distinguishes solid digit glyphs
+   * (observed fillRatio 0.50-0.81) from thin dashed cage-border-line segments
+   * (observed fillRatio ~0.15), which otherwise pass the bounding-box size check.
+   *
+   * This is the fallback threshold used when no candidate in
+   * `cageTotalFillRatioCandidates` yields a valid cage geometry.
+   */
+  readonly cageTotalMinFillRatio: number;
+  /**
+   * Candidate fill-ratio thresholds tried during per-image cage-total
+   * calibration, spanning the observed dash cluster (~0.15) to digit cluster
+   * (~0.50-0.81).
+   */
+  readonly cageTotalFillRatioCandidates: readonly number[];
 }
 
 export function defaultCellScanConfig(): CellScanConfig {
@@ -96,6 +112,8 @@ export function defaultCellScanConfig(): CellScanConfig {
     anchorConfidenceThreshold: 0.5,
     tlFractionThreshold: 0.40,
     rotationDominanceThreshold: 0.50,
+    cageTotalMinFillRatio: 0.3,
+    cageTotalFillRatioCandidates: [0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50],
   };
 }
 

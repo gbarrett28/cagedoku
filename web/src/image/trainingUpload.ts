@@ -2,12 +2,14 @@ import type { TrainingExport } from '../../../shared/src/reports/TrainingExport.
 import type { StallStateExport } from '../../../shared/src/reports/StallStateExport.js';
 import type { RuleBugReport } from '../../../shared/src/reports/RuleBugReport.js';
 import type { TriggerMissReport } from '../../../shared/src/reports/TriggerMissReport.js';
+import type { CageThresholdCalibrationReport } from '../../../shared/src/reports/CageThresholdCalibrationReport.js';
 import type { AnyReport } from '../../../shared/src/reports/index.js';
 
 export type { TrainingExport } from '../../../shared/src/reports/TrainingExport.js';
 export type { StallStateExport } from '../../../shared/src/reports/StallStateExport.js';
 export type { RuleBugReport } from '../../../shared/src/reports/RuleBugReport.js';
 export type { TriggerMissReport } from '../../../shared/src/reports/TriggerMissReport.js';
+export type { CageThresholdCalibrationReport } from '../../../shared/src/reports/CageThresholdCalibrationReport.js';
 
 // ---------------------------------------------------------------------------
 // Consent
@@ -86,6 +88,21 @@ export function submitTriggerMissReport(
   if (!hasConsent()) return;
   const payload: TriggerMissReport = {
     reportType: 'trigger-miss',
+    reportedAt: new Date().toISOString(),
+    appVersion: __BUILD_TIME__,
+    userAgent: navigator.userAgent,
+    ...report,
+  };
+  postToWorker(payload);
+}
+
+/** Submit a cage-threshold-calibration report. Silently dropped when consent is absent. */
+export function submitCageThresholdCalibrationReport(
+  report: Omit<CageThresholdCalibrationReport, 'reportType' | 'reportedAt' | 'appVersion' | 'userAgent'>,
+): void {
+  if (!hasConsent()) return;
+  const payload: CageThresholdCalibrationReport = {
+    reportType: 'cage-threshold-calibration',
     reportedAt: new Date().toISOString(),
     appVersion: __BUILD_TIME__,
     userAgent: navigator.userAgent,

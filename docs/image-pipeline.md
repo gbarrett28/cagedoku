@@ -171,21 +171,51 @@ format-specific border model.
 flowchart TD
     A[warped grayscale image] --> B[for each of 81 cells:\nextract subres x subres patch]
     B --> C[find contours in\ntop-left subres/2 x subres/2 quadrant]
-    C --> D{small contours?\nw in subres/16..subres/2\nh in subres/8..subres/2}
-    D -- yes --> E[cage_total_confidence = high]
-    D -- no --> F[cage_total_confidence = 0]
+    C --> D{size-valid contours?\nw in subres/16..subres/2\nh in subres/8..subres/2}
+    D -- yes --> E[ContourMetrics list per cell\nwidth, height, area]
+    D -- no --> F[empty list]
+    E --> CAL[calibrateCageTotalThreshold\nsee below]
+    F --> CAL
+    CAL --> CC[cage_total_confidence 9x9]
     B --> G[find contours in\ncentral subres/2 x subres/2 region]
     G --> H{large centred contour?\nw > subres/3 or h > subres/3}
     H -- yes --> I[classic_digit_confidence = high]
     H -- no --> J[classic_digit_confidence = 0]
-    E --> K[puzzle type heuristic\nsee Puzzle Type Detection]
+    CC --> K[puzzle type heuristic\nsee Puzzle Type Detection]
     I --> K
 ```
 
-**Confidence scoring:** contour area relative to the expected area for a digit at the
-given resolution, clamped to [0, 1].  A binary (0 / 1) score is sufficient for the
-initial implementation; a continuous score becomes valuable in Stage 6 for ranking
-uncertain assignments.
+**Contour collection:** `collectCageTotalContours` runs adaptiveThreshold +
+findContours once per cell's top-left quadrant and keeps every contour passing
+`isCageTotalContourSize` (the bounding-box check), recording `{width, height, area}`
+for each. No fill-ratio threshold is applied at this stage — that decision is
+deferred to calibration so it can be evaluated for many candidate thresholds without
+re-running OpenCV.
+
+**Per-image fill-ratio calibration:** `calibrateCageTotalThreshold`
+(`web/src/image/cellScan.ts`) searches `cageTotalFillRatioCandidates` (a fixed list
+spanning ~0.10-0.50) for the threshold that best separates real digit glyphs
+(observed fillRatio 0.50-0.81) from thin dashed cage-border-line segments (fillRatio
+~0.15), which both pass the size check but must be told apart. For each candidate:
+
+1. Derive `cage_total_confidence` via `cageConfFromContours` (1.0 if any contour's
+   `area / (width * height) >= threshold`, else 0.0).
+2. Run Stage 4's `clusterBorders` with that confidence as anchors.
+3. Threshold the resulting border probabilities at >0.5 and check structural
+   plausibility with `validateCageGeometry` — every cell in exactly one connected
+   component, every component with exactly one cage head, no double-heads.
+
+Among candidates that validate, the one with the largest `thresholdMargin` (minimum
+distance from the threshold to any contour's fillRatio — i.e. the cleanest
+separation between the dash and digit clusters) is chosen, and its
+`cage_total_confidence`/`borderX`/`borderY`/`borderXProb`/`borderYProb` are used
+directly by Stage 4/5 (no second `clusterBorders` run). If no candidate validates,
+the pipeline falls back to the fixed `cageTotalMinFillRatio` (0.3).
+
+Each run submits a `CageThresholdCalibrationReport` (consent-gated, stored in R2
+under `cage-threshold-calibration/`) recording the chosen threshold, whether the
+fallback was used, the full candidate sweep, and the raw flattened contour fill
+ratios — data for re-tuning the candidate list or margin rule later.
 
 **Parameters:**
 
@@ -194,6 +224,8 @@ uncertain assignments.
 | Top-left quadrant: `subres/2 x subres/2` | Cage totals occupy the top-left quarter of their cell; this is an upper bound on the search region. |
 | Contour width bounds: `subres/16 .. subres/2` | Same bounds as Stage 5 digit recognition.  Lower bound excludes grid lines; upper bound excludes whole-cell features. |
 | Contour height bounds: `subres/8 .. subres/2` | Digits are taller than wide; same bounds as Stage 5. |
+| `cageTotalFillRatioCandidates` | `[0.10, 0.15, ..., 0.50]` — spans the observed dash cluster (~0.15) to digit cluster (0.50-0.81). |
+| `cageTotalMinFillRatio` | 0.3 — fallback threshold used only when no candidate validates. |
 | Central region for classic digit: `subres/3 .. subres` | Pre-filled digits in classic sudoku occupy the centre two-thirds of a cell. |
 
 ---

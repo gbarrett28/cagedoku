@@ -88,6 +88,34 @@ describe('parseAnyReport', () => {
     expect(parsed!.reportType).toBe('trigger-miss');
   });
 
+  it('round-trips a cage-threshold-calibration report', () => {
+    const r = {
+      ...base,
+      reportType: 'cage-threshold-calibration',
+      chosenThreshold: 0.3,
+      fallbackUsed: false,
+      candidates: [
+        { threshold: 0.1, valid: false, margin: 0.05 },
+        { threshold: 0.3, valid: true, margin: 0.12 },
+      ],
+      contourFillRatios: [0.15, 0.81, 0.2],
+    };
+    const parsed = parseAnyReport(r);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.reportType).toBe('cage-threshold-calibration');
+  });
+
+  it('returns null for a cage-threshold-calibration report missing contourFillRatios', () => {
+    const r = {
+      ...base,
+      reportType: 'cage-threshold-calibration',
+      chosenThreshold: 0.3,
+      fallbackUsed: false,
+      candidates: [],
+    };
+    expect(parseAnyReport(r)).toBeNull();
+  });
+
   it('round-trips a feedback report', () => {
     const r = {
       ...base,
