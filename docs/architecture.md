@@ -355,6 +355,32 @@ The solver has no tunable thresholds — it is exact by construction.
 
 **MRV backtracker (`web/src/engine/backtracker.ts`):** The TypeScript coaching engine falls back to `mrvBacktrack()` when the rule engine stalls. It applies Minimum Remaining Values cell selection with arc-consistency propagation via `assign()`. After `search()` returns, a `gridValid()` defensive guard re-checks the extracted `number[][]` for row/column/box uniqueness before returning it — if the check fails the function logs a `console.error` and returns `null`, converting a corrupt `goldenSolution` into an `UnsolvedByRules` assertion instead of an `InvalidSolution` one.
 
+**`LinearSystem` virtual-cage derivation (`web/src/engine/linearSystem.ts`):**
+`_deriveNonburbVirtualCages` derives additional ("virtual") cages beyond the
+puzzle's real cages by combining row/column/box/cage sum equations — e.g. "this
+row sums to 45, this cage inside it sums to 14, so the remaining 6 cells sum to
+31". Each candidate group is a `DeriveEq { cells: Set<string>; total: number }`.
+`_reduceDerive` repeatedly subtracts one equation's cell-set from another when it
+is a subset (`ej.cells = ej.cells.difference(ei.cells)`, `ej.total -= ei.total`)
+until no further reduction is possible — pure cell-set/total arithmetic, the kind
+of pencil-and-paper deduction a human solver performs.
+
+For each surviving equation, `isBurb(cells)` determines whether the cells share a
+row/column/box (`distinct: true`, digits must be distinct). For non-distinct
+groups, `solSums(cells.length, 0, total)` is computed once to find the
+intersection of possible digit-sets (`must`); the group is only emitted as a
+virtual cage if `must` is non-empty. All derived virtual cages are pushed with
+`precomputedSolns: null` — `KillerBoardState` computes `solSums(cells.length, 0,
+total)` lazily when building `cageSolns` for the cage, so no information is lost.
+
+This derivation intentionally does **not** track or recombine per-equation
+solution sets across reduction steps (an earlier design did this and caused
+exponential blow-up for cage layouts with cages larger than 2 cells — see
+`web/scripts/fuzz-cage-rules.ts`). The resulting `precomputedSolns` values are a
+superset of what the earlier cross-equation-narrowed values would have been,
+which is strictly safer (cannot cause a new incorrect elimination) at the cost of
+deriving fewer virtual cages / slightly less pruning power.
+
 ---
 
 ## Rule Mutations and Rule Steps
