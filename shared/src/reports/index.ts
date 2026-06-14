@@ -6,6 +6,7 @@ export { FeedbackReport } from './FeedbackReport.js';
 export { RuleBugReport } from './RuleBugReport.js';
 export { TriggerMissReport } from './TriggerMissReport.js';
 export type { TriggerMissReproductionBundle } from './TriggerMissReport.js';
+export { CageThresholdCalibrationReport } from './CageThresholdCalibrationReport.js';
 
 import type { TrainingExport } from './TrainingExport.js';
 import type { PuzzleSpecExport } from './PuzzleSpecExport.js';
@@ -13,12 +14,14 @@ import type { StallStateExport } from './StallStateExport.js';
 import type { FeedbackReport } from './FeedbackReport.js';
 import type { RuleBugReport } from './RuleBugReport.js';
 import type { TriggerMissReport } from './TriggerMissReport.js';
+import type { CageThresholdCalibrationReport } from './CageThresholdCalibrationReport.js';
 import { RuleBugReport as RBR } from './RuleBugReport.js';
 import { TriggerMissReport as TMR } from './TriggerMissReport.js';
 import { FeedbackReport as FR } from './FeedbackReport.js';
 import { StallStateExport as SSE } from './StallStateExport.js';
 import { PuzzleSpecExport as PSE } from './PuzzleSpecExport.js';
 import { TrainingExport as TE } from './TrainingExport.js';
+import { CageThresholdCalibrationReport as CTCR } from './CageThresholdCalibrationReport.js';
 
 export type AnyReport =
   | TrainingExport
@@ -26,13 +29,15 @@ export type AnyReport =
   | StallStateExport
   | FeedbackReport
   | RuleBugReport
-  | TriggerMissReport;
+  | TriggerMissReport
+  | CageThresholdCalibrationReport;
 
 /**
  * Parse an unknown value as any known report type. Returns null if none match.
  * Validators are tried in specificity order — more-discriminating checks first.
  */
 export function parseAnyReport(value: unknown): AnyReport | null {
+  if (CTCR.is(value)) return value;
   if (RBR.is(value)) return value;
   if (TMR.is(value)) return value;
   if (FR.is(value)) return value;
