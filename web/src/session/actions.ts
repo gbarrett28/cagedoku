@@ -16,7 +16,7 @@ import { defaultRules } from '../engine/rules/index.js';
 import { cageSumRange, cellKey, keyToCell } from '../engine/types.js';
 import type { Cell } from '../engine/types.js';
 import { parsePuzzleImage, ImageDecodeError, GridNotFoundError } from '../image/inpImage.js';
-import { AssertionViolation, validateSudokuSolution } from './assertions.js';
+import { AssertionViolation, validateSudokuSolution, isCageSumCorrect } from './assertions.js';
 import { formatActionLog } from './actionLog.js';
 
 import type { ParseResult } from '../image/inpImage.js';
@@ -30,7 +30,8 @@ import {
   rebuildUserGrid,
   userRemoved,
   userVirtualCages,
-  findLastConsistentTurnIdx,
+  checkPuzzleInvariant,
+  findWrongVirtualCageTurnIdx,
   PuzzleStateOps,
 } from './engine.js';
 import { loadSettings, saveSettings } from './settings.js';
@@ -59,7 +60,7 @@ import type {
   VirtualCage,
   VirtualCageSuggestion,
 } from './types.js';
-import type { EliminateCandidateMutation, RuleStep } from './ruleMutation.js';
+import type { RuleStep } from './ruleMutation.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -270,7 +271,24 @@ async function fileToDisplayUrl(file: File): Promise<string | null> {
  */
 export function solveAndValidateSpec(spec: PuzzleSpec): string | null {
   const { board } = solve(spec);
-  return extractAndValidateSolution(board);
+  const grid = extractSolutionGrid(board);
+  const err = validateSudokuSolution(grid);
+  if (err) return err;
+  if (!isCageSumCorrect(grid, spec.regions, spec.cageTotals)) {
+    return 'Solved grid does not match the declared cage totals';
+  }
+  return null;
+}
+
+/** Extracts a tentative 9×9 solution grid from a board. Cells with more than
+ *  one candidate are recorded as 0 (unsolved). */
+function extractSolutionGrid(board: BoardState): number[][] {
+  return Array.from({ length: 9 }, (_, r) =>
+    Array.from({ length: 9 }, (__, c) => {
+      const cands = board.cands(r, c);
+      return cands.size === 1 ? [...cands][0]! : 0;
+    }),
+  );
 }
 
 /**
@@ -284,13 +302,7 @@ export function solveAndValidateSpec(spec: PuzzleSpec): string | null {
  * the playing screen.
  */
 export function extractAndValidateSolution(board: BoardState): string | null {
-  const grid: number[][] = Array.from({ length: 9 }, (_, r) =>
-    Array.from({ length: 9 }, (__, c) => {
-      const cands = board.cands(r, c);
-      return cands.size === 1 ? [...cands][0]! : 0;
-    }),
-  );
-  return validateSudokuSolution(grid);
+  return validateSudokuSolution(extractSolutionGrid(board));
 }
 
 /**
@@ -1060,98 +1072,28 @@ function makeRewindHint(idx: number): HintItem {
   };
 }
 
-/**
- * Scan turn history for the first turn that explicitly eliminated `digit` from
- * cell `(r,c)` — either via eliminateCandidate or via applyHint.
- * Returns the turn index, or null if not found (e.g. was eliminated by a rule).
- */
-function findFirstElimTurnIdx(
-  state: PuzzleState,
-  r: number,
-  c: number,
-  digit: number,
-): number | null {
-  for (let i = 0; i < state.turns.length; i++) {
-    const a = state.turns[i]!.action;
-    if (a.type === 'eliminateCandidate' && a.row === r && a.col === c && a.digit === digit) return i;
-    if (a.type === 'applyHint') {
-      for (const m of a.mutations) {
-        if (m.type === 'eliminateCandidate') {
-          const elim = m as EliminateCandidateMutation;
-          if (elim.row === r && elim.col === c && elim.digit === digit) return i;
-        }
-      }
-    }
-  }
-  return null;
-}
-
-/**
- * Checks the user's recorded eliminations (cycleCandidate, applyHint) against
- * goldenSolution.  Returns the first cell where the correct solution digit was
- * explicitly removed by the user, or null if all golden candidates are intact.
- *
- * State-based (no board build required) so it is safe to call before buildEngine.
- */
-function findMissingGoldenCandidate(
-  state: PuzzleState,
-): { r: number; c: number; gold: number } | null {
-  const gs = state.goldenSolution;
-  if (gs === null) return null;
-
-  // Check explicit eliminateCandidate actions via userRemoved()
-  for (const [r, c, d] of userRemoved(state)) {
-    const gold = gs[r]?.[c];
-    if (gold !== undefined && gold !== 0 && d === gold && state.userGrid![r]![c] === 0) {
-      return { r, c, gold };
-    }
-  }
-  return null;
-}
-
 export function getHints(): HintsResponse {
   let state = requireConfirmed();
   if (state.goldenSolution === null) return { hints: [] };
 
   // ── Inconsistency detection ─────────────────────────────────────────────────
-  // Three paths can put the board in a state inconsistent with goldenSolution:
-  //   1. A wrong digit was placed (detectable via userGrid vs goldenSolution).
-  //      findLastConsistentTurnIdx also finds the responsible turn when it was
-  //      a user placeDigit action; wrong auto-placed digits fall back to turn 0.
-  //   2. The correct solution digit was explicitly eliminated from a cell's
-  //      candidates (cycleCandidate / applyHint) — detectable from turn history.
-  //   3. Wrong digits in userGrid that have no corresponding turn (legacy states
-  //      from pre-soundness-assertion auto-placement cascades) — detected as any
-  //      non-zero wrong cell in userGrid.
-  const gs = state.goldenSolution;
-  let inconsistent = false;
-  let rewindTurnIdx: number | null = null;
-  let missingCell: { r: number; c: number; gold: number } | null = null;
-
-  if (gs !== null) {
-    // Check 1 & 3: wrong digit anywhere in userGrid
-    for (let r = 0; r < 9 && !inconsistent; r++) {
-      for (let c = 0; c < 9 && !inconsistent; c++) {
-        const placed = state.userGrid[r]![c]!;
-        const gold = gs[r]![c]!;
-        if (placed !== 0 && gold !== 0 && placed !== gold) {
-          inconsistent = true;
-          rewindTurnIdx = findLastConsistentTurnIdx(state); // null if no turn
-        }
-      }
-    }
-
-    // Check 2: correct golden candidate explicitly eliminated by user
-    if (!inconsistent) {
-      missingCell = findMissingGoldenCandidate(state);
-      if (missingCell !== null) {
-        inconsistent = true;
-        rewindTurnIdx = findFirstElimTurnIdx(state, missingCell.r, missingCell.c, missingCell.gold);
-      }
-    }
-  }
+  // checkPuzzleInvariant compares state against goldenSolution and returns the
+  // first detected violation (wrong virtual cage total, wrong placed digit, or
+  // an explicitly-eliminated correct candidate), or null if consistent.
+  const violation = checkPuzzleInvariant(state);
+  const inconsistent = violation !== null;
+  const rewindTurnIdx = violation?.rewindTurnIdx ?? null;
+  const missingCell = violation?.missingCell ?? null;
 
   if (inconsistent) {
+    // Check 0 (killer-only): a user-added virtual cage's total contradicts
+    // goldenSolution. userGrid itself is consistent, so the alt-solution
+    // search below (which assumes a wrong placed/eliminated digit) doesn't
+    // apply — rewind immediately.
+    if (missingCell === null && PuzzleState.isKiller(state) && findWrongVirtualCageTurnIdx(state) !== null) {
+      return { hints: [makeRewindHint(rewindTurnIdx ?? 0)] };
+    }
+
     if (missingCell !== null) {
       // Golden candidate was explicitly eliminated. In a multi-solution puzzle the
       // cell may still have a remaining candidate that is correct for an alternative

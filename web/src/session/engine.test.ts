@@ -13,6 +13,8 @@ import {
   applyRuleSteps,
   recordTurn,
   rebuildUserGrid,
+  findWrongVirtualCageTurnIdx,
+  checkPuzzleInvariant,
   PuzzleStateOps,
 } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
@@ -151,6 +153,184 @@ describe('userVirtualCages', () => {
       makeTurn({ type: 'removeVirtualCage', key }),
     ];
     expect(userVirtualCages({ ...state, turns })).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findWrongVirtualCageTurnIdx
+// ---------------------------------------------------------------------------
+
+describe('findWrongVirtualCageTurnIdx', () => {
+  it('returns null when goldenSolution is null', () => {
+    const state = makeState();
+    expect(findWrongVirtualCageTurnIdx(state)).toBeNull();
+  });
+
+  it('returns null when no addVirtualCage turns exist', () => {
+    const state: KillerPuzzleState = {
+      ...makeState(),
+      goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
+    };
+    expect(findWrongVirtualCageTurnIdx(state)).toBeNull();
+  });
+
+  it('returns null when a standard cage total matches the golden sum', () => {
+    const gs: number[][] = KNOWN_SOLUTION.map(row => [...row]);
+    const vc: VirtualCage = {
+      cells: [[0, 0], [0, 1]] as Cell[],
+      total: gs[0]![0]! + gs[0]![1]!,
+      eliminatedSolns: [],
+    };
+    const state: KillerPuzzleState = {
+      ...makeState(),
+      goldenSolution: gs,
+      turns: [makeTurn({ type: 'addVirtualCage', cage: vc })],
+    };
+    expect(findWrongVirtualCageTurnIdx(state)).toBeNull();
+  });
+
+  it('returns the turn index when a standard cage total contradicts the golden sum', () => {
+    const gs: number[][] = KNOWN_SOLUTION.map(row => [...row]);
+    const wrongTotal = gs[0]![0]! + gs[0]![1]! + 1;
+    const vc: VirtualCage = {
+      cells: [[0, 0], [0, 1]] as Cell[],
+      total: wrongTotal,
+      eliminatedSolns: [],
+    };
+    const state: KillerPuzzleState = {
+      ...makeState(),
+      goldenSolution: gs,
+      turns: [makeTurn({ type: 'addVirtualCage', cage: vc })],
+    };
+    expect(findWrongVirtualCageTurnIdx(state)).toBe(0);
+  });
+
+  it('accounts for negativeCells in a diff cage', () => {
+    const gs: number[][] = KNOWN_SOLUTION.map(row => [...row]);
+    const correctDiff = gs[0]![0]! - gs[0]![1]!;
+    const vc: VirtualCage = {
+      cells: [[0, 0], [0, 1]] as Cell[],
+      total: Math.abs(correctDiff) + 1, // wrong total
+      eliminatedSolns: [],
+      negativeCells: [[0, 1]] as Cell[],
+      eliminatedDiffSolns: [],
+    };
+    const state: KillerPuzzleState = {
+      ...makeState(),
+      goldenSolution: gs,
+      turns: [makeTurn({ type: 'addVirtualCage', cage: vc })],
+    };
+    expect(findWrongVirtualCageTurnIdx(state)).toBe(0);
+  });
+
+  it('finds the earliest inconsistent cage when multiple are added', () => {
+    const gs: number[][] = KNOWN_SOLUTION.map(row => [...row]);
+    const goodVc: VirtualCage = {
+      cells: [[0, 0], [0, 1]] as Cell[],
+      total: gs[0]![0]! + gs[0]![1]!,
+      eliminatedSolns: [],
+    };
+    const badVc: VirtualCage = {
+      cells: [[1, 0], [1, 1]] as Cell[],
+      total: gs[1]![0]! + gs[1]![1]! + 1,
+      eliminatedSolns: [],
+    };
+    const state: KillerPuzzleState = {
+      ...makeState(),
+      goldenSolution: gs,
+      turns: [
+        makeTurn({ type: 'addVirtualCage', cage: goodVc }),
+        makeTurn({ type: 'addVirtualCage', cage: badVc }),
+      ],
+    };
+    expect(findWrongVirtualCageTurnIdx(state)).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkPuzzleInvariant
+// ---------------------------------------------------------------------------
+
+describe('checkPuzzleInvariant', () => {
+  it('returns null when goldenSolution is null', () => {
+    const state = makeState();
+    expect(checkPuzzleInvariant(state)).toBeNull();
+  });
+
+  it('returns null for a consistent state', () => {
+    const gs: number[][] = KNOWN_SOLUTION.map(row => [...row]);
+    const state: KillerPuzzleState = {
+      ...makeState(),
+      goldenSolution: gs,
+      userGrid: gs.map(row => [...row]),
+    };
+    expect(checkPuzzleInvariant(state)).toBeNull();
+  });
+
+  it('Check 1/3: returns rewindTurnIdx (no missingCell) for a wrong userGrid digit', () => {
+    const gs: number[][] = KNOWN_SOLUTION.map(row => [...row]);
+    const wrong = gs[0]![0]! === 1 ? 2 : 1;
+    const userGrid = gs.map(row => [...row]);
+    userGrid[0]![0] = wrong;
+    const state: KillerPuzzleState = {
+      ...makeState(),
+      goldenSolution: gs,
+      userGrid,
+      turns: [makeTurn({ type: 'placeDigit', row: 0, col: 0, digit: wrong, source: 'user' })],
+    };
+    const violation = checkPuzzleInvariant(state);
+    expect(violation).not.toBeNull();
+    expect(violation!.rewindTurnIdx).toBe(0);
+    expect(violation!.missingCell).toBeNull();
+  });
+
+  it('Check 2: returns missingCell and rewindTurnIdx for an eliminated golden candidate', () => {
+    const gs: number[][] = KNOWN_SOLUTION.map(row => [...row]);
+    const gold = gs[0]![0]!;
+    const state: KillerPuzzleState = {
+      ...makeState(),
+      goldenSolution: gs,
+      turns: [makeTurn({ type: 'eliminateCandidate', row: 0, col: 0, digit: gold })],
+      userRemovedCandidates: [[0, 0, gold]],
+    };
+    const violation = checkPuzzleInvariant(state);
+    expect(violation).not.toBeNull();
+    expect(violation!.missingCell).toEqual({ r: 0, c: 0, gold });
+    expect(violation!.rewindTurnIdx).toBe(0);
+  });
+
+  it('Check 0 (killer-only): a wrong virtual cage total is reported with no missingCell', () => {
+    const gs: number[][] = KNOWN_SOLUTION.map(row => [...row]);
+    const badVc: VirtualCage = {
+      cells: [[0, 0], [0, 1]] as Cell[],
+      total: gs[0]![0]! + gs[0]![1]! + 1,
+      eliminatedSolns: [],
+    };
+    const state: KillerPuzzleState = {
+      ...makeState(),
+      goldenSolution: gs,
+      userGrid: gs.map(row => [...row]),
+      turns: [makeTurn({ type: 'addVirtualCage', cage: badVc })],
+    };
+    const violation = checkPuzzleInvariant(state);
+    expect(violation).not.toBeNull();
+    expect(violation!.rewindTurnIdx).toBe(0);
+    expect(violation!.missingCell).toBeNull();
+  });
+
+  it('Check 0 is skipped for a classic (non-killer) state', () => {
+    const gs: number[][] = KNOWN_SOLUTION.map(row => [...row]);
+    const givenDigits = makeClassicGivenDigits();
+    const classicState = PuzzleState.createClassic(givenDigits, [...DEFAULT_ALWAYS_APPLY_RULES], null);
+    const state: PuzzleState = {
+      ...classicState,
+      goldenSolution: gs,
+      userGrid: gs.map(row => [...row]),
+    };
+    expect(PuzzleState.isKiller(state)).toBe(false);
+    // Even though userGrid matches gs exactly, prove Check 0 isn't reached by
+    // confirming a consistent classic state returns null (no spurious cage check).
+    expect(checkPuzzleInvariant(state)).toBeNull();
   });
 });
 

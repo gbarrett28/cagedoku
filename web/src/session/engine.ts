@@ -28,7 +28,7 @@ import { disableRuleForSession, isRuleDisabledForSession, hasTriggerMissBeenRepo
 import { submitRuleBugReport, submitTriggerMissReport } from '../image/trainingUpload.js';
 import { findTriggerMisses } from '../engine/triggerValidator.js';
 import { RuleMutation } from './ruleMutation.js';
-import type { RuleStep } from './ruleMutation.js';
+import type { EliminateCandidateMutation, RuleStep } from './ruleMutation.js';
 import { UserAction, PuzzleState } from './types.js';
 import type { AutoMutation, BoardSnapshot, KillerPuzzleState, SessionResult, Turn, VirtualCage } from './types.js';
 import { UserFacingError } from './errors.js';
@@ -592,6 +592,125 @@ export function findLastConsistentTurnIdx(state: PuzzleState): number | null {
     }
   }
   return firstBadIdx;
+}
+
+/**
+ * Scan turn history for the first turn that explicitly eliminated `digit` from
+ * cell `(r,c)` — either via eliminateCandidate or via applyHint.
+ * Returns the turn index, or null if not found (e.g. was eliminated by a rule).
+ */
+export function findFirstElimTurnIdx(
+  state: PuzzleState,
+  r: number,
+  c: number,
+  digit: number,
+): number | null {
+  for (let i = 0; i < state.turns.length; i++) {
+    const a = state.turns[i]!.action;
+    if (a.type === 'eliminateCandidate' && a.row === r && a.col === c && a.digit === digit) return i;
+    if (a.type === 'applyHint') {
+      for (const m of a.mutations) {
+        if (m.type === 'eliminateCandidate') {
+          const elim = m as EliminateCandidateMutation;
+          if (elim.row === r && elim.col === c && elim.digit === digit) return i;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Checks the user's recorded eliminations (cycleCandidate, applyHint) against
+ * goldenSolution.  Returns the first cell where the correct solution digit was
+ * explicitly removed by the user, or null if all golden candidates are intact.
+ *
+ * State-based (no board build required) so it is safe to call before buildEngine.
+ */
+export function findMissingGoldenCandidate(
+  state: PuzzleState,
+): { r: number; c: number; gold: number } | null {
+  const gs = state.goldenSolution;
+  if (gs === null) return null;
+
+  // Check explicit eliminateCandidate actions via userRemoved()
+  for (const [r, c, d] of userRemoved(state)) {
+    const gold = gs[r]?.[c];
+    if (gold !== undefined && gold !== 0 && d === gold && state.userGrid![r]![c] === 0) {
+      return { r, c, gold };
+    }
+  }
+  return null;
+}
+
+/**
+ * Returns the turn index of the earliest addVirtualCage action whose cage
+ * total contradicts goldenSolution, or null if all current virtual cages
+ * are consistent.
+ */
+export function findWrongVirtualCageTurnIdx(state: PuzzleState): number | null {
+  const gs = state.goldenSolution;
+  if (gs === null) return null;
+  for (let i = 0; i < state.turns.length; i++) {
+    const a = state.turns[i]!.action;
+    if (a.type !== 'addVirtualCage') continue;
+    const { cells, total, negativeCells } = a.cage;
+    const negKeys = new Set((negativeCells ?? []).map(([r, c]) => `${r},${c}`));
+    let goldSum = 0;
+    for (const [r, c] of cells) {
+      goldSum += negKeys.has(`${r},${c}`) ? -gs[r]![c]! : gs[r]![c]!;
+    }
+    if (goldSum !== total) return i;
+  }
+  return null;
+}
+
+export interface PuzzleInvariantViolation {
+  readonly rewindTurnIdx: number | null;
+  readonly missingCell: { r: number; c: number; gold: number } | null;
+}
+
+/**
+ * Checks `state` against `state.goldenSolution` for any of the known
+ * inconsistency patterns (wrong placement, wrong candidate elimination,
+ * killer-only: wrong user-added virtual cage total). Returns the first
+ * violation found, or null if the state is consistent. Puzzle-type-specific
+ * checks (e.g. Check 0, killer-only) are gated internally via
+ * `PuzzleState.isKiller`.
+ */
+export function checkPuzzleInvariant(state: PuzzleState): PuzzleInvariantViolation | null {
+  const gs = state.goldenSolution;
+  if (gs === null) return null;
+
+  // Check 0 (killer-only): a user-added virtual cage's total contradicts
+  // goldenSolution — catches the root cause directly, before it cascades
+  // into Checks 1-3 below.
+  if (PuzzleState.isKiller(state)) {
+    const wrongCageIdx = findWrongVirtualCageTurnIdx(state);
+    if (wrongCageIdx !== null) return { rewindTurnIdx: wrongCageIdx, missingCell: null };
+  }
+
+  // Check 1 & 3: wrong digit anywhere in userGrid
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const placed = state.userGrid[r]![c]!;
+      const gold = gs[r]![c]!;
+      if (placed !== 0 && gold !== 0 && placed !== gold) {
+        return { rewindTurnIdx: findLastConsistentTurnIdx(state), missingCell: null };
+      }
+    }
+  }
+
+  // Check 2: correct golden candidate explicitly eliminated by user
+  const missingCell = findMissingGoldenCandidate(state);
+  if (missingCell !== null) {
+    return {
+      rewindTurnIdx: findFirstElimTurnIdx(state, missingCell.r, missingCell.c, missingCell.gold),
+      missingCell,
+    };
+  }
+
+  return null;
 }
 
 // ---------------------------------------------------------------------------
