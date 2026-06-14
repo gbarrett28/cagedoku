@@ -5,6 +5,7 @@ import { StallStateExport } from '../../shared/src/reports/StallStateExport.js';
 import { FeedbackReport } from '../../shared/src/reports/FeedbackReport.js';
 import { RuleBugReport } from '../../shared/src/reports/RuleBugReport.js';
 import { TriggerMissReport } from '../../shared/src/reports/TriggerMissReport.js';
+import { CageThresholdCalibrationReport } from '../../shared/src/reports/CageThresholdCalibrationReport.js';
 
 export interface Env {
   TRAINING_BUCKET: R2Bucket;
@@ -155,6 +156,15 @@ export default {
         });
         const action = TriggerMissReport.githubAction(report, key);
         try { await postToGitHub(env, action.body); } catch (err) { console.error('[worker] GitHub comment failed:', err); }
+        return new Response('OK', { status: 200, headers: corsHeaders(allowed) });
+      }
+
+      case 'cage-threshold-calibration': {
+        const key = CageThresholdCalibrationReport.storageKey(report, crypto.randomUUID());
+        await env.TRAINING_BUCKET.put(key, JSON.stringify(body), {
+          httpMetadata: { contentType: 'application/json' },
+          customMetadata: CageThresholdCalibrationReport.r2Metadata(report),
+        });
         return new Response('OK', { status: 200, headers: corsHeaders(allowed) });
       }
 
