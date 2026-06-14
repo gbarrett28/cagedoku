@@ -117,6 +117,55 @@ export function cageConfFromContours(
   );
 }
 
+
+/**
+ * Minimum distance from `threshold` to any individual size-valid contour's
+ * fillRatio across all 81 cells. Larger margin = cleaner separation between
+ * the dash cluster and the digit cluster at this threshold. Returns `Infinity`
+ * if there are no contours at all (no information to separate).
+ *
+ * @param contours - (9, 9) array [row][col] of size-valid contour metrics.
+ * @param subres - Pixels per cell side (unused directly, kept for symmetry
+ *   with `cageConfFromContours` and future fillRatio-shape changes).
+ * @param threshold - Candidate fill-ratio threshold.
+ */
+export function thresholdMargin(contours: ContourMetrics[][][], _subres: number, threshold: number): number {
+  let minDist = Infinity;
+  for (const rowContours of contours) {
+    for (const cellContours of rowContours) {
+      for (const c of cellContours) {
+        const fillRatio = c.area / (c.width * c.height);
+        const dist = Math.abs(fillRatio - threshold);
+        if (dist < minDist) minDist = dist;
+      }
+    }
+  }
+  return minDist;
+}
+
+/** Per-candidate calibration outcome, also used as `CageThresholdCalibrationReport.candidates`. */
+export interface ThresholdCandidateResult {
+  readonly threshold: number;
+  readonly valid: boolean;
+  readonly margin: number;
+}
+
+/**
+ * Among candidates with `valid === true`, return the one with the largest
+ * margin (cleanest separation). Returns `null` if none are valid.
+ *
+ * Isolated so a future tie-break rule can replace this body without touching
+ * the calibration search loop in `calibrateCageTotalThreshold`.
+ */
+export function pickBestThreshold(candidateResults: readonly ThresholdCandidateResult[]): number | null {
+  let best: ThresholdCandidateResult | null = null;
+  for (const c of candidateResults) {
+    if (!c.valid) continue;
+    if (best === null || c.margin > best.margin) best = c;
+  }
+  return best === null ? null : best.threshold;
+}
+
 /**
  * Scan all 81 cells for cage totals and classic pre-filled digits.
  *

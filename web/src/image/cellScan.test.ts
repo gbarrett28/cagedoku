@@ -6,8 +6,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { computeQuadSums, detectPuzzleType, detectRotation, isCageTotalContour, cageConfFromContours } from './cellScan.js';
-import type { ContourMetrics } from './cellScan.js';
+import {
+  computeQuadSums, detectPuzzleType, detectRotation, isCageTotalContour,
+  cageConfFromContours, thresholdMargin, pickBestThreshold,
+} from './cellScan.js';
+import type { ContourMetrics, ThresholdCandidateResult } from './cellScan.js';
 import type { OpenCVMat } from './opencv.js';
 
 // ---------------------------------------------------------------------------
@@ -141,6 +144,77 @@ describe('cageConfFromContours', () => {
     ];
     const result = cageConfFromContours(contours, SUBRES_FULL, 0.3);
     expect(result[3]![4]).toBe(1.0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// thresholdMargin
+// ---------------------------------------------------------------------------
+
+describe('thresholdMargin', () => {
+  function emptyContours(): ContourMetrics[][][] {
+    return Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => []));
+  }
+
+  it('returns Infinity when there are no contours', () => {
+    expect(thresholdMargin(emptyContours(), SUBRES_FULL, 0.3)).toBe(Infinity);
+  });
+
+  it('returns the distance from threshold to a single contour fillRatio', () => {
+    const contours = emptyContours();
+    contours[0]![0] = [{ width: 24, height: 30, area: 581 }]; // fillRatio ~0.8069
+    const margin = thresholdMargin(contours, SUBRES_FULL, 0.3);
+    expect(margin).toBeCloseTo(581 / (24 * 30) - 0.3, 5);
+  });
+
+  it('returns the minimum distance across multiple contours', () => {
+    const contours = emptyContours();
+    // fillRatios: ~0.1615 (dash) and ~0.8069 (digit)
+    contours[0]![0] = [{ width: 11, height: 52, area: 84 }];
+    contours[0]![1] = [{ width: 24, height: 30, area: 581 }];
+    const margin = thresholdMargin(contours, SUBRES_FULL, 0.3);
+    const dashRatio = 84 / (11 * 52);
+    const digitRatio = 581 / (24 * 30);
+    expect(margin).toBeCloseTo(Math.min(Math.abs(dashRatio - 0.3), Math.abs(digitRatio - 0.3)), 5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// pickBestThreshold
+// ---------------------------------------------------------------------------
+
+describe('pickBestThreshold', () => {
+  it('returns null when no candidate is valid', () => {
+    const results: ThresholdCandidateResult[] = [
+      { threshold: 0.1, valid: false, margin: 0.05 },
+      { threshold: 0.3, valid: false, margin: 0.20 },
+    ];
+    expect(pickBestThreshold(results)).toBeNull();
+  });
+
+  it('returns the only valid candidate', () => {
+    const results: ThresholdCandidateResult[] = [
+      { threshold: 0.1, valid: false, margin: 0.20 },
+      { threshold: 0.3, valid: true, margin: 0.05 },
+    ];
+    expect(pickBestThreshold(results)).toBe(0.3);
+  });
+
+  it('returns the valid candidate with the largest margin', () => {
+    const results: ThresholdCandidateResult[] = [
+      { threshold: 0.1, valid: true, margin: 0.05 },
+      { threshold: 0.3, valid: true, margin: 0.20 },
+      { threshold: 0.5, valid: true, margin: 0.10 },
+    ];
+    expect(pickBestThreshold(results)).toBe(0.3);
+  });
+
+  it('ignores invalid candidates even if they have the largest margin', () => {
+    const results: ThresholdCandidateResult[] = [
+      { threshold: 0.1, valid: true, margin: 0.05 },
+      { threshold: 0.3, valid: false, margin: 0.99 },
+    ];
+    expect(pickBestThreshold(results)).toBe(0.1);
   });
 });
 
