@@ -16,7 +16,7 @@ import { defaultRules } from '../engine/rules/index.js';
 import { cageSumRange, cellKey, keyToCell } from '../engine/types.js';
 import type { Cell } from '../engine/types.js';
 import { parsePuzzleImage, ImageDecodeError, GridNotFoundError } from '../image/inpImage.js';
-import { AssertionViolation, validateSudokuSolution } from './assertions.js';
+import { AssertionViolation, validateSudokuSolution, isCageSumCorrect } from './assertions.js';
 import { formatActionLog } from './actionLog.js';
 
 import type { ParseResult } from '../image/inpImage.js';
@@ -270,7 +270,24 @@ async function fileToDisplayUrl(file: File): Promise<string | null> {
  */
 export function solveAndValidateSpec(spec: PuzzleSpec): string | null {
   const { board } = solve(spec);
-  return extractAndValidateSolution(board);
+  const grid = extractSolutionGrid(board);
+  const err = validateSudokuSolution(grid);
+  if (err) return err;
+  if (!isCageSumCorrect(grid, spec.regions, spec.cageTotals)) {
+    return 'Solved grid does not match the declared cage totals';
+  }
+  return null;
+}
+
+/** Extracts a tentative 9×9 solution grid from a board. Cells with more than
+ *  one candidate are recorded as 0 (unsolved). */
+function extractSolutionGrid(board: BoardState): number[][] {
+  return Array.from({ length: 9 }, (_, r) =>
+    Array.from({ length: 9 }, (__, c) => {
+      const cands = board.cands(r, c);
+      return cands.size === 1 ? [...cands][0]! : 0;
+    }),
+  );
 }
 
 /**
@@ -284,13 +301,7 @@ export function solveAndValidateSpec(spec: PuzzleSpec): string | null {
  * the playing screen.
  */
 export function extractAndValidateSolution(board: BoardState): string | null {
-  const grid: number[][] = Array.from({ length: 9 }, (_, r) =>
-    Array.from({ length: 9 }, (__, c) => {
-      const cands = board.cands(r, c);
-      return cands.size === 1 ? [...cands][0]! : 0;
-    }),
-  );
-  return validateSudokuSolution(grid);
+  return validateSudokuSolution(extractSolutionGrid(board));
 }
 
 /**
