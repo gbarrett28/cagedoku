@@ -25,7 +25,7 @@ dependency injection needed, since `clusterBorders` has no OpenCV dependency.
 **Files:**
 - Modify: `web/src/image/config.ts`
 
-- [ ] **Step 1: Add the new field to `CellScanConfig` and its default**
+- [x] **Step 1: Add the new field to `CellScanConfig` and its default**
 
 In `web/src/image/config.ts`, add a new field to the `CellScanConfig` interface
 (after `cageTotalMinFillRatio`):
@@ -64,12 +64,12 @@ export function defaultCellScanConfig(): CellScanConfig {
 }
 ```
 
-- [ ] **Step 2: Verify it compiles**
+- [x] **Step 2: Verify it compiles**
 
 Run: `cd web && npx tsc --noEmit`
 Expected: no errors (this is a pure additive change to an existing interface).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add web/src/image/config.ts
@@ -88,7 +88,7 @@ git commit -m "feat: add cageTotalFillRatioCandidates config for per-image calib
 once, no double-assigned regions) from `validateCageLayout`, without the
 total-range check, returning `false` instead of throwing on failure.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `web/src/image/validation.test.ts` (it already imports `describe`, `expect`,
 `it`, and has `allWallsBorderX`/`allWallsBorderY` fixtures). Add this import:
@@ -148,12 +148,12 @@ describe('validateCageGeometry', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd web && npx vitest run src/image/validation.test.ts`
 Expected: FAIL — `validateCageGeometry` is not exported from `./validation.js`.
 
-- [ ] **Step 3: Implement `validateCageGeometry`**
+- [x] **Step 3: Implement `validateCageGeometry`**
 
 In `web/src/image/validation.ts`, add this function after `buildUnionFind` (it must
 be exported, unlike `buildUnionFind`):
@@ -213,12 +213,12 @@ export function validateCageGeometry(
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd web && npx vitest run src/image/validation.test.ts`
 Expected: PASS, all tests including the 4 new ones.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/image/validation.ts web/src/image/validation.test.ts
@@ -237,7 +237,7 @@ git commit -m "feat: add validateCageGeometry for structural-only cage checks"
 check in one function. Split out the size check so `collectCageTotalContours`
 (Sprint 2) can use it without needing a fill-ratio threshold yet.
 
-- [ ] **Step 1: Write the failing test for `cageConfFromContours`**
+- [x] **Step 1: Write the failing test for `cageConfFromContours`**
 
 Add to `web/src/image/cellScan.test.ts`. Add this import:
 
@@ -298,12 +298,12 @@ describe('cageConfFromContours', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd web && npx vitest run src/image/cellScan.test.ts`
 Expected: FAIL — `cageConfFromContours` and `ContourMetrics` are not exported.
 
-- [ ] **Step 3: Implement `ContourMetrics` and `cageConfFromContours`**
+- [x] **Step 3: Implement `ContourMetrics` and `cageConfFromContours`**
 
 In `web/src/image/cellScan.ts`, refactor `isCageTotalContour` to extract the size
 check, and add `ContourMetrics` + `cageConfFromContours`. Replace the existing
@@ -394,13 +394,13 @@ export function cageConfFromContours(
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd web && npx vitest run src/image/cellScan.test.ts`
 Expected: PASS, all tests including the 5 new ones. The existing
 `isCageTotalContour` tests must still pass unchanged.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/image/cellScan.ts web/src/image/cellScan.test.ts
@@ -415,7 +415,7 @@ git commit -m "feat: add ContourMetrics and cageConfFromContours for threshold c
 - Modify: `web/src/image/cellScan.ts`
 - Test: `web/src/image/cellScan.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `web/src/image/cellScan.test.ts`. Extend the import:
 
@@ -502,12 +502,12 @@ describe('pickBestThreshold', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd web && npx vitest run src/image/cellScan.test.ts`
 Expected: FAIL — `thresholdMargin`, `pickBestThreshold`, `ThresholdCandidateResult` not exported.
 
-- [ ] **Step 3: Implement `thresholdMargin` and `pickBestThreshold`**
+- [x] **Step 3: Implement `thresholdMargin` and `pickBestThreshold`**
 
 In `web/src/image/cellScan.ts`, add after `cageConfFromContours`:
 
@@ -568,17 +568,17 @@ definition needs it. If `tsc` reports an unused-parameter error, prefix it with 
 underscore (`_subres`) — check `tsconfig.json` for `noUnusedParameters` before
 choosing; if the project enables that flag, use `_subres`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd web && npx vitest run src/image/cellScan.test.ts`
 Expected: PASS, all tests including the 7 new ones.
 
-- [ ] **Step 5: Run full type check**
+- [x] **Step 5: Run full type check**
 
 Run: `cd web && npx tsc --noEmit`
 Expected: no errors (resolve any unused-parameter issue per the note above).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/src/image/cellScan.ts web/src/image/cellScan.test.ts
@@ -596,7 +596,7 @@ git commit -m "feat: add thresholdMargin and pickBestThreshold for calibration t
 This is the calibration search loop itself. It calls `clusterBorders`
 (borderClustering.ts, pure) and `validateCageGeometry` (validation.ts) directly.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `web/src/image/cellScan.test.ts`. Extend imports:
 
@@ -705,7 +705,7 @@ describe('calibrateCageTotalThreshold', () => {
 > expect(result.candidateResults[0]!.margin).toBeCloseTo(0.1, 5);
 > ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd web && npx vitest run src/image/cellScan.test.ts`
 Expected: FAIL — `calibrateCageTotalThreshold` is not exported.
@@ -725,7 +725,7 @@ property of `clusterBorders` and out of scope for this plan; in that case relax
 the assertion to check `result.fallbackUsed === false` and
 `result.threshold === 0.1` only, without asserting on `cageConf` border shape.
 
-- [ ] **Step 3: Implement `calibrateCageTotalThreshold`**
+- [x] **Step 3: Implement `calibrateCageTotalThreshold`**
 
 In `web/src/image/cellScan.ts`, add the necessary imports at the top of the file:
 
@@ -838,17 +838,17 @@ export function calibrateCageTotalThreshold(
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd web && npx vitest run src/image/cellScan.test.ts`
 Expected: PASS, all tests including the 2 new ones.
 
-- [ ] **Step 5: Run full bronze gate**
+- [x] **Step 5: Run full bronze gate**
 
 Run: `bash scripts/run-bronze-gate.sh` (from repo root)
 Expected: `tsc --noEmit`, `tsc -p tsconfig.node.json --noEmit`, and `npm test` all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/src/image/cellScan.ts web/src/image/cellScan.test.ts
