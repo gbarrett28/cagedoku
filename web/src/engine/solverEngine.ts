@@ -185,8 +185,8 @@ export class SolverEngine {
   protected readonly _triggerMap: Map<Trigger, SolverRule[]>;
   protected readonly _ruleIndex: Map<SolverRule, number>;
   private readonly _hintRules: ReadonlySet<string>;
-  private readonly _goldenSolution: readonly (readonly number[])[] | null;
-  private readonly _onViolation: ((ruleName: string, offending: readonly Elimination[]) => void) | null;
+  protected readonly _goldenSolution: readonly (readonly number[])[] | null;
+  protected readonly _onViolation: ((ruleName: string, offending: readonly Elimination[]) => void) | null;
   /** True once a violation has been reported in the current solve() pass. Only the
    *  first violating rule is reported; subsequent violations are still suppressed
    *  but not reported (they may be cascades of the first bug). Reset at the start
@@ -218,6 +218,22 @@ export class SolverEngine {
    *  with no LinearSystem; KillerSolverEngine overrides it to substitute the
    *  cell into the cage-sum equations and narrow live virtual-cage constraints. */
   protected _onCellDetermined(_cell: Cell, _val: number): void {}
+
+  /** Reports (or throws, if no onViolation handler) when a forced/eliminated
+   *  digit at (r, c) contradicts the golden solution. No-op if there is no
+   *  golden solution or the digit matches it. */
+  protected _checkAgainstGolden(ruleName: string, cell: Cell, digit: number): void {
+    if (this._goldenSolution === null) return;
+    const gold = this._goldenSolution[cell[0]]?.[cell[1]];
+    if (gold === undefined || digit === gold) return;
+    if (this._onViolation !== null) {
+      this._onViolation(ruleName, [{ cell, digit: gold }]);
+    } else {
+      throw new NoSolnError(
+        `${ruleName}: derived value ${digit} for r${cell[0] + 1}c${cell[1] + 1} contradicts golden solution ${gold}`,
+      );
+    }
+  }
 
   applyEliminations(eliminations: readonly Elimination[]): void {
     for (const elim of eliminations) {

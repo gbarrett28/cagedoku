@@ -112,6 +112,48 @@ describe('KillerSolverEngine — _onCellDetermined override', () => {
   });
 });
 
+describe('SolverEngine._checkAgainstGolden', () => {
+  class TestEngine extends KillerSolverEngine {
+    checkGolden(ruleName: string, cell: Cell, digit: number): void {
+      this._checkAgainstGolden(ruleName, cell, digit);
+    }
+  }
+
+  it('does nothing when no goldenSolution is set', () => {
+    const bs = new KillerBoardState(makeTrivialSpec());
+    const engine = new TestEngine(bs, []);
+    expect(() => engine.checkGolden('Test', [0, 0] as Cell, 999)).not.toThrow();
+  });
+
+  it('does nothing when the digit matches the golden solution', () => {
+    const bs = new KillerBoardState(makeTrivialSpec());
+    const engine = new TestEngine(bs, [], { goldenSolution: KNOWN_SOLUTION });
+    const gold = KNOWN_SOLUTION[0]![0]!;
+    expect(() => engine.checkGolden('Test', [0, 0] as Cell, gold)).not.toThrow();
+  });
+
+  it('throws when the digit contradicts golden and no onViolation is set', () => {
+    const bs = new KillerBoardState(makeTrivialSpec());
+    const engine = new TestEngine(bs, [], { goldenSolution: KNOWN_SOLUTION });
+    const gold = KNOWN_SOLUTION[0]![0]!;
+    const wrong = gold === 1 ? 2 : 1;
+    expect(() => engine.checkGolden('Test', [0, 0] as Cell, wrong)).toThrow();
+  });
+
+  it('calls onViolation instead of throwing when provided', () => {
+    const bs = new KillerBoardState(makeTrivialSpec());
+    const violations: string[] = [];
+    const engine = new TestEngine(bs, [], {
+      goldenSolution: KNOWN_SOLUTION,
+      onViolation: (name) => violations.push(name),
+    });
+    const gold = KNOWN_SOLUTION[0]![0]!;
+    const wrong = gold === 1 ? 2 : 1;
+    expect(() => engine.checkGolden('Test', [0, 0] as Cell, wrong)).not.toThrow();
+    expect(violations).toEqual(['Test']);
+  });
+});
+
 describe('SolverEngine rule routing', () => {
   it('routes COUNT_DECREASED events to subscribed rules', () => {
     const calls: number[] = [];
