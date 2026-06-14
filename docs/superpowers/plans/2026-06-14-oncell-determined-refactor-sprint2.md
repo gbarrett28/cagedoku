@@ -1,6 +1,6 @@
 # OnCellDetermined Refactor — Sprint 2 (Invariant Check Extraction) Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans (inline execution) to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans (inline execution) to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Extract `getHints()`'s inline inconsistency-detection logic into a reusable `checkPuzzleInvariant(state)` function in `session/engine.ts`, and add a new Check 0 that catches a user-added virtual cage whose total contradicts `goldenSolution`.
 
@@ -30,7 +30,7 @@ Key files:
 
 This is a pure move (no behavior change) — verified by the existing test suite, which already exercises both functions indirectly via `getHints()`.
 
-- [ ] **Step 1: Add `EliminateCandidateMutation` to engine.ts's ruleMutation import**
+- [x] **Step 1: Add `EliminateCandidateMutation` to engine.ts's ruleMutation import**
 
 In `web/src/session/engine.ts`, line 31, change:
 
@@ -44,7 +44,7 @@ to:
 import type { EliminateCandidateMutation, RuleStep } from './ruleMutation.js';
 ```
 
-- [ ] **Step 2: Append the two moved functions to engine.ts**
+- [x] **Step 2: Append the two moved functions to engine.ts**
 
 In `web/src/session/engine.ts`, insert immediately after `findLastConsistentTurnIdx` (after the closing `}` on line 595, before the `// ---- Snapshot helpers ----` comment on line 597):
 
@@ -99,7 +99,7 @@ export function findMissingGoldenCandidate(
 }
 ```
 
-- [ ] **Step 3: Remove the two functions from actions.ts and update its imports**
+- [x] **Step 3: Remove the two functions from actions.ts and update its imports**
 
 In `web/src/session/actions.ts`, delete the two function definitions at lines 1063-1110 (the `findFirstElimTurnIdx` JSDoc + function, and the `findMissingGoldenCandidate` JSDoc + function — everything between `makeRewindHint`'s closing `}` and `export function getHints()`).
 
@@ -126,12 +126,12 @@ Update the `./ruleMutation.js` type import (line 62) — `EliminateCandidateMuta
 import type { RuleStep } from './ruleMutation.js';
 ```
 
-- [ ] **Step 4: Run the test suite to verify the move is behavior-preserving**
+- [x] **Step 4: Run the test suite to verify the move is behavior-preserving**
 
 Run: `cd web && npm test -- --run engine.test actions.test`
 Expected: all existing tests PASS (no behavior change yet — `getHints()` still calls the moved functions by their new imported names).
 
-- [ ] **Step 5: Run typecheck and commit**
+- [x] **Step 5: Run typecheck and commit**
 
 ```bash
 cd /home/user/cagedoku/web && npx tsc --noEmit && npx tsc -p tsconfig.node.json --noEmit
@@ -148,7 +148,7 @@ git commit -m "refactor: move findFirstElimTurnIdx/findMissingGoldenCandidate to
 - Modify: `web/src/session/engine.ts`
 - Test: `web/src/session/engine.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 In `web/src/session/engine.test.ts`, add a new describe block after the existing `userVirtualCages` block (after line ~155):
 
@@ -247,12 +247,12 @@ describe('findWrongVirtualCageTurnIdx', () => {
 
 Add `findWrongVirtualCageTurnIdx` to the `./engine.js` import list at the top of the test file (it will not exist yet — this is expected to fail).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd web && npm test -- --run engine.test -t findWrongVirtualCageTurnIdx`
 Expected: FAIL — `findWrongVirtualCageTurnIdx is not exported` (or `is not a function`).
 
-- [ ] **Step 3: Implement `findWrongVirtualCageTurnIdx`**
+- [x] **Step 3: Implement `findWrongVirtualCageTurnIdx`**
 
 In `web/src/session/engine.ts`, append after the functions added in Task 1 (still before `// ---- Snapshot helpers ----`):
 
@@ -280,12 +280,12 @@ export function findWrongVirtualCageTurnIdx(state: PuzzleState): number | null {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd web && npm test -- --run engine.test -t findWrongVirtualCageTurnIdx`
 Expected: PASS (6 tests).
 
-- [ ] **Step 5: Typecheck and commit**
+- [x] **Step 5: Typecheck and commit**
 
 ```bash
 cd /home/user/cagedoku/web && npx tsc --noEmit
@@ -302,7 +302,7 @@ git commit -m "feat: add findWrongVirtualCageTurnIdx for virtual cage golden-sum
 - Modify: `web/src/session/engine.ts`
 - Test: `web/src/session/engine.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 In `web/src/session/engine.test.ts`, add a new describe block after the `findWrongVirtualCageTurnIdx` block from Task 2:
 
@@ -399,12 +399,12 @@ describe('checkPuzzleInvariant', () => {
 
 Add `checkPuzzleInvariant` to the `./engine.js` import list at the top of the test file.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd web && npm test -- --run engine.test -t checkPuzzleInvariant`
 Expected: FAIL — `checkPuzzleInvariant is not exported` (or `is not a function`).
 
-- [ ] **Step 3: Implement `PuzzleInvariantViolation` and `checkPuzzleInvariant`**
+- [x] **Step 3: Implement `PuzzleInvariantViolation` and `checkPuzzleInvariant`**
 
 In `web/src/session/engine.ts`, append after `findWrongVirtualCageTurnIdx` (still before `// ---- Snapshot helpers ----`):
 
@@ -458,12 +458,12 @@ export function checkPuzzleInvariant(state: PuzzleState): PuzzleInvariantViolati
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd web && npm test -- --run engine.test -t checkPuzzleInvariant`
 Expected: PASS (6 tests).
 
-- [ ] **Step 5: Typecheck and commit**
+- [x] **Step 5: Typecheck and commit**
 
 ```bash
 cd /home/user/cagedoku/web && npx tsc --noEmit
@@ -480,7 +480,7 @@ git commit -m "feat: add checkPuzzleInvariant with Check 0 virtual-cage golden-s
 - Modify: `web/src/session/actions.ts`
 - Test: `web/src/session/actions.test.ts`
 
-- [ ] **Step 1: Write the new end-to-end test (failing)**
+- [x] **Step 1: Write the new end-to-end test (failing)**
 
 In `web/src/session/actions.test.ts`, add a new describe block after the existing `'getHints — Rewind on wrong candidate elimination'` block:
 
@@ -513,13 +513,13 @@ describe('getHints — Rewind on wrong virtual cage total', () => {
 
 `makeKillerConfirmed`, `addVirtualCage`, `getHints`, `getState` are already imported/defined in `actions.test.ts`.
 
-- [ ] **Step 2: Run the test to verify it fails (or check current behavior)**
+- [x] **Step 2: Run the test to verify it fails (or check current behavior)**
 
 Run: `cd web && npm test -- --run actions.test -t "wrong virtual cage total"`
 
 Note: this may already partially pass if the current ad-hoc inconsistency checks happen to also catch this case incidentally — but Check 0 doesn't exist yet, so the existing Checks 1-3 won't fire (userGrid is fully consistent; no eliminated golden candidate). Expected: FAIL (`rewindHint` is `undefined`, since `hints.find(h => h.rewindToTurnIdx !== null)` finds nothing).
 
-- [ ] **Step 3: Rewrite the inconsistency block in `getHints()`**
+- [x] **Step 3: Rewrite the inconsistency block in `getHints()`**
 
 In `web/src/session/actions.ts`, replace the block from the `// ── Inconsistency detection ──` comment through the end of the `if (gs !== null) { ... }` block (currently lines 1116-1152) with:
 
@@ -536,7 +536,7 @@ In `web/src/session/actions.ts`, replace the block from the `// ── Inconsist
 
 The remainder of `getHints()` (the `if (inconsistent) { ... }` block, currently starting at line 1154) is **unchanged** — it already consumes `inconsistent`, `rewindTurnIdx`, and `missingCell` as plain values. Note `rewindTurnIdx` must remain `let` (not `const`) because the `if (inconsistent)` block's alt-solution branch does not reassign it, but downstream code reads it — check the existing block for any reassignment; if none exists, `const` is also fine. (It is not reassigned — use `const rewindTurnIdx` for clarity.)
 
-- [ ] **Step 4: Update actions.ts's `./engine.js` import**
+- [x] **Step 4: Update actions.ts's `./engine.js` import**
 
 Add `checkPuzzleInvariant` to the import list from Task 1 Step 3:
 
@@ -571,12 +571,12 @@ import {
 } from './engine.js';
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `cd web && npm test -- --run actions.test engine.test`
 Expected: PASS — including the new Check 0 test and the two pre-existing Rewind tests (Check 1/3 and Check 2 regressions).
 
-- [ ] **Step 6: Typecheck and commit**
+- [x] **Step 6: Typecheck and commit**
 
 ```bash
 cd /home/user/cagedoku/web && npx tsc --noEmit && npx tsc -p tsconfig.node.json --noEmit
@@ -591,7 +591,7 @@ git commit -m "refactor: rewrite getHints inconsistency detection via checkPuzzl
 
 **Files:** none (verification only)
 
-- [ ] **Step 1: Run the full test suite**
+- [x] **Step 1: Run the full test suite**
 
 ```bash
 cd /home/user/cagedoku/web && npm test -- --run
@@ -599,7 +599,7 @@ cd /home/user/cagedoku/web && npm test -- --run
 
 Expected: all tests PASS.
 
-- [ ] **Step 2: Run full typecheck**
+- [x] **Step 2: Run full typecheck**
 
 ```bash
 cd /home/user/cagedoku/web && npx tsc --noEmit && npx tsc -p tsconfig.node.json --noEmit
@@ -607,7 +607,7 @@ cd /home/user/cagedoku/web && npx tsc --noEmit && npx tsc -p tsconfig.node.json 
 
 Expected: no errors.
 
-- [ ] **Step 3: Search for any remaining references to the moved/removed local helpers**
+- [x] **Step 3: Search for any remaining references to the moved/removed local helpers**
 
 ```bash
 cd /home/user/cagedoku/web && grep -rn "findFirstElimTurnIdx\|findMissingGoldenCandidate\|findWrongVirtualCageTurnIdx\|checkPuzzleInvariant" src/session/
@@ -615,7 +615,7 @@ cd /home/user/cagedoku/web && grep -rn "findFirstElimTurnIdx\|findMissingGoldenC
 
 Expected: definitions in `engine.ts`, imports + usage in `actions.ts`, and test references in `engine.test.ts`/`actions.test.ts` — no stray duplicate local definitions.
 
-- [ ] **Step 4: Run bronze gate and commit if anything is outstanding**
+- [x] **Step 4: Run bronze gate and commit if anything is outstanding**
 
 ```bash
 cd /home/user/cagedoku && bash scripts/run-bronze-gate.sh
