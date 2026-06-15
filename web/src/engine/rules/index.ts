@@ -15,22 +15,24 @@
  *  5  SumPairConstraint       — COUNT_DECREASED / CELL_DETERMINED
  *  6  NakedPair               — COUNT_HIT_TWO
  *  7  HiddenPair              — COUNT_HIT_TWO
- *  8  NakedHiddenTriple       — COUNT_DECREASED
- *  9  NakedHiddenQuad         — COUNT_DECREASED
- *  9  PointingPairs           — COUNT_DECREASED
- * 11  LockedCandidates        — COUNT_DECREASED
- * 12  CageConfinement         — GLOBAL
- * 12  UnitPartitionFilter     — GLOBAL
- * 13  XWing                   — GLOBAL
- * 14  Swordfish               — GLOBAL
- * 15  Jellyfish               — GLOBAL
- * 16  XYWing                  — GLOBAL
- * 17  UniqueRectangle         — GLOBAL
- * 18  SimpleColouring         — GLOBAL
- * 19  XYZWing                 — GLOBAL
- * 20  WWing                   — COUNT_HIT_TWO
- * 21  Skyscraper              — GLOBAL
- * 22  TwoStringKite           — GLOBAL
+ *  8  NakedTriple             — COUNT_DECREASED
+ *  9  HiddenTriple            — COUNT_DECREASED
+ * 10  NakedQuad               — COUNT_DECREASED
+ * 11  HiddenQuad              — COUNT_DECREASED
+ * 12  PointingPairs           — COUNT_DECREASED
+ * 14  LockedCandidates        — COUNT_DECREASED
+ * 15  CageConfinement         — GLOBAL
+ * 15  UnitPartitionFilter     — GLOBAL
+ * 16  XWing                   — GLOBAL
+ * 17  Swordfish               — GLOBAL
+ * 18  Jellyfish               — GLOBAL
+ * 19  XYWing                  — GLOBAL
+ * 20  UniqueRectangle         — GLOBAL
+ * 21  SimpleColouring         — GLOBAL
+ * 22  XYZWing                 — GLOBAL
+ * 23  WWing                   — COUNT_HIT_TWO
+ * 24  Skyscraper              — GLOBAL
+ * 25  TwoStringKite           — GLOBAL
  */
 
 import type { SolverRule } from '../rule.js';
@@ -40,16 +42,18 @@ import { CageIntersection } from './cageIntersection.js';
 import { DeltaConstraint } from './deltaConstraint.js';
 import { DerivedVirtualCage } from './derivedVirtualCage.js';
 import { HiddenPair } from './hiddenPair.js';
+import { HiddenQuad } from './hiddenQuad.js';
 import { HiddenSingle } from './hiddenSingle.js';
+import { HiddenTriple } from './hiddenTriple.js';
 import { Jellyfish } from './jellyfish.js';
 import { LinearElimination } from './linearElimination.js';
 import { LockedCandidates } from './lockedCandidates.js';
 import { MustContain } from './mustContain.js';
 import { MustContainOutie } from './mustContainOutie.js';
-import { NakedHiddenQuad } from './nakedHiddenQuad.js';
-import { NakedHiddenTriple } from './nakedHiddenTriple.js';
 import { NakedPair } from './nakedPair.js';
+import { NakedQuad } from './nakedQuad.js';
 import { NakedSingle } from './nakedSingle.js';
+import { NakedTriple } from './nakedTriple.js';
 import { PointingPairs } from './pointingPairs.js';
 import { SimpleColouring } from './simpleColouring.js';
 import { SolutionMapFilter } from './solutionMapFilter.js';
@@ -71,16 +75,18 @@ export {
   DeltaConstraint,
   DerivedVirtualCage,
   HiddenPair,
+  HiddenQuad,
   HiddenSingle,
+  HiddenTriple,
   Jellyfish,
   LinearElimination,
   LockedCandidates,
   MustContain,
   MustContainOutie,
-  NakedHiddenQuad,
-  NakedHiddenTriple,
   NakedPair,
+  NakedQuad,
   NakedSingle,
+  NakedTriple,
   PointingPairs,
   SimpleColouring,
   SolutionMapFilter,
@@ -116,8 +122,10 @@ export function defaultRules(): SolverRule[] {
     new SumPairConstraint(),
     new NakedPair(),
     new HiddenPair(),
-    new NakedHiddenTriple(),
-    new NakedHiddenQuad(),
+    new NakedTriple(),
+    new HiddenTriple(),
+    new NakedQuad(),
+    new HiddenQuad(),
     new PointingPairs(),
     new LockedCandidates(),
     new CageConfinement(),
