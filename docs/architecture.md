@@ -879,58 +879,58 @@ comment block at the top of `web/src/engine/rules/index.ts`.
 
 ### Disabled rules
 
-When a rule produces an elimination that contradicts the known golden solution, it
-is automatically detected and suppressed.  The lifecycle is:
+`web/src/engine/rules/disabled-rules.ts` (`DISABLED_RULES`) is **manually curated** —
+no automation adds or removes entries. `buildEngine()` in `web/src/session/engine.ts`
+and `getHints()` in `web/src/engine/index.ts` both filter `defaultRules()` by
+`DISABLED_RULES` before constructing a `SolverEngine`. The spec validator (`solve()`)
+is intentionally **not** filtered so corrupted-spec detection still uses all rules.
 
-1. **Runtime detection** — `SolverEngine` (with `goldenSolution` + `onViolation`
-   options set by `buildEngine()`) detects the bad elimination, calls `onViolation`,
-   and skips applying the rule result.  The session-level callback:
-   - Adds the rule name to the in-memory `_sessionDisabledRules` set in
-     `web/src/session/store.ts` (fast-path: the rule won't be passed to any future
-     `SolverEngine` constructed in this tab).
-   - POSTs a `RuleBugReport` (version 4) to the Cloudflare Worker.
+A rule is added to `DISABLED_RULES` only as a deliberate product decision (e.g.
+`UniqueRectangle`, whose Type 1/2 proofs depend on "the puzzle has a unique
+solution" — a meta-assumption no other active rule makes). Its regression-fixture
+tests (see below) use the same `it.skip` convention while disabled.
+
+### Rule-bug fixture pipeline (for debugging stalls)
+
+When a rule produces an elimination that contradicts the known golden solution at
+runtime, `SolverEngine` (with `goldenSolution` + `onViolation` options set by
+`buildEngine()`) detects it, suppresses the elimination so it is **never applied**,
+and reports it for offline debugging:
+
+1. **Runtime detection** — `onViolation` adds the rule name to the in-memory
+   `_sessionDisabledRules` set in `web/src/session/store.ts` (fast-path: the rule
+   won't be passed to any future `SolverEngine` constructed in this tab), and POSTs
+   a `RuleBugReport` (version 4) to the Cloudflare Worker.
 
 2. **Worker ingestion** — `POST /` with a `RuleBugReport` body stores the raw report
    under `rule-bugs/<ruleName>/` and a `RuleBugFixture`-shaped JSON under
-   `rule-fixtures/<ruleName>/` in R2.
+   `rule-fixtures/<ruleName>/` in R2. `TriggerMissReport`s (valid eliminations the
+   engine failed to apply) are stored the same way with `source: 'trigger-miss'`.
 
 3. **Nightly Action** — `.github/workflows/rule-regression.yml` runs
    `npx vite-node web/scripts/sync-rule-fixtures.ts`, which derives the rule list
    dynamically from `defaultRules()`, fetches all `GET /rule-fixtures/<ruleName>`
-   responses, appends new fixtures to `web/src/engine/rules/__fixtures__/index.ts`,
-   and adds the rule name to `web/src/engine/rules/disabled-rules.ts`.  The Action
-   then commits and pushes; the next `pages.yml` deployment picks up the change.
+   responses, deduplicates against existing fixtures by `fixtureFingerprint()`
+   (`shared/src/fixture.ts` — identifies the same underlying puzzle state regardless
+   of `name`/`addedAt`/`source`), and appends new fixtures to
+   `web/src/engine/rules/__fixtures__/index.ts`. It does **not** touch
+   `disabled-rules.ts`. The Action commits and pushes; the next `pages.yml`
+   deployment picks up the change.
 
-4. **Build-time exclusion** — `buildEngine()` in `web/src/session/engine.ts` and
-   `getHints()` in `web/src/engine/index.ts` both filter `defaultRules()` by
-   `DISABLED_RULES` before constructing a `SolverEngine`.  The spec validator
-   (`solve()`) is intentionally **not** filtered so corrupted-spec detection still
-   uses all rules.
+4. **Regression tests** — some rules' test files (currently `nakedSingle.test.ts`,
+   `twoStringKite.test.ts`, `uniqueRectangle.test.ts`) have a describe block that
+   filters `ruleBugFixtures` by `ruleName` and asserts the rule's `apply()` never
+   eliminates the golden digit on that fixture's board. While the rule is in
+   `DISABLED_RULES` these run as `it.skip`.
 
-5. **Regression tests** — each rule's test file has a describe block that runs
-   fixture-based tests.  While the rule is in `DISABLED_RULES` the tests run as
-   `it.skip` (visible but not counted as failures).  Once the rule is fixed and
-   removed from `DISABLED_RULES`, the tests activate and must pass.
-
-**To re-enable a rule after fixing it:**
-
-1. Fix the rule implementation so it no longer produces eliminations that contradict
-   the golden digit on any of its fixture boards.
-2. Remove the rule name from `web/src/engine/rules/disabled-rules.ts`.
-3. Change the `it.skip` → `it` guard in the rule's `*.test.ts` if it isn't driven
-   automatically by `DISABLED_RULES`.  (The existing fixture tests read
-   `DISABLED_RULES` directly, so removing the name is sufficient.)
-4. Run the bronze gate — all fixture tests must now be green.
-5. Commit on a feature branch, open a PR, verify CI passes, then merge.
-
-**`UniqueRectangle` is a deliberate, non-automated exception** to the above
-lifecycle: it is listed in `DISABLED_RULES` not because it produced a
-golden-contradicting elimination, but because its Type 1/2 proofs depend on "the
-puzzle has a unique solution" — a meta-assumption no other active rule makes. It
-uses the same `DISABLED_RULES` filter (so it's excluded from `defaultRules()`
-everywhere, including the config modal) and the same `it.skip` convention for its
-fixture-regression tests, but re-enabling it is a product decision, not a bugfix —
-there is no "fix the implementation" step.
+**Debugging a fixture** — `web/scripts/repro-bugs.ts` (`cd web && npx vite-node
+scripts/repro-bugs.ts`) is a scratch harness that replays a hardcoded set of past
+bug reports against the current rule set using `mrvBacktrack` to compute the golden
+solution. It is not a generic `ruleBugFixtures` replay tool (it predates that
+mechanism and uses a fixed classic spec) — when investigating fixtures added by the
+nightly sync, either add a fixture-driven `it` block per the pattern in step 4
+(building the board via `dataToSpec(regions, cageTotals)` so killer cage geometry is
+preserved), or extend `repro-bugs.ts` with the new case.
 
 ---
 
