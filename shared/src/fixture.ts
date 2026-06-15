@@ -21,6 +21,15 @@ export interface RuleBugFixture {
   readonly totalCandidates: number;
 }
 
+/**
+ * A stable identity for a fixture's puzzle state, independent of `name`,
+ * `addedAt` and `source`. Used to deduplicate fixtures fetched from R2 —
+ * many reports describe the same underlying stall.
+ */
+export function fixtureFingerprint(f: RuleBugFixture): string {
+  return JSON.stringify([f.ruleName, f.regions, f.cageTotals, f.stalledCandidates, f.goldenSolution]);
+}
+
 /** Serialise a fixture to a TypeScript object literal suitable for index.ts. */
 export function fixtureToTypeScript(f: RuleBugFixture): string {
   return `  {
