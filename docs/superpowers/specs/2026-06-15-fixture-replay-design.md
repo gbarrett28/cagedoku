@@ -107,18 +107,44 @@ regression fixtures')` blocks from `nakedSingle.test.ts`, `twoStringKite.test.ts
 `DISABLED_RULES`/`ruleBugFixtures`/`Cell`/`Trigger` imports in those files aren't
 used elsewhere in the file before removing them.
 
-### 5. Documentation: how-to for debugging fixtures
+### 5. `web/scripts/debug-fixture.ts` — reusable fixture inspector (new file)
+
+Rather than documenting "write a one-off script", add one generic CLI tool that
+covers fixture inspection, including the cross-attribution checking that
+`regression.test.ts` deliberately doesn't do:
+
+```
+cd web && npx vite-node scripts/debug-fixture.ts <name-substring-or-ruleName>
+```
+
+For each matching fixture in `ruleBugFixtures` (match on `name` substring or
+exact `ruleName`):
+
+- Print fixture metadata (`name`, `ruleName`, `source`, `puzzleType`,
+  `unsolvedCells`/`totalCandidates`).
+- Build the board with `boardFromFixture()`.
+- Run `findTriggerMisses(board, defaultRules().filter(r =>
+  !DISABLED_RULES.includes(r.name)), fixture.goldenSolution)` against **all**
+  active rules (not just `fixture.ruleName`) and print every violation and miss
+  with its `ruleName`/`missedContext`/cells/digits.
+- Highlight whether `fixture.ruleName` itself is among the violators (the
+  `regression.test.ts` check) vs. only other rules (cross-attribution —
+  candidate puzzle-invariant bug, flagged for separate investigation).
+
+This is the one tool used for both "is this fixture's own rule still buggy?" and
+"did a different rule/invariant produce this?" — no new script needed per fixture.
+
+### 6. Documentation: how-to for debugging fixtures
 
 Replace the short "Debugging a fixture" paragraph in `docs/architecture.md`
 (§ Rule-bug fixture pipeline, added in commit c0166f7) with a fuller how-to:
 
 - How `regression.test.ts` works and what a red test means per `source` value.
-- How to write a one-off `vite-node` scratch script using `boardFromFixture()` to
-  inspect a specific fixture interactively (`board.cands(r,c)`, `board.cageSolns`,
-  running other rules to check cross-attribution).
+- How to run `debug-fixture.ts` and interpret its output, including the
+  cross-attribution case.
 - Note on `DISABLED_RULES`/`it.skip` interaction.
 - Note on the cross-attribution scope decision above (out of scope for the
-  generic gate; investigate separately if found).
+  generic gate; investigate separately if `debug-fixture.ts` finds one).
 
 ## Testing
 
