@@ -41,12 +41,12 @@ export default {
       if (!match) return new Response('Not found', { status: 404 });
       const ruleName = match[1]!;
       const listed = await env.TRAINING_BUCKET.list({ prefix: `rule-fixtures/${ruleName}/` });
-      const fixtures: unknown[] = [];
+      const records: { key: string; fixture: unknown }[] = [];
       for (const obj of listed.objects) {
         const r2obj = await env.TRAINING_BUCKET.get(obj.key);
-        if (r2obj) fixtures.push(await r2obj.json());
+        if (r2obj) records.push({ key: obj.key, fixture: await r2obj.json() });
       }
-      return new Response(JSON.stringify(fixtures), {
+      return new Response(JSON.stringify(records), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });

@@ -153,7 +153,7 @@ describe('Worker fetch handler', () => {
     expect(res.status).toBe(404);
   });
 
-  it('GET /rule-fixtures/:ruleName returns 200 with JSON array', async () => {
+  it('GET /rule-fixtures/:ruleName returns 200 with JSON array of {key, fixture}', async () => {
     const env = await makeEnv();
     await env.TRAINING_BUCKET.put('rule-fixtures/TwoStringKite/fix-1.json', JSON.stringify({ name: 'fix-1' }));
 
@@ -162,7 +162,7 @@ describe('Worker fetch handler', () => {
     expect(res.status).toBe(200);
     const body = await res.json() as unknown[];
     expect(body).toHaveLength(1);
-    expect(body[0]).toEqual({ name: 'fix-1' });
+    expect(body[0]).toEqual({ key: 'rule-fixtures/TwoStringKite/fix-1.json', fixture: { name: 'fix-1' } });
   });
 
   // --- CORS -------------------------------------------------------------------
