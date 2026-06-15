@@ -131,6 +131,7 @@ Guards:
         ruleName: this.name, displayName: 'Hidden Quad',
         explanation: `Hidden Quad: {${digits.join(',')}} are confined to ${quadCells.map(c => cellLabel(c)).join(', ')} within ${unitLabel(ctx.unit)}. Remove all other candidates from these cells.`,
         highlightCells: [...quadCells, ...elims.map(e => e.cell)],
+        secondaryHighlightCells: cells.filter(([pr, pc]) => !quadCells.some(([qr, qc]) => qr === pr && qc === pc)),
         eliminations: elims, placement: null, virtualCageSuggestion: null,
         patternDigits: digits,
       }];
