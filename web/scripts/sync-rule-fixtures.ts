@@ -7,11 +7,20 @@
  * Fixtures are deduplicated by the underlying puzzle state (see
  * `fixtureFingerprint`), since many reports describe the same stall.
  *
+ * Every newly-added fixture's name is also appended to
+ * `__fixtures__/needs-triage.ts`, so its regression test is skipped (via
+ * `shouldSkipFixture`) until a human reviews it.
+ *
  * This script never disables rules — `disabled-rules.ts` is maintained by
  * hand. A rule producing eliminations that contradict the golden solution is
  * already suppressed at runtime by SolverEngine's `onViolation` handling
  * (see session/engine.ts), so no elimination from a buggy rule is ever
  * applied; this script's job is purely to surface fixtures for debugging.
+ *
+ * Every fetched fixture's R2 key — new or already-synced duplicate — is
+ * written to /tmp/rule-fixture-keys.txt, one per line, so the calling
+ * workflow can delete them from R2 once this script's changes are committed.
+ * See .github/workflows/rule-regression.yml.
  *
  * Usage (from the repo root):
  *   TRAINING_WORKER_URL=https://... npx vite-node web/scripts/sync-rule-fixtures.ts
@@ -31,6 +40,8 @@ import type { RuleBugFixture } from '../../shared/src/fixture.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = join(__dirname, '..');
 const FIXTURES_FILE = join(WEB_ROOT, 'src', 'engine', 'rules', '__fixtures__', 'index.ts');
+const NEEDS_TRIAGE_FILE = join(WEB_ROOT, 'src', 'engine', 'rules', '__fixtures__', 'needs-triage.ts');
+const FETCHED_KEYS_FILE = '/tmp/rule-fixture-keys.txt';
 
 const WORKER_URL = process.env['TRAINING_WORKER_URL'] ?? '';
 if (!WORKER_URL) {
@@ -46,37 +57,84 @@ const RULE_NAMES = defaultRules()
   .map(r => r.name)
   .filter(n => !EXCLUDED_FROM_SYNC.has(n));
 
-async function fetchFixturesForRule(ruleName: string): Promise<RuleBugFixture[]> {
+/** A `{key, fixture}` record as returned by the worker, before validating `fixture`'s shape. */
+interface RawRecord {
+  readonly key: string;
+  readonly fixture: unknown;
+}
+
+async function fetchFixturesForRule(ruleName: string): Promise<RawRecord[]> {
   const url = `${WORKER_URL}/rule-fixtures/${ruleName}`;
   const res = await fetch(url);
   if (!res.ok) {
     console.warn(`  GET ${url} → ${res.status}, skipping`);
     return [];
   }
-  return res.json() as Promise<RuleBugFixture[]>;
+  return res.json() as Promise<RawRecord[]>;
+}
+
+/** R2 may still hold fixtures written before the v1 → v2 schema migration (27b7a71); skip those. */
+function isV2Fixture(fixture: unknown): fixture is RuleBugFixture {
+  return typeof fixture === 'object' && fixture !== null && (fixture as { version?: unknown }).version === 2;
+}
+
+/** Insert TS source just before the final `];` of a `readonly X[] = [ ... ];` array literal. */
+function insertBeforeClosingBracket(content: string, entries: string): string {
+  const insertPoint = content.lastIndexOf('];');
+  if (insertPoint < 0) {
+    console.error('Could not find closing `];`');
+    process.exit(1);
+  }
+  return content.slice(0, insertPoint) + entries + '\n' + content.slice(insertPoint);
+}
+
+function appendFixtures(newFixtures: readonly RuleBugFixture[]): void {
+  const content = readFileSync(FIXTURES_FILE, 'utf8');
+  const entries = newFixtures.map(fixtureToTypeScript).join('\n');
+  writeFileSync(FIXTURES_FILE, insertBeforeClosingBracket(content, entries));
+}
+
+function appendNeedsTriage(names: readonly string[]): void {
+  const content = readFileSync(NEEDS_TRIAGE_FILE, 'utf8');
+  const entries = names.map(name => `  ${JSON.stringify(name)},`).join('\n');
+  writeFileSync(NEEDS_TRIAGE_FILE, insertBeforeClosingBracket(content, entries));
 }
 
 async function main(): Promise<void> {
-  const fixturesContent = readFileSync(FIXTURES_FILE, 'utf8');
-
   const seenFingerprints = new Set(ruleBugFixtures.map(fixtureFingerprint));
   console.log(`Existing fixtures: ${ruleBugFixtures.length}`);
   console.log(`Checking ${RULE_NAMES.length} rules from defaultRules()`);
 
-  // Fetch new fixtures from R2, deduplicating by puzzle state.
+  // Fetch fixtures from R2. Every key fetched (new or already-synced
+  // duplicate) is recorded for the workflow to drain from R2 afterwards.
   const newFixtures: RuleBugFixture[] = [];
+  const fetchedKeys: string[] = [];
+  let legacyCount = 0;
   for (const ruleName of RULE_NAMES) {
     process.stdout.write(`Fetching rule-fixtures/${ruleName}... `);
-    const fixtures = await fetchFixturesForRule(ruleName);
+    const records = await fetchFixturesForRule(ruleName);
     const fresh: RuleBugFixture[] = [];
-    for (const f of fixtures) {
-      const fp = fixtureFingerprint(f);
+    for (const { key, fixture } of records) {
+      fetchedKeys.push(key);
+      if (!isV2Fixture(fixture)) {
+        legacyCount++;
+        continue;
+      }
+      const fp = fixtureFingerprint(fixture);
       if (seenFingerprints.has(fp)) continue;
       seenFingerprints.add(fp);
-      fresh.push(f);
+      fresh.push(fixture);
     }
-    console.log(`${fixtures.length} total, ${fresh.length} new`);
+    console.log(`${records.length} total, ${fresh.length} new`);
     newFixtures.push(...fresh);
+  }
+  if (legacyCount > 0) {
+    console.log(`Skipped ${legacyCount} pre-v2 fixture(s) (will be drained from R2)`);
+  }
+
+  if (fetchedKeys.length > 0) {
+    writeFileSync(FETCHED_KEYS_FILE, fetchedKeys.join('\n') + '\n');
+    console.log(`Wrote ${fetchedKeys.length} fetched key(s) to ${FETCHED_KEYS_FILE}`);
   }
 
   if (newFixtures.length === 0) {
@@ -84,19 +142,9 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Append new fixtures to index.ts (before the closing `];`)
-  const insertPoint = fixturesContent.lastIndexOf('];');
-  if (insertPoint < 0) {
-    console.error('Could not find closing `];` in fixtures index.ts');
-    process.exit(1);
-  }
-  const newEntries = newFixtures.map(fixtureToTypeScript).join('\n');
-  const updatedFixtures =
-    fixturesContent.slice(0, insertPoint) +
-    newEntries + '\n' +
-    fixturesContent.slice(insertPoint);
-  writeFileSync(FIXTURES_FILE, updatedFixtures);
-  console.log(`Wrote ${newFixtures.length} new fixture(s) to __fixtures__/index.ts`);
+  appendFixtures(newFixtures);
+  appendNeedsTriage(newFixtures.map(f => f.name));
+  console.log(`Wrote ${newFixtures.length} new fixture(s) to __fixtures__/index.ts and needs-triage.ts`);
 }
 
 main().catch((err: unknown) => {

@@ -970,14 +970,32 @@ and reports it for offline debugging:
      dedupe to the same fingerprint regardless of `name`/`addedAt`/`source`.
    - `fixtureToTypeScript(f)` emits the TS object literal used to append a fixture
      to `web/src/engine/rules/__fixtures__/index.ts`.
+   - `FixtureRecord { readonly key: string; readonly fixture: RuleBugFixture }` pairs
+     a fixture with its R2 object key — the shape returned by
+     `GET /rule-fixtures/<ruleName>` (see below).
 
 4. **Nightly Action** — `.github/workflows/rule-regression.yml` runs
    `npx vite-node web/scripts/sync-rule-fixtures.ts`, which derives the rule list
-   dynamically from `defaultRules()`, fetches all `GET /rule-fixtures/<ruleName>`
-   responses, deduplicates against existing fixtures by `fixtureFingerprint()`,
-   and appends new fixtures to `web/src/engine/rules/__fixtures__/index.ts`. It
-   does **not** touch `disabled-rules.ts`. The Action commits and pushes; the next
-   `pages.yml` deployment picks up the change.
+   dynamically from `defaultRules()` and fetches all `GET /rule-fixtures/<ruleName>`
+   responses, each an array of `FixtureRecord` (`{ key, fixture }`). For each
+   record:
+   - every key fetched (new or already-synced duplicate) is recorded;
+   - fixtures are deduplicated against existing ones by `fixtureFingerprint()`;
+     newly-seen fixtures are appended to
+     `web/src/engine/rules/__fixtures__/index.ts` **and** their `name` is appended
+     to `web/src/engine/rules/__fixtures__/needs-triage.ts` — unconditionally, with
+     no pass/fail check, so a freshly-reported (possibly still-buggy) fixture never
+     fails the bronze gate.
+
+   The script does **not** touch `disabled-rules.ts`. All fetched R2 keys are
+   written to `/tmp/rule-fixture-keys.txt`. The Action then runs the bronze gate,
+   commits and pushes `index.ts`/`needs-triage.ts` (the next `pages.yml`
+   deployment picks up the change), and — only if the bronze gate and commit/push
+   both succeeded — deletes every key in `/tmp/rule-fixture-keys.txt` from R2 via
+   `scripts/_r2_delete.py` (existing `R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY`
+   secrets). This drains R2 of both newly-synced fixtures and any pre-existing
+   duplicates, while never deleting from R2 if the job fails for unrelated
+   reasons.
 
 5. **Replay** — `boardFromFixture(fixture)` (in
    `web/src/engine/rules/__fixtures__/replay.ts`) is the single entry point for
@@ -997,10 +1015,21 @@ and reports it for offline debugging:
 6. **Regression tests** — `web/src/engine/rules/__fixtures__/regression.test.ts`
    generically replays every fixture via `boardFromFixture()` and asserts
    `fixture.ruleName`'s rule produces no golden-contradicting elimination against
-   `state.goldenSolution`. While the rule is in `DISABLED_RULES` (or the fixture is
-   otherwise marked as a known issue) it runs as `it.skip`. When
+   `state.goldenSolution`. Each fixture's `it`/`it.skip` is decided by
+   `shouldSkipFixture(fixture, rule, knownFailingFixtures)` (in
+   `__fixtures__/skipPolicy.ts`), which skips when: no rule matches the fixture's
+   `ruleName`; the rule is in `DISABLED_RULES`; the fixture is listed in the local
+   `KNOWN_FAILING_FIXTURES` (a tracked, still-open rule bug); or the fixture's name
+   is listed in `__fixtures__/needs-triage.ts`'s `NEEDS_TRIAGE_FIXTURES` (freshly
+   synced from R2, not yet reviewed by a human — see "Nightly Action" above). When
    `ruleBugFixtures` is empty the suite contains a single `it.skip` placeholder so
    the test file doesn't fail with "no test found in suite".
+
+   Periodic human review of `NEEDS_TRIAGE_FIXTURES`: for each entry, either remove
+   it (the fixture's rule now passes, so it becomes a live regression test), move
+   it to `KNOWN_FAILING_FIXTURES` with an explanatory comment (real, still-open
+   rule bug), or delete the fixture from `index.ts` entirely and remove its name
+   here (unactionable — its R2 copy was already drained, so it cannot resurface).
 
 See [`docs/debugging-fixtures.md`](./debugging-fixtures.md) for how to run the
 regression tests and debug a specific fixture.

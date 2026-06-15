@@ -25,6 +25,11 @@ export interface RuleBugFixture {
   readonly state: unknown;
 }
 
+export interface FixtureRecord {
+  readonly key: string;
+  readonly fixture: RuleBugFixture;
+}
+
 /**
  * A stable identity for a fixture's puzzle state, independent of `name`,
  * `addedAt` and `source`. Used to deduplicate fixtures fetched from R2 —

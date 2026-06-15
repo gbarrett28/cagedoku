@@ -8,8 +8,8 @@ import { describe, expect, it } from 'vitest';
 import { ruleBugFixtures } from './index.js';
 import { boardFromFixture } from './replay.js';
 import { defaultRules } from '../index.js';
-import { DISABLED_RULES } from '../disabled-rules.js';
 import { findTriggerMisses } from '../../triggerValidator.js';
+import { shouldSkipFixture } from './skipPolicy.js';
 
 /**
  * Fixtures with a known, still-reproducing violation in their own rule,
@@ -27,9 +27,7 @@ describe('rule-bug fixture regression', () => {
   const rules = defaultRules();
   for (const fixture of ruleBugFixtures) {
     const rule = rules.find(r => r.name === fixture.ruleName);
-    const itFixture = !rule || DISABLED_RULES.includes(fixture.ruleName) || KNOWN_FAILING_FIXTURES.includes(fixture.name)
-      ? it.skip
-      : it;
+    const itFixture = shouldSkipFixture(fixture, rule, KNOWN_FAILING_FIXTURES) ? it.skip : it;
     itFixture(`${fixture.name}: ${fixture.ruleName} produces no golden-contradicting elimination`, () => {
       const { board, state } = boardFromFixture(fixture);
       const { violations } = findTriggerMisses(board, [rule!], state.goldenSolution);

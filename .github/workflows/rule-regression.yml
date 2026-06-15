@@ -47,10 +47,29 @@ jobs:
         run: |
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
-          git add web/src/engine/rules/__fixtures__/index.ts
+          git add web/src/engine/rules/__fixtures__/index.ts web/src/engine/rules/__fixtures__/needs-triage.ts
           if git diff --cached --quiet; then
             echo "Nothing to commit."
           else
             git commit -m "chore: sync rule-bug fixtures"
             git push
+          fi
+
+      - name: Set up Python
+        if: success()
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Drain synced fixtures from R2
+        if: success()
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          if [ -s /tmp/rule-fixture-keys.txt ]; then
+            pip install --quiet boto3
+            python3 scripts/_r2_delete.py cagedoku-training < /tmp/rule-fixture-keys.txt
+          else
+            echo "No fixtures fetched; nothing to drain."
           fi
