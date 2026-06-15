@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { KillerBoardState } from '../boardState.js';
 import { HiddenSingle } from './hiddenSingle.js';
 import type { RuleContext } from '../rule.js';
-import { Cell, Trigger } from '../types.js';
+import { Trigger } from '../types.js';
 import { makeTrivialSpec, makeTwoCellCageSpec } from '../fixtures.js';
 
 function makeCtx(bs: KillerBoardState, rowUid: number, hintDigit: number): RuleContext {
@@ -53,7 +53,7 @@ describe('HiddenSingle', () => {
     expect(hints[0]!.eliminations).toStrictEqual(elims);
   });
 
-  it('asHints includes peer cells holding d in highlightCells', () => {
+  it('asHints: highlightCells contains only the sole cell; secondaryHighlightCells covers the rest of the unit', () => {
     // d=7 confined to (0,4) in row 0; col-4 and box-1 peers still hold 7
     const bs = new KillerBoardState(makeTrivialSpec());
     const rowUid = bs.rowUnitId(0);
@@ -66,14 +66,18 @@ describe('HiddenSingle', () => {
     const hints = new HiddenSingle().asHints(ctx, [...elims]);
     expect(hints).toHaveLength(1);
     const hint = hints[0]!;
-    // Sole cell (0,4) in highlightCells
-    expect(hint.highlightCells.some(([r, c]) => r === 0 && c === 4)).toBe(true);
-    // At least one col-4 peer (rows 1–8 still have 7) in highlightCells
-    expect(hint.highlightCells.some(([r, c]: Cell) => r !== 0 && c === 4)).toBe(true);
+    // highlightCells contains only the sole cell (0,4)
+    expect(hint.highlightCells).toEqual([[0, 4]]);
+    // secondaryHighlightCells covers the other 8 cells of row 0
+    expect(hint.secondaryHighlightCells).toHaveLength(8);
+    expect(hint.secondaryHighlightCells!.some(([r, c]) => r === 0 && c === 0)).toBe(true);
+    expect(hint.secondaryHighlightCells!.every(([r, c]) => !(r === 0 && c === 4))).toBe(true);
+    // col-4 peers (outside row 0) are in neither highlight set
+    expect(hint.secondaryHighlightCells!.some(([r, c]) => r !== 0 && c === 4)).toBe(false);
     // eliminations are unchanged: non-7 candidates of (0,4) only
     expect(hint.eliminations.every(e => e.cell[0] === 0 && e.cell[1] === 4)).toBe(true);
     expect(hint.eliminations.every(e => e.digit !== 7)).toBe(true);
-    // explanation mentions peer removal
+    // explanation still mentions peer removal in prose
     expect(hint.explanation).toContain('also removes 7 from');
   });
 
