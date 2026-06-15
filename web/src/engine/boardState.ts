@@ -165,6 +165,23 @@ export class BoardState {
   }
 
   /**
+   * Reduce candidates[r][c] to exactly the given set for every cell, removing
+   * everything else via removeCandidate (so KillerBoardState's cage-solution
+   * pruning runs correctly). Used to replay a RuleBugFixture's stalledCandidates
+   * onto a freshly constructed board.
+   */
+  restoreCandidates(candidates: readonly (readonly (readonly number[])[])[]): void {
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        const keep = new Set(candidates[r]![c]!);
+        for (const d of [...this.cands(r, c)]) {
+          if (!keep.has(d)) this.removeCandidate(r, c, d);
+        }
+      }
+    }
+  }
+
+  /**
    * Cage-sum data for the MRV backtracker's validity check, or null when this
    * board has no cages. Plain BoardState always returns null — mrvBacktrack's
    * search() then degrades to pure row/col/box backtracking (cageTotal empty

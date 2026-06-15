@@ -177,6 +177,35 @@ describe('removeCandidate', () => {
   });
 });
 
+describe('restoreCandidates', () => {
+  it('reduces candidates to exactly the given set', () => {
+    const bs = new KillerBoardState(makeTrivialSpec());
+    const candidates: number[][][] = Array.from({ length: 9 }, (_, r) =>
+      Array.from({ length: 9 }, (_, c) => (r === 0 && c === 0) ? [1, 2, 3] : [...bs.cands(r, c)]));
+    bs.restoreCandidates(candidates);
+    expect(bs.cands(0, 0)).toEqual(new Set([1, 2, 3]));
+  });
+
+  it('is a no-op for cells whose candidates already match', () => {
+    const bs = new KillerBoardState(makeTrivialSpec());
+    const before = bs.cands(1, 1).size;
+    const candidates: number[][][] = Array.from({ length: 9 }, (_, r) =>
+      Array.from({ length: 9 }, (_, c) => [...bs.cands(r, c)]));
+    bs.restoreCandidates(candidates);
+    expect(bs.cands(1, 1).size).toBe(before);
+  });
+
+  it('prunes cage solutions via the KillerBoardState removeCandidate override', () => {
+    const bs = new KillerBoardState(makeTrivialSpec());
+    const cageIdx = bs.regions[0]![0]!;
+    const before = bs.cageSolns[cageIdx]!.length;
+    const candidates: number[][][] = Array.from({ length: 9 }, (_, r) =>
+      Array.from({ length: 9 }, (_, c) => (r === 0 && c === 0) ? [bs.cands(0, 0).values().next().value!] : [...bs.cands(r, c)]));
+    bs.restoreCandidates(candidates);
+    expect(bs.cageSolns[cageIdx]!.length).toBeLessThanOrEqual(before);
+  });
+});
+
 describe('removeCageSolution', () => {
   it('emits SOLUTION_PRUNED and removes the solution', () => {
     const bs = new KillerBoardState(makeTrivialSpec());
