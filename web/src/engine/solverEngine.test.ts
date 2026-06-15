@@ -176,6 +176,26 @@ describe('KillerSolverEngine._onCellDetermined — bookkeeping only', () => {
     const eliminations = [1, 2, 3, 4, 5, 6, 7, 8].map(d => ({ cell: [0, 0] as Cell, digit: d }));
     expect(() => engine.applyEliminations(eliminations)).toThrow();
   });
+
+  it('a single-cell distinct result is golden-checked but never pushed onto pendingVirtualCages (it is a Naked Single, not a virtual cage)', () => {
+    const board = new KillerBoardState(makeTrivialSpec());
+    const violations: string[] = [];
+    const engine = new KillerSolverEngine(board, [], {
+      goldenSolution: KNOWN_SOLUTION,
+      onViolation: (name) => violations.push(name),
+    });
+    const gold = KNOWN_SOLUTION[1]![1]!;
+    const wrong = gold === 1 ? 2 : 1;
+    // wrong !== the existing single-cell cage's solved total (gold), so the
+    // existingTotals dedup alone would not prevent this from being queued.
+    vi.spyOn(board.linearSystem, 'substituteLiveRows').mockReturnValue([
+      [[[1, 1]] as Cell[], wrong, true],
+    ]);
+    const eliminations = [1, 2, 3, 4, 5, 6, 7, 8].map(d => ({ cell: [0, 0] as Cell, digit: d }));
+    engine.applyEliminations(eliminations);
+    expect(violations).toEqual(['DerivedVirtualCage']);
+    expect(board.linearSystem.pendingVirtualCages).toEqual([]);
+  });
 });
 
 describe('SolverEngine._checkAgainstGolden', () => {

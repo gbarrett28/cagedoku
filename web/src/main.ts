@@ -2376,15 +2376,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     logAction('hint_applied', hint.displayName);
     if (hint.rewindToTurnIdx !== null) {
-      try { currentState = rewind(hint.rewindToTurnIdx); refreshDisplay(); updateUndoButton(currentState); } catch (e) { setStatus(String(e), true); }
+      try { currentState = rewind(hint.rewindToTurnIdx); refreshDisplay(); updateUndoButton(currentState); } catch (e) { logAction('hint_apply_failed', String(e)); setStatus(String(e), true); }
     } else if (hint.placement !== null) {
       selectedCell = { row: hint.placement[0] + 1, col: hint.placement[1] + 1 };
       void handleCellEntry(hint.placement[2]);
     } else if (hint.virtualCageSuggestion !== null) {
       const { cells, total } = hint.virtualCageSuggestion;
-      try { currentState = addVirtualCage([...cells], total); void fetchCandidates(); } catch (e) { setStatus(String(e), true); }
+      try { currentState = addVirtualCage([...cells], total); void fetchCandidates(); } catch (e) { logAction('hint_apply_failed', String(e)); setStatus(String(e), true); }
     } else {
-      try { currentState = applyHint(hint.eliminations); refreshDisplay(); updateUndoButton(currentState); } catch (e) { setStatus(String(e), true); }
+      try { currentState = applyHint(hint.eliminations); refreshDisplay(); updateUndoButton(currentState); } catch (e) { logAction('hint_apply_failed', String(e)); setStatus(String(e), true); }
     }
   });
 

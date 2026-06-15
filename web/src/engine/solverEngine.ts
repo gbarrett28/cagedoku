@@ -416,7 +416,11 @@ export class KillerSolverEngine extends SolverEngine {
       if (!distinct) continue;
       const cells = [...vcells] as Cell[];
       if (cells.length === 1) {
+        // A single-cell result is a determined digit (Naked Single), not a
+        // virtual cage — golden-check it eagerly, then discard it rather
+        // than queuing it onto pendingVirtualCages.
         this._checkAgainstGolden('DerivedVirtualCage', cells[0]!, vtotal);
+        continue;
       }
       const key = cells.map(cellKey).slice().sort().join('|');
       if (existingTotals.get(key) === vtotal) continue;
