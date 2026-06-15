@@ -1198,6 +1198,9 @@ export function getHints(): HintsResponse {
         })),
       } : {}),
       ...(h.patternDigits ? { patternDigits: [...h.patternDigits] } : {}),
+      ...(h.secondaryHighlightCells ? {
+        secondaryHighlightCells: [...h.secondaryHighlightCells].map(([r, c]) => [r, c] as [number, number]),
+      } : {}),
     };
   });
 
