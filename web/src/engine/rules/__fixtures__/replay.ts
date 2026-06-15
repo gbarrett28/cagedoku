@@ -9,7 +9,10 @@ import { KillerBoardState } from '../../boardState.js';
 import type { RuleBugFixture } from '../../../../../shared/src/fixture.js';
 
 export function boardFromFixture(fixture: RuleBugFixture): KillerBoardState {
-  const spec = dataToSpec({ regions: fixture.regions, cageTotals: fixture.cageTotals });
+  const spec = dataToSpec({
+    regions: fixture.regions.map(row => [...row]),
+    cageTotals: fixture.cageTotals.map(row => [...row]),
+  });
   const board = new KillerBoardState(spec, { includeVirtualCages: false });
   board.restoreCandidates(fixture.stalledCandidates);
   return board;
