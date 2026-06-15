@@ -51,6 +51,15 @@ describe('buildFeedbackPayload', () => {
     expect(payload.unsolvedCells).toBe(12);
     expect(payload.totalCandidates).toBe(34);
   });
+
+  it('includes activeHint when provided, omits it when not', () => {
+    const activeHint = { ruleName: 'HiddenSingle', displayName: 'Hidden Single' };
+    const withHint = buildFeedbackPayload({ ...baseParams, activeHint });
+    expect(withHint.activeHint).toEqual(activeHint);
+
+    const withoutHint = buildFeedbackPayload(baseParams);
+    expect('activeHint' in withoutHint).toBe(false);
+  });
 });
 
 describe('submitFeedback', () => {
