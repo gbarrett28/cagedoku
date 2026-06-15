@@ -34,6 +34,12 @@ export interface HintResult {
   /** Two colour groups for bipartite-chain rules; absent for all other rules. */
   readonly colourGroups?: readonly ColourGroup[];
   /**
+   * Cells rendered with a pale-blue wash to give unit context for the deduction
+   * (e.g. "this is the unit in which the digit/tuple is unique"). Distinct from
+   * `highlightCells` (orange/yellow) and `colourGroups` (chain-colouring blue/green).
+   */
+  readonly secondaryHighlightCells?: readonly Cell[];
+  /**
    * Digits key to the rule's reasoning — marked with squares in `highlightCells`.
    * Absent for most rules; the renderer then derives them from `eliminations`
    * (or `placement[2]` for placement hints). Set explicitly only when pattern

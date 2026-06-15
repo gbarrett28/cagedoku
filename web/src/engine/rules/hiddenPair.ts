@@ -81,6 +81,7 @@ Guards:
       ruleName: this.name, displayName: 'Hidden Pair',
       explanation: `Hidden Pair: only {${digits.join(',')}} can go in ${cellLabel(c1)} and ${cellLabel(c2)} within ${unitLabel(ctx.unit)}. Remove all other candidates from these two cells.`,
       highlightCells: [...pairCells, ...eliminations.map(e => e.cell)],
+      secondaryHighlightCells: cells.filter(([pr, pc]) => !pairCells.some(([qr, qc]) => qr === pr && qc === pc)),
       eliminations: [...eliminations], placement: null, virtualCageSuggestion: null,
       patternDigits: digits,
     }];

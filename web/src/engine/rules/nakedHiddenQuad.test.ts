@@ -85,6 +85,9 @@ describe('NakedHiddenQuad', () => {
     expect(hints[0]!.explanation).toContain('Hidden Quad');
     expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
     expect(hints[0]!.placement).toBeNull();
+    // secondaryHighlightCells covers the rest of the unit, not the hidden-quad cells
+    expect(hints[0]!.secondaryHighlightCells).toHaveLength(5);
+    expect(hints[0]!.secondaryHighlightCells!.every(([r, c]) => !(r === 0 && [0, 1, 2, 3].includes(c)))).toBe(true);
   });
 
   it('near-miss naked quad: one cell has 1 candidate (naked single included) → no naked quad fires', () => {

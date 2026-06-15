@@ -67,6 +67,9 @@ describe('HiddenPair', () => {
     expect(hints[0]!.explanation).toContain('6');
     expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
     expect(hints[0]!.placement).toBeNull();
+    // secondaryHighlightCells covers the rest of the unit, not the pair cells
+    expect(hints[0]!.secondaryHighlightCells).toHaveLength(7);
+    expect(hints[0]!.secondaryHighlightCells!.every(([r, c]) => !(r === 0 && (c === 0 || c === 1)))).toBe(true);
   });
 
   it('near-miss: d1 in 3 cells → no hidden pair (pairCells.length !== 2)', () => {

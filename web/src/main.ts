@@ -120,6 +120,7 @@ let virtualCageNegCells = new Set<string>();    // "r,c" keys, 0-based — negat
 let hintHighlightCells = new Set<string>();     // "r,c" keys, 0-based — pattern cells (orange)
 let hintElimCells = new Set<string>();          // "r,c" keys, 0-based — elimination cells (yellow)
 let hintColourGroups: readonly { cells: readonly [number, number][]; colour: 'blue' | 'green' }[] = [];
+let hintSecondaryHighlightCells = new Set<string>(); // "r,c" keys, 0-based — pale-blue unit context
 let activeHintItem: HintItem | null = null;
 let inspectCageMode = false;
 
@@ -235,6 +236,14 @@ function drawUnderlays(
     const r = parts[0]!, c = parts[1]!;
     ctx.fillStyle = colour === 'blue' ? 'rgba(59, 130, 246, 0.45)' : 'rgba(34, 197, 94, 0.45)';
     ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
+  }
+  if (hintSecondaryHighlightCells.size > 0) {
+    ctx.fillStyle = 'rgba(96, 165, 240, 0.18)';
+    for (const key of hintSecondaryHighlightCells) {
+      const parts = key.split(',').map(Number);
+      const r = parts[0]!, c = parts[1]!;
+      ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
+    }
   }
   if (highlightKeys !== null && highlightKeys.size > 0) {
     ctx.fillStyle = 'rgba(249, 115, 22, 0.35)';
@@ -985,6 +994,7 @@ function showHintModal(hint: HintItem): void {
   hintHighlightCells = new Set(hint.highlightCells.map(([r, c]) => `${r},${c}`));
   hintElimCells = new Set(hint.eliminations.map(({ cell: [r, c] }) => `${r},${c}`));
   hintColourGroups = hint.colourGroups ?? [];
+  hintSecondaryHighlightCells = new Set((hint.secondaryHighlightCells ?? []).map(([r, c]) => `${r},${c}`));
   redrawGrid();
   el<HTMLElement>('hint-modal-title').textContent = hint.displayName;
   el<HTMLElement>('hint-modal-explanation').textContent = hint.explanation;
@@ -1019,6 +1029,7 @@ function clearHintHighlight(): void {
   hintHighlightCells = new Set();
   hintElimCells = new Set();
   hintColourGroups = [];
+  hintSecondaryHighlightCells = new Set();
   activeHintItem = null;
   hideHintPill(el('hint-pill'));
   redrawGrid();
@@ -2095,7 +2106,8 @@ document.addEventListener('DOMContentLoaded', () => {
     currentState = null; currentCandidates = null; currentBoard = null; selectedCell = null;
     showCandidates = false; candidateEditMode = false;
     virtualCageMode = false; virtualCageSelection = new Set(); virtualCageNegCells = new Set();
-    hintHighlightCells = new Set(); hintElimCells = new Set(); hintColourGroups = []; activeHintItem = null;
+    hintHighlightCells = new Set(); hintElimCells = new Set(); hintColourGroups = [];
+    hintSecondaryHighlightCells = new Set(); activeHintItem = null;
     colourMode = 'off'; cellColours.clear();
     inspectCageMode = false;
     el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');
