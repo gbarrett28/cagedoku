@@ -980,6 +980,7 @@ function openRuleInfoModal(displayName: string, description: string): void {
 }
 
 function showHintModal(hint: HintItem): void {
+  logAction('hint_shown', hint.displayName);
   activeHintItem = hint;
   hintHighlightCells = new Set(hint.highlightCells.map(([r, c]) => `${r},${c}`));
   hintElimCells = new Set(hint.eliminations.map(({ cell: [r, c] }) => `${r},${c}`));
@@ -1639,6 +1640,7 @@ async function handleFeedbackSubmit(): Promise<void> {
     ...(expected !== undefined && { expected }),
     ...(exceptionForSubmission !== null && { exception: exceptionForSubmission }),
     ...(fixtureCtx !== null && { fixtureContext: fixtureCtx }),
+    ...(activeHintItem !== null && { activeHint: activeHintItem }),
   });
 
   const statusEl = el<HTMLElement>('feedback-status');

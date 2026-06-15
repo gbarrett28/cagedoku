@@ -17,6 +17,7 @@ export interface FeedbackPayloadParams {
   readonly config: { readonly alwaysApplyRules: readonly string[]; readonly autoPlacementDelay: number };
   readonly exception?: string;
   readonly fixtureContext?: { readonly name: string; readonly unsolvedCells: number; readonly totalCandidates: number };
+  readonly activeHint?: unknown;
   readonly appVersion: string;
   readonly userAgent: string;
 }
@@ -42,6 +43,7 @@ export function buildFeedbackPayload(params: FeedbackPayloadParams): FeedbackRep
       unsolvedCells: params.fixtureContext.unsolvedCells,
       totalCandidates: params.fixtureContext.totalCandidates,
     }),
+    ...(params.activeHint !== undefined && { activeHint: params.activeHint }),
   };
 }
 

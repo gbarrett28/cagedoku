@@ -318,6 +318,8 @@ Four tiers applied consistently across all production code:
 
 **Bug reporting:** `reportBug(e, context)` (in `main.ts`) stores the exception for the next feedback modal open. When the user submits feedback via the Feedback button, `handleFeedbackSubmit` reads the form fields and calls `buildFeedbackPayload()` (`session/feedbackSubmit.ts`) to construct a `FeedbackReport` — including `reportType: 'feedback'`, the exception string (if any), and (for `new-rule` suggestions with an active fixture) `fixtureName`/`unsolvedCells`/`totalCandidates`. `submitFeedback()` POSTs the payload to the training worker, which opens a GitHub issue via `FeedbackReport.githubAction()`.
 
+**Active hint capture:** `showHintModal` (in `main.ts`) logs a `hint_shown` action (the hint's `displayName`) every time a hint is displayed, so the session trace shows when it appeared. If a hint is on screen when feedback is submitted, `handleFeedbackSubmit` includes the full `HintItem` as `FeedbackReport.activeHint`, rendered as a JSON "Active hint" section in the GitHub issue — this lets a report submitted with no turns still identify exactly which hint it refers to.
+
 **Assertion violations:** `checkSolutionAssertions()` (in `session/actions.ts`) validates the `goldenSolution` after every confirm. If the solution is incomplete or fails `validateSudokuSolution()`, an `AssertionViolation` is raised and shown in the assertion modal. The modal's "Submit bug report" button pre-fills `exceptionForSubmission` with the violation details and programmatically opens the feedback modal — no GitHub login required.
 
 ---
