@@ -851,11 +851,11 @@ rather than in `highlightCells`; `highlightCells` contains only the elimination
 targets (rendered yellow). See `CellColour` and `ColourGroup` in `web/src/engine/hint.ts`.
 
 **`secondaryHighlightCells`** gives the unit context for "hidden" deductions
-(HiddenSingle, HiddenPair, and the Hidden Triple/Quad branches of
-NakedHiddenTriple/NakedHiddenQuad): the rest of `ctx.unit.cells`, excluding the
-cells already in `highlightCells`. Rendered as a pale-blue wash underneath the
-orange/yellow overlays, so the user sees "this is the unit the deduction is about"
-without it competing visually with the actual target cell(s).
+(HiddenSingle, HiddenPair, HiddenTriple, and HiddenQuad): the rest of
+`ctx.unit.cells`, excluding the cells already in `highlightCells`. Rendered as a
+pale-blue wash underneath the orange/yellow overlays, so the user sees "this is
+the unit the deduction is about" without it competing visually with the actual
+target cell(s).
 
 **`KillerOnlyRule`** (`web/src/engine/rule.ts`) is an abstract base class for rules
 that require `KillerBoardState` (cage sums, cage solutions, the linear system —
