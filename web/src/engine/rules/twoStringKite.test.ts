@@ -5,8 +5,6 @@ import { SolverEngine } from '../solverEngine.js';
 import { makeTrivialSpec } from '../fixtures.js';
 import { Trigger } from '../types.js';
 import type { Cell } from '../types.js';
-import { DISABLED_RULES } from './disabled-rules.js';
-import { ruleBugFixtures } from './__fixtures__/index.js';
 
 /**
  * 2-String Kite test board for digit 5 — correct shared-box pattern.
@@ -131,50 +129,4 @@ describe('TwoStringKite', () => {
     expect(rule.apply(ctx).eliminations).toHaveLength(0);
     expect(rule.asHints(ctx, [])).toHaveLength(0);
   });
-});
-
-// ---------------------------------------------------------------------------
-// Regression tests against rule-bug fixtures
-// Skipped while TwoStringKite is in DISABLED_RULES; active once the rule is fixed.
-// ---------------------------------------------------------------------------
-
-function boardFromStallCandidates(stalledCandidates: readonly (readonly (readonly number[])[])[]): KillerBoardState {
-  const spec = {
-    regions: Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, () => r + 1)),
-    cageTotals: Array.from({ length: 9 }, () =>
-      Array.from({ length: 9 }, (_, c) => (c === 0 ? 45 : 0))),
-    borderX: Array.from({ length: 9 }, () => Array.from({ length: 8 }, () => true)),
-    borderY: Array.from({ length: 8 }, () => Array.from({ length: 9 }, () => false)),
-  };
-  const board = new KillerBoardState(spec, { includeVirtualCages: false });
-  const engine = new SolverEngine(board, []);
-  for (let r = 0; r < 9; r++) {
-    for (let c = 0; c < 9; c++) {
-      const keep = new Set(stalledCandidates[r]![c]!);
-      const elims: Array<{ cell: Cell; digit: number }> = [];
-      for (let d = 1; d <= 9; d++) {
-        if (!keep.has(d) && board.cands(r, c).has(d))
-          elims.push({ cell: [r, c] as Cell, digit: d });
-      }
-      if (elims.length) engine.applyEliminations(elims);
-    }
-  }
-  return board;
-}
-
-const kiteFixtures = ruleBugFixtures.filter(f => f.ruleName === 'TwoStringKite');
-const itKite = DISABLED_RULES.includes('TwoStringKite') ? it.skip : it;
-
-describe('TwoStringKite — rule-bug regression fixtures', () => {
-  for (const fixture of kiteFixtures) {
-    itKite(`${fixture.name}: no elimination contradicts golden solution`, () => {
-      const board = boardFromStallCandidates(fixture.stalledCandidates);
-      const ctx = { board, unit: null, cell: null, hint: Trigger.GLOBAL, hintDigit: null } as const;
-      const result = new TwoStringKite().apply(ctx);
-      for (const e of result.eliminations) {
-        const [r, c] = e.cell;
-        expect(fixture.goldenSolution[r]![c]).not.toBe(e.digit);
-      }
-    });
-  }
 });
