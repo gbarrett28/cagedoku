@@ -97,13 +97,12 @@ describe('buildEngine — validationContext', () => {
     expect(validationContext).toBeNull();
   });
 
-  it('carries rules/golden/spec when goldenSolution is present and board is not corrupted', () => {
+  it('carries rules/golden when goldenSolution is present and board is not corrupted', () => {
     const state = makeAlmostCompleteState();
     const { validationContext } = buildEngine(state);
     expect(validationContext).not.toBeNull();
     expect(validationContext!.golden).toEqual(state.goldenSolution);
     expect(validationContext!.rules.length).toBeGreaterThan(0);
-    expect(validationContext!.spec).not.toBeNull();
   });
 
   it('is null when the board is user-corrupted', () => {

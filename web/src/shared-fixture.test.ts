@@ -3,24 +3,31 @@ import { fixtureFingerprint } from '../../shared/src/fixture.js';
 import type { RuleBugFixture } from '../../shared/src/fixture.js';
 
 const grid9x9 = Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, (__, c) => ((r * 3 + Math.floor(r / 3) + c) % 9) + 1));
-const candidates9x9 = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => [1, 2, 3]));
-const regions9x9 = Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, () => r + 1));
-const cageTotals9x9 = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+
+function makeState(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    kind: 'classic',
+    version: 1,
+    userGrid: grid9x9,
+    turns: [],
+    alwaysApplyRules: [],
+    goldenSolution: grid9x9,
+    givenDigits: null,
+    originalImageUrl: null,
+    userRemovedCandidates: [],
+    ...overrides,
+  };
+}
 
 function makeFixture(overrides: Partial<RuleBugFixture> = {}): RuleBugFixture {
   return {
-    version: 1,
+    version: 2,
     source: 'r2',
     name: 'TestRule-r2-2026-01-01T00-00-00-000Z',
     addedAt: '2026-01-01',
     puzzleType: 'killer',
     ruleName: 'TestRule',
-    regions: regions9x9,
-    cageTotals: cageTotals9x9,
-    stalledCandidates: candidates9x9,
-    goldenSolution: grid9x9,
-    unsolvedCells: 81,
-    totalCandidates: 243,
+    state: makeState(),
     ...overrides,
   };
 }
@@ -38,11 +45,11 @@ describe('fixtureFingerprint', () => {
     expect(fixtureFingerprint(a)).not.toBe(fixtureFingerprint(b));
   });
 
-  it('differs when the stalled candidates differ', () => {
+  it('differs when the puzzle state differs', () => {
     const a = makeFixture();
-    const otherCandidates = candidates9x9.map(row => row.map(cell => [...cell]));
-    otherCandidates[0]![0] = [4, 5];
-    const b = makeFixture({ stalledCandidates: otherCandidates });
+    const otherGrid = grid9x9.map(row => [...row]);
+    otherGrid[0]![0] = otherGrid[0]![0]! === 9 ? 1 : otherGrid[0]![0]! + 1;
+    const b = makeFixture({ state: makeState({ userGrid: otherGrid }) });
     expect(fixtureFingerprint(a)).not.toBe(fixtureFingerprint(b));
   });
 });

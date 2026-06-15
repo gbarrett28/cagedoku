@@ -1,27 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import { boardFromFixture } from './replay.js';
-import { ruleBugFixtures } from './index.js';
+import { PuzzleState } from '../../../session/types.js';
+import { KNOWN_SOLUTION } from '../../fixtures.js';
+import type { RuleBugFixture } from '../../../../../shared/src/fixture.js';
 
 describe('boardFromFixture', () => {
-  it('restores stalledCandidates onto the board', () => {
-    const fixture = ruleBugFixtures[0]!;
-    const board = boardFromFixture(fixture);
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 9; c++) {
-        expect([...board.cands(r, c)].sort((a, b) => a - b)).toEqual(
-          [...fixture.stalledCandidates[r]![c]!].sort((a, b) => a - b),
-        );
-      }
-    }
-  });
+  it('replays a serialized session and reproduces the board at report time', () => {
+    const userGrid = KNOWN_SOLUTION.map(row => [...row]);
+    userGrid[0]![0] = 0;
+    const state: PuzzleState = {
+      ...PuzzleState.createClassic(null, [], null),
+      goldenSolution: KNOWN_SOLUTION.map(row => [...row]),
+      userGrid,
+    };
+    const fixture: RuleBugFixture = {
+      version: 2,
+      source: 'r2',
+      name: 'test-fixture',
+      addedAt: '2026-01-01',
+      ruleName: 'NakedSingle',
+      puzzleType: 'classic',
+      state: PuzzleState.serialize(state),
+    };
 
-  it('maps fixture regions (1-based) to board.regions (0-based)', () => {
-    const fixture = ruleBugFixtures[0]!;
-    const board = boardFromFixture(fixture);
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 9; c++) {
-        expect(board.regions[r]![c]).toBe(fixture.regions[r]![c]! - 1);
-      }
-    }
+    const { board, state: replayed } = boardFromFixture(fixture);
+
+    expect(replayed.goldenSolution).toEqual(KNOWN_SOLUTION);
+    expect([...board.cands(0, 0)]).toEqual([KNOWN_SOLUTION[0]![0]!]);
   });
 });

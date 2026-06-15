@@ -3,8 +3,18 @@ import { parseAnyReport, assertNeverReport } from '../../shared/src/reports/inde
 
 const grid9x9 = Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, (__, c) => ((r * 3 + Math.floor(r / 3) + c) % 9) + 1));
 const candidates9x9 = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => [1, 2, 3]));
-const regions9x9 = Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, () => r + 1));
-const cageTotals9x9 = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+
+const state = {
+  kind: 'classic',
+  version: 1,
+  userGrid: grid9x9,
+  turns: [],
+  alwaysApplyRules: [],
+  goldenSolution: grid9x9,
+  givenDigits: null,
+  originalImageUrl: null,
+  userRemovedCandidates: [],
+};
 
 const base = {
   reportedAt: '2026-01-01T00:00:00.000Z',
@@ -59,11 +69,8 @@ describe('parseAnyReport', () => {
       reportType: 'rule-bug',
       ruleName: 'TestRule',
       offendingEliminations: [{ cell: [0, 0], digit: 5 }],
-      stalledCandidates: candidates9x9,
-      goldenSolution: grid9x9,
       puzzleType: 'classic',
-      regions: regions9x9,
-      cageTotals: cageTotals9x9,
+      state,
     };
     const parsed = parseAnyReport(r);
     expect(parsed).not.toBeNull();
@@ -77,11 +84,8 @@ describe('parseAnyReport', () => {
       ruleName: 'TestRule',
       missedContext: 'GLOBAL',
       missedEliminations: [{ cell: [0, 0], digit: 3 }],
-      stalledCandidates: candidates9x9,
-      goldenSolution: grid9x9,
       puzzleType: 'killer',
-      regions: regions9x9,
-      cageTotals: cageTotals9x9,
+      state,
     };
     const parsed = parseAnyReport(r);
     expect(parsed).not.toBeNull();

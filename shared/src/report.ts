@@ -1,5 +1,3 @@
-import type { Grid, CandidateGrid } from './grid.js';
-
 /**
  * GitHub notification produced by a report. 'comment' posts to the tracking
  * issue; 'issue' opens a new GitHub issue.
@@ -16,14 +14,18 @@ export interface ReportBase {
   readonly userAgent: string;
 }
 
-/** Fields shared by reports that contain a full puzzle board state. */
+/**
+ * Fields shared by reports that contain a full puzzle board state.
+ *
+ * `state` is a `SerializedPuzzleState` (see `web/src/session/types.ts`'s
+ * `PuzzleState.serialize`) — the full turn history plus golden solution and
+ * cage data needed to replay the session via `PuzzleState.deserialize` +
+ * `buildEngine`. Typed `unknown` so `shared/` stays independent of `web/`.
+ */
 export interface PuzzleRuleReport extends ReportBase {
   readonly ruleName: string;
-  readonly stalledCandidates: CandidateGrid;
-  readonly goldenSolution: Grid;
   readonly puzzleType: 'killer' | 'classic';
-  readonly regions: Grid;
-  readonly cageTotals: Grid;
+  readonly state: unknown;
 }
 
 /**
@@ -33,8 +35,5 @@ export interface PuzzleRuleReport extends ReportBase {
 export interface ReproductionBundle {
   readonly ruleName: string;
   readonly puzzleType: 'killer' | 'classic';
-  readonly regions: Grid;
-  readonly cageTotals: Grid;
-  readonly stalledCandidates: CandidateGrid;
-  readonly goldenSolution: Grid;
+  readonly state: unknown;
 }

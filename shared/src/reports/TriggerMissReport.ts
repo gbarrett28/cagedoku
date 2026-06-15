@@ -23,11 +23,8 @@ export namespace TriggerMissReport {
     if (typeof v['ruleName'] !== 'string' || v['ruleName'].length === 0) return false;
     if (typeof v['missedContext'] !== 'string' || v['missedContext'].length === 0) return false;
     if (!Array.isArray(v['missedEliminations'])) return false;
-    if (!isStallCandidates(v['stalledCandidates'])) return false;
-    if (!is9x9NumberGrid(v['goldenSolution'])) return false;
     if (v['puzzleType'] !== 'killer' && v['puzzleType'] !== 'classic') return false;
-    if (!is9x9NumberGrid(v['regions'])) return false;
-    if (!is9x9NumberGrid(v['cageTotals'])) return false;
+    if (typeof v['state'] !== 'object' || v['state'] === null) return false;
     return true;
   }
 
@@ -57,20 +54,15 @@ export namespace TriggerMissReport {
 
   export function toFixture(r: TriggerMissReport): RuleBugFixture {
     const timestamp = new Date(r.reportedAt).toISOString().replace(/[:.]/g, '-');
-    const flat = (r.stalledCandidates as number[][][]).flat();
     return {
-      version: 1,
+      version: 2,
       source: 'trigger-miss',
       name: `${r.ruleName}-trigger-miss-${timestamp}`,
       addedAt: r.reportedAt.slice(0, 10),
-      puzzleType: r.puzzleType,
       ruleName: r.ruleName,
-      regions: r.regions,
-      cageTotals: r.cageTotals,
-      stalledCandidates: r.stalledCandidates,
-      goldenSolution: r.goldenSolution,
-      unsolvedCells: flat.filter(c => c.length > 1).length,
-      totalCandidates: flat.reduce((s, c) => s + c.length, 0),
+      puzzleType: r.puzzleType,
+      missedContext: r.missedContext,
+      state: r.state,
     };
   }
 
@@ -78,37 +70,9 @@ export namespace TriggerMissReport {
     return {
       ruleName: r.ruleName,
       puzzleType: r.puzzleType,
-      regions: r.regions,
-      cageTotals: r.cageTotals,
-      stalledCandidates: r.stalledCandidates,
-      goldenSolution: r.goldenSolution,
+      state: r.state,
       missedContext: r.missedContext,
       missedEliminations: r.missedEliminations,
     };
   }
-}
-
-function is9x9NumberGrid(value: unknown): boolean {
-  if (!Array.isArray(value) || value.length !== 9) return false;
-  for (const row of value as unknown[]) {
-    if (!Array.isArray(row) || (row as unknown[]).length !== 9) return false;
-    for (const cell of row as unknown[]) {
-      if (typeof cell !== 'number') return false;
-    }
-  }
-  return true;
-}
-
-function isStallCandidates(value: unknown): boolean {
-  if (!Array.isArray(value) || value.length !== 9) return false;
-  for (const row of value as unknown[]) {
-    if (!Array.isArray(row) || (row as unknown[]).length !== 9) return false;
-    for (const cell of row as unknown[]) {
-      if (!Array.isArray(cell) || (cell as unknown[]).length === 0) return false;
-      for (const d of cell as unknown[]) {
-        if (typeof d !== 'number') return false;
-      }
-    }
-  }
-  return true;
 }

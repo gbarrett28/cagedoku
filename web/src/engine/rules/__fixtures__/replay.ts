@@ -1,19 +1,17 @@
 /**
- * Builds a KillerBoardState that replays a RuleBugFixture's stalled puzzle
- * state, using the standard PuzzleSpecData deserialiser so cage geometry
- * matches what the real engine would have produced.
+ * Replays a RuleBugFixture's serialized session: deserializes the
+ * `SerializedPuzzleState` and runs it through `buildEngine` exactly as the
+ * live app would, reproducing the board at the moment the bug/miss was
+ * detected.
  */
 
-import { dataToSpec } from '../../../session/specUtils.js';
-import { KillerBoardState } from '../../boardState.js';
+import { buildEngine } from '../../../session/engine.js';
+import { PuzzleState } from '../../../session/types.js';
+import type { BoardState } from '../../boardState.js';
 import type { RuleBugFixture } from '../../../../../shared/src/fixture.js';
 
-export function boardFromFixture(fixture: RuleBugFixture): KillerBoardState {
-  const spec = dataToSpec({
-    regions: fixture.regions.map(row => [...row]),
-    cageTotals: fixture.cageTotals.map(row => [...row]),
-  });
-  const board = new KillerBoardState(spec, { includeVirtualCages: false });
-  board.restoreCandidates(fixture.stalledCandidates);
-  return board;
+export function boardFromFixture(fixture: RuleBugFixture): { board: BoardState; state: PuzzleState } {
+  const state = PuzzleState.deserialize(fixture.state);
+  const { board } = buildEngine(state, { skipValidation: true });
+  return { board, state };
 }

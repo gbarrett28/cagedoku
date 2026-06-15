@@ -892,36 +892,105 @@ tests (see below) use the same `it.skip` convention while disabled.
 
 ### Rule-bug fixture pipeline (for debugging stalls)
 
+**Goal:** every rule-bug/trigger-miss report carries the *entire session*
+(`SerializedPuzzleState`, including full `turns` history) so the exact board at
+the moment the bug was detected can be reproduced byte-for-byte offline — not
+just a single candidate-grid snapshot. This is what makes
+`web/src/engine/rules/__fixtures__/regression.test.ts` a faithful reproduction
+rather than an approximation.
+
 When a rule produces an elimination that contradicts the known golden solution at
 runtime, `SolverEngine` (with `goldenSolution` + `onViolation` options set by
 `buildEngine()`) detects it, suppresses the elimination so it is **never applied**,
 and reports it for offline debugging:
 
-1. **Runtime detection** — `onViolation` adds the rule name to the in-memory
-   `_sessionDisabledRules` set in `web/src/session/store.ts` (fast-path: the rule
-   won't be passed to any future `SolverEngine` constructed in this tab), and POSTs
-   a `RuleBugReport` (version 4) to the Cloudflare Worker.
+1. **Runtime detection** — `onViolation` (a plain function, constructed once per
+   `buildEngine()` call — no longer a `board`-capturing factory) adds the rule name
+   to the in-memory `_sessionDisabledRules` set in `web/src/session/store.ts`
+   (fast-path: the rule won't be passed to any future `SolverEngine` constructed in
+   this tab), and POSTs a `RuleBugReport` to the Cloudflare Worker. Likewise,
+   `runTriggerValidation` (`web/src/session/engine.ts` — a debounced background
+   brute-force check scheduled by `scheduleTriggerValidation` after each turn,
+   using `findTriggerMisses` from `triggerValidator.ts`) POSTs a
+   `TriggerMissReport` when a rule misses a valid elimination.
 
-2. **Worker ingestion** — `POST /` with a `RuleBugReport` body stores the raw report
-   under `rule-bugs/<ruleName>/` and a `RuleBugFixture`-shaped JSON under
-   `rule-fixtures/<ruleName>/` in R2. `TriggerMissReport`s (valid eliminations the
-   engine failed to apply) are stored the same way with `source: 'trigger-miss'`.
+   Both report shapes carry:
+   ```typescript
+   {
+     ruleName: string;
+     puzzleType: 'killer' | 'classic';
+     state: SerializedPuzzleState;   // PuzzleState.serialize(state) — full turn history
+     // RuleBugReport only:
+     offendingEliminations: { cell: [number, number]; digit: number }[];
+     // TriggerMissReport only:
+     missedContext: string;
+     missedEliminations: { cell: [number, number]; digit: number }[];
+   }
+   ```
+   `state` is produced by `PuzzleState.serialize(state)` (see
+   "`PuzzleState.serialize`/`deserialize`" below) — the same total, structural
+   transform used for feedback reports and the dev replay hook. No separate
+   candidate-grid/region/cage-total snapshot is captured; replaying `state` through
+   `buildEngine` reconstructs all of that.
 
-3. **Nightly Action** — `.github/workflows/rule-regression.yml` runs
+2. **Worker ingestion** — `POST /` with a `RuleBugReport` or `TriggerMissReport`
+   body stores the raw report under `rule-bugs/<ruleName>/` or
+   `trigger-misses/<ruleName>/` respectively, and a `RuleBugFixture`-shaped JSON
+   (via `.toFixture()`) under `rule-fixtures/<ruleName>/` in R2. Worker dispatch is
+   fully generic — it calls `.is()`/`.toFixture()`/`.storageKey()`/`.r2Metadata()`/
+   `.githubAction()` on whichever report type `parseAnyReport` returns, with no
+   per-field knowledge of the report shape.
+
+3. **`RuleBugFixture` (version 2)** — defined in `shared/src/fixture.ts`:
+   ```typescript
+   export interface RuleBugFixture {
+     readonly version: 2;
+     readonly source: 'issue' | 'r2' | 'trigger-miss';
+     readonly name: string;
+     readonly addedAt: string;
+     readonly issueNumber?: number;
+     readonly ruleName: string;
+     readonly puzzleType: 'killer' | 'classic';
+     readonly missedContext?: string;       // trigger-miss fixtures only
+     readonly state: unknown;               // SerializedPuzzleState
+   }
+   ```
+   - `fixtureFingerprint(f)` is `JSON.stringify([f.ruleName, f.state])` — two
+     fixtures describing the same session (same rule, same serialized state)
+     dedupe to the same fingerprint regardless of `name`/`addedAt`/`source`.
+   - `fixtureToTypeScript(f)` emits the TS object literal used to append a fixture
+     to `web/src/engine/rules/__fixtures__/index.ts`.
+
+4. **Nightly Action** — `.github/workflows/rule-regression.yml` runs
    `npx vite-node web/scripts/sync-rule-fixtures.ts`, which derives the rule list
    dynamically from `defaultRules()`, fetches all `GET /rule-fixtures/<ruleName>`
-   responses, deduplicates against existing fixtures by `fixtureFingerprint()`
-   (`shared/src/fixture.ts` — identifies the same underlying puzzle state regardless
-   of `name`/`addedAt`/`source`), and appends new fixtures to
-   `web/src/engine/rules/__fixtures__/index.ts`. It does **not** touch
-   `disabled-rules.ts`. The Action commits and pushes; the next `pages.yml`
-   deployment picks up the change.
+   responses, deduplicates against existing fixtures by `fixtureFingerprint()`,
+   and appends new fixtures to `web/src/engine/rules/__fixtures__/index.ts`. It
+   does **not** touch `disabled-rules.ts`. The Action commits and pushes; the next
+   `pages.yml` deployment picks up the change.
 
-4. **Regression tests** — `web/src/engine/rules/__fixtures__/regression.test.ts`
-   generically replays every fixture (via `boardFromFixture()`, using the real
-   `regions`/`cageTotals`) and asserts `fixture.ruleName`'s rule produces no
-   golden-contradicting elimination. While the rule is in `DISABLED_RULES` (or the
-   fixture is otherwise marked as a known issue) it runs as `it.skip`.
+5. **Replay** — `boardFromFixture(fixture)` (in
+   `web/src/engine/rules/__fixtures__/replay.ts`) is the single entry point for
+   reproducing a fixture:
+   ```typescript
+   export function boardFromFixture(fixture: RuleBugFixture): { board: BoardState; state: PuzzleState }
+   ```
+   It calls `PuzzleState.deserialize(fixture.state)` to reconstruct the exact
+   `PuzzleState`/`KillerPuzzleState` (including `turns`, `goldenSolution`,
+   `userRemovedCandidates`, and — for killer — `specData`/`cageStates`/
+   `virtualCages`), then `buildEngine(state, { skipValidation: true })` to rebuild
+   the board exactly as the live app would. `skipValidation` prevents the replay
+   itself from scheduling another background trigger-validation pass. The returned
+   `board` is the board at the moment the bug was detected; `state.goldenSolution`
+   is the known-correct solution for that puzzle.
+
+6. **Regression tests** — `web/src/engine/rules/__fixtures__/regression.test.ts`
+   generically replays every fixture via `boardFromFixture()` and asserts
+   `fixture.ruleName`'s rule produces no golden-contradicting elimination against
+   `state.goldenSolution`. While the rule is in `DISABLED_RULES` (or the fixture is
+   otherwise marked as a known issue) it runs as `it.skip`. When
+   `ruleBugFixtures` is empty the suite contains a single `it.skip` placeholder so
+   the test file doesn't fail with "no test found in suite".
 
 See [`docs/debugging-fixtures.md`](./debugging-fixtures.md) for how to run the
 regression tests and debug a specific fixture.

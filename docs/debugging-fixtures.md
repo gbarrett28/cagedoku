@@ -11,12 +11,14 @@ See `docs/architecture.md` § "Rule-bug fixture pipeline" for how they get there
 cd web && npx vitest run src/engine/rules/__fixtures__/regression.test.ts
 ```
 
-For each fixture, this replays it on a board built from the fixture's **real**
-`regions`/`cageTotals` (via `boardFromFixture()`, which uses the standard
-`dataToSpec` deserialiser) and `stalledCandidates`, then runs only
+For each fixture, `boardFromFixture(fixture)` calls `PuzzleState.deserialize(fixture.state)`
+to reconstruct the exact `PuzzleState`/`KillerPuzzleState` (full turn history,
+`goldenSolution`, and — for killer — `specData`/`cageStates`/`virtualCages`), then
+`buildEngine(state, { skipValidation: true })` to rebuild the board exactly as the
+live app would at the moment the bug was detected. The test then runs only
 `fixture.ruleName`'s rule across all of its trigger contexts
 (`findTriggerMisses`) and asserts it produces **no** elimination that
-contradicts `fixture.goldenSolution`.
+contradicts `state.goldenSolution`.
 
 - A fixture whose rule is in `DISABLED_RULES` (`web/src/engine/rules/disabled-rules.ts`)
   runs as `it.skip`.
@@ -28,6 +30,8 @@ contradicts `fixture.goldenSolution`.
 - A `source: 'trigger-miss'` fixture was never a violation to begin with, so
   this check is a cheap sanity pass for those — it isn't expected to catch
   anything new.
+- When `ruleBugFixtures` is empty, the suite contains a single `it.skip`
+  placeholder so the test file passes trivially.
 
 ## Debugging a specific fixture
 
@@ -40,8 +44,9 @@ substring of it, or a `ruleName` (e.g. `SolutionMapFilter`, which matches every
 fixture for that rule).
 
 For each match, this prints the fixture's metadata, then runs **all active
-rules** (not just `fixture.ruleName`) against the replayed board via
-`findTriggerMisses` and reports:
+rules** (not just `fixture.ruleName`) against the replayed board (via
+`boardFromFixture()` and `state.goldenSolution`) using `findTriggerMisses` and
+reports:
 
 - `VIOLATION by <rule> at <context>` — a golden-contradicting elimination.
   If `<rule>` is **not** `fixture.ruleName`, this is flagged

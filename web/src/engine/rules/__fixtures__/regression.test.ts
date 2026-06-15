@@ -1,6 +1,6 @@
 /**
  * Generic regression gate for rule-bug fixtures: replays each fixture's
- * stalled puzzle state against its own rule and asserts no
+ * serialized session against its own rule and asserts no
  * golden-contradicting elimination. See docs/debugging-fixtures.md.
  */
 
@@ -20,6 +20,10 @@ import { findTriggerMisses } from '../../triggerValidator.js';
 const KNOWN_FAILING_FIXTURES: readonly string[] = [];
 
 describe('rule-bug fixture regression', () => {
+  if (ruleBugFixtures.length === 0) {
+    it.skip('no fixtures recorded', () => {});
+  }
+
   const rules = defaultRules();
   for (const fixture of ruleBugFixtures) {
     const rule = rules.find(r => r.name === fixture.ruleName);
@@ -27,8 +31,8 @@ describe('rule-bug fixture regression', () => {
       ? it.skip
       : it;
     itFixture(`${fixture.name}: ${fixture.ruleName} produces no golden-contradicting elimination`, () => {
-      const board = boardFromFixture(fixture);
-      const { violations } = findTriggerMisses(board, [rule!], fixture.goldenSolution);
+      const { board, state } = boardFromFixture(fixture);
+      const { violations } = findTriggerMisses(board, [rule!], state.goldenSolution);
       expect(violations).toEqual([]);
     });
   }

@@ -22,7 +22,6 @@ import type { Cell, Elimination } from '../engine/types.js';
 import { cellKey } from '../engine/types.js';
 import type { SolverRule } from '../engine/rule.js';
 import { NoSolnError } from '../solver/errors.js';
-import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import { dataToSpec, virtualCageKeyFromCage, solutionKey } from './specUtils.js';
 import { disableRuleForSession, isRuleDisabledForSession, hasTriggerMissBeenReported, markTriggerMissReported } from './store.js';
 import { submitRuleBugReport, submitTriggerMissReport } from '../image/trainingUpload.js';
@@ -49,12 +48,11 @@ function scheduleTriggerValidation(
   rules: readonly SolverRule[],
   golden: readonly (readonly number[])[],
   state: PuzzleState,
-  spec: PuzzleSpec | null,
 ): void {
   if (_validationTimer !== null) clearTimeout(_validationTimer);
   _validationTimer = setTimeout(() => {
     _validationTimer = null;
-    runTriggerValidation(board, rules, golden, state, spec);
+    runTriggerValidation(board, rules, golden, state);
   }, 0);
 }
 
@@ -63,15 +61,14 @@ function runTriggerValidation(
   rules: readonly SolverRule[],
   golden: readonly (readonly number[])[],
   state: PuzzleState,
-  spec: PuzzleSpec | null,
 ): void {
   const { misses, violations } = findTriggerMisses(board, rules, golden);
   if (misses.length === 0 && violations.length === 0) return;
 
-  // Compute once — shared by both miss reports and violation reports.
-  const stalledCandidates = Array.from({ length: 9 }, (_, r) =>
-    Array.from({ length: 9 }, (__, c) => [...board.cands(r, c)].sort((a, b) => a - b)),
-  );
+  // Full session snapshot — shared by both miss reports and violation reports.
+  // Replayable via PuzzleState.deserialize + buildEngine (see RuleBugFixture).
+  const puzzleType = PuzzleState.isKiller(state) ? 'killer' : 'classic';
+  const serialized = PuzzleState.serialize(state);
 
   for (const miss of misses) {
     const key = `${miss.ruleName}:${miss.missedContext}`;
@@ -81,11 +78,8 @@ function runTriggerValidation(
       ruleName: miss.ruleName,
       missedContext: miss.missedContext,
       missedEliminations: miss.eliminations.map(e => ({ cell: e.cell, digit: e.digit })),
-      stalledCandidates,
-      goldenSolution: golden as number[][],
-      puzzleType: PuzzleState.isKiller(state) ? 'killer' : 'classic',
-      regions: (spec?.regions ?? []) as number[][],
-      cageTotals: (spec?.cageTotals ?? []) as number[][],
+      puzzleType,
+      state: serialized,
     });
   }
 
@@ -98,11 +92,8 @@ function runTriggerValidation(
     submitRuleBugReport({
       ruleName: violation.ruleName,
       offendingEliminations: violation.offendingEliminations.map(e => ({ cell: e.cell, digit: e.digit })),
-      goldenSolution: golden as number[][],
-      stalledCandidates,
-      puzzleType: PuzzleState.isKiller(state) ? 'killer' : 'classic',
-      regions: (spec?.regions ?? []) as number[][],
-      cageTotals: (spec?.cageTotals ?? []) as number[][],
+      puzzleType,
+      state: serialized,
     });
   }
 }
@@ -210,15 +201,12 @@ export function isUserCorrupted(state: PuzzleState): boolean {
 export interface ValidationContext {
   readonly rules: readonly SolverRule[];
   readonly golden: readonly (readonly number[])[];
-  readonly spec: PuzzleSpec | null;
 }
 
 export function buildEngine(
   state: PuzzleState,
   { includeHints = false, skipSolve = false, skipValidation = false }: { includeHints?: boolean; skipSolve?: boolean; skipValidation?: boolean } = {},
 ): { board: BoardState; engine: SolverEngine; ruleSteps: readonly RuleStep[]; validationContext: ValidationContext | null } {
-  const spec: PuzzleSpec | null = PuzzleState.isKiller(state) ? dataToSpec(state.specData) : null;
-
   const rules = [...PuzzleState.rules(state)];
   const alwaysApplySet = new Set(state.alwaysApplyRules);
 
@@ -236,25 +224,18 @@ export function buildEngine(
   const userCorrupted = isUserCorrupted(state);
   const activeGolden = userCorrupted ? null : state.goldenSolution;
 
-  const makeOnViolation = (board: BoardState) =>
-    activeGolden !== null
-      ? (ruleName: string, offending: readonly Elimination[]) => {
-          if (isRuleDisabledForSession(ruleName)) return;
-          disableRuleForSession(ruleName);
-          const stalledCandidates = Array.from({ length: 9 }, (_, r) =>
-            Array.from({ length: 9 }, (_, c) => [...board.cands(r, c)].sort((a, b) => a - b))
-          );
-          submitRuleBugReport({
-            ruleName,
-            offendingEliminations: offending.map(e => ({ cell: [e.cell[0], e.cell[1]] as [number, number], digit: e.digit })),
-            goldenSolution: activeGolden,
-            stalledCandidates,
-            puzzleType: PuzzleState.isKiller(state) ? 'killer' : 'classic',
-            regions: (spec?.regions ?? []) as number[][],
-            cageTotals: (spec?.cageTotals ?? []) as number[][],
-          });
-        }
-      : null;
+  const onViolation = activeGolden !== null
+    ? (ruleName: string, offending: readonly Elimination[]) => {
+        if (isRuleDisabledForSession(ruleName)) return;
+        disableRuleForSession(ruleName);
+        submitRuleBugReport({
+          ruleName,
+          offendingEliminations: offending.map(e => ({ cell: [e.cell[0], e.cell[1]] as [number, number], digit: e.digit })),
+          puzzleType: PuzzleState.isKiller(state) ? 'killer' : 'classic',
+          state: PuzzleState.serialize(state),
+        });
+      }
+    : null;
 
   const { board, engine }: { board: BoardState; engine: SolverEngine } = PuzzleState.isKiller(state)
     ? (() => {
@@ -283,7 +264,7 @@ export function buildEngine(
         const engine = new KillerSolverEngine(board, activeRules, {
           hintRules,
           goldenSolution: activeGolden,
-          onViolation: makeOnViolation(board),
+          onViolation,
         });
         return { board, engine };
       })()
@@ -292,7 +273,7 @@ export function buildEngine(
         const engine = new SolverEngine(board, activeRules, {
           hintRules,
           goldenSolution: activeGolden,
-          onViolation: makeOnViolation(board),
+          onViolation,
         });
         return { board, engine };
       })();
@@ -364,7 +345,7 @@ export function buildEngine(
   // Callers that need to schedule validation against a different state (e.g.
   // recordTurn, using finalState) pass skipValidation and schedule it themselves.
   if (_solveCompleted && !includeHints && !skipValidation && activeGolden !== null) {
-    scheduleTriggerValidation(board, activeRules, activeGolden, state, spec);
+    scheduleTriggerValidation(board, activeRules, activeGolden, state);
   }
 
   const ruleSteps: readonly RuleStep[] = (_solveCompleted && !skipSolve)
@@ -372,7 +353,7 @@ export function buildEngine(
     : [];
 
   const validationContext: ValidationContext | null = activeGolden !== null
-    ? { rules: activeRules, golden: activeGolden, spec }
+    ? { rules: activeRules, golden: activeGolden }
     : null;
 
   return { board, engine, ruleSteps, validationContext };
@@ -505,7 +486,7 @@ export function recordTurn(
   const turn: Turn = { action, autoMutations, snapshot };
   const finalState = { ...folded, turns: [...baseState.turns, turn] };
   if (validationContext !== null) {
-    scheduleTriggerValidation(board, validationContext.rules, validationContext.golden, finalState, validationContext.spec);
+    scheduleTriggerValidation(board, validationContext.rules, validationContext.golden, finalState);
   }
   return { state: finalState, ruleSteps, baseState, board };
 }

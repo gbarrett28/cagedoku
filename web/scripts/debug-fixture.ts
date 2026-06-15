@@ -33,10 +33,9 @@ const activeRules = defaultRules().filter(r => !DISABLED_RULES.includes(r.name))
 for (const fixture of matches) {
   console.log(`\n=== ${fixture.name} ===`);
   console.log(`  ruleName: ${fixture.ruleName}, source: ${fixture.source}, puzzleType: ${fixture.puzzleType}`);
-  console.log(`  unsolvedCells: ${fixture.unsolvedCells}, totalCandidates: ${fixture.totalCandidates}`);
 
-  const board = boardFromFixture(fixture);
-  const { violations, misses } = findTriggerMisses(board, activeRules, fixture.goldenSolution);
+  const { board, state } = boardFromFixture(fixture);
+  const { violations, misses } = findTriggerMisses(board, activeRules, state.goldenSolution);
 
   if (violations.length === 0) {
     console.log('  No golden-contradicting eliminations found.');

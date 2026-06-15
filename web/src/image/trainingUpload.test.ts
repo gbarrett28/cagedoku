@@ -177,14 +177,19 @@ describe('submitStallReport', () => {
 
 const minimalRuleBugReport = {
   puzzleType: 'classic' as const,
-  regions: Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, () => r)),
-  cageTotals: Array.from({ length: 9 }, () => new Array<number>(9).fill(0)),
-  stalledCandidates: Array.from({ length: 9 }, () =>
-    Array.from({ length: 9 }, () => [1, 2, 3]),
-  ),
   ruleName: 'TestRule',
   offendingEliminations: [{ cell: [0, 0] as [number, number], digit: 5 }],
-  goldenSolution: Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, (__, c) => ((r * 3 + Math.floor(r / 3) + c) % 9) + 1)),
+  state: {
+    kind: 'classic' as const,
+    version: 1 as const,
+    userGrid: Array.from({ length: 9 }, () => new Array<number>(9).fill(0)),
+    turns: [],
+    alwaysApplyRules: [],
+    goldenSolution: Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, (__, c) => ((r * 3 + Math.floor(r / 3) + c) % 9) + 1)),
+    givenDigits: null,
+    originalImageUrl: null,
+    userRemovedCandidates: [],
+  },
 };
 
 describe('submitRuleBugReport', () => {
