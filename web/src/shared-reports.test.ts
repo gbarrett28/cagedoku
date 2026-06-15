@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseAnyReport, assertNeverReport } from '../../shared/src/reports/index.js';
+import { parseAnyReport, assertNeverReport, FeedbackReport } from '../../shared/src/reports/index.js';
 
 const grid9x9 = Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, (__, c) => ((r * 3 + Math.floor(r / 3) + c) % 9) + 1));
 const candidates9x9 = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => [1, 2, 3]));
@@ -134,6 +134,33 @@ describe('parseAnyReport', () => {
     const parsed = parseAnyReport(r);
     expect(parsed).not.toBeNull();
     expect(parsed!.reportType).toBe('feedback');
+  });
+});
+
+describe('FeedbackReport.githubAction', () => {
+  const feedbackBase = {
+    ...base,
+    reportType: 'feedback' as const,
+    feedbackType: 'bug' as const,
+    description: 'Something broke',
+    actionLog: 'action1\naction2',
+    puzzleSpec: null,
+    viewport: '1280x800',
+    config: { alwaysApplyRules: [], autoPlacementDelay: 0 },
+  };
+
+  it('includes an "Active hint" section with the JSON snapshot when activeHint is set', () => {
+    const activeHint = { ruleName: 'HiddenSingle', displayName: 'Hidden Single', explanation: 'x' };
+    const report: FeedbackReport = { ...feedbackBase, activeHint };
+    const { body } = FeedbackReport.githubAction(report);
+    expect(body).toContain('Active hint');
+    expect(body).toContain('"ruleName": "HiddenSingle"');
+  });
+
+  it('omits the "Active hint" section when activeHint is not set', () => {
+    const report: FeedbackReport = { ...feedbackBase };
+    const { body } = FeedbackReport.githubAction(report);
+    expect(body).not.toContain('Active hint');
   });
 });
 

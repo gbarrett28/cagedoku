@@ -14,6 +14,7 @@ export interface FeedbackReport extends ReportBase {
   readonly fixtureName?: string;
   readonly unsolvedCells?: number;
   readonly totalCandidates?: number;
+  readonly activeHint?: unknown;
 }
 
 export namespace FeedbackReport {
@@ -81,6 +82,9 @@ export namespace FeedbackReport {
         `**Unsolved cells:** ${r.unsolvedCells ?? '?'}\n` +
         `**Total candidates:** ${r.totalCandidates ?? '?'}\n\n`
       : '';
+    const activeHintSection = r.activeHint !== undefined
+      ? `\n<details>\n<summary>Active hint</summary>\n\n\`\`\`json\n${JSON.stringify(r.activeHint, null, 2)}\n\`\`\`\n\n</details>\n`
+      : '';
 
     const body = `## ${typeLabel}
 
@@ -95,7 +99,7 @@ ${expectedSection}${exceptionSection}
 ### Config
 - Auto-apply rules: ${rules}
 - Step delay: ${delay}
-${specJson}
+${specJson}${activeHintSection}
 ### Session trace
 
 <details>
