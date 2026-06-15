@@ -345,6 +345,21 @@ describe('Worker fetch handler', () => {
     expect(githubCall[1].headers).toMatchObject({ Authorization: 'Bearer fake-token' });
   });
 
+  it('stores the full feedback report to R2 under feedback/', async () => {
+    const env = await makeEnv();
+    const res = await worker.fetch(
+      makeRequest({ contentType: 'application/json', body: validFeedback }),
+      env,
+    );
+    expect(res.status).toBe(200);
+
+    const listed = await env.TRAINING_BUCKET.list({ prefix: 'feedback/' });
+    expect(listed.objects).toHaveLength(1);
+    const stored = await env.TRAINING_BUCKET.get(listed.objects[0]!.key);
+    const storedJson = await stored!.json();
+    expect(storedJson).toMatchObject({ reportType: 'feedback', description: validFeedback.description });
+  });
+
   it('returns 200 even when GitHub issue creation fails, and logs the error', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('GitHub down'));
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -415,6 +430,13 @@ describe('Worker fetch handler', () => {
   });
 
   it('handles a feedback report with a large, realistic puzzleSpec (full turn history) without error', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const { body: issueBody } = JSON.parse((init as RequestInit).body as string) as { body: string };
+      if (issueBody.length > 65536) {
+        return new Response('{"message":"Body is too long (maximum is 65536 characters)"}', { status: 422 });
+      }
+      return new Response('{}', { status: 201 });
+    });
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const env = await makeEnv();
     const body = { ...validFeedback, puzzleSpec: makeLargePuzzleSpec(25) };
@@ -427,8 +449,17 @@ describe('Worker fetch handler', () => {
     expect(globalThis.fetch).toHaveBeenCalledOnce();
     const githubCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
     const issue = JSON.parse(githubCall[1].body as string) as { body: string };
+    expect(issue.body.length).toBeLessThanOrEqual(65536);
     expect(issue.body).toContain('<summary>Puzzle spec</summary>');
     expect(issue.body).toContain('"turns"');
+    expect(issue.body).not.toContain('"snapshot"');
+
+    // The full, untruncated report (with candidate snapshots) is still stored in R2.
+    const listed = await env.TRAINING_BUCKET.list({ prefix: 'feedback/' });
+    expect(listed.objects).toHaveLength(1);
+    const stored = await env.TRAINING_BUCKET.get(listed.objects[0]!.key);
+    const storedJson = await stored!.json() as { puzzleSpec: { turns: { snapshot?: unknown }[] } };
+    expect(storedJson.puzzleSpec.turns[0]!.snapshot).toBeDefined();
   });
 });
 
