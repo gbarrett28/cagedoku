@@ -917,20 +917,14 @@ and reports it for offline debugging:
    `disabled-rules.ts`. The Action commits and pushes; the next `pages.yml`
    deployment picks up the change.
 
-4. **Regression tests** — some rules' test files (currently `nakedSingle.test.ts`,
-   `twoStringKite.test.ts`, `uniqueRectangle.test.ts`) have a describe block that
-   filters `ruleBugFixtures` by `ruleName` and asserts the rule's `apply()` never
-   eliminates the golden digit on that fixture's board. While the rule is in
-   `DISABLED_RULES` these run as `it.skip`.
+4. **Regression tests** — `web/src/engine/rules/__fixtures__/regression.test.ts`
+   generically replays every fixture (via `boardFromFixture()`, using the real
+   `regions`/`cageTotals`) and asserts `fixture.ruleName`'s rule produces no
+   golden-contradicting elimination. While the rule is in `DISABLED_RULES` (or the
+   fixture is otherwise marked as a known issue) it runs as `it.skip`.
 
-**Debugging a fixture** — `web/scripts/repro-bugs.ts` (`cd web && npx vite-node
-scripts/repro-bugs.ts`) is a scratch harness that replays a hardcoded set of past
-bug reports against the current rule set using `mrvBacktrack` to compute the golden
-solution. It is not a generic `ruleBugFixtures` replay tool (it predates that
-mechanism and uses a fixed classic spec) — when investigating fixtures added by the
-nightly sync, either add a fixture-driven `it` block per the pattern in step 4
-(building the board via `dataToSpec(regions, cageTotals)` so killer cage geometry is
-preserved), or extend `repro-bugs.ts` with the new case.
+See [`docs/debugging-fixtures.md`](./debugging-fixtures.md) for how to run the
+regression tests and debug a specific fixture.
 
 ---
 
