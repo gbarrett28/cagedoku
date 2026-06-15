@@ -13,12 +13,13 @@ import { HiddenSingle } from '../src/engine/rules/hiddenSingle.js';
 import { PointingPairs } from '../src/engine/rules/pointingPairs.js';
 import { UniqueRectangle } from '../src/engine/rules/uniqueRectangle.js';
 import { NakedPair } from '../src/engine/rules/nakedPair.js';
-import { NakedHiddenQuad } from '../src/engine/rules/nakedHiddenQuad.js';
+import { HiddenQuad } from '../src/engine/rules/hiddenQuad.js';
 import { XWing } from '../src/engine/rules/xWing.js';
 import { XYZWing } from '../src/engine/rules/xyzWing.js';
 import { Skyscraper } from '../src/engine/rules/skyscraper.js';
 import { HiddenPair } from '../src/engine/rules/hiddenPair.js';
-import { NakedHiddenTriple } from '../src/engine/rules/nakedHiddenTriple.js';
+import { NakedTriple } from '../src/engine/rules/nakedTriple.js';
+import { HiddenTriple } from '../src/engine/rules/hiddenTriple.js';
 import { LockedCandidates } from '../src/engine/rules/lockedCandidates.js';
 import { mrvBacktrack } from '../src/engine/backtracker.js';
 import { Cell, Elimination, Trigger } from '../src/engine/types.js';
@@ -126,7 +127,7 @@ console.log('\n====== Bug #139 — Unique Rectangle ======');
   let quadApplied = false;
   for (const unit of board.units) {
     const uCtx = { board, unit, cell: null, hint: Trigger.GLOBAL, hintDigit: null };
-    const quad = new NakedHiddenQuad();
+    const quad = new HiddenQuad();
     const res = quad.apply(uCtx);
     if (res.eliminations.length > 0) {
       const hints = quad.asHints(uCtx, res.eliminations);
@@ -175,7 +176,7 @@ console.log('\n====== Bug #141 — Naked Pair ======');
   console.log('\nAll hint rules simultaneously:');
   checkAllHintRules(board, golden, [
     new HiddenSingle(), new NakedPair(), new HiddenPair(),
-    new PointingPairs(), new LockedCandidates(), new NakedHiddenTriple(),
+    new PointingPairs(), new LockedCandidates(), new NakedTriple(), new HiddenTriple(),
   ]);
 
   // Now check: does PointingPairs eliminate the SAME targets as NakedPair?
