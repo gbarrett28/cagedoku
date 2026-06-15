@@ -14,6 +14,13 @@ import { findTriggerMisses } from '../../triggerValidator.js';
 /**
  * Fixtures with a known, still-reproducing violation in their own rule,
  * tracked as a separate bug rather than blocking this generic gate.
+ *
+ * - SolutionMapFilter-r2-2026-05-29T07-06-49-234Z: SolutionMapFilter eliminates
+ *   golden digit 1 from cell (5,5), via both GLOBAL and SOLUTION_PRUNED:CAGE:32
+ *   contexts. Found by `npx vite-node scripts/debug-fixture.ts SolutionMapFilter`
+ *   (see docs/debugging-fixtures.md). Needs its own investigation into
+ *   SolutionMapFilter's cage-solution-pruning logic.
+ *
  * Remove an entry once the underlying rule bug is fixed.
  */
 const KNOWN_FAILING_FIXTURES: readonly string[] = [
@@ -21,8 +28,9 @@ const KNOWN_FAILING_FIXTURES: readonly string[] = [
 ];
 
 describe('rule-bug fixture regression', () => {
+  const rules = defaultRules();
   for (const fixture of ruleBugFixtures) {
-    const rule = defaultRules().find(r => r.name === fixture.ruleName);
+    const rule = rules.find(r => r.name === fixture.ruleName);
     const itFixture = !rule || DISABLED_RULES.includes(fixture.ruleName) || KNOWN_FAILING_FIXTURES.includes(fixture.name)
       ? it.skip
       : it;
