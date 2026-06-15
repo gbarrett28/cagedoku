@@ -35,7 +35,7 @@ import { fileURLToPath } from 'node:url';
 import { defaultRules } from '../src/engine/rules/index.js';
 import { ruleBugFixtures } from '../src/engine/rules/__fixtures__/index.js';
 import { fixtureToTypeScript, fixtureFingerprint } from '../../shared/src/fixture.js';
-import type { RuleBugFixture, FixtureRecord } from '../../shared/src/fixture.js';
+import type { RuleBugFixture } from '../../shared/src/fixture.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = join(__dirname, '..');
@@ -57,14 +57,25 @@ const RULE_NAMES = defaultRules()
   .map(r => r.name)
   .filter(n => !EXCLUDED_FROM_SYNC.has(n));
 
-async function fetchFixturesForRule(ruleName: string): Promise<FixtureRecord[]> {
+/** A `{key, fixture}` record as returned by the worker, before validating `fixture`'s shape. */
+interface RawRecord {
+  readonly key: string;
+  readonly fixture: unknown;
+}
+
+async function fetchFixturesForRule(ruleName: string): Promise<RawRecord[]> {
   const url = `${WORKER_URL}/rule-fixtures/${ruleName}`;
   const res = await fetch(url);
   if (!res.ok) {
     console.warn(`  GET ${url} → ${res.status}, skipping`);
     return [];
   }
-  return res.json() as Promise<FixtureRecord[]>;
+  return res.json() as Promise<RawRecord[]>;
+}
+
+/** R2 may still hold fixtures written before the v1 → v2 schema migration (27b7a71); skip those. */
+function isV2Fixture(fixture: unknown): fixture is RuleBugFixture {
+  return typeof fixture === 'object' && fixture !== null && (fixture as { version?: unknown }).version === 2;
 }
 
 /** Insert TS source just before the final `];` of a `readonly X[] = [ ... ];` array literal. */
@@ -98,12 +109,17 @@ async function main(): Promise<void> {
   // duplicate) is recorded for the workflow to drain from R2 afterwards.
   const newFixtures: RuleBugFixture[] = [];
   const fetchedKeys: string[] = [];
+  let legacyCount = 0;
   for (const ruleName of RULE_NAMES) {
     process.stdout.write(`Fetching rule-fixtures/${ruleName}... `);
     const records = await fetchFixturesForRule(ruleName);
     const fresh: RuleBugFixture[] = [];
     for (const { key, fixture } of records) {
       fetchedKeys.push(key);
+      if (!isV2Fixture(fixture)) {
+        legacyCount++;
+        continue;
+      }
       const fp = fixtureFingerprint(fixture);
       if (seenFingerprints.has(fp)) continue;
       seenFingerprints.add(fp);
@@ -111,6 +127,9 @@ async function main(): Promise<void> {
     }
     console.log(`${records.length} total, ${fresh.length} new`);
     newFixtures.push(...fresh);
+  }
+  if (legacyCount > 0) {
+    console.log(`Skipped ${legacyCount} pre-v2 fixture(s) (will be drained from R2)`);
   }
 
   if (fetchedKeys.length > 0) {
