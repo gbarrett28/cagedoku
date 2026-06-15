@@ -136,8 +136,7 @@ This is the one tool used for both "is this fixture's own rule still buggy?" and
 
 ### 6. Documentation: how-to for debugging fixtures
 
-Replace the short "Debugging a fixture" paragraph in `docs/architecture.md`
-(§ Rule-bug fixture pipeline, added in commit c0166f7) with a fuller how-to:
+New live doc `docs/debugging-fixtures.md`, covering:
 
 - How `regression.test.ts` works and what a red test means per `source` value.
 - How to run `debug-fixture.ts` and interpret its output, including the
@@ -145,6 +144,14 @@ Replace the short "Debugging a fixture" paragraph in `docs/architecture.md`
 - Note on `DISABLED_RULES`/`it.skip` interaction.
 - Note on the cross-attribution scope decision above (out of scope for the
   generic gate; investigate separately if `debug-fixture.ts` finds one).
+
+Replace the short "Debugging a fixture" paragraph in `docs/architecture.md`
+(§ Rule-bug fixture pipeline, added in commit c0166f7) with one or two sentences
+summarising what the pipeline produces and a link: "See
+[`docs/debugging-fixtures.md`](./debugging-fixtures.md) for how to run the
+regression tests and debug a specific fixture." — so a reader of
+`architecture.md` knows the linked doc exists and roughly what it's for, without
+the full how-to living inline.
 
 ## Testing
 
