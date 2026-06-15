@@ -1,4 +1,4 @@
-name: Sync rule-bug fixtures and disable broken rules
+name: Sync rule-bug fixtures
 
 on:
   schedule:
@@ -47,11 +47,10 @@ jobs:
         run: |
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
-          git add web/src/engine/rules/__fixtures__/index.ts \
-                  web/src/engine/rules/disabled-rules.ts
+          git add web/src/engine/rules/__fixtures__/index.ts
           if git diff --cached --quiet; then
             echo "Nothing to commit."
           else
-            git commit -m "chore: sync rule-bug fixtures and update disabled-rules"
+            git commit -m "chore: sync rule-bug fixtures"
             git push
           fi
