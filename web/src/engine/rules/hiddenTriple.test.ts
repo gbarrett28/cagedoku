@@ -1,0 +1,84 @@
+/**
+ * Tests for HiddenTriple.
+ */
+
+import { describe, expect, it } from 'vitest';
+import { KillerBoardState } from '../boardState.js';
+import { HiddenTriple } from './hiddenTriple.js';
+import type { RuleContext } from '../rule.js';
+import { Trigger } from '../types.js';
+import { makeTrivialSpec } from '../fixtures.js';
+
+function makeCtx(bs: KillerBoardState, row: number): RuleContext {
+  const rowUid = bs.rowUnitId(row);
+  for (let d = 1; d <= 9; d++) {
+    bs.counts[rowUid]![d] = Array.from({ length: 9 }, (_, c) => c)
+      .filter(c => bs.cands(row, c).has(d)).length;
+  }
+  return {
+    unit: bs.units[rowUid] ?? null,
+    cell: null,
+    board: bs,
+    hint: Trigger.COUNT_DECREASED,
+    hintDigit: null,
+  };
+}
+
+describe('HiddenTriple', () => {
+  it('asHints: hidden triple returns hint with correct shape', () => {
+    const bs = new KillerBoardState(makeTrivialSpec());
+    bs.candidates[0]![0]! = new Set([1, 2, 4, 5]);
+    bs.candidates[0]![1]! = new Set([2, 3, 6, 7]);
+    bs.candidates[0]![2]! = new Set([1, 3, 8, 9]);
+    for (let c = 3; c < 9; c++) bs.candidates[0]![c]! = new Set([4, 5, 6, 7]);
+    const ctx = makeCtx(bs, 0);
+    const rule = new HiddenTriple();
+    const elims = rule.apply(ctx).eliminations;
+    expect(elims.length).toBeGreaterThan(0);
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBe(1);
+    expect(hints[0]!.ruleName).toBe('HiddenTriple');
+    expect(hints[0]!.displayName).toBe('Hidden Triple');
+    expect(hints[0]!.explanation).toContain('Hidden Triple');
+    expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
+    expect(hints[0]!.placement).toBeNull();
+    // secondaryHighlightCells covers the rest of the unit, not the hidden-triple cells
+    expect(hints[0]!.secondaryHighlightCells).toHaveLength(6);
+    expect(hints[0]!.secondaryHighlightCells!.every(([r, c]) => !(r === 0 && [0, 1, 2].includes(c)))).toBe(true);
+  });
+
+  it('near-miss hidden triple: one of the three digits appears in a 4th cell → no hidden triple', () => {
+    const bs = new KillerBoardState(makeTrivialSpec());
+    // Digits 1,2,3 should form a hidden triple in cells 0-2.
+    // But digit 1 also appears in cell 3 → cellsWith.size===4, not 3 → guard fails.
+    bs.candidates[0]![0]! = new Set([1, 2, 4, 5]);
+    bs.candidates[0]![1]! = new Set([2, 3, 6, 7]);
+    bs.candidates[0]![2]! = new Set([1, 3, 8, 9]);
+    bs.candidates[0]![3]! = new Set([1, 4, 5, 6]); // digit 1 leaks into cell 3
+    for (let c = 4; c < 9; c++) bs.candidates[0]![c]! = new Set([4, 5, 6, 7]);
+
+    const elims = new HiddenTriple().apply(makeCtx(bs, 0)).eliminations;
+    // Hidden triple does not fire → extras 4,5 from cell 0 must not be eliminated
+    expect(elims.some(e => e.cell[1] === 0 && (e.digit === 4 || e.digit === 5))).toBe(false);
+  });
+
+  it('hidden triple: restricts three cells to only the triple digits', () => {
+    const bs = new KillerBoardState(makeTrivialSpec());
+
+    // Digits 1,2,3 appear only in cells (0,0), (0,1), (0,2) — hidden triple
+    bs.candidates[0]![0]! = new Set([1, 2, 4, 5]); // extras 4,5 to be removed
+    bs.candidates[0]![1]! = new Set([2, 3, 6, 7]);  // extras 6,7 to be removed
+    bs.candidates[0]![2]! = new Set([1, 3, 8, 9]);  // extras 8,9 to be removed
+    for (let c = 3; c < 9; c++) bs.candidates[0]![c]! = new Set([4, 5, 6, 7]); // no 1,2,3
+
+    const elims = new HiddenTriple().apply(makeCtx(bs, 0)).eliminations;
+
+    // Extras eliminated from the triple cells
+    expect(elims.some(e => e.cell[0] === 0 && e.cell[1] === 0 && e.digit === 4)).toBe(true);
+    expect(elims.some(e => e.cell[0] === 0 && e.cell[1] === 0 && e.digit === 5)).toBe(true);
+    expect(elims.some(e => e.cell[0] === 0 && e.cell[1] === 1 && e.digit === 6)).toBe(true);
+    expect(elims.some(e => e.cell[0] === 0 && e.cell[1] === 2 && e.digit === 8)).toBe(true);
+    // Non-triple digits (4-9) not eliminated from cells outside the triple
+    expect(elims.every(e => e.cell[1] <= 2)).toBe(true);
+  });
+});
