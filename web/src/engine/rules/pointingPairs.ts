@@ -34,7 +34,7 @@ Proof (row case):
 Guards:
   carriers.length >= 2     at least two box cells must hold d for the row/col confinement to be non-trivial (one cell would be a Hidden Single)
   rows.size === 1          all d-candidates share one row (or cols.size === 1 for the column variant)`.trim();
-  readonly priority = 9;
+  readonly priority = 12;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.BOX]);
 

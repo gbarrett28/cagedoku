@@ -29,7 +29,7 @@ Guards:
   cols.size === 2   row qualifies only when d appears in exactly 2 columns
   [...cols1].every(c => cols2.has(c))   both rows must cover the same 2 columns
 `.trim();
-  readonly priority = 13;
+  readonly priority = 16;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
 

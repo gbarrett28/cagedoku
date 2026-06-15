@@ -38,7 +38,7 @@ Guards:
   shared column detection   rows must share at least one column (else continue skips the pair)
   explicit roof-cell skip   roof cells themselves are not elimination targets
 `.trim();
-  readonly priority = 21;
+  readonly priority = 24;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
 

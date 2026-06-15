@@ -26,7 +26,7 @@ Guards:
   cols.size >= 2 && cols.size <= 4   row qualifies only when d spans 2–4 columns
   coverCols.size === 4   the union of columns must be exactly 4
 `.trim();
-  readonly priority = 15;
+  readonly priority = 18;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
 

@@ -29,7 +29,7 @@ Guards:
   baseIndices.length === 2 && extraIndices.length === 2   Type 2 requires exactly 2 base + 2 extra corners
   extra0.size === 1 && extra0[0] === extra1[0]   extra corners must share the same single extra digit
 `.trim();
-  readonly priority = 17;
+  readonly priority = 20;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
 

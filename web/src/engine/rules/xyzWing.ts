@@ -35,7 +35,7 @@ export class XYZWing {
     'When a trivalue cell (pivot) sees two bivalue cells (pincers) that each ' +
     'share a candidate with the pivot, the shared candidate can be eliminated ' +
     'from any cell that sees all three cells.';
-  readonly priority = 19;
+  readonly priority = 22;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
 

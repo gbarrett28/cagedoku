@@ -48,7 +48,7 @@ Guards:
   combinedUids.size === n   the cages' d-candidates must collectively span exactly N units
   disjoint cage cells   cages in the combination must not overlap
 `.trim();
-  readonly priority = 12;
+  readonly priority = 15;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
 

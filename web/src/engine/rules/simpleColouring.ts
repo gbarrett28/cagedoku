@@ -29,7 +29,7 @@ Guards:
   seesC0 && seesC1   trap fires only when T sees both colours
   !allColoured.has(...)   trap targets must be outside the chain
 `.trim();
-  readonly priority = 18;
+  readonly priority = 21;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
 

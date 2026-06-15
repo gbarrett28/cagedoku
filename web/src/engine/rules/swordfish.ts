@@ -26,7 +26,7 @@ Guards:
   cols.size >= 2 && cols.size <= 3   row qualifies only when d spans 2 or 3 columns
   coverCols.size === 3   the union of columns must be exactly 3 (not fewer, not more)
 `.trim();
-  readonly priority = 14;
+  readonly priority = 17;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
 

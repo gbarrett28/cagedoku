@@ -34,7 +34,7 @@ export class XYWing {
   readonly description =
     'When three cells form a chain where each shares a candidate with the others, ' +
     'a digit that sees both end cells of the chain can be eliminated.';
-  readonly priority = 16;
+  readonly priority = 19;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
 

@@ -147,7 +147,7 @@ Guards:
   cells.length <= MAX_PARTITION_CAGE_SIZE (4)   large sub-cages skipped to bound DFS
   nodes <= MAX_NODES (200)   DFS budget; surviving candidates preserved on cap hit
 `.trim();
-  readonly priority = 12;
+  readonly priority = 15;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
 

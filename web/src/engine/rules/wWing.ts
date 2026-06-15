@@ -42,7 +42,7 @@ export class WWing {
     'When two cells with the same two candidates are each connected to one end ' +
     'of a strong link on one of those candidates, the other candidate can be ' +
     'eliminated from any cell that sees both bivalue cells.';
-  readonly priority = 20;
+  readonly priority = 23;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_HIT_TWO]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX]);
 

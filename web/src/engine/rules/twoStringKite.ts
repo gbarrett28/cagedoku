@@ -31,7 +31,7 @@ export class TwoStringKite {
     'When a row and a column each have exactly two candidates for a digit, and one ' +
     'cell from each string shares a 3×3 box (forming the knot), the digit can be ' +
     'eliminated from any cell that sees both of the non-knot endpoints.';
-  readonly priority = 22;
+  readonly priority = 25;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
 

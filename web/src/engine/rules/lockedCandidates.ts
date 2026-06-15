@@ -42,7 +42,7 @@ Guards:
   carriers.length >= 2        at least two candidates needed (one would be a Hidden Single)
   commonCageIds?.size > 0     cage-line: all carriers share a common cage
   boxRows.size === 1 && boxCols.size === 1   box-line: all carriers share one box`.trim();
-  readonly priority = 11;
+  readonly priority = 14;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX]);
 
