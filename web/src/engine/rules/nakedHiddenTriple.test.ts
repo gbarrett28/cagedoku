@@ -83,6 +83,9 @@ describe('NakedHiddenTriple', () => {
     expect(hints[0]!.explanation).toContain('Hidden Triple');
     expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
     expect(hints[0]!.placement).toBeNull();
+    // secondaryHighlightCells covers the rest of the unit, not the hidden-triple cells
+    expect(hints[0]!.secondaryHighlightCells).toHaveLength(6);
+    expect(hints[0]!.secondaryHighlightCells!.every(([r, c]) => !(r === 0 && [0, 1, 2].includes(c)))).toBe(true);
   });
 
   it('near-miss naked triple: one cell has 1 candidate (naked single included) → no naked triple fires', () => {

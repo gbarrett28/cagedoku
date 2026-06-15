@@ -131,6 +131,7 @@ Guards:
         ruleName: this.name, displayName: 'Hidden Triple',
         explanation: `Hidden Triple: {${digits.join(',')}} are confined to ${tripleCells.map(c => cellLabel(c)).join(', ')} within ${unitLabel(ctx.unit)}. Remove all other candidates from these cells.`,
         highlightCells: [...tripleCells, ...elims.map(e => e.cell)],
+        secondaryHighlightCells: cells.filter(([pr, pc]) => !tripleCells.some(([qr, qc]) => qr === pr && qc === pc)),
         eliminations: elims, placement: null, virtualCageSuggestion: null,
         patternDigits: digits,
       }];
