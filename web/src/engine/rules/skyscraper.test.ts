@@ -74,15 +74,14 @@ describe('Skyscraper', () => {
     expect(hints[0]!.placement).toBeNull();
   });
 
-  it('asHints: colourGroups contains the 4 pattern cells, highlightCells has only elimination targets', () => {
+  it('asHints: chainCells tags all 4 pattern cells with digit 7, highlightCells has only elimination targets', () => {
     // Board: r1=0 roof=(0,1) base=(0,0); r2=1 roof=(1,2) base=(1,0); shared col=0
     // BFS chain: roof1=(0,1) → base1=(0,0) → base2=(1,0) → roof2=(1,2)
-    // Blue (colour 0): [roof1=(0,1), base2=(1,0)]
-    // Green (colour 1): [base1=(0,0), roof2=(1,2)]
+    // Blue: roof1=(0,1), base2=(1,0). Green: base1=(0,0), roof2=(1,2).
     //
     // Note: in this compact board the base cells share box 0 with the roofs so
     // they see both roofs and ARE also elimination targets — they appear in both
-    // colourGroups and highlightCells (yellow overrides on render).  Only the
+    // chainCells and highlightCells (yellow overrides on render). Only the
     // explicit-skip roof cells are guaranteed to be absent from highlightCells.
     const board = makeSkyscraperBoard();
     const ctx = GLOBAL_CTX(board);
@@ -91,12 +90,12 @@ describe('Skyscraper', () => {
     expect(hints.length).toBeGreaterThan(0);
     const hint = hints[0]!;
 
-    // colourGroups: exactly 2 groups covering all 4 pattern cells
-    expect(hint.colourGroups?.length).toBe(2);
-    const allGroupCells = hint.colourGroups!.flatMap(g => g.cells);
-    for (const [r, c] of [[0, 0], [0, 1], [1, 0], [1, 2]] as [number, number][]) {
-      expect(allGroupCells.some(([gr, gc]) => gr === r && gc === c)).toBe(true);
-    }
+    expect(hint.chainCells?.length).toBe(4);
+    const ccFor = (r: number, c: number) => hint.chainCells!.find(cc => cc.cell[0] === r && cc.cell[1] === c);
+    expect(ccFor(0, 1)).toEqual({ cell: [0, 1], digits: [7], colour: 'blue' });  // roof1
+    expect(ccFor(1, 0)).toEqual({ cell: [1, 0], digits: [7], colour: 'blue' });  // base2
+    expect(ccFor(0, 0)).toEqual({ cell: [0, 0], digits: [7], colour: 'green' }); // base1
+    expect(ccFor(1, 2)).toEqual({ cell: [1, 2], digits: [7], colour: 'green' }); // roof2
 
     // Roof cells are explicitly skipped by the rule — they must NOT be in highlightCells
     expect(hint.highlightCells.some(([r, c]) => r === 0 && c === 1)).toBe(false); // roof1

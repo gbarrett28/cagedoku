@@ -137,9 +137,12 @@ export class TwoStringKite {
                 eliminations: hintElims,
                 placement: null,
                 virtualCageSuggestion: null,
-                colourGroups: [
-                  { cells: [rowEnd], colour: 'blue' },
-                  { cells: [colEnd], colour: 'green' },
+                // All four pattern cells are only relevant for digit d.
+                chainCells: [
+                  { cell: rowKnot, digits: [d] },
+                  { cell: colKnot, digits: [d] },
+                  { cell: rowEnd, digits: [d], colour: 'blue' },
+                  { cell: colEnd, digits: [d], colour: 'green' },
                 ],
               });
             }

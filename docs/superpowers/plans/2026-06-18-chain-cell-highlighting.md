@@ -98,17 +98,17 @@ export interface ChainCell {
 
 ### Sprint 4 — Migrate Two-String Kite, Skyscraper, Simple Colouring
 
-- [ ] `twoStringKite.test.ts` / `.ts`: row knot, col knot, row end, col
+- [x] `twoStringKite.test.ts` / `.ts`: row knot, col knot, row end, col
       end each get a `chainCells` entry with their own relevant digit(s);
       remove `colourGroups`.
-- [ ] `skyscraper.test.ts` / `.ts`: roof/base cells (row and column
+- [x] `skyscraper.test.ts` / `.ts`: roof/base cells (row and column
       variants) get `chainCells` entries with the shared digit; remove
       `colourGroups`.
-- [ ] `simpleColouring.test.ts` / `.ts`: wrap case (`bad`/`good` cell
+- [x] `simpleColouring.test.ts` / `.ts`: wrap case (`bad`/`good` cell
       sets) and trap case (`c0`/`c1` sets) each get `chainCells` entries
       tagged with the coloured digit; remove `colourGroups`.
-- [ ] `bash scripts/run-bronze-gate.sh` passes.
-- [ ] Commit: `fix: per-cell digit highlighting for Two-String Kite, Skyscraper, Simple Colouring`.
+- [x] `bash scripts/run-bronze-gate.sh` passes.
+- [x] Commit: `fix: per-cell digit highlighting for Two-String Kite, Skyscraper, Simple Colouring`.
 
 ### Sprint 5 — Cleanup and doc updates (Silver-gate-adjacent)
 

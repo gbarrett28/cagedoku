@@ -72,7 +72,7 @@ describe('SimpleColouring', () => {
     expect(hints[0]!.placement).toBeNull();
   });
 
-  it('asHints trap: colourGroups contains the two chain groups, highlightCells has only elimination targets', () => {
+  it('asHints trap: chainCells tags the two chain colour groups with digit 3, highlightCells has only elimination targets', () => {
     // Chain: (0,0) -[col0]- (5,0) -[row5]- (5,3) -[col3]- (0,3)
     // BFS colours: (0,0)=0, (5,0)=1, (5,3)=0, (0,3)=1
     // Trap target: (0,6) sees (0,0)=colour 0 and (0,3)=colour 1 via row 0
@@ -89,12 +89,12 @@ describe('SimpleColouring', () => {
     expect(hints.length).toBeGreaterThan(0);
     const hint = hints[0]!;
 
-    // colourGroups: exactly 2 groups covering all 4 chain cells
-    expect(hint.colourGroups?.length).toBe(2);
-    const allGroupCells = hint.colourGroups!.flatMap(g => g.cells);
-    for (const [r, c] of [[0, 0], [5, 0], [5, 3], [0, 3]] as [number, number][]) {
-      expect(allGroupCells.some(([gr, gc]) => gr === r && gc === c)).toBe(true);
-    }
+    expect(hint.chainCells?.length).toBe(4);
+    const ccFor = (r: number, c: number) => hint.chainCells!.find(cc => cc.cell[0] === r && cc.cell[1] === c);
+    expect(ccFor(0, 0)).toEqual({ cell: [0, 0], digits: [3], colour: 'green' });
+    expect(ccFor(5, 3)).toEqual({ cell: [5, 3], digits: [3], colour: 'green' });
+    expect(ccFor(5, 0)).toEqual({ cell: [5, 0], digits: [3], colour: 'blue' });
+    expect(ccFor(0, 3)).toEqual({ cell: [0, 3], digits: [3], colour: 'blue' });
 
     // highlightCells: only the elimination target (0,6), NOT the chain cells
     expect(hint.highlightCells.some(([r, c]) => r === 0 && c === 6)).toBe(true);
@@ -103,7 +103,7 @@ describe('SimpleColouring', () => {
     }
   });
 
-  it('asHints wrap: colourGroups contains the two chain groups, highlightCells has only the bad colour cells', () => {
+  it('asHints wrap: chainCells tags the two chain colour groups with digit 5, highlightCells has only the bad colour cells', () => {
     // Chain: (0,0) -[row0]- (0,1) -[col1]- (1,1)
     // BFS: (0,0)=0, (0,1)=1, (1,1)=0
     // Wrap: (0,0) and (1,1) both colour 0 and share box 0 → colour 0 is eliminated
@@ -118,12 +118,11 @@ describe('SimpleColouring', () => {
     expect(hints.length).toBeGreaterThan(0);
     const hint = hints[0]!;
 
-    // colourGroups: exactly 2 groups covering all 3 chain cells
-    expect(hint.colourGroups?.length).toBe(2);
-    const allGroupCells = hint.colourGroups!.flatMap(g => g.cells);
-    for (const [r, c] of [[0, 0], [0, 1], [1, 1]] as [number, number][]) {
-      expect(allGroupCells.some(([gr, gc]) => gr === r && gc === c)).toBe(true);
-    }
+    expect(hint.chainCells?.length).toBe(3);
+    const ccFor = (r: number, c: number) => hint.chainCells!.find(cc => cc.cell[0] === r && cc.cell[1] === c);
+    expect(ccFor(0, 0)).toEqual({ cell: [0, 0], digits: [5], colour: 'blue' });  // bad (colour 0)
+    expect(ccFor(1, 1)).toEqual({ cell: [1, 1], digits: [5], colour: 'blue' });  // bad (colour 0)
+    expect(ccFor(0, 1)).toEqual({ cell: [0, 1], digits: [5], colour: 'green' }); // good (colour 1)
 
     // The good colour cell (0,1) should NOT be in highlightCells
     expect(hint.highlightCells.some(([r, c]) => r === 0 && c === 1)).toBe(false);

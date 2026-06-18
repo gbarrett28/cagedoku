@@ -214,7 +214,10 @@ Guards:
             explanation: `Simple Colouring (digit ${d}): two same-colour cells see each other — that colour cannot hold ${d}. Remove ${d} from ${elims.map(e => cellLabel(e.cell)).join(', ')}.`,
             highlightCells: elims.map(e => e.cell),
             eliminations: elims, placement: null, virtualCageSuggestion: null,
-            colourGroups: [{ cells: bad, colour: 'blue' }, { cells: good, colour: 'green' }],
+            chainCells: [
+              ...bad.map(cell => ({ cell, digits: [d], colour: 'blue' as const })),
+              ...good.map(cell => ({ cell, digits: [d], colour: 'green' as const })),
+            ],
           });
         };
         tryWrap(c0, c1); tryWrap(c1, c0);
@@ -235,7 +238,10 @@ Guards:
             explanation: `Simple Colouring (digit ${d}): ${trapElims.map(e => cellLabel(e.cell)).join(', ')} each see a cell from both colour groups. One group must hold ${d} in any valid solution, so these cells are excluded. Remove ${d} from ${trapElims.map(e => cellLabel(e.cell)).join(', ')}.`,
             highlightCells: trapElims.map(e => e.cell),
             eliminations: trapElims, placement: null, virtualCageSuggestion: null,
-            colourGroups: [{ cells: c0, colour: 'blue' }, { cells: c1, colour: 'green' }],
+            chainCells: [
+              ...c0.map(cell => ({ cell, digits: [d], colour: 'blue' as const })),
+              ...c1.map(cell => ({ cell, digits: [d], colour: 'green' as const })),
+            ],
           });
         }
       }

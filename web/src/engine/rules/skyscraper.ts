@@ -143,12 +143,18 @@ Guards:
           const base1 = [r1, baseC] as Cell;
           const base2 = [r2, baseC] as Cell;
           // BFS chain: roof1→base1→base2→roof2 → blue:[roof1,base2] green:[base1,roof2]
+          // All four pattern cells are only relevant for digit d.
           hints.push({
             ruleName: this.name, displayName: 'Skyscraper',
             explanation: `Skyscraper on ${d}: rows r${r1+1} and r${r2+1} share base column c${baseC+1}. Roof cells ${cellLabel(roof1)} and ${cellLabel(roof2)} — ${d} eliminated from cells seeing both.`,
             highlightCells: elims.map(e => e.cell),
             eliminations: elims, placement: null, virtualCageSuggestion: null,
-            colourGroups: [{ cells: [roof1, base2], colour: 'blue' }, { cells: [base1, roof2], colour: 'green' }],
+            chainCells: [
+              { cell: roof1, digits: [d], colour: 'blue' },
+              { cell: base2, digits: [d], colour: 'blue' },
+              { cell: base1, digits: [d], colour: 'green' },
+              { cell: roof2, digits: [d], colour: 'green' },
+            ],
           });
         }
       }
@@ -191,7 +197,12 @@ Guards:
             explanation: `Skyscraper on ${d}: cols c${c1+1} and c${c2+1} share base row r${baseR+1}. Roof cells ${cellLabel(roof1)} and ${cellLabel(roof2)} — ${d} eliminated from cells seeing both.`,
             highlightCells: elims.map(e => e.cell),
             eliminations: elims, placement: null, virtualCageSuggestion: null,
-            colourGroups: [{ cells: [roof1, base2], colour: 'blue' }, { cells: [base1, roof2], colour: 'green' }],
+            chainCells: [
+              { cell: roof1, digits: [d], colour: 'blue' },
+              { cell: base2, digits: [d], colour: 'blue' },
+              { cell: base1, digits: [d], colour: 'green' },
+              { cell: roof2, digits: [d], colour: 'green' },
+            ],
           });
         }
       }
