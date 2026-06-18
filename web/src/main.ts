@@ -1748,27 +1748,33 @@ let waitingSW: ServiceWorker | null = null;
 
 // Register the offline service worker. Only runs in production builds — skipped
 // during Vite dev mode to prevent the SW from intercepting HMR/module requests.
-if ('serviceWorker' in navigator && !import.meta.env.DEV) {
-  navigator.serviceWorker.register('./sw.js')
-    .then((registration) => {
-      // Capture a SW that is already waiting (e.g. tab opened after a deploy
-      // landed but before the user interacted with the page).
-      if (registration.waiting) waitingSW = registration.waiting;
+// The registration promise is captured (not just consumed via .then) so boot can
+// await it and apply an already-waiting update before anything renders — see the
+// DOMContentLoaded handler below.
+const swRegistration: Promise<ServiceWorkerRegistration | null> =
+  ('serviceWorker' in navigator && !import.meta.env.DEV)
+    ? navigator.serviceWorker.register('./sw.js')
+        .then((registration) => {
+          // Capture a SW that is already waiting (e.g. tab opened after a deploy
+          // landed but before the user interacted with the page).
+          if (registration.waiting) waitingSW = registration.waiting;
 
-      // Capture future updates: fires when a new SW begins installing.
-      registration.addEventListener('updatefound', () => {
-        const sw = registration.installing;
-        if (sw === null) return;
-        sw.addEventListener('statechange', () => {
-          // 'installed' means the SW finished installing and is now waiting.
-          if (sw.state === 'installed') waitingSW = sw;
-        });
-      });
-    })
-    .catch(err => {
-      console.warn('[SW] Registration failed:', err);
-    });
-}
+          // Capture future updates: fires when a new SW begins installing.
+          registration.addEventListener('updatefound', () => {
+            const sw = registration.installing;
+            if (sw === null) return;
+            sw.addEventListener('statechange', () => {
+              // 'installed' means the SW finished installing and is now waiting.
+              if (sw.state === 'installed') waitingSW = sw;
+            });
+          });
+          return registration;
+        })
+        .catch(err => {
+          console.warn('[SW] Registration failed:', err);
+          return null;
+        })
+    : Promise.resolve(null);
 
 // Dev-only test hook: lets Playwright tests inject a fake waiting SW so the
 // SKIP_WAITING path can be exercised without a real service worker.
@@ -1867,7 +1873,23 @@ function renderFixtureTable(fixtures: FixtureMeta[]): void {
 
 // ---------------------------------------------------------------------------
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+
+  // Apply a pending SW update before anything renders. Every share-to-app action is
+  // already a full page navigation (the SW redirects the share POST to the app root),
+  // so this guarantees share-only users receive updates too — without it, applying
+  // updates required clicking "New Puzzle" at least once. Safe here: the share inbox
+  // and any saved session are still untouched at this point.
+  const registration = await swRegistration;
+  if (registration?.waiting) {
+    navigator.serviceWorker.addEventListener(
+      'controllerchange',
+      () => location.reload(),
+      { once: true },
+    );
+    registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+    return;
+  }
 
   // ── Persist session across accidental refreshes ───────────────────────────────
   // Save whenever the page is about to unload (refresh, close, navigate away).
