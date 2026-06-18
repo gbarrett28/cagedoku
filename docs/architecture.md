@@ -815,6 +815,20 @@ must not mutate board state.
 just produced, so both paths share the same detection logic.  Return `[]` if the
 rule should not surface hints (always-apply-only rules).
 
+A GLOBAL-triggered rule that scans `ctx.board.units` itself (`ctx.unit === null`)
+can find more than one independent instance of its pattern in a single
+invocation — `apply()`'s flat `eliminations` array is then the union of all of
+them. `asHints()` must not pick one instance and attach the whole array to it;
+each returned `HintResult.eliminations` must contain only the eliminations that
+its own `explanation`/`highlightCells` actually justify. Return one `HintResult`
+per distinct instance (`solverEngine.ts` already spreads `asHints()`'s array into
+`pendingHints` and runs `dedupHints()` over the combined list, so 0..N hints per
+invocation is a supported case). `NakedPair` is the reference implementation: it
+groups each unit's pair by the pair's own two cells via `_distinctPairs()` —
+merging units where the same two cells satisfy more than one at once (e.g. a
+row-pair that's also a box-pair) into a single hint — and filters the incoming
+`eliminations` down to each pair's own peer cells before emitting its hint.
+
 **`RuleResult`** (`web/src/engine/types.ts`):
 
 ```typescript
