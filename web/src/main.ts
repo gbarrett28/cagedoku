@@ -1169,6 +1169,10 @@ function resetToUploadPanel(): void {
 
   // Apply any pending SW update now that all puzzle state has been cleared.
   // The page will reload once the new SW activates and fires controllerchange.
+  // Trade-off: handleProcess() calls this before awaiting uploadPuzzle(), so a
+  // SW update that becomes waiting during that window can reload the page and
+  // silently discard the in-flight upload. Accepted as a narrow, low-probability
+  // race rather than deferring updates further (see design doc's non-goals).
   if (waitingSW !== null) {
     navigator.serviceWorker.addEventListener(
       'controllerchange',
