@@ -1125,6 +1125,61 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
   setStatus(warning ? `Warning: ${warning}` : '');
 }
 
+/**
+ * Returns the app to the pre-upload state: clears all puzzle-related module state,
+ * resets every panel/button to its pre-upload visibility, and applies any pending
+ * service-worker update. Used both by the "New Puzzle" button and at the start of
+ * `handleProcess()` so a new upload never leaves a previous puzzle on screen.
+ */
+function resetToUploadPanel(): void {
+  clearActionLog();
+  clearPersistedSession();
+  currentState = null; currentCandidates = null; currentBoard = null; selectedCell = null;
+  showCandidates = false; candidateEditMode = false;
+  virtualCageMode = false; virtualCageSelection = new Set(); virtualCageNegCells = new Set();
+  hintHighlightCells = new Set(); hintElimCells = new Set(); hintColourGroups = [];
+  hintSecondaryHighlightCells = new Set(); activeHintItem = null;
+  colourMode = 'off'; cellColours.clear();
+  inspectCageMode = false;
+  el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');
+  el<HTMLElement>('inspector-col').hidden = true;
+  el<HTMLElement>('side-panel').classList.remove('inspector-open');
+  el<HTMLElement>('side-panel').classList.remove('virtual-cage-open');
+  totalEditCell = null;
+  reviewErrorCells = new Set();
+  draftEdited = false;
+  pendingCellThumbs = new Map();
+  pendingMergedThumbs = new Map();
+  el<HTMLElement>('upload-panel').hidden = false;
+  el<HTMLElement>('review-panel').hidden = true;
+  el<HTMLElement>('solution-panel').hidden = true;
+  el<HTMLElement>('playing-actions').hidden = true;
+  el<HTMLElement>('action-group').hidden = true;
+  el<HTMLButtonElement>('new-puzzle-btn').hidden = true;
+  el<HTMLButtonElement>('hints-btn').disabled = true;
+  el<HTMLButtonElement>('inspect-cage-btn').hidden = true;
+  el<HTMLButtonElement>('virtual-cage-btn').hidden = true;
+  el<HTMLButtonElement>('colour-btn').hidden = true;
+  el<HTMLButtonElement>('colour-btn').classList.remove('active');
+  el<HTMLButtonElement>('reveal-btn').hidden = true;
+  el<HTMLInputElement>('file-input').value = '';
+  setStatus('');
+  // Re-show #use-last-btn if a valid handle is still available.
+  void initUseLastBtn();
+
+  // Apply any pending SW update now that all puzzle state has been cleared.
+  // The page will reload once the new SW activates and fires controllerchange.
+  if (waitingSW !== null) {
+    navigator.serviceWorker.addEventListener(
+      'controllerchange',
+      () => location.reload(),
+      { once: true },
+    );
+    waitingSW.postMessage({ type: 'SKIP_WAITING' });
+    waitingSW = null;
+  }
+}
+
 async function handleProcess(file?: File): Promise<void> {
   const f = file ?? el<HTMLInputElement>('file-input').files?.[0];
   if (!f) { setStatus('Please drop, paste, or select an image.', true); return; }
@@ -2101,52 +2156,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   el<HTMLButtonElement>('new-puzzle-btn').addEventListener('click', () => {
     logAction('new_puzzle');
-    clearActionLog();
-    clearPersistedSession();
-    currentState = null; currentCandidates = null; currentBoard = null; selectedCell = null;
-    showCandidates = false; candidateEditMode = false;
-    virtualCageMode = false; virtualCageSelection = new Set(); virtualCageNegCells = new Set();
-    hintHighlightCells = new Set(); hintElimCells = new Set(); hintColourGroups = [];
-    hintSecondaryHighlightCells = new Set(); activeHintItem = null;
-    colourMode = 'off'; cellColours.clear();
-    inspectCageMode = false;
-    el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');
-    el<HTMLElement>('inspector-col').hidden = true;
-    el<HTMLElement>('side-panel').classList.remove('inspector-open');
-    el<HTMLElement>('side-panel').classList.remove('virtual-cage-open');
-    totalEditCell = null;
-    reviewErrorCells = new Set();
-    draftEdited = false;
-    pendingCellThumbs = new Map();
-    pendingMergedThumbs = new Map();
-    el<HTMLElement>('upload-panel').hidden = false;
-    el<HTMLElement>('review-panel').hidden = true;
-    el<HTMLElement>('solution-panel').hidden = true;
-    el<HTMLElement>('playing-actions').hidden = true;
-    el<HTMLElement>('action-group').hidden = true;
-    el<HTMLButtonElement>('new-puzzle-btn').hidden = true;
-    el<HTMLButtonElement>('hints-btn').disabled = true;
-    el<HTMLButtonElement>('inspect-cage-btn').hidden = true;
-    el<HTMLButtonElement>('virtual-cage-btn').hidden = true;
-    el<HTMLButtonElement>('colour-btn').hidden = true;
-    el<HTMLButtonElement>('colour-btn').classList.remove('active');
-    el<HTMLButtonElement>('reveal-btn').hidden = true;
-    el<HTMLInputElement>('file-input').value = '';
-    setStatus('');
-    // Re-show #use-last-btn if a valid handle is still available.
-    void initUseLastBtn();
-
-    // Apply any pending SW update now that all puzzle state has been cleared.
-    // The page will reload once the new SW activates and fires controllerchange.
-    if (waitingSW !== null) {
-      navigator.serviceWorker.addEventListener(
-        'controllerchange',
-        () => location.reload(),
-        { once: true },
-      );
-      waitingSW.postMessage({ type: 'SKIP_WAITING' });
-      waitingSW = null;
-    }
+    resetToUploadPanel();
   });
 
   el<HTMLButtonElement>('edit-ocr-btn').addEventListener('click', () => {
