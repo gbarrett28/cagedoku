@@ -13,6 +13,15 @@ import type { RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, Unit, UnitKind } from '../types.js';
 import { cellLabel, unitLabel } from './_labels.js';
 
+/** A naked pair found in one or more units, keyed by its own two cells. */
+interface DistinctPair {
+  readonly c1: Cell;
+  readonly c2: Cell;
+  readonly dLo: number;
+  readonly dHi: number;
+  readonly units: Unit[];
+}
+
 export class NakedPair {
   readonly name = 'NakedPair';
   readonly killerOnly = false;
@@ -68,8 +77,8 @@ Guards:
    * satisfies more than one unit at once (e.g. a row-pair that is also a
    * box-pair) collapses into a single entry instead of being reported twice.
    */
-  private _distinctPairs(ctx: RuleContext): { c1: Cell; c2: Cell; dLo: number; dHi: number; units: Unit[] }[] {
-    const found = new Map<string, { c1: Cell; c2: Cell; dLo: number; dHi: number; units: Unit[] }>();
+  private _distinctPairs(ctx: RuleContext): DistinctPair[] {
+    const found = new Map<string, DistinctPair>();
     for (const unit of this._activeUnits(ctx)) {
       const pair = this._findPairInCells(ctx.board, unit.cells);
       if (!pair) continue;
@@ -83,7 +92,7 @@ Guards:
   }
 
   /** Union of cells from all of a pair's units, excluding the pair's own two cells. */
-  private _peerCells(pair: { c1: Cell; c2: Cell; units: Unit[] }): Cell[] {
+  private _peerCells(pair: DistinctPair): Cell[] {
     const c1k = `${pair.c1[0]},${pair.c1[1]}`, c2k = `${pair.c2[0]},${pair.c2[1]}`;
     const seen = new Set<string>();
     const peers: Cell[] = [];
@@ -119,10 +128,11 @@ Guards:
         (e.digit === pair.dLo || e.digit === pair.dHi) && peerKeys.has(`${e.cell[0]},${e.cell[1]}`));
       if (!ownElims.length) continue;
       const unitsLabel = pair.units.map(unitLabel).join(' and ');
+      const unitOrUnits = pair.units.length > 1 ? 'those units' : 'that unit';
       hints.push({
         ruleName: this.name,
         displayName: 'Naked Pair',
-        explanation: `${cellLabel(pair.c1)} and ${cellLabel(pair.c2)} both have only {${pair.dLo},${pair.dHi}} as candidates in ${unitsLabel}. These digits can be eliminated from all other cells in that unit.`,
+        explanation: `${cellLabel(pair.c1)} and ${cellLabel(pair.c2)} both have only {${pair.dLo},${pair.dHi}} as candidates in ${unitsLabel}. These digits can be eliminated from all other cells in ${unitOrUnits}.`,
         highlightCells: [pair.c1, pair.c2],
         eliminations: ownElims,
         placement: null,
