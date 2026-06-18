@@ -63,18 +63,47 @@ Guards:
     return ctx.board.units.filter(u => this.unitKinds.has(u.kind));
   }
 
-  apply(ctx: RuleContext): RuleResult {
-    const elims: Elimination[] = [];
+  /**
+   * Groups the pair found in each active unit by its two cells, so a pair that
+   * satisfies more than one unit at once (e.g. a row-pair that is also a
+   * box-pair) collapses into a single entry instead of being reported twice.
+   */
+  private _distinctPairs(ctx: RuleContext): { c1: Cell; c2: Cell; dLo: number; dHi: number; units: Unit[] }[] {
+    const found = new Map<string, { c1: Cell; c2: Cell; dLo: number; dHi: number; units: Unit[] }>();
     for (const unit of this._activeUnits(ctx)) {
       const pair = this._findPairInCells(ctx.board, unit.cells);
       if (!pair) continue;
       const [c1, c2, dLo, dHi] = pair;
-      const c1k = `${c1[0]},${c1[1]}`, c2k = `${c2[0]},${c2[1]}`;
+      const key = `${c1[0]},${c1[1]}-${c2[0]},${c2[1]}`;
+      const entry = found.get(key);
+      if (entry) entry.units.push(unit);
+      else found.set(key, { c1, c2, dLo, dHi, units: [unit] });
+    }
+    return [...found.values()];
+  }
+
+  /** Union of cells from all of a pair's units, excluding the pair's own two cells. */
+  private _peerCells(pair: { c1: Cell; c2: Cell; units: Unit[] }): Cell[] {
+    const c1k = `${pair.c1[0]},${pair.c1[1]}`, c2k = `${pair.c2[0]},${pair.c2[1]}`;
+    const seen = new Set<string>();
+    const peers: Cell[] = [];
+    for (const unit of pair.units) {
       for (const [r, c] of unit.cells as Cell[]) {
-        if (`${r},${c}` !== c1k && `${r},${c}` !== c2k) {
-          if (ctx.board.cands(r, c).has(dLo)) elims.push({ cell: [r, c] as Cell, digit: dLo });
-          if (ctx.board.cands(r, c).has(dHi)) elims.push({ cell: [r, c] as Cell, digit: dHi });
-        }
+        const key = `${r},${c}`;
+        if (key === c1k || key === c2k || seen.has(key)) continue;
+        seen.add(key);
+        peers.push([r, c] as Cell);
+      }
+    }
+    return peers;
+  }
+
+  apply(ctx: RuleContext): RuleResult {
+    const elims: Elimination[] = [];
+    for (const pair of this._distinctPairs(ctx)) {
+      for (const [r, c] of this._peerCells(pair)) {
+        if (ctx.board.cands(r, c).has(pair.dLo)) elims.push({ cell: [r, c] as Cell, digit: pair.dLo });
+        if (ctx.board.cands(r, c).has(pair.dHi)) elims.push({ cell: [r, c] as Cell, digit: pair.dHi });
       }
     }
     return { ...emptyResult(), eliminations: elims };
@@ -82,20 +111,24 @@ Guards:
 
   asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
     if (!eliminations.length) return [];
-    for (const unit of this._activeUnits(ctx)) {
-      const pair = this._findPairInCells(ctx.board, unit.cells);
-      if (!pair) continue;
-      const [c1, c2, dLo, dHi] = pair;
-      return [{
+    const hints: HintResult[] = [];
+    for (const pair of this._distinctPairs(ctx)) {
+      const peerCells = this._peerCells(pair);
+      const peerKeys = new Set(peerCells.map(([r, c]) => `${r},${c}`));
+      const ownElims = eliminations.filter(e =>
+        (e.digit === pair.dLo || e.digit === pair.dHi) && peerKeys.has(`${e.cell[0]},${e.cell[1]}`));
+      if (!ownElims.length) continue;
+      const unitsLabel = pair.units.map(unitLabel).join(' and ');
+      hints.push({
         ruleName: this.name,
         displayName: 'Naked Pair',
-        explanation: `${cellLabel(c1)} and ${cellLabel(c2)} both have only {${dLo},${dHi}} as candidates in ${unitLabel(unit)}. These digits can be eliminated from all other cells in that unit.`,
-        highlightCells: [c1, c2],
-        eliminations,
+        explanation: `${cellLabel(pair.c1)} and ${cellLabel(pair.c2)} both have only {${pair.dLo},${pair.dHi}} as candidates in ${unitsLabel}. These digits can be eliminated from all other cells in that unit.`,
+        highlightCells: [pair.c1, pair.c2],
+        eliminations: ownElims,
         placement: null,
         virtualCageSuggestion: null,
-      }];
+      });
     }
-    return [];
+    return hints;
   }
 }
