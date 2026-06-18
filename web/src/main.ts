@@ -1183,17 +1183,18 @@ function resetToUploadPanel(): void {
 async function handleProcess(file?: File): Promise<void> {
   const f = file ?? el<HTMLInputElement>('file-input').files?.[0];
   if (!f) { setStatus('Please drop, paste, or select an image.', true); return; }
+  resetToUploadPanel();
   // Clear any active fixture — the normal image pipeline takes over.
   currentFixtureName = null;
   currentFixtureUnsolvedCells = null;
   currentFixtureTotalCandidates = null;
-  clearActionLog();
   logAction('file_selected', `${f.name} (${(f.size / 1024).toFixed(0)} KB)`);
   el<HTMLButtonElement>('edit-ocr-btn').hidden = true;
   lastOcrCandidates = [];
   lastWarpedUrl = null;
   // Reset solver result so stale data from a previous run is never read.
   (window as unknown as Record<string, unknown>)['__lastSolverResult'] = null;
+  setStatus('Processing image…');
   setLoading(true);
   try {
     const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs } = await uploadPuzzle(f);
