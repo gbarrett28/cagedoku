@@ -68,6 +68,15 @@ describe('XYZWing', () => {
     expect(hints[0]!.explanation).toMatch(/XYZ.Wing/i);
     expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
     expect(hints[0]!.placement).toBeNull();
+    // chainCells: pivot keeps all 3 of its candidates; pincers carry their
+    // shared+z digits with blue/green wash.
+    expect(hints[0]!.chainCells?.length).toBe(3);
+    const pivotCC = hints[0]!.chainCells!.find(cc => cc.cell[0] === 0 && cc.cell[1] === 0);
+    expect(pivotCC).toEqual({ cell: [0, 0], digits: [1, 2, 3] });
+    const pinACC = hints[0]!.chainCells!.find(cc => cc.cell[0] === 0 && cc.cell[1] === 1);
+    expect(pinACC).toEqual({ cell: [0, 1], digits: [1, 3], colour: 'blue' });
+    const pinBCC = hints[0]!.chainCells!.find(cc => cc.cell[0] === 1 && cc.cell[1] === 0);
+    expect(pinBCC).toEqual({ cell: [1, 0], digits: [2, 3], colour: 'green' });
   });
 
   it('returns empty when no XYZWing pattern exists', () => {

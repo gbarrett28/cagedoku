@@ -458,20 +458,26 @@ function drawHintDigitMarkers(
     }
   }
 
-  // Blue squares around pattern digits in highlight (pattern) cells.
+  // Blue squares around pattern digits in highlight (pattern) cells, plus any
+  // `chainCells` cell (chain rules tag structural cells, like wing pincers,
+  // that carry their own digits but aren't washed orange via highlightCells).
   // Skip any cell that is also an elimination cell — it gets a circle, not a square.
-  // Cells with their own `chainCells` entry are marked with that cell's own digits;
-  // all other highlight cells fall back to the rule-wide `patternDigits` list.
+  // A cell with its own `chainCells` entry is marked with that cell's own digits;
+  // a `highlightCells` cell with no `chainCells` entry falls back to the
+  // rule-wide `patternDigits` list.
   const fallbackPatternDigits: readonly number[] =
     hint.patternDigits ??
     (hint.placement !== null ? [hint.placement[2]] : [...new Set(hint.eliminations.map(e => e.digit))]);
-  if (hint.highlightCells.length > 0) {
+  const markerCells = new Map<string, Cell>();
+  for (const cell of hint.highlightCells) markerCells.set(`${cell[0]},${cell[1]}`, cell);
+  for (const cc of hintChainCells) markerCells.set(`${cc.cell[0]},${cc.cell[1]}`, cc.cell);
+  if (markerCells.size > 0) {
     ctx.strokeStyle = 'rgba(59, 130, 246, 0.85)';
     ctx.lineWidth = 1.5;
     const hw = SUB_W * 0.38;
     const hh = SUB_H * 0.38;
-    for (const [r, c] of hint.highlightCells) {
-      if (hintElimCells.has(`${r},${c}`)) continue;   // elim cells get circles, not squares
+    for (const [key, [r, c]] of markerCells) {
+      if (hintElimCells.has(key)) continue;   // elim cells get circles, not squares
       if ((userGrid[r]?.[c] ?? 0) !== 0) continue;
       const cellInfo = candidatesData.cells[r]?.[c];
       if (!cellInfo) continue;

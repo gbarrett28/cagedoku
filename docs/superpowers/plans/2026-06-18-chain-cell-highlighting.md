@@ -67,20 +67,22 @@ export interface ChainCell {
 
 ### Sprint 2 — Migrate XY-Wing and XYZ-Wing (fixes #157)
 
-- [ ] `xyWing.test.ts`: update/add assertions for `chainCells` — pivot
-      entry has `digits` = its full candidate set (no colour, or omit
-      from chainCells if it shouldn't wash — keep current behaviour of
-      pivot being orange via `highlightCells`, just give it correct
-      digits), pincer A entry `{cell: A, digits: [shared, z], colour:
-      'blue'}`, pincer B entry `{cell: B, digits: [shared, z], colour:
-      'green'}`. Watch tests fail (TDD).
-- [ ] `xyWing.ts`: populate `chainCells` in `asHints()`; remove
+- [x] `xyWing.test.ts`: updated assertions for `chainCells` — pivot entry
+      `{digits: [x,y]}` (no colour, stays orange via `highlightCells`),
+      pincer A `{cell: A, digits: [x,z], colour: 'blue'}`, pincer B
+      `{cell: B, digits: [y,z], colour: 'green'}`.
+- [x] `xyWing.ts`: populate `chainCells` in `asHints()`; removed
       `colourGroups`.
-- [ ] `xyzWing.test.ts` / `xyzWing.ts`: same treatment — pivot keeps its
+- [x] `xyzWing.test.ts` / `xyzWing.ts`: same treatment — pivot keeps its
       3 digits, pincer A `{digits:[px,pz], colour:'blue'}`, pincer B
       `{digits:[py,pz], colour:'green'}`.
-- [ ] `bash scripts/run-bronze-gate.sh` passes.
-- [ ] Commit: `fix: per-cell digit highlighting for XY-Wing and XYZ-Wing (#157)`.
+- [x] Renderer refinement (uncovered while migrating): pincer cells are
+      deliberately *not* in `highlightCells` (to keep the orange wash from
+      overwriting their blue/green chain wash), so `drawHintDigitMarkers`
+      in `web/src/main.ts` now draws squares for the union of
+      `highlightCells` and `chainCells` cells, not just `highlightCells`.
+- [x] `bash scripts/run-bronze-gate.sh` passes.
+- [x] Commit: `fix: per-cell digit highlighting for XY-Wing and XYZ-Wing (#157)`.
 
 ### Sprint 3 — Migrate W-Wing (fixes #156)
 

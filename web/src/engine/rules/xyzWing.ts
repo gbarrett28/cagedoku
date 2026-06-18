@@ -146,7 +146,11 @@ export class XYZWing {
               // pivot P → highlightCells (orange); A=blue, B=green so elims see blue∧green
               highlightCells: [P, ...elims.map(e => e.cell)],
               eliminations: elims, placement: null, virtualCageSuggestion: null,
-              colourGroups: [{ cells: [A], colour: 'blue' }, { cells: [B], colour: 'green' }],
+              chainCells: [
+                { cell: P, digits: allCands },
+                { cell: A, digits: [px, pz].sort((a, b) => a - b), colour: 'blue' },
+                { cell: B, digits: [py, pz].sort((a, b) => a - b), colour: 'green' },
+              ],
             });
           }
         }

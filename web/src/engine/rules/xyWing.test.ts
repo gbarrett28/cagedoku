@@ -55,11 +55,17 @@ describe('XYWing', () => {
     expect(hints[0]!.explanation).toContain('XY-Wing');
     expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
     expect(hints[0]!.placement).toBeNull();
-    // colourGroups: pinA=blue (1 cell), pinB=green (1 cell); pivot → highlightCells (orange)
-    expect(hints[0]!.colourGroups?.length).toBe(2);
-    const allGroupCells = hints[0]!.colourGroups!.flatMap(g => g.cells);
-    expect(allGroupCells.length).toBe(2); // only the two pincers
-    // Pincers must NOT be in highlightCells; pivot (0,0) and elim target MUST be
+    // chainCells: pivot has its own bivalue digits (no wash); pincers carry
+    // their shared+z digits with blue/green wash.
+    expect(hints[0]!.chainCells?.length).toBe(3);
+    const pivotCC = hints[0]!.chainCells!.find(cc => cc.cell[0] === 0 && cc.cell[1] === 0);
+    expect(pivotCC).toEqual({ cell: [0, 0], digits: [1, 2] });
+    const pinACC = hints[0]!.chainCells!.find(cc => cc.cell[0] === 0 && cc.cell[1] === 1);
+    expect(pinACC).toEqual({ cell: [0, 1], digits: [1, 3], colour: 'blue' });
+    const pinBCC = hints[0]!.chainCells!.find(cc => cc.cell[0] === 1 && cc.cell[1] === 0);
+    expect(pinBCC).toEqual({ cell: [1, 0], digits: [2, 3], colour: 'green' });
+    // Pincers must NOT be in highlightCells (they're chain-coloured, not orange);
+    // pivot (0,0) and elim target MUST be.
     for (const [r, c] of [[0, 1], [1, 0]] as [number, number][]) {
       expect(hints[0]!.highlightCells.some(([hr, hc]) => hr === r && hc === c)).toBe(false);
     }

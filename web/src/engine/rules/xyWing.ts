@@ -137,9 +137,10 @@ export class XYWing {
             // pivot → highlightCells (orange); pinA=blue, pinB=green so elims see blue∧green
             highlightCells: [pivot, ...elims.map(e => e.cell)],
             eliminations: elims, placement: null, virtualCageSuggestion: null,
-            colourGroups: [
-              { cells: [pinA], colour: 'blue' },
-              { cells: [pinB], colour: 'green' },
+            chainCells: [
+              { cell: pivot, digits: [x, y] },
+              { cell: pinA, digits: [x, z].sort((a, b) => a - b), colour: 'blue' },
+              { cell: pinB, digits: [y, z].sort((a, b) => a - b), colour: 'green' },
             ],
           });
         }
