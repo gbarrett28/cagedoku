@@ -86,10 +86,11 @@ describe('WWing', () => {
     expect(hints[0]!.placement).toBeNull();
   });
 
-  it('asHints: colourGroups contains the 4 chain cells, highlightCells has only elimination targets', () => {
-    // Strong link X=(0,0)–Y=(4,0); wings A=(0,5), B=(4,7)
-    // Chain A→X→Y→B: A=blue, X=green, Y=blue, B=green
-    // Blue: [A=(0,5), Y=(4,0)]   Green: [X=(0,0), B=(4,7)]
+  it('asHints: chainCells tags A, X, Y, B with their own digits; highlightCells has only elimination targets', () => {
+    // Strong link X=(0,0)–Y=(4,0); wings A=(0,5), B=(4,7); p=5, q=7.
+    // Chain A→X→Y→B: A=blue, X=green, Y=blue, B=green.
+    // A and B are bivalue {5,7} — both digits matter. X and Y are strong-link
+    // endpoints — only 5 (the link digit) matters there.
     const { board, unit } = makeWWingBoard();
     const ctx = unitCtx(board, unit, 5);
     const elims = rule.apply(ctx).eliminations;
@@ -97,12 +98,12 @@ describe('WWing', () => {
     expect(hints.length).toBeGreaterThan(0);
     const hint = hints[0]!;
 
-    // colourGroups: 2 groups covering A, X, Y, B
-    expect(hint.colourGroups?.length).toBe(2);
-    const allGroupCells = hint.colourGroups!.flatMap(g => g.cells);
-    for (const [r, c] of [[0, 5], [0, 0], [4, 0], [4, 7]] as [number, number][]) {
-      expect(allGroupCells.some(([gr, gc]) => gr === r && gc === c)).toBe(true);
-    }
+    expect(hint.chainCells?.length).toBe(4);
+    const ccFor = (r: number, c: number) => hint.chainCells!.find(cc => cc.cell[0] === r && cc.cell[1] === c);
+    expect(ccFor(0, 5)).toEqual({ cell: [0, 5], digits: [5, 7], colour: 'blue' });   // A
+    expect(ccFor(4, 0)).toEqual({ cell: [4, 0], digits: [5], colour: 'blue' });      // Y
+    expect(ccFor(0, 0)).toEqual({ cell: [0, 0], digits: [5], colour: 'green' });     // X
+    expect(ccFor(4, 7)).toEqual({ cell: [4, 7], digits: [5, 7], colour: 'green' });  // B
 
     // highlightCells: only elimination targets, NOT the 4 chain cells
     for (const [r, c] of [[0, 5], [0, 0], [4, 0], [4, 7]] as [number, number][]) {

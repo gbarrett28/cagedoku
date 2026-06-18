@@ -86,17 +86,15 @@ export interface ChainCell {
 
 ### Sprint 3 — Migrate W-Wing (fixes #156)
 
-- [ ] `wWing.test.ts`: rewrite the colourGroups-disjointness test to
+- [x] `wWing.test.ts`: rewrote the colourGroups-disjointness test to
       instead assert `chainCells` contains all 4 structural cells with
       correct digits: X and Y (the strong-link endpoints) get
       `digits: [p]`; A and B (the bivalue wings) get `digits: [p, q]`;
-      colours preserved (X,Y → one colour pairing consistent with current
-      A/Y-blue, X/B-green grouping — re-derive from the rule's own
-      strong-link/wing semantics, not the old grouping, since the old
-      grouping was already not digit-aware). Watch tests fail.
-- [ ] `wWing.ts`: populate `chainCells`; remove `colourGroups`.
-- [ ] `bash scripts/run-bronze-gate.sh` passes.
-- [ ] Commit: `fix: per-cell digit highlighting for W-Wing (#156)`.
+      colours preserved (A/Y=blue, X/B=green, matching the original chain
+      A→X→Y→B alternation).
+- [x] `wWing.ts`: populated `chainCells`; removed `colourGroups`.
+- [x] `bash scripts/run-bronze-gate.sh` passes.
+- [x] Commit: `fix: per-cell digit highlighting for W-Wing (#156)`.
 
 ### Sprint 4 — Migrate Two-String Kite, Skyscraper, Simple Colouring
 

@@ -146,13 +146,21 @@ export class WWing {
 
         const A = [ar, ac] as Cell; const B = [br, bc] as Cell;
         const X = [xr, xc] as Cell; const Y = [yr, yc] as Cell;
-        // Chain A→X→Y→B: A=blue, X=green, Y=blue, B=green
+        const pq = [p, q].sort((a, b) => a - b);
+        // Chain A→X→Y→B: A=blue, X=green, Y=blue, B=green.
+        // A/B are bivalue {p,q} — both digits matter. X/Y are strong-link
+        // endpoints — only p (the link digit) matters there.
         hints.push({
           ruleName: this.name, displayName: 'W-Wing',
           explanation: `W-Wing: ${cellLabel(A)} and ${cellLabel(B)} both {${p},${q}} are connected via strong link on ${p} in ${unitLabel(ctx.unit)} (${cellLabel(X)}–${cellLabel(Y)}). Digit ${q} eliminated from cells seeing both.`,
           highlightCells: elims.map(e => e.cell),
           eliminations: elims, placement: null, virtualCageSuggestion: null,
-          colourGroups: [{ cells: [A, Y], colour: 'blue' }, { cells: [X, B], colour: 'green' }],
+          chainCells: [
+            { cell: A, digits: pq, colour: 'blue' },
+            { cell: Y, digits: [p], colour: 'blue' },
+            { cell: X, digits: [p], colour: 'green' },
+            { cell: B, digits: pq, colour: 'green' },
+          ],
         });
       }
     }
