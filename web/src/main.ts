@@ -120,6 +120,7 @@ let virtualCageNegCells = new Set<string>();    // "r,c" keys, 0-based — negat
 let hintHighlightCells = new Set<string>();     // "r,c" keys, 0-based — pattern cells (orange)
 let hintElimCells = new Set<string>();          // "r,c" keys, 0-based — elimination cells (yellow)
 let hintColourGroups: readonly { cells: readonly [number, number][]; colour: 'blue' | 'green' }[] = [];
+let hintChainCells: readonly { cell: [number, number]; digits: readonly number[]; colour?: 'blue' | 'green' }[] = [];
 let hintSecondaryHighlightCells = new Set<string>(); // "r,c" keys, 0-based — pale-blue unit context
 let activeHintItem: HintItem | null = null;
 let inspectCageMode = false;
@@ -229,6 +230,13 @@ function drawUnderlays(
     for (const [r, c] of group.cells) {
       ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
     }
+  }
+  // Chain-colouring: per-cell chain cells with their own wash colour
+  for (const cc of hintChainCells) {
+    if (!cc.colour) continue;
+    ctx.fillStyle = cc.colour === 'blue' ? 'rgba(59, 130, 246, 0.45)' : 'rgba(34, 197, 94, 0.45)';
+    const [r, c] = cc.cell;
+    ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
   }
   // User colouring tool: manually coloured cells (blue/green)
   for (const [key, colour] of cellColours) {
@@ -452,10 +460,12 @@ function drawHintDigitMarkers(
 
   // Blue squares around pattern digits in highlight (pattern) cells.
   // Skip any cell that is also an elimination cell — it gets a circle, not a square.
-  const patternDigits: readonly number[] =
+  // Cells with their own `chainCells` entry are marked with that cell's own digits;
+  // all other highlight cells fall back to the rule-wide `patternDigits` list.
+  const fallbackPatternDigits: readonly number[] =
     hint.patternDigits ??
     (hint.placement !== null ? [hint.placement[2]] : [...new Set(hint.eliminations.map(e => e.digit))]);
-  if (patternDigits.length > 0 && hint.highlightCells.length > 0) {
+  if (hint.highlightCells.length > 0) {
     ctx.strokeStyle = 'rgba(59, 130, 246, 0.85)';
     ctx.lineWidth = 1.5;
     const hw = SUB_W * 0.38;
@@ -466,7 +476,9 @@ function drawHintDigitMarkers(
       const cellInfo = candidatesData.cells[r]?.[c];
       if (!cellInfo) continue;
       const candSet = new Set(cellInfo.candidates);
-      for (const d of patternDigits) {
+      const chainCell = hintChainCells.find(cc => cc.cell[0] === r && cc.cell[1] === c);
+      const digits = chainCell ? chainCell.digits : fallbackPatternDigits;
+      for (const d of digits) {
         if (!candSet.has(d)) continue;
         const subRow = Math.floor((d - 1) / 3);
         const subCol = (d - 1) % 3;
@@ -994,6 +1006,7 @@ function showHintModal(hint: HintItem): void {
   hintHighlightCells = new Set(hint.highlightCells.map(([r, c]) => `${r},${c}`));
   hintElimCells = new Set(hint.eliminations.map(({ cell: [r, c] }) => `${r},${c}`));
   hintColourGroups = hint.colourGroups ?? [];
+  hintChainCells = hint.chainCells ?? [];
   hintSecondaryHighlightCells = new Set((hint.secondaryHighlightCells ?? []).map(([r, c]) => `${r},${c}`));
   redrawGrid();
   el<HTMLElement>('hint-modal-title').textContent = hint.displayName;
@@ -1029,6 +1042,7 @@ function clearHintHighlight(): void {
   hintHighlightCells = new Set();
   hintElimCells = new Set();
   hintColourGroups = [];
+  hintChainCells = [];
   hintSecondaryHighlightCells = new Set();
   activeHintItem = null;
   hideHintPill(el('hint-pill'));
@@ -1138,7 +1152,7 @@ function resetToUploadPanel(): void {
   showCandidates = false; candidateEditMode = false;
   virtualCageMode = false; virtualCageSelection = new Set(); virtualCageNegCells = new Set();
   hintHighlightCells = new Set(); hintElimCells = new Set(); hintColourGroups = [];
-  hintSecondaryHighlightCells = new Set(); activeHintItem = null;
+  hintChainCells = []; hintSecondaryHighlightCells = new Set(); activeHintItem = null;
   colourMode = 'off'; cellColours.clear();
   inspectCageMode = false;
   el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');

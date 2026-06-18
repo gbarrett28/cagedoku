@@ -15,6 +15,20 @@ export interface ColourGroup {
   readonly colour: CellColour;
 }
 
+/**
+ * A structurally significant cell in a chain-style hint (XY-Wing, W-Wing,
+ * Two-String Kite, Skyscraper, Simple Colouring), tagged with the digit(s)
+ * that matter for *that* cell and an optional wash colour. Replaces the
+ * old approach of washing cells via `colourGroups` and marking digits via
+ * a single rule-wide `patternDigits` list, which cannot express that
+ * different chain cells carry different digits.
+ */
+export interface ChainCell {
+  readonly cell: Cell;
+  readonly digits: readonly number[];
+  readonly colour?: CellColour;
+}
+
 /** Rich hint produced by a single rule application instance. */
 export interface HintResult {
   readonly ruleName: string;
@@ -34,6 +48,14 @@ export interface HintResult {
   /** Two colour groups for bipartite-chain rules; absent for all other rules. */
   readonly colourGroups?: readonly ColourGroup[];
   /**
+   * Per-cell digit/colour tags for chain-style rules. When a cell in
+   * `highlightCells` has a matching entry here, the renderer marks that
+   * cell's own `digits` instead of falling back to the rule-wide
+   * `patternDigits` list, and washes it with the entry's `colour` (if set)
+   * instead of `colourGroups`. Absent for non-chain rules.
+   */
+  readonly chainCells?: readonly ChainCell[];
+  /**
    * Cells rendered with a pale-blue wash to give unit context for the deduction
    * (e.g. "this is the unit in which the digit/tuple is unique"). Distinct from
    * `highlightCells` (orange/yellow) and `colourGroups` (chain-colouring blue/green).
@@ -50,4 +72,11 @@ export interface HintResult {
 
 export function eliminationCount(h: HintResult): number {
   return h.eliminations.length;
+}
+
+/** Looks up the `ChainCell` entry for `cell` in `hint.chainCells`, or null if absent. */
+export function findChainCell(hint: HintResult, cell: Cell): ChainCell | null {
+  if (!hint.chainCells) return null;
+  const [r, c] = cell;
+  return hint.chainCells.find(cc => cc.cell[0] === r && cc.cell[1] === c) ?? null;
 }

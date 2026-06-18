@@ -1197,6 +1197,13 @@ export function getHints(): HintsResponse {
           cells: [...g.cells].map(([r, c]) => [r, c] as [number, number]),
         })),
       } : {}),
+      ...(h.chainCells ? {
+        chainCells: h.chainCells.map(cc => ({
+          cell: [cc.cell[0], cc.cell[1]] as [number, number],
+          digits: [...cc.digits],
+          ...(cc.colour ? { colour: cc.colour } : {}),
+        })),
+      } : {}),
       ...(h.patternDigits ? { patternDigits: [...h.patternDigits] } : {}),
       ...(h.secondaryHighlightCells ? {
         secondaryHighlightCells: [...h.secondaryHighlightCells].map(([r, c]) => [r, c] as [number, number]),
