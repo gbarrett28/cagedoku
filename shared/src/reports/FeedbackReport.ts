@@ -40,16 +40,21 @@ export namespace FeedbackReport {
     return true;
   }
 
-  /** FeedbackReport is not stored in R2 — it opens a GitHub issue instead. */
-  export function storageKey(_r: FeedbackReport, _uuid: string): null {
-    return null;
+  export function storageKey(r: FeedbackReport, uuid: string): string {
+    const timestamp = r.reportedAt.replace(/[:.]/g, '-');
+    return `feedback/${timestamp}-${uuid}.json`;
   }
 
-  export function githubAction(r: FeedbackReport): { kind: 'issue'; title: string; body: string; labels: string[] } {
-    return { kind: 'issue', ...buildIssue(r) };
+  export function r2Metadata(r: FeedbackReport): Record<string, string> {
+    return { appVersion: r.appVersion, feedbackType: r.feedbackType };
   }
 
-  function buildIssue(r: FeedbackReport): { title: string; body: string; labels: string[] } {
+  /** Opens a GitHub issue. `key` is the R2 object holding the full (untruncated) report. */
+  export function githubAction(r: FeedbackReport, key: string): { kind: 'issue'; title: string; body: string; labels: string[] } {
+    return { kind: 'issue', ...buildIssue(r, key) };
+  }
+
+  function buildIssue(r: FeedbackReport, key: string): { title: string; body: string; labels: string[] } {
     const isNewRule = r.feedbackType === 'new-rule';
     const typeLabel = r.feedbackType === 'bug'
       ? 'Bug report'
@@ -75,7 +80,7 @@ export namespace FeedbackReport {
     const expectedSection = r.expected ? `\n### Expected behaviour\n${r.expected}\n` : '';
     const exceptionSection = r.exception ? `\n## Exception\n\`\`\`\n${r.exception}\n\`\`\`\n` : '';
     const specJson = r.puzzleSpec !== null
-      ? `\n<details>\n<summary>Puzzle spec</summary>\n\n\`\`\`json\n${JSON.stringify(r.puzzleSpec, null, 2)}\n\`\`\`\n\n</details>\n`
+      ? `\n<details>\n<summary>Puzzle spec</summary>\n\n\`\`\`json\n${JSON.stringify(stripSnapshots(r.puzzleSpec), null, 2)}\n\`\`\`\n\n</details>\n`
       : '';
     const fixtureSection = isNewRule && r.fixtureName
       ? `**Fixture:** \`${r.fixtureName}\`\n` +
@@ -100,6 +105,8 @@ ${expectedSection}${exceptionSection}
 - Auto-apply rules: ${rules}
 - Step delay: ${delay}
 ${specJson}${activeHintSection}
+**Full report (with candidate snapshots):** R2 key \`${key}\`
+
 ### Session trace
 
 <details>
@@ -111,6 +118,35 @@ ${r.actionLog}
 
 </details>
 `;
-    return { title, body, labels };
+    return { title, body: truncateBody(body, key), labels };
+  }
+
+  /**
+   * Strips per-turn `BoardSnapshot.candidates` arrays from a serialized
+   * `PuzzleState` — they're a rendering cache, not needed to replay the
+   * session via `PuzzleState.deserialize` + `buildEngine`, and they dominate
+   * the size of the issue body for sessions with many turns.
+   */
+  function stripSnapshots(puzzleSpec: unknown): unknown {
+    if (typeof puzzleSpec !== 'object' || puzzleSpec === null) return puzzleSpec;
+    const v = puzzleSpec as Record<string, unknown>;
+    if (!Array.isArray(v['turns'])) return puzzleSpec;
+    return {
+      ...v,
+      turns: v['turns'].map((turn: unknown) => {
+        if (typeof turn !== 'object' || turn === null) return turn;
+        const { snapshot: _snapshot, ...rest } = turn as Record<string, unknown>;
+        return rest;
+      }),
+    };
+  }
+
+  /** GitHub caps issue bodies at 65536 characters; truncate with a pointer to the full R2 report. */
+  const MAX_BODY_LENGTH = 65536;
+
+  function truncateBody(body: string, key: string): string {
+    if (body.length <= MAX_BODY_LENGTH) return body;
+    const notice = `\n\n*(Issue body truncated — see R2 key \`${key}\` for the full report.)*\n`;
+    return body.slice(0, MAX_BODY_LENGTH - notice.length) + notice;
   }
 }

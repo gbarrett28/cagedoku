@@ -152,14 +152,14 @@ describe('FeedbackReport.githubAction', () => {
   it('includes an "Active hint" section with the JSON snapshot when activeHint is set', () => {
     const activeHint = { ruleName: 'HiddenSingle', displayName: 'Hidden Single', explanation: 'x' };
     const report: FeedbackReport = { ...feedbackBase, activeHint };
-    const { body } = FeedbackReport.githubAction(report);
+    const { body } = FeedbackReport.githubAction(report, 'feedback/test-key.json');
     expect(body).toContain('Active hint');
     expect(body).toContain('"ruleName": "HiddenSingle"');
   });
 
   it('omits the "Active hint" section when activeHint is not set', () => {
     const report: FeedbackReport = { ...feedbackBase };
-    const { body } = FeedbackReport.githubAction(report);
+    const { body } = FeedbackReport.githubAction(report, 'feedback/test-key.json');
     expect(body).not.toContain('Active hint');
   });
 });

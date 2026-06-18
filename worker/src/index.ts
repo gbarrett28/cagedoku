@@ -122,7 +122,12 @@ export default {
       }
 
       case 'feedback': {
-        const action = FeedbackReport.githubAction(report);
+        const key = FeedbackReport.storageKey(report, crypto.randomUUID());
+        await env.TRAINING_BUCKET.put(key, JSON.stringify(body), {
+          httpMetadata: { contentType: 'application/json' },
+          customMetadata: FeedbackReport.r2Metadata(report),
+        });
+        const action = FeedbackReport.githubAction(report, key);
         try { await createGitHubIssue(env, action.title, action.body, action.labels); } catch (err) { console.error('[worker] GitHub issue creation failed:', err); }
         return new Response('OK', { status: 200, headers: corsHeaders(allowed) });
       }
