@@ -112,25 +112,28 @@ export interface ChainCell {
 
 ### Sprint 5 — Cleanup and doc updates (Silver-gate-adjacent)
 
-- [ ] Remove `ColourGroup`/`colourGroups` entirely from `hint.ts`,
+- [x] Remove `ColourGroup`/`colourGroups` entirely from `hint.ts`,
       `types.ts`, `actions.ts`, `main.ts` (no remaining consumers after
       Sprint 4).
-- [ ] Remove the legacy global-`patternDigits`-on-every-`highlightCells`-cell
+- [x] Remove the legacy global-`patternDigits`-on-every-`highlightCells`-cell
       fallback path in `drawHintDigitMarkers()` if no rule still relies on
-      it for chain-style multi-cell patterns (verify: `patternDigits` is
-      still legitimately used by non-chain rules for single-purpose
-      highlight sets — keep that path, only the colourGroups-driven
-      multi-colour-without-digits path goes away).
-- [ ] Full check: `tsc --noEmit`, `npm test -- --reporter=verbose`,
+      it for chain-style multi-cell patterns — verified `patternDigits` is
+      still legitimately used by HiddenSingle/HiddenPair/HiddenTriple/
+      HiddenQuad, so the fallback path is kept unchanged; only the
+      `colourGroups`-driven multi-colour-without-digits path was removed.
+- [x] Full check: `tsc --noEmit`, `npm test -- --reporter=verbose`,
       `npx playwright test`, `npx playwright test --config
-      playwright.dev.config.ts` (this is the Silver gate, appropriate
-      here since this sprint finalizes the feature before any eventual
-      merge).
+      playwright.dev.config.ts` — all green (736 unit tests, 5/5 + 45/45
+      e2e, 12 e2e tests skipped as in baseline).
 - [ ] Visual verification: `cd web && npm run dev -- --port 5175`, use
       Playwright MCP to trigger an XY-Wing and a W-Wing hint and confirm
-      squares/washes render correctly with no regressions.
-- [ ] Update `docs/architecture.md` (current `colourGroups`/`ColourGroup`
+      squares/washes render correctly with no regressions. **Not done —
+      no Playwright MCP browser tool is available in this remote
+      execution environment.** The full e2e suite (including
+      `flow.spec.ts` hint-modal tests) passed, but no live screenshot
+      verification was performed. Run this manually before merging.
+- [x] Update `docs/architecture.md` (current `colourGroups`/`ColourGroup`
       references) to describe `ChainCell`/`chainCells` instead.
-- [ ] Update `docs/ui.md` (current "Hint chain colour groups" references)
+- [x] Update `docs/ui.md` (current "Hint chain colour groups" references)
       to describe the new per-cell model.
 - [ ] Delete this plan file once every checkbox above is ticked.

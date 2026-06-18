@@ -845,6 +845,12 @@ Use `emptyResult()` to return no progress.
 **`HintResult`** (`web/src/engine/hint.ts`):
 
 ```typescript
+interface ChainCell {
+  cell:    Cell;
+  digits:  readonly number[];   // digit(s) relevant to *this* cell
+  colour?: CellColour;          // optional 'blue' | 'green' wash
+}
+
 interface HintResult {
   ruleName:     string;
   displayName:  string;
@@ -853,16 +859,30 @@ interface HintResult {
   eliminations: readonly Elimination[];
   placement:    readonly [number, number, number] | null;  // [row, col, digit] or null
   virtualCageSuggestion: readonly [readonly Cell[], number] | null;
-  colourGroups?: readonly ColourGroup[];             // optional — bipartite chain colouring
+  chainCells?: readonly ChainCell[];                 // optional — per-cell chain digits/colour
   secondaryHighlightCells?: readonly Cell[];         // optional — pale-blue unit-context cells
+  patternDigits?: readonly number[];                 // optional — fallback digit list for highlightCells
 }
 ```
 
-**`colourGroups`** is populated by rules that use bipartite conjugate-pair reasoning
-(SimpleColouring, Skyscraper, TwoStringKite, WWing). Each group specifies which chain
-cells belong to the blue side and which to the green side. Chain cells are placed here
-rather than in `highlightCells`; `highlightCells` contains only the elimination
-targets (rendered yellow). See `CellColour` and `ColourGroup` in `web/src/engine/hint.ts`.
+**`chainCells`** is populated by rules whose structurally significant cells each carry
+a different digit (XYWing, XYZWing, WWing, TwoStringKite, Skyscraper, SimpleColouring).
+Each entry tags one cell with the digit(s) relevant to *that* cell and an optional
+`colour` wash. The renderer (`drawHintDigitMarkers` / `drawUnderlays` in
+`web/src/main.ts`) draws squares for a cell's own `chainCells` digits when present, and
+paints the `colour` wash, instead of relying on one rule-wide digit list. Chain cells
+that need a wash but no orange highlight (e.g. wing/pincer cells) are deliberately
+omitted from `highlightCells`; the renderer unions `highlightCells` and `chainCells`
+when deciding which cells get digit squares. `highlightCells` otherwise contains only
+the elimination targets (rendered yellow) plus any orange-highlighted pattern cells
+that don't need a `chainCells` entry (e.g. pivot/knot cells with a single relevant
+digit set).
+
+**`patternDigits`** is the non-chain fallback: when a `highlightCells` cell has no
+matching `chainCells` entry, the renderer marks that cell's own live candidates that
+appear in `patternDigits` (or, if absent, derives them from `eliminations`/
+`placement[2]`). Used by HiddenSingle/HiddenPair/HiddenTriple/HiddenQuad, where the
+keying digits differ from the elimination digits.
 
 **`secondaryHighlightCells`** gives the unit context for "hidden" deductions
 (HiddenSingle, HiddenPair, HiddenTriple, and HiddenQuad): the rest of

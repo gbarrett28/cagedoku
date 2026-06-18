@@ -258,7 +258,7 @@ Renders the 9×9 sudoku grid with the following layers (back → front):
 2. Virtual cage underlays (teal/violet/pink/orange tints, one per cage)
 3. Virtual cage selection underlay (indigo, while drawing a new cage)
 4. Selected cell highlight (light blue)
-5. Hint chain colour groups (blue / green — from `HintResult.colourGroups`, see below)
+5. Hint chain cells (blue / green — from `HintResult.chainCells`, see below)
 6. User colouring tool cells (blue / green — manually coloured cells)
 7. Hint highlight cells (yellow — elimination targets)
 8. Thin dashed lines for internal cell boundaries
@@ -513,12 +513,22 @@ Cell colours are stored in `cellColours: Map<string, 'blue' | 'green'>` keyed by
 `"r,c"` (0-based). They are rendered as semi-transparent overlays (layer 6 in
 `drawUnderlays`) and cleared on puzzle reset, solve completion, or button press.
 
-**Hint chain colouring**: rules that reason about bipartite conjugate-pair chains
-(SimpleColouring, Skyscraper, TwoStringKite, WWing) populate `HintResult.colourGroups`
-with two groups — blue and green — identifying the two sides of the chain. These are
-rendered as layer 5 in `drawUnderlays`, beneath both user colours (layer 6) and
-yellow elimination highlights (layer 7). Colours: blue = `rgba(59,130,246,0.45)`,
+**Hint chain colouring**: rules with structurally distinct chain cells (XYWing,
+XYZWing, WWing, TwoStringKite, Skyscraper, SimpleColouring) populate
+`HintResult.chainCells` — one entry per structurally significant cell, each tagging
+its own relevant digit(s) and an optional `'blue' | 'green'` wash colour. Coloured
+entries are rendered as layer 5 in `drawUnderlays`, beneath both user colours (layer 6)
+and yellow elimination highlights (layer 7). Colours: blue = `rgba(59,130,246,0.45)`,
 green = `rgba(34,197,94,0.45)`.
+
+`drawHintDigitMarkers` draws a digit square for each cell in the union of
+`highlightCells` and `chainCells`: if the cell has a `chainCells` entry, it draws that
+entry's own `digits`; otherwise it falls back to the rule-wide `patternDigits` list (or
+digits derived from `eliminations`/`placement`). This lets cells in the same hint —
+e.g. an XY-Wing's pivot and its two pincers — each show only the digits actually
+relevant to that cell, instead of one digit set applied uniformly to every highlighted
+cell. Elimination-target cells always get a red circle instead of a square, regardless
+of which set they came from.
 
 ---
 

@@ -704,8 +704,6 @@ export interface HintItem {
   readonly placement: [number, number, number] | null;
   readonly rewindToTurnIdx: number | null;
   readonly virtualCageSuggestion: VirtualCageSuggestion | null;
-  /** Two colour groups for bipartite-chain hints; absent for all other hints. */
-  readonly colourGroups?: readonly { cells: readonly [number, number][]; colour: 'blue' | 'green' }[];
   /** Per-cell digit/colour tags for chain-style rules; see HintResult.chainCells. */
   readonly chainCells?: readonly { cell: [number, number]; digits: readonly number[]; colour?: 'blue' | 'green' }[];
   /** Digits key to the rule — marked with squares in highlightCells. See HintResult.patternDigits. */

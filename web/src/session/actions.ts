@@ -1191,12 +1191,6 @@ export function getHints(): HintsResponse {
       placement: h.placement ? [h.placement[0], h.placement[1], h.placement[2]] : null,
       rewindToTurnIdx: null,
       virtualCageSuggestion: vcSug,
-      ...(h.colourGroups ? {
-        colourGroups: h.colourGroups.map(g => ({
-          colour: g.colour,
-          cells: [...g.cells].map(([r, c]) => [r, c] as [number, number]),
-        })),
-      } : {}),
       ...(h.chainCells ? {
         chainCells: h.chainCells.map(cc => ({
           cell: [cc.cell[0], cc.cell[1]] as [number, number],

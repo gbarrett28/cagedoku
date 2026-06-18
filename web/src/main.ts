@@ -119,7 +119,6 @@ let virtualCageSelection = new Set<string>();   // "r,c" keys, 0-based — all s
 let virtualCageNegCells = new Set<string>();    // "r,c" keys, 0-based — negative-role cells
 let hintHighlightCells = new Set<string>();     // "r,c" keys, 0-based — pattern cells (orange)
 let hintElimCells = new Set<string>();          // "r,c" keys, 0-based — elimination cells (yellow)
-let hintColourGroups: readonly { cells: readonly [number, number][]; colour: 'blue' | 'green' }[] = [];
 let hintChainCells: readonly { cell: [number, number]; digits: readonly number[]; colour?: 'blue' | 'green' }[] = [];
 let hintSecondaryHighlightCells = new Set<string>(); // "r,c" keys, 0-based — pale-blue unit context
 let activeHintItem: HintItem | null = null;
@@ -221,13 +220,6 @@ function drawUnderlays(
       ctx.fillStyle = (vcNegSelection?.has(key))
         ? 'rgba(239, 68, 68, 0.35)'     // red tint for negative cells
         : 'rgba(99, 102, 241, 0.35)';   // indigo for positive cells
-      ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
-    }
-  }
-  // Chain-colouring: hint colour groups (blue/green for the two chain groups)
-  for (const group of hintColourGroups) {
-    ctx.fillStyle = group.colour === 'blue' ? 'rgba(59, 130, 246, 0.45)' : 'rgba(34, 197, 94, 0.45)';
-    for (const [r, c] of group.cells) {
       ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
     }
   }
@@ -1011,7 +1003,6 @@ function showHintModal(hint: HintItem): void {
   activeHintItem = hint;
   hintHighlightCells = new Set(hint.highlightCells.map(([r, c]) => `${r},${c}`));
   hintElimCells = new Set(hint.eliminations.map(({ cell: [r, c] }) => `${r},${c}`));
-  hintColourGroups = hint.colourGroups ?? [];
   hintChainCells = hint.chainCells ?? [];
   hintSecondaryHighlightCells = new Set((hint.secondaryHighlightCells ?? []).map(([r, c]) => `${r},${c}`));
   redrawGrid();
@@ -1047,7 +1038,6 @@ function showHintModal(hint: HintItem): void {
 function clearHintHighlight(): void {
   hintHighlightCells = new Set();
   hintElimCells = new Set();
-  hintColourGroups = [];
   hintChainCells = [];
   hintSecondaryHighlightCells = new Set();
   activeHintItem = null;
@@ -1157,7 +1147,7 @@ function resetToUploadPanel(): void {
   currentState = null; currentCandidates = null; currentBoard = null; selectedCell = null;
   showCandidates = false; candidateEditMode = false;
   virtualCageMode = false; virtualCageSelection = new Set(); virtualCageNegCells = new Set();
-  hintHighlightCells = new Set(); hintElimCells = new Set(); hintColourGroups = [];
+  hintHighlightCells = new Set(); hintElimCells = new Set();
   hintChainCells = []; hintSecondaryHighlightCells = new Set(); activeHintItem = null;
   colourMode = 'off'; cellColours.clear();
   inspectCageMode = false;
