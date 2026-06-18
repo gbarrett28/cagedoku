@@ -1125,20 +1125,80 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
   setStatus(warning ? `Warning: ${warning}` : '');
 }
 
+/**
+ * Returns the app to the pre-upload state: clears all puzzle-related module state,
+ * resets every panel/button to its pre-upload visibility, and applies any pending
+ * service-worker update. Used both by the "New Puzzle" button and at the start of
+ * `handleProcess()` so a new upload never leaves a previous puzzle on screen.
+ */
+function resetToUploadPanel(): void {
+  clearActionLog();
+  clearPersistedSession();
+  currentState = null; currentCandidates = null; currentBoard = null; selectedCell = null;
+  showCandidates = false; candidateEditMode = false;
+  virtualCageMode = false; virtualCageSelection = new Set(); virtualCageNegCells = new Set();
+  hintHighlightCells = new Set(); hintElimCells = new Set(); hintColourGroups = [];
+  hintSecondaryHighlightCells = new Set(); activeHintItem = null;
+  colourMode = 'off'; cellColours.clear();
+  inspectCageMode = false;
+  el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');
+  el<HTMLElement>('inspector-col').hidden = true;
+  el<HTMLElement>('side-panel').classList.remove('inspector-open');
+  el<HTMLElement>('side-panel').classList.remove('virtual-cage-open');
+  totalEditCell = null;
+  reviewErrorCells = new Set();
+  draftEdited = false;
+  pendingCellThumbs = new Map();
+  pendingMergedThumbs = new Map();
+  el<HTMLElement>('upload-panel').hidden = false;
+  el<HTMLElement>('review-panel').hidden = true;
+  el<HTMLElement>('solution-panel').hidden = true;
+  el<HTMLElement>('playing-actions').hidden = true;
+  el<HTMLElement>('action-group').hidden = true;
+  el<HTMLButtonElement>('new-puzzle-btn').hidden = true;
+  el<HTMLButtonElement>('hints-btn').disabled = true;
+  el<HTMLButtonElement>('inspect-cage-btn').hidden = true;
+  el<HTMLButtonElement>('virtual-cage-btn').hidden = true;
+  el<HTMLButtonElement>('colour-btn').hidden = true;
+  el<HTMLButtonElement>('colour-btn').classList.remove('active');
+  el<HTMLButtonElement>('reveal-btn').hidden = true;
+  el<HTMLInputElement>('file-input').value = '';
+  setStatus('');
+  // Re-show #use-last-btn if a valid handle is still available.
+  void initUseLastBtn();
+
+  // Apply any pending SW update now that all puzzle state has been cleared.
+  // The page will reload once the new SW activates and fires controllerchange.
+  // Trade-off: handleProcess() calls this before awaiting uploadPuzzle(), so a
+  // SW update that becomes waiting during that window can reload the page and
+  // silently discard the in-flight upload. Accepted as a narrow, low-probability
+  // race rather than deferring updates further (see design doc's non-goals).
+  if (waitingSW !== null) {
+    navigator.serviceWorker.addEventListener(
+      'controllerchange',
+      () => location.reload(),
+      { once: true },
+    );
+    waitingSW.postMessage({ type: 'SKIP_WAITING' });
+    waitingSW = null;
+  }
+}
+
 async function handleProcess(file?: File): Promise<void> {
   const f = file ?? el<HTMLInputElement>('file-input').files?.[0];
   if (!f) { setStatus('Please drop, paste, or select an image.', true); return; }
+  resetToUploadPanel();
   // Clear any active fixture — the normal image pipeline takes over.
   currentFixtureName = null;
   currentFixtureUnsolvedCells = null;
   currentFixtureTotalCandidates = null;
-  clearActionLog();
   logAction('file_selected', `${f.name} (${(f.size / 1024).toFixed(0)} KB)`);
   el<HTMLButtonElement>('edit-ocr-btn').hidden = true;
   lastOcrCandidates = [];
   lastWarpedUrl = null;
   // Reset solver result so stale data from a previous run is never read.
   (window as unknown as Record<string, unknown>)['__lastSolverResult'] = null;
+  setStatus('Processing image…');
   setLoading(true);
   try {
     const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs } = await uploadPuzzle(f);
@@ -1692,27 +1752,33 @@ let waitingSW: ServiceWorker | null = null;
 
 // Register the offline service worker. Only runs in production builds — skipped
 // during Vite dev mode to prevent the SW from intercepting HMR/module requests.
-if ('serviceWorker' in navigator && !import.meta.env.DEV) {
-  navigator.serviceWorker.register('./sw.js')
-    .then((registration) => {
-      // Capture a SW that is already waiting (e.g. tab opened after a deploy
-      // landed but before the user interacted with the page).
-      if (registration.waiting) waitingSW = registration.waiting;
+// The registration promise is captured (not just consumed via .then) so boot can
+// await it and apply an already-waiting update before anything renders — see the
+// DOMContentLoaded handler below.
+const swRegistration: Promise<ServiceWorkerRegistration | null> =
+  ('serviceWorker' in navigator && !import.meta.env.DEV)
+    ? navigator.serviceWorker.register('./sw.js')
+        .then((registration) => {
+          // Capture a SW that is already waiting (e.g. tab opened after a deploy
+          // landed but before the user interacted with the page).
+          if (registration.waiting) waitingSW = registration.waiting;
 
-      // Capture future updates: fires when a new SW begins installing.
-      registration.addEventListener('updatefound', () => {
-        const sw = registration.installing;
-        if (sw === null) return;
-        sw.addEventListener('statechange', () => {
-          // 'installed' means the SW finished installing and is now waiting.
-          if (sw.state === 'installed') waitingSW = sw;
-        });
-      });
-    })
-    .catch(err => {
-      console.warn('[SW] Registration failed:', err);
-    });
-}
+          // Capture future updates: fires when a new SW begins installing.
+          registration.addEventListener('updatefound', () => {
+            const sw = registration.installing;
+            if (sw === null) return;
+            sw.addEventListener('statechange', () => {
+              // 'installed' means the SW finished installing and is now waiting.
+              if (sw.state === 'installed') waitingSW = sw;
+            });
+          });
+          return registration;
+        })
+        .catch(err => {
+          console.warn('[SW] Registration failed:', err);
+          return null;
+        })
+    : Promise.resolve(null);
 
 // Dev-only test hook: lets Playwright tests inject a fake waiting SW so the
 // SKIP_WAITING path can be exercised without a real service worker.
@@ -1811,7 +1877,23 @@ function renderFixtureTable(fixtures: FixtureMeta[]): void {
 
 // ---------------------------------------------------------------------------
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+
+  // Apply a pending SW update before anything renders. Every share-to-app action is
+  // already a full page navigation (the SW redirects the share POST to the app root),
+  // so this guarantees share-only users receive updates too — without it, applying
+  // updates required clicking "New Puzzle" at least once. Safe here: the share inbox
+  // and any saved session are still untouched at this point.
+  const registration = await swRegistration;
+  if (registration?.waiting) {
+    navigator.serviceWorker.addEventListener(
+      'controllerchange',
+      () => location.reload(),
+      { once: true },
+    );
+    registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+    return;
+  }
 
   // ── Persist session across accidental refreshes ───────────────────────────────
   // Save whenever the page is about to unload (refresh, close, navigate away).
@@ -2101,52 +2183,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   el<HTMLButtonElement>('new-puzzle-btn').addEventListener('click', () => {
     logAction('new_puzzle');
-    clearActionLog();
-    clearPersistedSession();
-    currentState = null; currentCandidates = null; currentBoard = null; selectedCell = null;
-    showCandidates = false; candidateEditMode = false;
-    virtualCageMode = false; virtualCageSelection = new Set(); virtualCageNegCells = new Set();
-    hintHighlightCells = new Set(); hintElimCells = new Set(); hintColourGroups = [];
-    hintSecondaryHighlightCells = new Set(); activeHintItem = null;
-    colourMode = 'off'; cellColours.clear();
-    inspectCageMode = false;
-    el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');
-    el<HTMLElement>('inspector-col').hidden = true;
-    el<HTMLElement>('side-panel').classList.remove('inspector-open');
-    el<HTMLElement>('side-panel').classList.remove('virtual-cage-open');
-    totalEditCell = null;
-    reviewErrorCells = new Set();
-    draftEdited = false;
-    pendingCellThumbs = new Map();
-    pendingMergedThumbs = new Map();
-    el<HTMLElement>('upload-panel').hidden = false;
-    el<HTMLElement>('review-panel').hidden = true;
-    el<HTMLElement>('solution-panel').hidden = true;
-    el<HTMLElement>('playing-actions').hidden = true;
-    el<HTMLElement>('action-group').hidden = true;
-    el<HTMLButtonElement>('new-puzzle-btn').hidden = true;
-    el<HTMLButtonElement>('hints-btn').disabled = true;
-    el<HTMLButtonElement>('inspect-cage-btn').hidden = true;
-    el<HTMLButtonElement>('virtual-cage-btn').hidden = true;
-    el<HTMLButtonElement>('colour-btn').hidden = true;
-    el<HTMLButtonElement>('colour-btn').classList.remove('active');
-    el<HTMLButtonElement>('reveal-btn').hidden = true;
-    el<HTMLInputElement>('file-input').value = '';
-    setStatus('');
-    // Re-show #use-last-btn if a valid handle is still available.
-    void initUseLastBtn();
-
-    // Apply any pending SW update now that all puzzle state has been cleared.
-    // The page will reload once the new SW activates and fires controllerchange.
-    if (waitingSW !== null) {
-      navigator.serviceWorker.addEventListener(
-        'controllerchange',
-        () => location.reload(),
-        { once: true },
-      );
-      waitingSW.postMessage({ type: 'SKIP_WAITING' });
-      waitingSW = null;
-    }
+    resetToUploadPanel();
   });
 
   el<HTMLButtonElement>('edit-ocr-btn').addEventListener('click', () => {

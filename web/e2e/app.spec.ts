@@ -281,6 +281,28 @@ pipelineTest('new puzzle button returns to upload panel', async ({ pipelinePage 
 });
 
 // ---------------------------------------------------------------------------
+// Test: a second upload resets to the upload panel before processing  (slow)
+// ---------------------------------------------------------------------------
+
+pipelineTest('uploading a second image resets to the upload panel before the new puzzle appears', async ({ pipelinePage }) => {
+  pipelineTest.skip(!PIPELINE, 'Needs PLAYWRIGHT_PIPELINE_TESTS=1');
+  pipelineTest.setTimeout(90_000);
+
+  await pipelinePage.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
+  await expect(pipelinePage.locator('#review-panel')).toBeVisible({ timeout: 40_000 });
+
+  // Upload again while the first puzzle is still on screen.
+  await pipelinePage.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
+
+  // The previous puzzle must not remain visible while the second upload processes.
+  await expect(pipelinePage.locator('#upload-panel')).toBeVisible({ timeout: 2_000 });
+  await expect(pipelinePage.locator('#review-panel')).toBeHidden();
+
+  // The second image still processes successfully afterward.
+  await expect(pipelinePage.locator('#review-panel')).toBeVisible({ timeout: 40_000 });
+});
+
+// ---------------------------------------------------------------------------
 // Test: cageTotals row-major orientation (replaces it.todo in inpImage.test.ts)
 // ---------------------------------------------------------------------------
 
