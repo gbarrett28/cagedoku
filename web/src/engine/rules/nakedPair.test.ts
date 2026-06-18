@@ -194,4 +194,37 @@ describe('NakedPair', () => {
     };
     expect(new NakedPair().apply(ctx).eliminations).toEqual([]);
   });
+
+  it('root-cause repro (issue #151): asHints describes only the first unit\'s pair ' +
+    'but eliminations include a second, unrelated pair\'s eliminations', () => {
+    const bs = new KillerBoardState(makeTrivialSpec());
+    const full = () => new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    // Row 0: naked pair {4,6} at (0,0),(0,1); other row-0 cells are full sets
+    // (so the pair eliminates 4 and 6 from them).
+    bs.candidates[0]![0]! = new Set([4, 6]);
+    bs.candidates[0]![1]! = new Set([4, 6]);
+    for (let c = 2; c < 9; c++) bs.candidates[0]![c]! = full();
+    // Row 1: a completely unrelated naked pair {2,5} at (1,3),(1,4); other
+    // row-1 cells are full sets (so this pair eliminates 2 and 5 from them).
+    bs.candidates[1]![3]! = new Set([2, 5]);
+    bs.candidates[1]![4]! = new Set([2, 5]);
+    for (let c = 0; c < 9; c++) if (c !== 3 && c !== 4) bs.candidates[1]![c]! = full();
+    // All other cells: singleton {9}, so no other row/col/box accidentally
+    // contains a second size-2 cell that could form a spurious pair.
+    for (let r = 2; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set([9]);
+
+    const ctx: RuleContext = { unit: null, cell: null, board: bs, hint: Trigger.GLOBAL, hintDigit: null };
+    const elims = new NakedPair().apply(ctx).eliminations;
+    // Sanity: row 1's pair did contribute eliminations to the flat array.
+    expect(elims.some(e => e.cell[0] === 1 && (e.digit === 2 || e.digit === 5))).toBe(true);
+
+    const hints = new NakedPair().asHints(ctx, [...elims]);
+    expect(hints).toHaveLength(1);
+    const h = hints[0]!;
+    // BUG: the explanation/highlight describe row 0's {4,6} pair only...
+    expect(h.highlightCells).toEqual([[0, 0], [0, 1]]);
+    // ...yet the attached eliminations also include row 1's {2,5} eliminations,
+    // which are not explained by the displayed pair at all.
+    expect(h.eliminations.some(e => e.cell[0] === 1 && (e.digit === 2 || e.digit === 5))).toBe(true);
+  });
 });
