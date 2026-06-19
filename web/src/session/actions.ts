@@ -1279,6 +1279,7 @@ export function getSettingsData(): SettingsResponse {
     autoPlacementDelay: settings.autoPlacementDelay,
     showEssential: true, // localStorage-persisted by main.ts
     showCandidatesByDefault: settings.showCandidatesByDefault,
+    devSurfaceTelemetryFailures: settings.devSurfaceTelemetryFailures,
     hintableRules,
   };
 }
@@ -1291,8 +1292,9 @@ export function saveSettingsData(
   alwaysApplyRules: string[],
   autoPlacementDelay: number,
   showCandidatesByDefault: boolean,
+  devSurfaceTelemetryFailures: boolean = loadSettings().devSurfaceTelemetryFailures,
 ): PuzzleState | null {
-  saveSettings({ alwaysApplyRules, autoPlacementDelay, showCandidatesByDefault });
+  saveSettings({ alwaysApplyRules, autoPlacementDelay, showCandidatesByDefault, devSurfaceTelemetryFailures });
   const s = getState();
   if (s === null) return null;
   const updated: PuzzleState = { ...s, alwaysApplyRules };

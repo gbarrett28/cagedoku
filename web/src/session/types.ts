@@ -624,6 +624,12 @@ export interface CoachSettings {
   readonly autoPlacementDelay: number;
   /** Show candidate grid automatically when playing mode starts. Default: true. */
   readonly showCandidatesByDefault: boolean;
+  /**
+   * Dev-only diagnostic: surface rule-bug/trigger-miss telemetry failures
+   * (no consent, or upload rejected) as a prefilled bug report instead of
+   * dropping them silently. Default: false.
+   */
+  readonly devSurfaceTelemetryFailures: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -751,5 +757,6 @@ export interface SettingsResponse {
   readonly autoPlacementDelay: number;
   readonly showEssential: boolean;
   readonly showCandidatesByDefault: boolean;
+  readonly devSurfaceTelemetryFailures: boolean;
   readonly hintableRules: readonly RuleInfo[];
 }

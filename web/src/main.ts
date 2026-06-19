@@ -6,7 +6,7 @@
  * State lives in session/store.ts; no server required.
  */
 
-import { loadCV, loadRec, loadSplitRec, setCandidatesCache, setState, getStateCandidates, setStateCandidates } from './session/store.js';
+import { loadCV, loadRec, loadSplitRec, setCandidatesCache, setState, getStateCandidates, setStateCandidates, drainTelemetryFailure } from './session/store.js';
 import { logAction, clearActionLog, formatActionLog, getActionLog } from './session/actionLog.js';
 import { loadSettings } from './session/settings.js';
 import { buildFeedbackPayload, submitFeedback } from './session/feedbackSubmit.js';
@@ -1067,6 +1067,7 @@ function openConfigModal(): void {
   clearChildren(list);
 
   el<HTMLInputElement>('candidates-default-toggle').checked = data.showCandidatesByDefault;
+  el<HTMLInputElement>('telemetry-failures-toggle').checked = data.devSurfaceTelemetryFailures;
 
   const ess = el<HTMLInputElement>('essential-toggle');
   ess.checked = showEssential;
@@ -2250,6 +2251,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       el<HTMLTextAreaElement>('feedback-description').value = pendingBug.info;
       exceptionForSubmission = pendingBug.info;
       pendingBug = null;
+    } else {
+      const telemetryFailure = drainTelemetryFailure();
+      if (telemetryFailure !== null) {
+        el<HTMLInputElement>('feedback-type-bug').click();
+        el<HTMLTextAreaElement>('feedback-description').value = telemetryFailure;
+        exceptionForSubmission = telemetryFailure;
+      }
     }
 
     (el<HTMLDialogElement>('feedback-modal') as HTMLDialogElement).showModal();
@@ -2312,7 +2320,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     showEssential = el<HTMLInputElement>('essential-toggle').checked;
     const delay = Number(el<HTMLInputElement>('config-delay-input').value);
     const showCandDefault = el<HTMLInputElement>('candidates-default-toggle').checked;
-    const updated = saveSettingsData(alwaysApply, delay, showCandDefault);
+    const devSurfaceTelemetryFailures = el<HTMLInputElement>('telemetry-failures-toggle').checked;
+    const updated = saveSettingsData(alwaysApply, delay, showCandDefault, devSurfaceTelemetryFailures);
     if (updated !== null) currentState = updated;
     el<HTMLDialogElement>('config-modal').close();
     if (currentState !== null) refreshDisplay();

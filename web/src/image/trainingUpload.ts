@@ -4,6 +4,8 @@ import type { RuleBugReport } from '../../../shared/src/reports/RuleBugReport.js
 import type { TriggerMissReport } from '../../../shared/src/reports/TriggerMissReport.js';
 import type { CageThresholdCalibrationReport } from '../../../shared/src/reports/CageThresholdCalibrationReport.js';
 import type { AnyReport } from '../../../shared/src/reports/index.js';
+import { loadSettings } from '../session/settings.js';
+import { enqueueTelemetryFailure } from '../session/store.js';
 
 export type { TrainingExport } from '../../../shared/src/reports/TrainingExport.js';
 export type { StallStateExport } from '../../../shared/src/reports/StallStateExport.js';
@@ -41,7 +43,22 @@ function postToWorker(data: AnyReport | TrainingExport): void {
     body: JSON.stringify(data),
   }).catch((err: unknown) => {
     console.error('[trainingUpload] upload failed:', err);
+    surfaceTelemetryFailure(data.reportType, err instanceof Error ? err.message : String(err));
   });
+}
+
+/**
+ * Surfaces rule-bug/trigger-miss telemetry failures as a prefilled bug report
+ * instead of dropping them silently — gated behind the dev-only
+ * `devSurfaceTelemetryFailures` setting (default off) so normal users never
+ * see this. Other report types (stall, training export, calibration) already
+ * have either an explicit consent-modal recourse or no regression-test
+ * consequence, so they are out of scope here.
+ */
+function surfaceTelemetryFailure(reportType: string, reason: string): void {
+  if (reportType !== 'rule-bug' && reportType !== 'trigger-miss') return;
+  if (!loadSettings().devSurfaceTelemetryFailures) return;
+  enqueueTelemetryFailure(`Telemetry upload failed (${reportType}): ${reason}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -70,7 +87,10 @@ export function submitStallReport(
 export function submitRuleBugReport(
   report: Omit<RuleBugReport, 'reportType' | 'reportedAt' | 'appVersion' | 'userAgent'>,
 ): void {
-  if (!hasConsent()) return;
+  if (!hasConsent()) {
+    surfaceTelemetryFailure('rule-bug', 'training consent not granted; report was dropped');
+    return;
+  }
   const payload: RuleBugReport = {
     reportType: 'rule-bug',
     reportedAt: new Date().toISOString(),
@@ -85,7 +105,10 @@ export function submitRuleBugReport(
 export function submitTriggerMissReport(
   report: Omit<TriggerMissReport, 'reportType' | 'reportedAt' | 'appVersion' | 'userAgent'>,
 ): void {
-  if (!hasConsent()) return;
+  if (!hasConsent()) {
+    surfaceTelemetryFailure('trigger-miss', 'training consent not granted; report was dropped');
+    return;
+  }
   const payload: TriggerMissReport = {
     reportType: 'trigger-miss',
     reportedAt: new Date().toISOString(),

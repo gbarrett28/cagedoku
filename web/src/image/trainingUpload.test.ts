@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { hasConsent, grantConsent, uploadTrainingData, initiateUpload, submitStallReport, submitRuleBugReport } from './trainingUpload.js';
+import { hasConsent, grantConsent, uploadTrainingData, initiateUpload, submitStallReport, submitRuleBugReport, submitTriggerMissReport } from './trainingUpload.js';
+import { saveSettings } from '../session/settings.js';
+import { drainTelemetryFailure } from '../session/store.js';
 
 function clearCookies(): void {
   document.cookie.split(';').forEach(c => {
@@ -218,5 +220,63 @@ describe('submitRuleBugReport', () => {
     submitRuleBugReport(minimalRuleBugReport);
 
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+const minimalTriggerMissReport = {
+  puzzleType: 'classic' as const,
+  ruleName: 'TestRule',
+  missedContext: 'box 3',
+  missedEliminations: [{ cell: [0, 0] as [number, number], digit: 5 }],
+  state: minimalRuleBugReport.state,
+};
+
+describe('dev telemetry-failure surfacing', () => {
+  beforeEach(() => { clearCookies(); localStorage.clear(); drainTelemetryFailure(); });
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); clearCookies(); localStorage.clear(); drainTelemetryFailure(); });
+
+  function enableDevFlag(): void {
+    saveSettings({ alwaysApplyRules: [], autoPlacementDelay: 0, showCandidatesByDefault: true, devSurfaceTelemetryFailures: true });
+  }
+
+  it('does nothing when the dev flag is off (default) and consent is absent', () => {
+    submitRuleBugReport(minimalRuleBugReport);
+    expect(drainTelemetryFailure()).toBeNull();
+  });
+
+  it('queues a message when consent is absent and the dev flag is on (rule-bug)', () => {
+    enableDevFlag();
+    submitRuleBugReport(minimalRuleBugReport);
+    expect(drainTelemetryFailure()).toMatch(/rule-bug.*consent/i);
+  });
+
+  it('queues a message when consent is absent and the dev flag is on (trigger-miss)', () => {
+    enableDevFlag();
+    submitTriggerMissReport(minimalTriggerMissReport);
+    expect(drainTelemetryFailure()).toMatch(/trigger-miss.*consent/i);
+  });
+
+  it('queues a message when the upload itself rejects and the dev flag is on', async () => {
+    enableDevFlag();
+    document.cookie = 'training_consent=granted';
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://test-worker.example.com');
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
+
+    submitRuleBugReport(minimalRuleBugReport);
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(drainTelemetryFailure()).toMatch(/rule-bug.*network down/i);
+  });
+
+  it('does not queue anything for report types outside rule-bug/trigger-miss', async () => {
+    enableDevFlag();
+    document.cookie = 'training_consent=granted';
+    vi.stubEnv('VITE_TRAINING_WORKER_URL', 'https://test-worker.example.com');
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
+
+    submitStallReport(minimalStallReport);
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(drainTelemetryFailure()).toBeNull();
   });
 });

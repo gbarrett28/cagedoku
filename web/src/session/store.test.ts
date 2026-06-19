@@ -6,6 +6,8 @@ import {
   getStateCandidates,
   setStateCandidates,
   clearSession,
+  enqueueTelemetryFailure,
+  drainTelemetryFailure,
 } from './store.js';
 
 function makeState(): PuzzleState {
@@ -41,5 +43,32 @@ describe('store candidate list', () => {
     clearSession();
     expect(getStateCandidates()).toEqual([]);
     expect(getState()).toBeNull();
+  });
+});
+
+describe('telemetry failure queue', () => {
+  beforeEach(() => {
+    drainTelemetryFailure(); // reset any leftover state between tests
+  });
+
+  it('drainTelemetryFailure returns null when nothing is queued', () => {
+    expect(drainTelemetryFailure()).toBeNull();
+  });
+
+  it('enqueueTelemetryFailure makes the message available to the next drain', () => {
+    enqueueTelemetryFailure('rule-bug report dropped: no consent');
+    expect(drainTelemetryFailure()).toBe('rule-bug report dropped: no consent');
+  });
+
+  it('drain clears the queue so a second drain returns null', () => {
+    enqueueTelemetryFailure('first failure');
+    drainTelemetryFailure();
+    expect(drainTelemetryFailure()).toBeNull();
+  });
+
+  it('a later enqueue overwrites an undrained earlier one', () => {
+    enqueueTelemetryFailure('first failure');
+    enqueueTelemetryFailure('second failure');
+    expect(drainTelemetryFailure()).toBe('second failure');
   });
 });

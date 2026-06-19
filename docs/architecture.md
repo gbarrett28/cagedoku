@@ -1068,6 +1068,36 @@ and reports it for offline debugging:
 See [`docs/debugging-fixtures.md`](./debugging-fixtures.md) for how to run the
 regression tests and debug a specific fixture.
 
+### Telemetry-failure surfacing (dev diagnostic)
+
+The fixture pipeline above depends entirely on `submitRuleBugReport`/
+`submitTriggerMissReport` (`web/src/image/trainingUpload.ts`) actually reaching
+R2. Both calls fail silently for two reasons that have nothing to do with rule
+correctness:
+
+- **No consent** — both functions no-op when `hasConsent()` is false. Unlike
+  `submitStallReport`/`uploadTrainingData`, there is no consent-modal flow
+  wired to either of these call paths, so a rule bug detected before the user
+  has granted training consent is dropped with no trace.
+- **Upload failure** — `postToWorker`'s fetch rejection handler only
+  `console.error`s, invisible to anyone but a developer with devtools open.
+
+Because of this, an empty `ruleBugFixtures`/`NEEDS_TRIAGE_FIXTURES` cannot be
+read as proof that no rule bugs exist — it is equally consistent with the
+pipeline silently dropping reports.
+
+`CoachSettings.devSurfaceTelemetryFailures` (default `false`, toggled via the
+"Surface telemetry failures (dev)" checkbox in the rules/config modal) closes
+this gap. When enabled, `trainingUpload.ts`'s `surfaceTelemetryFailure()`
+queues a message via `enqueueTelemetryFailure()`/`drainTelemetryFailure()`
+(`web/src/session/store.ts`) on either failure mode, scoped to `rule-bug`/
+`trigger-miss` reports only (the two paths with no other recourse). The next
+time the feedback modal opens, `main.ts` drains the queue and prefills the bug
+report exactly as it does for `pendingBug`/`exceptionForSubmission` (see
+"Bug reporting" in the Exception Handling Policy above) — so a developer
+debugging the pipeline gets an actionable report instead of a silent drop,
+while normal users (flag off) see no behaviour change at all.
+
 ---
 
 ## Stress-Test Tooling

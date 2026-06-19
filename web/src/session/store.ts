@@ -84,6 +84,28 @@ export function markTriggerMissReported(key: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Telemetry pipeline diagnostics (dev mode)
+// ---------------------------------------------------------------------------
+
+let _pendingTelemetryFailure: string | null = null;
+
+/**
+ * Records a rule-bug/trigger-miss telemetry failure so the next feedback-modal
+ * open surfaces it as a prefilled bug report. Only called when the user has
+ * opted into `CoachSettings.devSurfaceTelemetryFailures` — see trainingUpload.ts.
+ */
+export function enqueueTelemetryFailure(message: string): void {
+  _pendingTelemetryFailure = message;
+}
+
+/** Drains and returns the most recently queued telemetry failure, or null if none is pending. */
+export function drainTelemetryFailure(): string | null {
+  const message = _pendingTelemetryFailure;
+  _pendingTelemetryFailure = null;
+  return message;
+}
+
+// ---------------------------------------------------------------------------
 // OpenCV + digit recogniser singletons
 // ---------------------------------------------------------------------------
 
