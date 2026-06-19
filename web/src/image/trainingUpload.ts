@@ -28,6 +28,10 @@ export function grantConsent(): void {
   document.cookie = `${CONSENT_COOKIE}=granted; max-age=31536000; SameSite=Strict`;
 }
 
+export function revokeConsent(): void {
+  document.cookie = `${CONSENT_COOKIE}=; max-age=0`;
+}
+
 // ---------------------------------------------------------------------------
 // Core upload helper
 // ---------------------------------------------------------------------------

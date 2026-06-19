@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { hasConsent, grantConsent, uploadTrainingData, initiateUpload, submitStallReport, submitRuleBugReport, submitTriggerMissReport } from './trainingUpload.js';
+import { hasConsent, grantConsent, revokeConsent, uploadTrainingData, initiateUpload, submitStallReport, submitRuleBugReport, submitTriggerMissReport } from './trainingUpload.js';
 import { saveSettings } from '../session/settings.js';
 import { drainTelemetryFailure } from '../session/store.js';
 
@@ -37,6 +37,18 @@ describe('grantConsent', () => {
     expect(hasConsent()).toBe(false);
     grantConsent();
     expect(hasConsent()).toBe(true);
+  });
+});
+
+describe('revokeConsent', () => {
+  beforeEach(clearCookies);
+  afterEach(clearCookies);
+
+  it('clears the consent cookie so hasConsent() returns false', () => {
+    grantConsent();
+    expect(hasConsent()).toBe(true);
+    revokeConsent();
+    expect(hasConsent()).toBe(false);
   });
 });
 
