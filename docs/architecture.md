@@ -1103,6 +1103,17 @@ Exception Handling Policy above) — so a developer debugging the pipeline gets
 an actionable report instead of a silent drop, while normal users (flag off)
 see no behaviour change at all.
 
+Because the no-consent case forces the feedback modal open on every new
+distinct rule-bug/trigger-miss with no way to address the root cause from
+within that modal, the config modal's "Privacy" section exposes a
+`consent-toggle` checkbox to all users (not gated behind the dev flag). It
+reads `hasConsent()` when the modal opens and calls `grantConsent()`/
+`revokeConsent()` immediately on change — independent of the modal's
+Save/Cancel buttons, since consent is cookie-based and applies right away
+rather than being part of `CoachSettings`. Granting consent here breaks the
+loop: subsequent `submitRuleBugReport`/`submitTriggerMissReport` calls
+succeed instead of dropping.
+
 ---
 
 ## Stress-Test Tooling
