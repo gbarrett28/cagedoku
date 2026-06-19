@@ -55,7 +55,7 @@ function postToWorker(data: AnyReport | TrainingExport): void {
  * calibration) already have either an explicit consent-modal recourse or no
  * regression-test consequence, so they are out of scope here.
  */
-function surfaceTelemetryFailure(reportType: string, reason: string): void {
+function surfaceTelemetryFailure(reportType: AnyReport['reportType'], reason: string): void {
   if (reportType !== 'rule-bug' && reportType !== 'trigger-miss') return;
   if (!loadSettings().devSurfaceTelemetryFailures) return;
   enqueueTelemetryFailure(`Telemetry upload failed (${reportType}): ${reason}`);
