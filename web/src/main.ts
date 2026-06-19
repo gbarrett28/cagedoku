@@ -14,7 +14,7 @@ import { cellLabel } from './engine/rules/_labels.js';
 import { extractTrainingData } from './image/trainingExport.js';
 import type { TrainingExport } from './image/trainingExport.js';
 import { defaultImagePipelineConfig } from './image/config.js';
-import { initiateUpload, grantConsent, uploadTrainingData, submitStallReport, hasConsent } from './image/trainingUpload.js';
+import { initiateUpload, grantConsent, revokeConsent, uploadTrainingData, submitStallReport, hasConsent } from './image/trainingUpload.js';
 import { dataToSpec, classicSyntheticSpec, specToData, specToCageStates } from './session/specUtils.js';
 import { analyseKernels } from './engine/kernelAnalysis.js';
 import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec, makeClassicGivenDigits, makeClassicPartialGivenDigits } from './engine/fixtures.js';
@@ -1068,6 +1068,7 @@ function openConfigModal(): void {
 
   el<HTMLInputElement>('candidates-default-toggle').checked = data.showCandidatesByDefault;
   el<HTMLInputElement>('telemetry-failures-toggle').checked = data.devSurfaceTelemetryFailures;
+  el<HTMLInputElement>('consent-toggle').checked = hasConsent();
 
   const ess = el<HTMLInputElement>('essential-toggle');
   ess.checked = showEssential;
@@ -2321,6 +2322,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   // ─────────────────────────────────────────────────────────────────────────────
 
+  el<HTMLInputElement>('consent-toggle').addEventListener('change', (e) => {
+    if ((e.target as HTMLInputElement).checked) grantConsent();
+    else revokeConsent();
+  });
   el<HTMLButtonElement>('config-btn').addEventListener('click', () => { openConfigModal(); });
   el<HTMLButtonElement>('config-cancel-btn').addEventListener('click', () => { el<HTMLDialogElement>('config-modal').close(); });
   el<HTMLButtonElement>('config-save-btn').addEventListener('click', () => {
