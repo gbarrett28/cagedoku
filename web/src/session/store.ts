@@ -88,14 +88,27 @@ export function markTriggerMissReported(key: string): void {
 // ---------------------------------------------------------------------------
 
 let _pendingTelemetryFailure: string | null = null;
+let _telemetryFailureHandler: (() => void) | null = null;
 
 /**
- * Records a rule-bug/trigger-miss telemetry failure so the next feedback-modal
- * open surfaces it as a prefilled bug report. Only called when the user has
- * opted into `CoachSettings.devSurfaceTelemetryFailures` — see trainingUpload.ts.
+ * Registers the UI-layer callback that forces the feedback modal open when a
+ * telemetry failure is queued. `main.ts` registers this once at startup so a
+ * dropped report can't go unnoticed even if the user never opens feedback
+ * manually. Only invoked when the user has opted into
+ * `CoachSettings.devSurfaceTelemetryFailures` — see trainingUpload.ts.
+ */
+export function onTelemetryFailure(handler: () => void): void {
+  _telemetryFailureHandler = handler;
+}
+
+/**
+ * Records a rule-bug/trigger-miss telemetry failure so it can be surfaced as
+ * a prefilled bug report, and immediately invokes the registered handler (if
+ * any) to force the feedback modal open.
  */
 export function enqueueTelemetryFailure(message: string): void {
   _pendingTelemetryFailure = message;
+  _telemetryFailureHandler?.();
 }
 
 /** Drains and returns the most recently queued telemetry failure, or null if none is pending. */

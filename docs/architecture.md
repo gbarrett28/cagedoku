@@ -1089,14 +1089,19 @@ pipeline silently dropping reports.
 `CoachSettings.devSurfaceTelemetryFailures` (default `false`, toggled via the
 "Surface telemetry failures (dev)" checkbox in the rules/config modal) closes
 this gap. When enabled, `trainingUpload.ts`'s `surfaceTelemetryFailure()`
-queues a message via `enqueueTelemetryFailure()`/`drainTelemetryFailure()`
-(`web/src/session/store.ts`) on either failure mode, scoped to `rule-bug`/
-`trigger-miss` reports only (the two paths with no other recourse). The next
-time the feedback modal opens, `main.ts` drains the queue and prefills the bug
-report exactly as it does for `pendingBug`/`exceptionForSubmission` (see
-"Bug reporting" in the Exception Handling Policy above) — so a developer
-debugging the pipeline gets an actionable report instead of a silent drop,
-while normal users (flag off) see no behaviour change at all.
+queues a message via `enqueueTelemetryFailure()` (`web/src/session/store.ts`)
+on either failure mode, scoped to `rule-bug`/`trigger-miss` reports only (the
+two paths with no other recourse). `enqueueTelemetryFailure()` immediately
+invokes a handler registered via `onTelemetryFailure()` — `main.ts` registers
+`openFeedbackModal` for this at startup, so the failure forces the feedback
+modal open immediately (mirroring how `showAssertionModal` forces itself
+open), rather than waiting for the user to click the feedback button and
+risking the single-slot queue being overwritten or lost on reload first.
+`openFeedbackModal()` drains the queue and prefills the bug report exactly as
+it does for `pendingBug`/`exceptionForSubmission` (see "Bug reporting" in the
+Exception Handling Policy above) — so a developer debugging the pipeline gets
+an actionable report instead of a silent drop, while normal users (flag off)
+see no behaviour change at all.
 
 ---
 

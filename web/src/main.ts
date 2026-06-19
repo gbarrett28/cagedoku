@@ -6,7 +6,7 @@
  * State lives in session/store.ts; no server required.
  */
 
-import { loadCV, loadRec, loadSplitRec, setCandidatesCache, setState, getStateCandidates, setStateCandidates, drainTelemetryFailure } from './session/store.js';
+import { loadCV, loadRec, loadSplitRec, setCandidatesCache, setState, getStateCandidates, setStateCandidates, drainTelemetryFailure, onTelemetryFailure } from './session/store.js';
 import { logAction, clearActionLog, formatActionLog, getActionLog } from './session/actionLog.js';
 import { loadSettings } from './session/settings.js';
 import { buildFeedbackPayload, submitFeedback } from './session/feedbackSubmit.js';
@@ -1107,6 +1107,44 @@ function openConfigModal(): void {
 function reportBug(e: unknown, context: string): void {
   const stack = e instanceof Error && e.stack ? `\n\nStack:\n${e.stack}` : '';
   pendingBug = { info: `Exception in ${context}:\n${String(e)}${stack}` };
+}
+
+/**
+ * Opens the feedback modal, prefilled with `pendingBug` or a queued
+ * telemetry-pipeline failure if either is pending. Also registered with
+ * `onTelemetryFailure` so a dropped rule-bug/trigger-miss report (dev flag
+ * only) forces this open immediately rather than waiting for the user to
+ * click the feedback button.
+ */
+function openFeedbackModal(): void {
+  // Default to bug report
+  el<HTMLInputElement>('feedback-type-bug').checked = true;
+  el<HTMLElement>('feedback-bug-fields').style.display = '';
+  el<HTMLElement>('feedback-description-label').textContent = 'What happened?';
+  el<HTMLTextAreaElement>('feedback-description').value = '';
+  el<HTMLTextAreaElement>('feedback-expected').value = '';
+  el<HTMLInputElement>('bug-cat-wrong').checked = true;
+  el<HTMLElement>('feedback-status').textContent = '';
+
+  const entries = getActionLog();
+  el<HTMLElement>('feedback-trace-count').textContent = String(entries.length);
+  el<HTMLElement>('feedback-trace').textContent = formatActionLog();
+
+  if (pendingBug !== null) {
+    el<HTMLInputElement>('feedback-type-bug').click();
+    el<HTMLTextAreaElement>('feedback-description').value = pendingBug.info;
+    exceptionForSubmission = pendingBug.info;
+    pendingBug = null;
+  } else {
+    const telemetryFailure = drainTelemetryFailure();
+    if (telemetryFailure !== null) {
+      el<HTMLInputElement>('feedback-type-bug').click();
+      el<HTMLTextAreaElement>('feedback-description').value = telemetryFailure;
+      exceptionForSubmission = telemetryFailure;
+    }
+  }
+
+  (el<HTMLDialogElement>('feedback-modal') as HTMLDialogElement).showModal();
 }
 
 function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, warning: string | null): void {
@@ -2232,36 +2270,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // ── Feedback modal ───────────────────────────────────────────────────────────
-  el<HTMLButtonElement>('feedback-btn').addEventListener('click', () => {
-    // Default to bug report
-    el<HTMLInputElement>('feedback-type-bug').checked = true;
-    el<HTMLElement>('feedback-bug-fields').style.display = '';
-    el<HTMLElement>('feedback-description-label').textContent = 'What happened?';
-    el<HTMLTextAreaElement>('feedback-description').value = '';
-    el<HTMLTextAreaElement>('feedback-expected').value = '';
-    el<HTMLInputElement>('bug-cat-wrong').checked = true;
-    el<HTMLElement>('feedback-status').textContent = '';
-
-    const entries = getActionLog();
-    el<HTMLElement>('feedback-trace-count').textContent = String(entries.length);
-    el<HTMLElement>('feedback-trace').textContent = formatActionLog();
-
-    if (pendingBug !== null) {
-      el<HTMLInputElement>('feedback-type-bug').click();
-      el<HTMLTextAreaElement>('feedback-description').value = pendingBug.info;
-      exceptionForSubmission = pendingBug.info;
-      pendingBug = null;
-    } else {
-      const telemetryFailure = drainTelemetryFailure();
-      if (telemetryFailure !== null) {
-        el<HTMLInputElement>('feedback-type-bug').click();
-        el<HTMLTextAreaElement>('feedback-description').value = telemetryFailure;
-        exceptionForSubmission = telemetryFailure;
-      }
-    }
-
-    (el<HTMLDialogElement>('feedback-modal') as HTMLDialogElement).showModal();
-  });
+  el<HTMLButtonElement>('feedback-btn').addEventListener('click', openFeedbackModal);
+  onTelemetryFailure(openFeedbackModal);
 
   el<HTMLInputElement>('feedback-type-bug').addEventListener('change', () => {
     el<HTMLElement>('feedback-bug-fields').style.display = '';

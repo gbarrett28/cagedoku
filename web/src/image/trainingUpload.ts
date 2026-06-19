@@ -48,12 +48,12 @@ function postToWorker(data: AnyReport | TrainingExport): void {
 }
 
 /**
- * Surfaces rule-bug/trigger-miss telemetry failures as a prefilled bug report
- * instead of dropping them silently — gated behind the dev-only
- * `devSurfaceTelemetryFailures` setting (default off) so normal users never
- * see this. Other report types (stall, training export, calibration) already
- * have either an explicit consent-modal recourse or no regression-test
- * consequence, so they are out of scope here.
+ * Surfaces rule-bug/trigger-miss telemetry failures by forcing open a
+ * prefilled bug report instead of dropping them silently — gated behind the
+ * dev-only `devSurfaceTelemetryFailures` setting (default off) so normal
+ * users never see this. Other report types (stall, training export,
+ * calibration) already have either an explicit consent-modal recourse or no
+ * regression-test consequence, so they are out of scope here.
  */
 function surfaceTelemetryFailure(reportType: string, reason: string): void {
   if (reportType !== 'rule-bug' && reportType !== 'trigger-miss') return;

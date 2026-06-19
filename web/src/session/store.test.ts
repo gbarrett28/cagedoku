@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PuzzleState } from './types.js';
 import {
   getState,
@@ -8,6 +8,7 @@ import {
   clearSession,
   enqueueTelemetryFailure,
   drainTelemetryFailure,
+  onTelemetryFailure,
 } from './store.js';
 
 function makeState(): PuzzleState {
@@ -49,6 +50,7 @@ describe('store candidate list', () => {
 describe('telemetry failure queue', () => {
   beforeEach(() => {
     drainTelemetryFailure(); // reset any leftover state between tests
+    onTelemetryFailure(() => {}); // reset any leftover handler between tests
   });
 
   it('drainTelemetryFailure returns null when nothing is queued', () => {
@@ -70,5 +72,12 @@ describe('telemetry failure queue', () => {
     enqueueTelemetryFailure('first failure');
     enqueueTelemetryFailure('second failure');
     expect(drainTelemetryFailure()).toBe('second failure');
+  });
+
+  it('enqueueTelemetryFailure invokes the registered handler', () => {
+    const handler = vi.fn();
+    onTelemetryFailure(handler);
+    enqueueTelemetryFailure('a failure');
+    expect(handler).toHaveBeenCalledOnce();
   });
 });
