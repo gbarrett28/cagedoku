@@ -364,6 +364,23 @@ test('config button opens config-modal', async ({ page }) => {
   await expect(page.locator('#config-modal')).toBeHidden();
 });
 
+test('config modal consent checkbox grants and revokes training_consent cookie immediately', async ({ page }) => {
+  await loadAndConfirm(page);
+  await page.locator('#config-btn').click();
+  await expect(page.locator('#config-modal')).toBeVisible();
+
+  const checkbox = page.locator('#consent-toggle');
+  await expect(checkbox).not.toBeChecked();
+
+  await checkbox.check();
+  let cookies = await page.context().cookies();
+  expect(cookies.find(c => c.name === 'training_consent')?.value).toBe('granted');
+
+  await checkbox.uncheck();
+  cookies = await page.context().cookies();
+  expect(cookies.find(c => c.name === 'training_consent')).toBeUndefined();
+});
+
 // ---------------------------------------------------------------------------
 // Hints list modal
 // ---------------------------------------------------------------------------
