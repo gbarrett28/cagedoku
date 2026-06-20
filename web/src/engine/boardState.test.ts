@@ -82,6 +82,13 @@ describe('BoardState (plain) construction', () => {
     expect(events.some(e => e.trigger === Trigger.COUNT_DECREASED)).toBe(true);
     expect(bs.cands(0, 0).has(9)).toBe(false);
   });
+
+  it('extraPeers returns empty for every cell by default', () => {
+    const bs = new BoardState();
+    expect(bs.extraPeers(0, 0)).toEqual([]);
+    expect(bs.extraPeers(4, 4)).toEqual([]);
+    expect(bs.extraPeers(8, 8)).toEqual([]);
+  });
 });
 
 describe('Cage-aware rule hints never mention cages against a plain BoardState', () => {
