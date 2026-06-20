@@ -626,17 +626,18 @@ function renderState(state: PuzzleState): void {
   currentState = state;
   drawGrid(el<HTMLCanvasElement>('grid-canvas'), state);
 
-  const puzzleType = PuzzleState.isKiller(state) ? 'killer' : 'classic';
+  const puzzleType = PuzzleState.isKiller(state) ? 'killer' : PuzzleState.isBigApple(state) ? 'bigapple' : 'classic';
 
   const heading = document.getElementById('detected-layout-heading');
   if (heading !== null) {
-    heading.textContent = puzzleType === 'classic'
-      ? 'Detected Layout — Classic Sudoku'
-      : 'Detected Layout — Killer Sudoku';
+    heading.textContent =
+      puzzleType === 'classic' ? 'Detected Layout — Classic Sudoku' :
+      puzzleType === 'bigapple' ? 'Detected Layout — Big Apple Sudoku' :
+      'Detected Layout — Killer Sudoku';
   }
 
   el<HTMLElement>('classic-edit-hint').hidden =
-    puzzleType !== 'classic' || state.goldenSolution !== null;
+    puzzleType === 'killer' || state.goldenSolution !== null;
 
   if (state.originalImageUrl !== null) {
     el<HTMLImageElement>('original-img').src = state.originalImageUrl;
@@ -2172,7 +2173,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   el<HTMLSelectElement>('puzzle-type-select').addEventListener('change', (e) => {
     const state = currentState;
     if (state === null) return;
-    const type = (e.target as HTMLSelectElement).value as 'killer' | 'classic';
+    const type = (e.target as HTMLSelectElement).value as 'killer' | 'classic' | 'bigapple';
+    el<HTMLElement>('bigapple-banner').hidden = true;
     const candidates = getStateCandidates();
     const found = activeCandidate(candidates, type);
     let updated: PuzzleState;
@@ -2185,6 +2187,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         specToData(synthetic), specToCageStates(synthetic),
         state.alwaysApplyRules, state.originalImageUrl, null,
       );
+      setState(updated);
+    } else if (type === 'bigapple') {
+      const givenDigits = PuzzleState.isKiller(state)
+        ? Array.from({ length: 9 }, () => new Array<number>(9).fill(0))
+        : state.givenDigits;
+      updated = PuzzleState.createBigApple(givenDigits, state.alwaysApplyRules, state.originalImageUrl);
       setState(updated);
     } else {
       const givenDigits = PuzzleState.isKiller(state)
