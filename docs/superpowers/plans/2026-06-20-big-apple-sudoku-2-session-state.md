@@ -41,7 +41,7 @@ No other files are touched in this sprint. The OCR-detection heuristic (Sprint 3
 - Consumes: `PuzzleState` interface, `PuzzleState.createClassic` (both already in `types.ts`).
 - Produces: `BigApplePuzzleState` interface, `PuzzleState.isBigApple(state: PuzzleState): state is BigApplePuzzleState`, `PuzzleState.createBigApple(givenDigits: number[][] | null, alwaysApplyRules: readonly string[], originalImageUrl: string | null): BigApplePuzzleState`. Sprint 3 and Sprint 4 call `createBigApple` and `isBigApple` directly.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `web/src/session/types.test.ts` (after the existing `describe('PuzzleState.isKiller', ...)` block, i.e. after line 46):
 
@@ -70,12 +70,12 @@ describe('PuzzleState.isBigApple', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd web && npx vitest run src/session/types.test.ts`
 Expected: FAIL — `PuzzleState.createBigApple is not a function` (or a TypeScript compile error if run through `tsc` first; vitest will report it as a runtime `TypeError`).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `web/src/session/types.ts`, add the interface immediately after `KillerPuzzleState` (after line 303, before the `SerializedPuzzleState` type at line 310):
 
@@ -108,12 +108,12 @@ Add `createBigApple` immediately after `createClassic` (after line 569, before `
   }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd web && npx vitest run src/session/types.test.ts`
 Expected: PASS (all tests in the file, including the two new ones).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/session/types.ts web/src/session/types.test.ts
@@ -132,7 +132,7 @@ git commit -m "feat: add BigApplePuzzleState, isBigApple, createBigApple"
 - Consumes: `BigApplePuzzleState`, `PuzzleState.isBigApple`, `PuzzleState.createBigApple` (Task 1).
 - Produces: widened `SerializedPuzzleState` union (3-way), `serialize()`/`deserialize()` handling `kind: 'bigapple'`. Sprint 3's detection-result plumbing and any future bug-report tooling rely on `serialize`/`deserialize` round-tripping all three kinds.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `web/src/session/types.test.ts`:
 
@@ -157,12 +157,12 @@ describe('PuzzleState.serialize / deserialize — bigapple', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd web && npx vitest run src/session/types.test.ts`
 Expected: FAIL — `serialized.kind` is `'classic'` (not `'bigapple'`), so the first assertion fails. (The malformed-grid test passes already since the existing `is9x9NumberGrid` check runs before the `kind` switch — that's fine, it's asserting current correct behaviour continues to hold once `kind` is `'bigapple'`.)
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `web/src/session/types.ts`, widen `SerializedPuzzleState` (replace lines 310-312):
 
@@ -200,12 +200,12 @@ Update the dispatch after `base` is built (replace line 521, `if (v['kind'] === 
 
 (The remainder of the function — the `killerState` construction — is unchanged; it only runs when `v['kind'] === 'killer'`, which is the only path left after the two early returns above.)
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd web && npx vitest run src/session/types.test.ts`
 Expected: PASS (all tests, including the two new ones).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/session/types.ts web/src/session/types.test.ts
@@ -226,7 +226,7 @@ git commit -m "feat: add bigapple kind to SerializedPuzzleState serialize/deseri
 
 This task also makes an explicit, documented decision to **leave the `onViolation` closure's bug-report `puzzleType` tagging as 2-way** (`isKiller(state) ? 'killer' : 'classic'`, at `engine.ts:234`). Widening it would require changing the shared wire-format type `PuzzleRuleReport.puzzleType: 'killer' | 'classic'` in `shared/src/report.ts`, plus its `RuleBugReport.is()` validator and `RuleBugFixture.puzzleType` — a cross-package change to a shared telemetry format that is out of scope for this sprint. Big Apple states will report as `'classic'` in bug-report telemetry; this is a labelling inaccuracy only (the report still carries the full serialized state, so the engine-side cause is still diagnosable from `state`), not a gameplay or correctness issue. Documented here as an accepted gap, same status as Sprint 1's `LockedCandidates` box-line gap.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `web/src/session/engine.test.ts`, immediately after the existing `'constructs a plain BoardState and SolverEngine (not Killer variants) for classic puzzles'` test (after line 504):
 
@@ -248,12 +248,12 @@ Add the import at the top of `web/src/session/engine.test.ts` (alongside the exi
 import { BigAppleBoardState } from '../engine/bigAppleBoardState.js';
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd web && npx vitest run src/session/engine.test.ts -t "BigAppleBoardState and plain SolverEngine"`
 Expected: FAIL — the constructed `board` is a plain `BoardState`, not a `BigAppleBoardState` (the `toBeInstanceOf(BigAppleBoardState)` assertion fails because `buildEngine` currently has no Big Apple branch).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `web/src/session/engine.ts`, add the import (alongside the existing import at line 19):
 
@@ -316,12 +316,12 @@ Replace the ternary at lines 240-279 (the `const { board, engine }: { ... } = Pu
         })();
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd web && npx vitest run src/session/engine.test.ts`
 Expected: PASS (all tests in the file, including the new one).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/session/engine.ts web/src/session/engine.test.ts
@@ -343,7 +343,7 @@ This file does not exist yet — `persistence.ts` currently has no tests at all.
 
 `loadSession()` only returns a session when `payload.state.goldenSolution !== null` (`persistence.ts:53`), so the test must use a "confirmed" Big Apple state (non-null `goldenSolution`), not the blank OCR-review state `createBigApple` returns by default.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `web/src/session/persistence.test.ts`:
 
@@ -380,14 +380,14 @@ describe('saveSession / loadSession — Big Apple', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test**
+- [x] **Step 2: Run the test**
 
 Run: `cd web && npx vitest run src/session/persistence.test.ts`
 Expected: PASS immediately. Unlike the other tasks in this sprint, this one requires no implementation change: `persistence.ts`'s `isKiller(state) ? strippedKiller : strippedClassic` branch (line 31) already takes the `strippedClassic` path for any non-killer state, including Big Apple, and that path already does the right thing (only strips `originalImageUrl`, since Big Apple has no `warpedImageUrl`). This task exists purely to add regression coverage for that fact.
 
 If it fails, investigate `persistence.ts`'s branch at line 31 before changing anything — do not modify `persistence.ts` without first determining why the existing logic is insufficient.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add web/src/session/persistence.test.ts
