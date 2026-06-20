@@ -36,6 +36,18 @@ describe('unitLabel', () => {
     expect(unitLabel(unit)).toBe('box (2,2)');
   });
 
+  it('BOX (window): labels the 4 Big Apple windows by position, not box arithmetic', () => {
+    const windowAt = (r0: number, c0: number): Cell[] => {
+      const cells: Cell[] = [];
+      for (let dr = 0; dr < 3; dr++) for (let dc = 0; dc < 3; dc++) cells.push([r0 + dr, c0 + dc] as Cell);
+      return cells;
+    };
+    expect(unitLabel(makeUnit(UnitKind.BOX, windowAt(1, 1)))).toBe('top-left window');
+    expect(unitLabel(makeUnit(UnitKind.BOX, windowAt(5, 1)))).toBe('bottom-left window');
+    expect(unitLabel(makeUnit(UnitKind.BOX, windowAt(1, 5)))).toBe('top-right window');
+    expect(unitLabel(makeUnit(UnitKind.BOX, windowAt(5, 5)))).toBe('bottom-right window');
+  });
+
   it('CAGE: lists sorted cell labels', () => {
     const unit = makeUnit(UnitKind.CAGE, [[1, 2], [0, 5]] as Cell[]);
     expect(unitLabel(unit)).toBe('cage [r1c6, r2c3]');
