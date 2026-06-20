@@ -1604,6 +1604,7 @@ async function handleCellEntry(digit: number): Promise<void> {
       setAutoApplyLock(true);
       try {
         const animRefresh = (player: AnimationPlayer): void => {
+          currentState = AnimationPlayer.stateAtCursor(player);
           if (showCandidates) {
             const data = AnimationPlayer.boardAtCursor(player);
             currentCandidates = data;
@@ -1613,7 +1614,6 @@ async function handleCellEntry(digit: number): Promise<void> {
         };
 
         const { state: finalState, ruleSteps, baseState } = enterCellStep(selectedCell.row, selectedCell.col, digit);
-        currentState = finalState;
         updateUndoButton(finalState);
 
         let player: AnimationPlayer = { baseState, ruleSteps, cursor: 0, playing: true };
@@ -1637,6 +1637,7 @@ async function handleCellEntry(digit: number): Promise<void> {
           animRefresh(player);
         }
 
+        currentState = finalState;
         refreshDisplay();   // final redraw from the already-committed finalState
       } finally {
         setAutoApplyLock(false);
