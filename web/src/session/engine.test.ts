@@ -23,6 +23,7 @@ import { UserAction, PuzzleState, type KillerPuzzleState, type SessionResult, ty
 import { RuleMutation, type RuleStep } from './ruleMutation.js';
 import type { Cell } from '../engine/types.js';
 import { BoardState, KillerBoardState } from '../engine/boardState.js';
+import { BigAppleBoardState } from '../engine/bigAppleBoardState.js';
 import { SolverEngine, KillerSolverEngine } from '../engine/solverEngine.js';
 
 const itNS = DISABLED_RULES.includes('NakedSingle') ? it.skip : it;
@@ -498,6 +499,16 @@ describe('buildEngine', () => {
     const state = PuzzleState.createClassic(null, base.alwaysApplyRules, null);
     const { board, engine } = buildEngine(state);
     expect(board).toBeInstanceOf(BoardState);
+    expect(board).not.toBeInstanceOf(KillerBoardState);
+    expect(engine).toBeInstanceOf(SolverEngine);
+    expect(engine).not.toBeInstanceOf(KillerSolverEngine);
+  });
+
+  it('constructs a BigAppleBoardState and plain SolverEngine (not Killer variants) for Big Apple puzzles', () => {
+    const base = makeState();
+    const state = PuzzleState.createBigApple(null, base.alwaysApplyRules, null);
+    const { board, engine } = buildEngine(state);
+    expect(board).toBeInstanceOf(BigAppleBoardState);
     expect(board).not.toBeInstanceOf(KillerBoardState);
     expect(engine).toBeInstanceOf(SolverEngine);
     expect(engine).not.toBeInstanceOf(KillerSolverEngine);

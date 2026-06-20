@@ -17,6 +17,7 @@
  */
 
 import { BoardState, KillerBoardState } from '../engine/boardState.js';
+import { BigAppleBoardState } from '../engine/bigAppleBoardState.js';
 import { SolverEngine, KillerSolverEngine, toDisplayName } from '../engine/solverEngine.js';
 import type { Cell, Elimination } from '../engine/types.js';
 import { cellKey } from '../engine/types.js';
@@ -268,15 +269,25 @@ export function buildEngine(
         });
         return { board, engine };
       })()
-    : (() => {
-        const board = new BoardState();
-        const engine = new SolverEngine(board, activeRules, {
-          hintRules,
-          goldenSolution: activeGolden,
-          onViolation,
-        });
-        return { board, engine };
-      })();
+    : PuzzleState.isBigApple(state)
+      ? (() => {
+          const board = new BigAppleBoardState();
+          const engine = new SolverEngine(board, activeRules, {
+            hintRules,
+            goldenSolution: activeGolden,
+            onViolation,
+          });
+          return { board, engine };
+        })()
+      : (() => {
+          const board = new BoardState();
+          const engine = new SolverEngine(board, activeRules, {
+            hintRules,
+            goldenSolution: activeGolden,
+            onViolation,
+          });
+          return { board, engine };
+        })();
 
   // Apply user placements and explicit candidate removals, then solve.
   // All three steps are wrapped in a single try/catch: any step can produce a
