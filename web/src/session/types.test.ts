@@ -44,3 +44,26 @@ describe('PuzzleState.isKiller', () => {
     expect(PuzzleState.isKiller(killer)).toBe(true);
   });
 });
+
+describe('PuzzleState.createBigApple', () => {
+  it('builds a BigApplePuzzleState with the bigApple marker set and no cage data', () => {
+    const state = PuzzleState.createBigApple([[1, 0, 0, 0, 0, 0, 0, 0, 0]], ['nakedSingle'], null);
+    expect(state.bigApple).toBe(true);
+    expect(state.userGrid).toEqual(Array.from({ length: 9 }, () => new Array<number>(9).fill(0)));
+    expect(state.goldenSolution).toBeNull();
+    expect(state.givenDigits).toEqual([[1, 0, 0, 0, 0, 0, 0, 0, 0]]);
+    expect(state.alwaysApplyRules).toEqual(['nakedSingle']);
+    expect(PuzzleState.isKiller(state)).toBe(false);
+  });
+});
+
+describe('PuzzleState.isBigApple', () => {
+  it('narrows to BigApplePuzzleState only when the bigApple marker is present', () => {
+    const classic = PuzzleState.createClassic(null, [], null);
+    const killer = PuzzleState.createKiller(specData, cageStates, [], null, null);
+    const bigApple = PuzzleState.createBigApple(null, [], null);
+    expect(PuzzleState.isBigApple(classic)).toBe(false);
+    expect(PuzzleState.isBigApple(killer)).toBe(false);
+    expect(PuzzleState.isBigApple(bigApple)).toBe(true);
+  });
+});

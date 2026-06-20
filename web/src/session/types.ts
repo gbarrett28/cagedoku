@@ -302,6 +302,11 @@ export interface KillerPuzzleState extends PuzzleState {
   readonly fixtureStalledCandidates?: readonly number[][][] | null;
 }
 
+export interface BigApplePuzzleState extends PuzzleState {
+  /** Structural discriminant — always `true`. Mirrors `KillerPuzzleState`'s `specData`-presence pattern. */
+  readonly bigApple: true;
+}
+
 /**
  * Wire format for a serialized `PuzzleState`/`KillerPuzzleState` snapshot
  * (e.g. embedded in a bug report). `kind`/`version` exist only here — the
@@ -354,6 +359,12 @@ export namespace PuzzleState {
   /** Type guard: true for KillerPuzzleState (has cage data). */
   export function isKiller(state: PuzzleState): state is KillerPuzzleState {
     return 'specData' in state;
+  }
+
+
+  /** Type guard: true for BigApplePuzzleState (has the bigApple marker). */
+  export function isBigApple(state: PuzzleState): state is BigApplePuzzleState {
+    return 'bigApple' in state;
   }
 
   /** Enabled rules for this puzzle's type: killer yields all; classic excludes `killerOnly`. */
@@ -566,6 +577,16 @@ export namespace PuzzleState {
       originalImageUrl,
       userRemovedCandidates: [],
     };
+  }
+
+
+  /** Builds a fresh Big Apple PuzzleState for the OCR review phase (blank grid, no golden solution). */
+  export function createBigApple(
+    givenDigits: number[][] | null,
+    alwaysApplyRules: readonly string[],
+    originalImageUrl: string | null,
+  ): BigApplePuzzleState {
+    return { ...createClassic(givenDigits, alwaysApplyRules, originalImageUrl), bigApple: true };
   }
 
   /** Builds a fresh killer PuzzleState for the OCR review phase (blank grid, no golden solution). */
