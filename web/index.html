@@ -159,12 +159,19 @@
       Duplicate digits are highlighted in red.
     </p>
 
+    <p id="bigapple-banner" class="hint-text" hidden>
+      Detected as a Big Apple puzzle (classic sudoku plus 4 shaded "window"
+      regions) — already selected below. Change the Type dropdown if that's wrong.
+      <button id="bigapple-banner-dismiss-btn" class="btn-secondary btn-icon" aria-label="Dismiss" type="button">✕</button>
+    </p>
+
     <div class="form-actions" id="review-actions">
       <button id="confirm-btn">Confirm &amp; Solve</button>
       <label class="field-label" for="puzzle-type-select" style="margin-left:1rem">Type</label>
       <select id="puzzle-type-select" class="puzzle-type-select">
         <option value="killer">Killer</option>
         <option value="classic">Classic</option>
+        <option value="bigapple">Big Apple</option>
       </select>
       <span id="review-status-msg" class="status" style="margin-left:1rem"></span>
     </div>

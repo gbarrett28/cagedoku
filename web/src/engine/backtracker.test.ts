@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { BoardState, KillerBoardState } from './boardState.js';
+import { BigAppleBoardState } from './bigAppleBoardState.js';
 import { mrvBacktrack } from './backtracker.js';
 import { KNOWN_SOLUTION, makeTrivialSpec, makeBoxCageSpec, makeRowCageSpec } from './fixtures.js';
 import { validateSudokuSolution } from '../session/assertions.js';
@@ -51,6 +52,21 @@ describe('mrvBacktrack', () => {
     const result = mrvBacktrack(bs);
     if (result === null) return; // unsolvable from this state is acceptable
     expect(validateSudokuSolution(result)).toBeNull();
+  });
+
+  it('respects window constraints on a BigAppleBoardState (bug: PEERS table is row/col/box-only)', () => {
+    const bs = new BigAppleBoardState();
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++)
+        bs.candidates[r]![c]! = new Set([KNOWN_SOLUTION[r]![c]!]);
+    // KNOWN_SOLUTION is a valid plain sudoku, but (2,1)=9 and (3,2)=9 share
+    // the top-left window despite differing row, column, and standard box.
+    // Leave both open: without window-peer elimination the backtracker
+    // reconstructs KNOWN_SOLUTION verbatim (row/col/box-valid, window-invalid).
+    bs.candidates[2]![1]! = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    bs.candidates[3]![2]! = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(bs.extraPeers(2, 1).some(([r, c]) => r === 3 && c === 2)).toBe(true);
+    expect(mrvBacktrack(bs)).toBeNull();
   });
 
   it('solves a 9-cage box spec (harder constraint structure)', () => {

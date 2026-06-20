@@ -18,7 +18,7 @@ export interface RuleBugFixture {
   readonly addedAt: string;
   readonly issueNumber?: number;
   readonly ruleName: string;
-  readonly puzzleType: 'killer' | 'classic';
+  readonly puzzleType: 'killer' | 'classic' | 'bigapple';
   /** Trigger context that should have fired, for 'trigger-miss' fixtures. */
   readonly missedContext?: string;
   /** A `SerializedPuzzleState` — replay via `PuzzleState.deserialize` + `buildEngine`. */

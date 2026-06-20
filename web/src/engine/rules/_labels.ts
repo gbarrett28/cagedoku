@@ -12,12 +12,21 @@ export function cellLabel([r, c]: Cell): string {
   return `r${r + 1}c${c + 1}`;
 }
 
+const WINDOW_LABELS_BY_CORNER: ReadonlyMap<string, string> = new Map([
+  ['1,1', 'top-left window'],
+  ['5,1', 'bottom-left window'],
+  ['1,5', 'top-right window'],
+  ['5,5', 'bottom-right window'],
+]);
+
 export function unitLabel(unit: Unit): string {
   const cells = unit.cells as Cell[];
   switch (unit.kind) {
     case UnitKind.ROW: return `row ${cells[0]![0] + 1}`;
     case UnitKind.COL: return `col ${cells[0]![1] + 1}`;
     case UnitKind.BOX: {
+      const windowLabel = WINDOW_LABELS_BY_CORNER.get(`${cells[0]![0]},${cells[0]![1]}`);
+      if (windowLabel !== undefined) return windowLabel;
       const br = (cells[0]![0] / 3 | 0) + 1;
       const bc = (cells[0]![1] / 3 | 0) + 1;
       return `box (${br},${bc})`;

@@ -16,7 +16,7 @@ export namespace RuleBugReport {
     if (typeof v['userAgent'] !== 'string') return false;
     if (typeof v['ruleName'] !== 'string' || v['ruleName'].length === 0) return false;
     if (!Array.isArray(v['offendingEliminations'])) return false;
-    if (v['puzzleType'] !== 'killer' && v['puzzleType'] !== 'classic') return false;
+    if (v['puzzleType'] !== 'killer' && v['puzzleType'] !== 'classic' && v['puzzleType'] !== 'bigapple') return false;
     if (typeof v['state'] !== 'object' || v['state'] === null) return false;
     return true;
   }

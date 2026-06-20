@@ -62,11 +62,13 @@ export function mrvBacktrack(board: BoardState): number[][] | null {
   const cageOf: number[][] = constraints?.cageOf ?? Array.from({length: 9}, () => new Array<number>(9).fill(0));
   const cageTotal: ReadonlyMap<number, number> = constraints?.cageTotal ?? new Map();
   const cageCells: ReadonlyMap<number, readonly Cell[]> = constraints?.cageCells ?? new Map();
+  const extraPeers: readonly (readonly Cell[])[][] = Array.from({length: 9}, (_, r) =>
+    Array.from({length: 9}, (__, c) => board.extraPeers(r, c)));
 
   const cands: Set<number>[][] = Array.from({length: 9}, (_, r) =>
     Array.from({length: 9}, (__, c) => new Set(board.cands(r, c))));
 
-  const solution = search(cands, cageOf, cageTotal, cageCells, { n: 0 });
+  const solution = search(cands, cageOf, cageTotal, cageCells, extraPeers, { n: 0 });
   if (solution !== null && !gridValid(solution)) {
     console.error('mrvBacktrack: search returned an invalid solution — treating as unsolvable');
     return null;
@@ -153,6 +155,7 @@ function assign(
   cageOf: number[][],
   cageTotal: ReadonlyMap<number, number>,
   cageCells: ReadonlyMap<number, readonly Cell[]>,
+  extraPeers: readonly (readonly Cell[])[][],
 ): boolean {
   cands[r]![c] = new Set([d]);
   const queue: Array<[number, number, number]> = [[r, c, d]];
@@ -160,7 +163,7 @@ function assign(
   while (queue.length > 0) {
     const [r0, c0, d0] = queue.pop()!;
     if (!cageValid(cands, cageOf[r0]![c0]!, cageTotal, cageCells)) return false;
-    for (const [r2, c2] of PEERS[r0]![c0]!) {
+    for (const [r2, c2] of [...PEERS[r0]![c0]!, ...extraPeers[r0]![c0]!]) {
       const s = cands[r2]![c2]!;
       if (!s.has(d0)) continue;
       s.delete(d0);
@@ -190,6 +193,7 @@ function search(
   cageOf: number[][],
   cageTotal: ReadonlyMap<number, number>,
   cageCells: ReadonlyMap<number, readonly Cell[]>,
+  extraPeers: readonly (readonly Cell[])[][],
   counter: { n: number },
 ): number[][] | null {
   if (++counter.n > MAX_BACKTRACK_NODES) return null;
@@ -236,8 +240,8 @@ function search(
   for (const d of [...cands[r]![c]!].sort((a, b) => a - b)) {
     const newCands: Set<number>[][] = Array.from({length: 9}, (_, r2) =>
       Array.from({length: 9}, (__, c2) => new Set(cands[r2]![c2]!)));
-    if (assign(newCands, r, c, d, cageOf, cageTotal, cageCells)) {
-      const result = search(newCands, cageOf, cageTotal, cageCells, counter);
+    if (assign(newCands, r, c, d, cageOf, cageTotal, cageCells, extraPeers)) {
+      const result = search(newCands, cageOf, cageTotal, cageCells, extraPeers, counter);
       if (result !== null) return result;
     }
   }

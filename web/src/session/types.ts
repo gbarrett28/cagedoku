@@ -302,6 +302,11 @@ export interface KillerPuzzleState extends PuzzleState {
   readonly fixtureStalledCandidates?: readonly number[][][] | null;
 }
 
+export interface BigApplePuzzleState extends PuzzleState {
+  /** Structural discriminant — always `true`. Mirrors `KillerPuzzleState`'s `specData`-presence pattern. */
+  readonly bigApple: true;
+}
+
 /**
  * Wire format for a serialized `PuzzleState`/`KillerPuzzleState` snapshot
  * (e.g. embedded in a bug report). `kind`/`version` exist only here — the
@@ -309,7 +314,8 @@ export interface KillerPuzzleState extends PuzzleState {
  */
 export type SerializedPuzzleState =
   | (PuzzleState & { readonly kind: 'classic'; readonly version: 1 })
-  | (KillerPuzzleState & { readonly kind: 'killer'; readonly version: 1 });
+  | (KillerPuzzleState & { readonly kind: 'killer'; readonly version: 1 })
+  | (BigApplePuzzleState & { readonly kind: 'bigapple'; readonly version: 1 });
 
 /** UI commands whose availability depends on puzzle state. */
 export type Command = 'undo' | 'inspectCage' | 'virtualCage' | 'reveal';
@@ -354,6 +360,17 @@ export namespace PuzzleState {
   /** Type guard: true for KillerPuzzleState (has cage data). */
   export function isKiller(state: PuzzleState): state is KillerPuzzleState {
     return 'specData' in state;
+  }
+
+
+  /** Type guard: true for BigApplePuzzleState (has the bigApple marker). */
+  export function isBigApple(state: PuzzleState): state is BigApplePuzzleState {
+    return 'bigApple' in state;
+  }
+
+  /** The puzzle-type label for telemetry/UI — not the OCR-detected layout type. */
+  export function kind(state: PuzzleState): 'killer' | 'classic' | 'bigapple' {
+    return isKiller(state) ? 'killer' : isBigApple(state) ? 'bigapple' : 'classic';
   }
 
   /** Enabled rules for this puzzle's type: killer yields all; classic excludes `killerOnly`. */
@@ -462,9 +479,9 @@ export namespace PuzzleState {
    * smaller payload strip those fields from their own copy.
    */
   export function serialize(state: PuzzleState): SerializedPuzzleState {
-    return isKiller(state)
-      ? { kind: 'killer', version: 1, ...state }
-      : { kind: 'classic', version: 1, ...state };
+    if (isKiller(state)) return { kind: 'killer', version: 1, ...state };
+    if (isBigApple(state)) return { kind: 'bigapple', version: 1, ...state };
+    return { kind: 'classic', version: 1, ...state };
   }
 
   /**
@@ -480,7 +497,7 @@ export namespace PuzzleState {
     }
     const v = data as Record<string, unknown>;
 
-    if (v['kind'] !== 'classic' && v['kind'] !== 'killer') {
+    if (v['kind'] !== 'classic' && v['kind'] !== 'killer' && v['kind'] !== 'bigapple') {
       throw new Error(`PuzzleState.deserialize: unrecognised kind ${JSON.stringify(v['kind'])}`);
     }
     if (v['version'] !== 1) {
@@ -519,6 +536,10 @@ export namespace PuzzleState {
     };
 
     if (v['kind'] === 'classic') return base;
+    if (v['kind'] === 'bigapple') {
+      const bigAppleState: BigApplePuzzleState = { ...base, bigApple: true };
+      return bigAppleState;
+    }
 
     const specData = v['specData'];
     if (typeof specData !== 'object' || specData === null) {
@@ -566,6 +587,16 @@ export namespace PuzzleState {
       originalImageUrl,
       userRemovedCandidates: [],
     };
+  }
+
+
+  /** Builds a fresh Big Apple PuzzleState for the OCR review phase (blank grid, no golden solution). */
+  export function createBigApple(
+    givenDigits: number[][] | null,
+    alwaysApplyRules: readonly string[],
+    originalImageUrl: string | null,
+  ): BigApplePuzzleState {
+    return { ...createClassic(givenDigits, alwaysApplyRules, originalImageUrl), bigApple: true };
   }
 
   /** Builds a fresh killer PuzzleState for the OCR review phase (blank grid, no golden solution). */

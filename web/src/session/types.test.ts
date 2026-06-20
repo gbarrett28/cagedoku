@@ -44,3 +44,47 @@ describe('PuzzleState.isKiller', () => {
     expect(PuzzleState.isKiller(killer)).toBe(true);
   });
 });
+
+describe('PuzzleState.createBigApple', () => {
+  it('builds a BigApplePuzzleState with the bigApple marker set and no cage data', () => {
+    const state = PuzzleState.createBigApple([[1, 0, 0, 0, 0, 0, 0, 0, 0]], ['nakedSingle'], null);
+    expect(state.bigApple).toBe(true);
+    expect(state.userGrid).toEqual(Array.from({ length: 9 }, () => new Array<number>(9).fill(0)));
+    expect(state.goldenSolution).toBeNull();
+    expect(state.givenDigits).toEqual([[1, 0, 0, 0, 0, 0, 0, 0, 0]]);
+    expect(state.alwaysApplyRules).toEqual(['nakedSingle']);
+    expect(PuzzleState.isKiller(state)).toBe(false);
+  });
+});
+
+describe('PuzzleState.isBigApple', () => {
+  it('narrows to BigApplePuzzleState only when the bigApple marker is present', () => {
+    const classic = PuzzleState.createClassic(null, [], null);
+    const killer = PuzzleState.createKiller(specData, cageStates, [], null, null);
+    const bigApple = PuzzleState.createBigApple(null, [], null);
+    expect(PuzzleState.isBigApple(classic)).toBe(false);
+    expect(PuzzleState.isBigApple(killer)).toBe(false);
+    expect(PuzzleState.isBigApple(bigApple)).toBe(true);
+  });
+});
+
+describe('PuzzleState.serialize / deserialize — bigapple', () => {
+  it('round-trips a BigApplePuzzleState with kind "bigapple"', () => {
+    const givenDigits = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    givenDigits[0]![0] = 1;
+    const state = PuzzleState.createBigApple(givenDigits, ['nakedSingle'], null);
+    const serialized = PuzzleState.serialize(state);
+    expect(serialized.kind).toBe('bigapple');
+    expect(serialized.version).toBe(1);
+
+    const restored = PuzzleState.deserialize(serialized);
+    expect(PuzzleState.isBigApple(restored)).toBe(true);
+    expect(restored).toEqual(state);
+  });
+
+  it('rejects a "bigapple" payload with a malformed userGrid', () => {
+    const state = PuzzleState.createBigApple(null, [], null);
+    const serialized = { ...PuzzleState.serialize(state), userGrid: 'not-a-grid' };
+    expect(() => PuzzleState.deserialize(serialized)).toThrow(/userGrid/);
+  });
+});

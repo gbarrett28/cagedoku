@@ -17,6 +17,7 @@
  */
 
 import { BoardState, KillerBoardState } from '../engine/boardState.js';
+import { BigAppleBoardState } from '../engine/bigAppleBoardState.js';
 import { SolverEngine, KillerSolverEngine, toDisplayName } from '../engine/solverEngine.js';
 import type { Cell, Elimination } from '../engine/types.js';
 import { cellKey } from '../engine/types.js';
@@ -67,7 +68,7 @@ function runTriggerValidation(
 
   // Full session snapshot — shared by both miss reports and violation reports.
   // Replayable via PuzzleState.deserialize + buildEngine (see RuleBugFixture).
-  const puzzleType = PuzzleState.isKiller(state) ? 'killer' : 'classic';
+  const puzzleType = PuzzleState.kind(state);
   const serialized = PuzzleState.serialize(state);
 
   for (const miss of misses) {
@@ -231,7 +232,7 @@ export function buildEngine(
         submitRuleBugReport({
           ruleName,
           offendingEliminations: offending.map(e => ({ cell: [e.cell[0], e.cell[1]] as [number, number], digit: e.digit })),
-          puzzleType: PuzzleState.isKiller(state) ? 'killer' : 'classic',
+          puzzleType: PuzzleState.kind(state),
           state: PuzzleState.serialize(state),
         });
       }
@@ -268,15 +269,25 @@ export function buildEngine(
         });
         return { board, engine };
       })()
-    : (() => {
-        const board = new BoardState();
-        const engine = new SolverEngine(board, activeRules, {
-          hintRules,
-          goldenSolution: activeGolden,
-          onViolation,
-        });
-        return { board, engine };
-      })();
+    : PuzzleState.isBigApple(state)
+      ? (() => {
+          const board = new BigAppleBoardState();
+          const engine = new SolverEngine(board, activeRules, {
+            hintRules,
+            goldenSolution: activeGolden,
+            onViolation,
+          });
+          return { board, engine };
+        })()
+      : (() => {
+          const board = new BoardState();
+          const engine = new SolverEngine(board, activeRules, {
+            hintRules,
+            goldenSolution: activeGolden,
+            onViolation,
+          });
+          return { board, engine };
+        })();
 
   // Apply user placements and explicit candidate removals, then solve.
   // All three steps are wrapped in a single try/catch: any step can produce a

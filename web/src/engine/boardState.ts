@@ -187,6 +187,13 @@ export class BoardState {
    * search() then degrades to pure row/col/box backtracking (cageTotal empty
    * ⟹ cageValid's `if (total === undefined) return true` short-circuit).
    */
+  /**
+   * Cells outside the standard row/col/box that share an extra distinct-digit
+   * constraint with (r, c) — e.g. Big Apple window peers. Empty for a plain
+   * board; overridden by BigAppleBoardState.
+   */
+  extraPeers(_r: number, _c: number): readonly Cell[] { return []; }
+
   cageConstraints(): CageConstraints | null { return null; }
 
   /**

@@ -7,7 +7,7 @@
  * main.ts can call them as drop-in replacements.
  */
 
-import { solve, BoardState, KillerBoardState, intersectAll, SolveResult } from '../engine/index.js';
+import { solve, solveBigApple, detectBigApple, BoardState, KillerBoardState, intersectAll, SolveResult } from '../engine/index.js';
 import { mrvBacktrack } from '../engine/backtracker.js';
 import { solSums, solDiffs } from '../solver/equation.js';
 import type { DiffSolution } from '../solver/equation.js';
@@ -137,6 +137,7 @@ export interface UploadResult {
   warning: string | null;
   cellThumbs: ReadonlyMap<string, Uint8Array[]>;
   mergedThumbs: ReadonlyMap<string, Uint8Array>;
+  detectedBigApple: boolean;
 }
 
 /**
@@ -149,7 +150,7 @@ export function loadSpecDirect(spec: PuzzleSpec): UploadResult {
   const settings = loadSettings();
   const state = PuzzleState.createKiller(specToData(spec), specToCageStates(spec), [...settings.alwaysApplyRules], null, null);
   setState(state);
-  return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map(), mergedThumbs: new Map() };
+  return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map(), mergedThumbs: new Map(), detectedBigApple: false };
 }
 
 /**
@@ -169,6 +170,7 @@ export function loadClassicDirect(givenDigits: readonly (readonly number[])[]): 
     warning: 'Review the detected digits and press Confirm & Solve',
     cellThumbs: new Map(),
     mergedThumbs: new Map(),
+    detectedBigApple: false,
   };
 }
 
@@ -200,8 +202,8 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
   }
 
   const originalImageUrl = await fileToDisplayUrl(file);
-  const { state, warpedImageUrl, warning } = await buildStateFromParseResult(result, originalImageUrl);
-  return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, mergedThumbs: result.mergedThumbs };
+  const { state, warpedImageUrl, warning, detectedBigApple } = await buildStateFromParseResult(result, originalImageUrl);
+  return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, mergedThumbs: result.mergedThumbs, detectedBigApple };
 }
 
 /**
@@ -312,26 +314,46 @@ export function extractAndValidateSolution(board: BoardState): string | null {
  * readClassicDigits pass; a Classic-detected scan offers only the Classic
  * candidate, since no cage signal was sought.
  */
+/**
+ * Builds the OCR-review candidate list for a parsed puzzle image, per spec
+ * section 1: a Killer-detected scan offers both a Killer candidate (primary,
+ * the first element) and a Classic candidate built from the same
+ * readClassicDigits pass; a Classic-detected scan offers a Classic candidate,
+ * plus — when the solvability heuristic concludes Big Apple — a Big Apple
+ * candidate prepended as the primary element.
+ *
+ * Detection only runs for Classic-detected scans: a Killer scan's Classic
+ * candidate comes from a less-reliable digit pass (see solveCurrentSpec's
+ * comment on false-positive digit detection near cage-total text), and a
+ * real Big Apple photo never has cage borders.
+ */
 export function buildCandidatesFromParseResult(
   result: ParseResult,
   spec: PuzzleSpec,
   alwaysApplyRules: readonly string[],
   originalImageUrl: string | null,
   warpedImageUrl: string | null,
-): readonly PuzzleState[] {
+): { candidates: readonly PuzzleState[]; detectedBigApple: boolean } {
   const classicCandidate = PuzzleState.createClassic(result.givenDigits, alwaysApplyRules, originalImageUrl);
-  if (result.puzzleType !== 'killer') return [classicCandidate];
 
-  const killerCandidate = PuzzleState.createKiller(
-    specToData(spec), specToCageStates(spec), alwaysApplyRules, originalImageUrl, warpedImageUrl,
-  );
-  return [killerCandidate, classicCandidate];
+  if (result.puzzleType === 'killer') {
+    const killerCandidate = PuzzleState.createKiller(
+      specToData(spec), specToCageStates(spec), alwaysApplyRules, originalImageUrl, warpedImageUrl,
+    );
+    return { candidates: [killerCandidate, classicCandidate], detectedBigApple: false };
+  }
+
+  const detectedBigApple = result.givenDigits !== null && detectBigApple(result.givenDigits);
+  if (!detectedBigApple) return { candidates: [classicCandidate], detectedBigApple: false };
+
+  const bigAppleCandidate = PuzzleState.createBigApple(result.givenDigits, alwaysApplyRules, originalImageUrl);
+  return { candidates: [bigAppleCandidate, classicCandidate], detectedBigApple: true };
 }
 
 async function buildStateFromParseResult(
   result: ParseResult,
   originalImageUrl: string | null,
-): Promise<{ state: PuzzleState; warpedImageUrl: string | null; warning: string | null }> {
+): Promise<{ state: PuzzleState; warpedImageUrl: string | null; warning: string | null; detectedBigApple: boolean }> {
   let warpedImageUrl: string | null = null;
   if (result.warpedImageData !== null) {
     const offscreen = new OffscreenCanvas(result.warpedImageData.width, result.warpedImageData.height);
@@ -369,9 +391,9 @@ async function buildStateFromParseResult(
     }
   }
 
-  const candidates = buildCandidatesFromParseResult(result, spec, [...settings.alwaysApplyRules], originalImageUrl, warpedImageUrl);
+  const { candidates, detectedBigApple } = buildCandidatesFromParseResult(result, spec, [...settings.alwaysApplyRules], originalImageUrl, warpedImageUrl);
   setStateCandidates(candidates);
-  return { state: candidates[0]!, warpedImageUrl, warning };
+  return { state: candidates[0]!, warpedImageUrl, warning, detectedBigApple };
 }
 
 // ---------------------------------------------------------------------------
@@ -517,6 +539,7 @@ export function applyDraftLayout(
 export function solveCurrentSpec(): SolveResult {
   const state = requireState();
   if (state.goldenSolution !== null) throw new Error('Already confirmed');
+  if (PuzzleState.isBigApple(state)) return solveBigApple(state.givenDigits ?? undefined);
   const spec = PuzzleState.isKiller(state)
     ? cageStatesToSpec(state.cageStates, state.specData)
     : classicSyntheticSpec();
@@ -585,9 +608,9 @@ export function confirmPuzzle(board: BoardState, fixtureStalledCandidates?: numb
  */
 export function activeCandidate(
   candidates: readonly PuzzleState[],
-  selectedType: 'killer' | 'classic',
+  selectedType: 'killer' | 'classic' | 'bigapple',
 ): PuzzleState | undefined {
-  return candidates.find(c => PuzzleState.isKiller(c) === (selectedType === 'killer'));
+  return candidates.find(c => PuzzleState.kind(c) === selectedType);
 }
 
 /**

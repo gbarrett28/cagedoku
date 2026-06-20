@@ -11,6 +11,7 @@
  */
 
 import { BoardState, KillerBoardState } from './boardState.js';
+import { BigAppleBoardState } from './bigAppleBoardState.js';
 import { mrvBacktrack } from './backtracker.js';
 import { SolverEngine, KillerSolverEngine } from './solverEngine.js';
 import type { HintResult } from './hint.js';
@@ -57,6 +58,29 @@ function checkStalled(board: BoardState): boolean {
   ).some(row => row.some(Boolean));
 }
 
+
+/**
+ * Heuristic Big Apple detector: runs classic-only constraint propagation; if
+ * it stalls before every cell is solved, retries with the 4 extra window
+ * units (BigAppleBoardState). Concludes "Big Apple" only if the window retry
+ * completes the grid. Backtracking is deliberately excluded from both passes
+ * — brute-force search would solve a valid classic puzzle regardless of
+ * windows, making it useless as a discriminator.
+ */
+export function detectBigApple(givenDigits: number[][]): boolean {
+  const classicBoard = new BoardState();
+  const classicEngine = new SolverEngine(classicBoard, defaultRules().filter(r => !r.killerOnly));
+  seedGivenDigits(classicEngine, classicBoard, givenDigits);
+  classicEngine.solve();
+  if (!checkStalled(classicBoard)) return false;
+
+  const windowBoard = new BigAppleBoardState();
+  const windowEngine = new SolverEngine(windowBoard, defaultRules().filter(r => !r.killerOnly));
+  seedGivenDigits(windowEngine, windowBoard, givenDigits);
+  windowEngine.solve();
+  return !checkStalled(windowBoard);
+}
+
 function snapshotCandidates(board: BoardState): number[][][] {
   return Array.from({ length: 9 }, (_, r) =>
     Array.from({ length: 9 }, (_, c) => [...board.cands(r, c)].sort((a, b) => a - b))
@@ -85,6 +109,21 @@ function runWithBacktrack(board: BoardState, stalled: boolean): SolveResult {
 export function solve(spec: PuzzleSpec, givenDigits?: number[][]): SolveResult {
   const board = new KillerBoardState(spec, { includeVirtualCages: false });
   const engine = new KillerSolverEngine(board, defaultRules());
+
+  if (givenDigits) seedGivenDigits(engine, board, givenDigits);
+
+  engine.solve();
+
+  return runWithBacktrack(board, checkStalled(board));
+}
+
+/**
+ * Run the full classic rule engine on a Big Apple puzzle (classic rules plus
+ * the 4 extra window units). Falls back to MRV backtracking if it stalls.
+ */
+export function solveBigApple(givenDigits?: number[][]): SolveResult {
+  const board = new BigAppleBoardState();
+  const engine = new SolverEngine(board, defaultRules().filter(r => !r.killerOnly));
 
   if (givenDigits) seedGivenDigits(engine, board, givenDigits);
 

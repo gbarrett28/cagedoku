@@ -17,6 +17,7 @@ import { defaultImagePipelineConfig } from './image/config.js';
 import { initiateUpload, grantConsent, revokeConsent, uploadTrainingData, submitStallReport, hasConsent } from './image/trainingUpload.js';
 import { dataToSpec, classicSyntheticSpec, specToData, specToCageStates } from './session/specUtils.js';
 import { analyseKernels } from './engine/kernelAnalysis.js';
+import { WINDOW_STARTS } from './engine/bigAppleBoardState.js';
 import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec, makeClassicGivenDigits, makeClassicPartialGivenDigits } from './engine/fixtures.js';
 import {
   uploadPuzzle,
@@ -324,6 +325,13 @@ function drawCageBorders(
   }
 }
 
+function drawWindowTint(ctx: CanvasRenderingContext2D): void {
+  ctx.fillStyle = 'rgba(37, 99, 235, 0.10)';
+  for (const [r0, c0] of WINDOW_STARTS) {
+    ctx.fillRect(MARGIN + c0 * CELL, MARGIN + r0 * CELL, 3 * CELL, 3 * CELL);
+  }
+}
+
 function drawGridLines(ctx: CanvasRenderingContext2D): void {
   ctx.strokeStyle = '#000'; ctx.lineWidth = 0.5; ctx.setLineDash([3, 3]);
   for (let i = 1; i < 9; i++) {
@@ -510,6 +518,7 @@ function drawGrid(
   ctx.fillRect(0, 0, GRID_PX, GRID_PX);
   drawUnderlays(ctx, candidatesData, vcSelection, highlightKeys, selected, errorCells, suspectCells, vcNegSelection);
   if (PuzzleState.isKiller(state)) drawCageBorders(ctx, state, draft);
+  if (PuzzleState.isBigApple(state)) drawWindowTint(ctx);
   drawGridLines(ctx);
   if (PuzzleState.isKiller(state)) drawCageTotals(ctx, state);
   const cheapBoard = buildEngine(state, { skipSolve: true }).board;
@@ -626,17 +635,18 @@ function renderState(state: PuzzleState): void {
   currentState = state;
   drawGrid(el<HTMLCanvasElement>('grid-canvas'), state);
 
-  const puzzleType = PuzzleState.isKiller(state) ? 'killer' : 'classic';
+  const puzzleType = PuzzleState.kind(state);
 
   const heading = document.getElementById('detected-layout-heading');
   if (heading !== null) {
-    heading.textContent = puzzleType === 'classic'
-      ? 'Detected Layout — Classic Sudoku'
-      : 'Detected Layout — Killer Sudoku';
+    heading.textContent =
+      puzzleType === 'classic' ? 'Detected Layout — Classic Sudoku' :
+      puzzleType === 'bigapple' ? 'Detected Layout — Big Apple Sudoku' :
+      'Detected Layout — Killer Sudoku';
   }
 
   el<HTMLElement>('classic-edit-hint').hidden =
-    puzzleType !== 'classic' || state.goldenSolution !== null;
+    puzzleType === 'killer' || state.goldenSolution !== null;
 
   if (state.originalImageUrl !== null) {
     el<HTMLImageElement>('original-img').src = state.originalImageUrl;
@@ -1148,7 +1158,12 @@ function openFeedbackModal(): void {
   (el<HTMLDialogElement>('feedback-modal') as HTMLDialogElement).showModal();
 }
 
-function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, warning: string | null): void {
+function applyUploadResult(
+  state: PuzzleState,
+  warpedImageUrl: string | null,
+  warning: string | null,
+  detectedBigApple = false,
+): void {
   reviewErrorCells = new Set();
   reviewSuspectCells = new Set();
   kernelWarningShown = false;
@@ -1173,6 +1188,7 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
   el<HTMLButtonElement>('new-puzzle-btn').hidden = false;
   el<HTMLButtonElement>('edit-ocr-btn').hidden = true;
   setStatus(warning ? `Warning: ${warning}` : '');
+  el<HTMLElement>('bigapple-banner').hidden = !detectedBigApple;
 }
 
 /**
@@ -1251,7 +1267,7 @@ async function handleProcess(file?: File): Promise<void> {
   setStatus('Processing image…');
   setLoading(true);
   try {
-    const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs } = await uploadPuzzle(f);
+    const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs, detectedBigApple } = await uploadPuzzle(f);
     pendingCellThumbs = new Map(cellThumbs);
     pendingMergedThumbs = new Map(mergedThumbs);
 
@@ -1268,7 +1284,7 @@ async function handleProcess(file?: File): Promise<void> {
     };
 
     const nCages = Math.max(...ocrSpec.regions.flat()) + 1;
-    logAction('ocr_complete', `${PuzzleState.isKiller(state) ? 'killer' : 'classic'}, ${nCages} cage(s)${warning ? ', warning: ' + warning : ''}`);
+    logAction('ocr_complete', `${PuzzleState.kind(state)}, ${nCages} cage(s)${warning ? ', warning: ' + warning : ''}`);
 
     // Attempt auto-confirm (Killer only): skip the review screen when OCR is clean,
     // the cage layout is valid, and the solver finds a complete solution.
@@ -1341,7 +1357,7 @@ async function handleProcess(file?: File): Promise<void> {
       if (allFilled) {
         const dupCells = findDuplicateCells(state.givenDigits);
         if (dupCells.size > 0) {
-          applyUploadResult(state, warpedImageUrl, null);
+          applyUploadResult(state, warpedImageUrl, null, detectedBigApple);
           appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
           logAction('review_shown', 'classic duplicates');
           reviewErrorCells = dupCells;
@@ -1364,7 +1380,7 @@ async function handleProcess(file?: File): Promise<void> {
         if (boardComplete) {
           lastOcrCandidates = getStateCandidates();
           lastWarpedUrl = warpedImageUrl;
-          logAction('auto_confirmed', 'classic');
+          logAction('auto_confirmed', PuzzleState.kind(state));
           const classicPlaying = confirmPuzzle(classicBoard);
           renderPlayingMode(classicPlaying);
           appendCallouts(buildPlayingCallouts(false));
@@ -1378,7 +1394,7 @@ async function handleProcess(file?: File): Promise<void> {
           // 81/81-digit OCR result); coverage comes from the manual-confirm path
           // tests and the underlying upload-function unit tests.
           if (classicUsedBt && classicStalled && state.originalImageUrl !== null) {
-            const classicStallReport = { puzzleType: 'classic' as const, stalledCandidates: classicStalled };
+            const classicStallReport = { puzzleType: PuzzleState.kind(state), stalledCandidates: classicStalled };
             if (hasConsent()) {
               submitStallReport(classicStallReport);
             } else {
@@ -1393,7 +1409,7 @@ async function handleProcess(file?: File): Promise<void> {
           ));
           return;
         }
-        applyUploadResult(state, warpedImageUrl, null);
+        applyUploadResult(state, warpedImageUrl, null, detectedBigApple);
         appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
         logAction('review_shown', 'classic solver incomplete');
         setStatus('Solver could not process the detected digits — please review and confirm manually', true);
@@ -1404,7 +1420,7 @@ async function handleProcess(file?: File): Promise<void> {
     // Reach here when: OCR produced a warning, Classic grid is incomplete/invalid,
     // or this is a Classic puzzle the user needs to review.
     logAction('review_shown', !PuzzleState.isKiller(state) ? 'classic' : 'ocr warning');
-    applyUploadResult(state, warpedImageUrl, warning ?? 'Review the detected digits and press Confirm & Solve');
+    applyUploadResult(state, warpedImageUrl, warning ?? 'Review the detected digits and press Confirm & Solve', detectedBigApple);
     appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
   } catch (e) {
     if (e instanceof GridNotFoundError) {
@@ -1510,7 +1526,7 @@ async function handleConfirm(): Promise<void> {
     }
 
     const playing = confirmPuzzle(confirmedBoard);
-    logAction('confirmed', PuzzleState.isKiller(state) ? 'killer' : 'classic');
+    logAction('confirmed', PuzzleState.kind(state));
     renderPlayingMode(playing);
     appendCallouts(buildPlayingCallouts(PuzzleState.isKiller(playing)));
     setStatus('');
@@ -1519,7 +1535,7 @@ async function handleConfirm(): Promise<void> {
 
     // Upload puzzle spec when backtracking was needed (rules alone couldn't solve it).
     if (confirmUsedBacktracking && confirmStalledCandidates && state.originalImageUrl !== null) {
-      const stallReport = { puzzleType: PuzzleState.isKiller(state) ? 'killer' as const : 'classic' as const, stalledCandidates: confirmStalledCandidates };
+      const stallReport = { puzzleType: PuzzleState.kind(state), stalledCandidates: confirmStalledCandidates };
       if (hasConsent()) {
         submitStallReport(stallReport);
       } else {
@@ -2143,6 +2159,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     localStorage.setItem(INSTALL_DISMISSED_KEY, '1');
     hideInstallBanner();
   });
+  el<HTMLButtonElement>('bigapple-banner-dismiss-btn').addEventListener('click', () => {
+    el<HTMLElement>('bigapple-banner').hidden = true;
+  });
 
   // Web Share Target: consume any image stashed in IDB by the service worker.
   void checkShareInbox();
@@ -2163,7 +2182,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   el<HTMLSelectElement>('puzzle-type-select').addEventListener('change', (e) => {
     const state = currentState;
     if (state === null) return;
-    const type = (e.target as HTMLSelectElement).value as 'killer' | 'classic';
+    const type = (e.target as HTMLSelectElement).value as 'killer' | 'classic' | 'bigapple';
+    el<HTMLElement>('bigapple-banner').hidden = true;
     const candidates = getStateCandidates();
     const found = activeCandidate(candidates, type);
     let updated: PuzzleState;
@@ -2176,6 +2196,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         specToData(synthetic), specToCageStates(synthetic),
         state.alwaysApplyRules, state.originalImageUrl, null,
       );
+      setState(updated);
+    } else if (type === 'bigapple') {
+      const givenDigits = PuzzleState.isKiller(state)
+        ? Array.from({ length: 9 }, () => new Array<number>(9).fill(0))
+        : state.givenDigits;
+      updated = PuzzleState.createBigApple(givenDigits, state.alwaysApplyRules, state.originalImageUrl);
       setState(updated);
     } else {
       const givenDigits = PuzzleState.isKiller(state)

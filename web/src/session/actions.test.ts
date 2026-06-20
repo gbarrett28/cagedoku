@@ -31,6 +31,7 @@ import {
   confirmPuzzle,
   solveCurrentSpec,
   loadSpecDirect,
+  loadClassicDirect,
   enterCell,
   enterCellStep,
   undo,
@@ -59,6 +60,8 @@ import {
   makeTrivialSpec,
   makeTwoCellCageSpec,
   makeClassicGivenDigits,
+  makeBigAppleGivenDigits,
+  BIG_APPLE_SOLUTION,
   KNOWN_SOLUTION,
 } from '../engine/fixtures.js';
 import { specToData, specToCageStates, classicSyntheticSpec } from './specUtils.js';
@@ -99,6 +102,22 @@ function makeClassicConfirmed(): PuzzleState {
   return confirmPuzzle(board);
 }
 
+
+// ---------------------------------------------------------------------------
+// solveCurrentSpec — Big Apple dispatch
+// ---------------------------------------------------------------------------
+
+describe('solveCurrentSpec — Big Apple', () => {
+  it('dispatches to solveBigApple for a Big Apple state', () => {
+    const givenDigits = makeBigAppleGivenDigits();
+    const state = PuzzleState.createBigApple(givenDigits, [], null);
+    setState(state);
+    const result = solveCurrentSpec();
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++)
+        expect([...result.board.cands(r, c)]).toEqual([BIG_APPLE_SOLUTION[r]![c]!]);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // #13 – Classic candidates
@@ -918,6 +937,18 @@ describe('extractAndValidateSolution', () => {
   });
 });
 
+describe('detectedBigApple — non-OCR loaders', () => {
+  it('loadClassicDirect reports detectedBigApple: false', () => {
+    const result = loadClassicDirect(makeClassicGivenDigits());
+    expect(result.detectedBigApple).toBe(false);
+  });
+
+  it('loadSpecDirect reports detectedBigApple: false', () => {
+    const result = loadSpecDirect(makeTwoCellCageSpec());
+    expect(result.detectedBigApple).toBe(false);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // hasMultipleCageTotals
 // ---------------------------------------------------------------------------
@@ -964,7 +995,7 @@ describe('buildCandidatesFromParseResult', () => {
 
   it('returns [killerCandidate, classicCandidate] when OCR detects killer', () => {
     const result = makeParseResult('killer');
-    const candidates = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
+    const { candidates } = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
 
     expect(candidates).toHaveLength(2);
     expect(PuzzleState.isKiller(candidates[0]!)).toBe(true);
@@ -973,7 +1004,7 @@ describe('buildCandidatesFromParseResult', () => {
 
   it('killer candidate has givenDigits: null (never a hybrid from OCR)', () => {
     const result = makeParseResult('killer');
-    const candidates = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
+    const { candidates } = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
 
     expect(candidates[0]!.givenDigits).toBeNull();
   });
@@ -981,14 +1012,14 @@ describe('buildCandidatesFromParseResult', () => {
   it('classic candidate is built from result.givenDigits', () => {
     const givenDigits = blankGivenDigits.map((row, r) => row.map((_, c) => (r === 0 && c === 0 ? 5 : 0)));
     const result = { ...makeParseResult('killer'), givenDigits };
-    const candidates = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
+    const { candidates } = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
 
     expect(candidates[1]!.givenDigits).toEqual(givenDigits);
   });
 
   it('returns only [classicCandidate] when OCR detects classic', () => {
     const result = makeParseResult('classic');
-    const candidates = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
+    const { candidates } = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
 
     expect(candidates).toHaveLength(1);
     expect(PuzzleState.isKiller(candidates[0]!)).toBe(false);
@@ -997,10 +1028,35 @@ describe('buildCandidatesFromParseResult', () => {
   it('all candidates start with a blank userGrid and no golden solution', () => {
     const result = makeParseResult('killer');
     const blankGrid = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-    for (const candidate of buildCandidatesFromParseResult(result, spec, [], null, null)) {
+    for (const candidate of buildCandidatesFromParseResult(result, spec, [], null, null).candidates) {
       expect(candidate.userGrid).toEqual(blankGrid);
       expect(candidate.goldenSolution).toBeNull();
     }
+  });
+
+  it('detects Big Apple from a classic-type scan and prepends a Big Apple candidate', () => {
+    const result = { ...makeParseResult('classic'), givenDigits: makeBigAppleGivenDigits() };
+    const { candidates, detectedBigApple } = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
+
+    expect(detectedBigApple).toBe(true);
+    expect(candidates).toHaveLength(2);
+    expect(PuzzleState.isBigApple(candidates[0]!)).toBe(true);
+    expect(PuzzleState.isBigApple(candidates[1]!)).toBe(false);
+  });
+
+  it('does not detect Big Apple from a killer-type scan, even with the same digits', () => {
+    const result = { ...makeParseResult('killer'), givenDigits: makeBigAppleGivenDigits() };
+    const { candidates, detectedBigApple } = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
+
+    expect(detectedBigApple).toBe(false);
+    expect(candidates.some(c => PuzzleState.isBigApple(c))).toBe(false);
+  });
+
+  it('reports detectedBigApple: false for an ordinary classic scan', () => {
+    const result = makeParseResult('classic');
+    const { detectedBigApple } = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
+
+    expect(detectedBigApple).toBe(false);
   });
 });
 
@@ -1019,6 +1075,15 @@ describe('activeCandidate', () => {
 
   it('returns undefined when no candidate of the selected type exists', () => {
     expect(activeCandidate([classicCandidate], 'killer')).toBeUndefined();
+  });
+
+  it('returns the Big Apple candidate when selectedType is bigapple', () => {
+    const bigAppleCandidate = PuzzleState.createBigApple(null, [], null);
+    expect(activeCandidate([killerCandidate, classicCandidate, bigAppleCandidate], 'bigapple')).toBe(bigAppleCandidate);
+  });
+
+  it('does not return the classic candidate when selectedType is bigapple', () => {
+    expect(activeCandidate([classicCandidate], 'bigapple')).toBeUndefined();
   });
 });
 

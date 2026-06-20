@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { solveFromStall, solveFromCandidates } from './index.js';
-import { makeTrivialSpec } from './fixtures.js';
+import { solveFromStall, solveFromCandidates, detectBigApple, solveBigApple } from './index.js';
+import { makeTrivialSpec, makeClassicGivenDigits, makeBigAppleGivenDigits, BIG_APPLE_SOLUTION } from './fixtures.js';
 
 describe('solveFromStall', () => {
   it('returns usedBacktracking=false and 81 solved cells for a fully-solved grid', () => {
@@ -57,5 +57,38 @@ describe('solveFromCandidates', () => {
     );
     const result = solveFromCandidates(makeTrivialSpec(), solved);
     expect(result.stalledCandidates).toBeUndefined();
+  });
+});
+
+describe('detectBigApple', () => {
+  it('returns false for an all-blank grid (both passes stall identically)', () => {
+    const blank = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    expect(detectBigApple(blank)).toBe(false);
+  });
+
+  it('returns false when classic rules alone already solve the grid', () => {
+    expect(detectBigApple(makeClassicGivenDigits())).toBe(false);
+  });
+
+  it('returns true for a deadly-rectangle grid that only windows can resolve', () => {
+    expect(detectBigApple(makeBigAppleGivenDigits())).toBe(true);
+  });
+});
+
+describe('solveBigApple', () => {
+  it('fully solves a deadly-rectangle grid using window constraints, without backtracking', () => {
+    const result = solveBigApple(makeBigAppleGivenDigits());
+    expect(result.usedBacktracking).toBe(false);
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++)
+        expect([...result.board.cands(r, c)]).toEqual([BIG_APPLE_SOLUTION[r]![c]!]);
+  });
+
+  it('falls back to backtracking when given no digits', () => {
+    const result = solveBigApple();
+    expect(result.usedBacktracking).toBe(true);
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++)
+        expect(result.board.cands(r, c).size).toBe(1);
   });
 });
