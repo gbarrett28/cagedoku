@@ -186,7 +186,7 @@ git commit -m "feat: add detectBigApple solvability heuristic and deadly-rectang
 
 This closes a real bug: `solveCurrentSpec()` (used by `confirmPuzzle`'s caller in `main.ts` to compute the golden solution at confirm time) currently has no knowledge of Big Apple at all — it always falls into the classic/killer 2-way branch, which builds a plain `KillerBoardState` with classic-only rules, silently ignoring the 4 window constraints for a confirmed Big Apple puzzle. Without this fix, a Big Apple puzzle could confirm with a golden solution that violates its own windows.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `web/src/engine/index.test.ts`:
 
@@ -227,12 +227,12 @@ Add to `web/src/session/actions.test.ts`, in the existing `describe('solveCurren
 
 This requires `makeBigAppleGivenDigits` and `BIG_APPLE_SOLUTION` imported from `'../engine/fixtures.js'` in `actions.test.ts` (add to its existing fixtures import line if one exists, else add a new import line), and confirms the exact `setState`/`solveCurrentSpec` call pattern used by the file's other `solveCurrentSpec` tests (match their existing style — read a neighbouring test in the same `describe` block before writing this one).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd web && npx vitest run src/engine/index.test.ts -t solveBigApple && npx vitest run src/session/actions.test.ts -t "dispatches to solveBigApple"`
 Expected: FAIL — `solveBigApple is not exported` for the first; the second fails with a wrong/missing-windows result once `solveBigApple` exists but `solveCurrentSpec` hasn't been updated yet (run it after Step 3's `index.ts` half is done but before the `actions.ts` half, or just expect both to fail at once now).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `web/src/engine/index.ts`, add `solveBigApple` immediately after `solve` (after line 94):
 
@@ -281,12 +281,12 @@ Update the `solve` import at the top of `actions.ts` (currently `import { solve,
 import { solve, solveBigApple, BoardState, KillerBoardState, intersectAll, SolveResult } from '../engine/index.js';
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd web && npx vitest run src/engine/index.test.ts -t solveBigApple && npx vitest run src/session/actions.test.ts -t "dispatches to solveBigApple"`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/engine/index.ts web/src/engine/index.test.ts web/src/session/actions.ts web/src/session/actions.test.ts
@@ -305,7 +305,7 @@ git commit -m "feat: add solveBigApple and dispatch it from solveCurrentSpec"
 - Consumes: `detectBigApple` (Task 1), `PuzzleState.createBigApple` (Sprint 2), `ParseResult` (`web/src/image/inpImage.ts`, unchanged).
 - Produces: `buildCandidatesFromParseResult(...)` now returns `{ candidates: readonly PuzzleState[]; detectedBigApple: boolean }` instead of `readonly PuzzleState[]` directly — every call site must update. Consumed by Task 4's `buildStateFromParseResult`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `web/src/session/actions.test.ts`, update the 5 existing tests in the `describe('buildCandidatesFromParseResult', ...)` block (current lines 949-1005) to destructure the new shape — change every:
 
@@ -352,12 +352,12 @@ Add new tests at the end of the `describe` block, before its closing `});`:
 
 Add `makeBigAppleGivenDigits` to the file's existing fixtures import line (find it via `grep -n "from '../engine/fixtures.js'" web/src/session/actions.test.ts`).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd web && npx vitest run src/session/actions.test.ts -t buildCandidatesFromParseResult`
 Expected: FAIL — destructuring `{ candidates }` from an array yields `undefined`, so the existing tests fail on `candidates.toHaveLength` etc.; the 3 new tests fail because `detectedBigApple` is `undefined`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `web/src/session/actions.ts`, replace `buildCandidatesFromParseResult` (currently lines 315-329):
 
@@ -407,17 +407,18 @@ import { solve, solveBigApple, detectBigApple, BoardState, KillerBoardState, int
 
 This file does not yet call `buildCandidatesFromParseResult` anywhere except `buildStateFromParseResult` (line 372) — that call site is fixed in Task 4, so leave it as-is for now; Task 4's own failing test will catch the now-broken call.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd web && npx vitest run src/session/actions.test.ts -t buildCandidatesFromParseResult`
 Expected: PASS (all 8 tests — 5 updated, 3 new). `npx tsc --noEmit` will report an error at `buildStateFromParseResult`'s call site until Task 4 is done — that's expected at this point.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
-```bash
-git add web/src/session/actions.ts web/src/session/actions.test.ts
-git commit -m "feat: detect Big Apple in buildCandidatesFromParseResult"
-```
+Deviation: not committed in isolation — the bronze gate requires `tsc --noEmit`
+to pass before every commit, and Task 3 alone leaves `buildStateFromParseResult`'s
+call site broken (as Step 4 above notes). Combined into a single commit together
+with Task 4 (commit `ba52c46`, "feat: detect Big Apple in OCR pipeline and thread
+it through to UploadResult"), once both tasks' changes left the tree green.
 
 ---
 
@@ -431,7 +432,7 @@ git commit -m "feat: detect Big Apple in buildCandidatesFromParseResult"
 - Consumes: `buildCandidatesFromParseResult`'s new return shape (Task 3).
 - Produces: `UploadResult` gains `detectedBigApple: boolean`; `buildStateFromParseResult`'s resolved type gains `detectedBigApple: boolean`; `uploadPuzzle`, `loadSpecDirect`, `loadClassicDirect` all return it. Consumed by Task 5's `main.ts` changes.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `web/src/session/actions.test.ts`, in the existing `describe('uploadPuzzle', ...)` or equivalent block covering the upload pipeline (search via `grep -n "uploadPuzzle\|loadClassicDirect\|loadSpecDirect" web/src/session/actions.test.ts` for the exact existing test structure and mocking pattern used for `uploadPuzzle`, since it depends on `parsePuzzleImage`/`getCV`/`getRec` mocks already set up elsewhere in the file):
 
@@ -449,12 +450,12 @@ Add to `web/src/session/actions.test.ts`, in the existing `describe('uploadPuzzl
 
 (Use whichever fixture functions are already imported in the file for `loadSpecDirect`'s spec argument — match the existing test's spec fixture if `loadSpecDirect` is already tested elsewhere in the file, rather than introducing a new one.)
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd web && npx vitest run src/session/actions.test.ts -t "reports detectedBigApple"`
 Expected: FAIL — `result.detectedBigApple` is `undefined`, `expect(undefined).toBe(false)` fails.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `web/src/session/actions.ts`:
 
@@ -515,17 +516,14 @@ Update `uploadPuzzle`'s body (currently lines 202-204):
   return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, mergedThumbs: result.mergedThumbs, detectedBigApple };
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd web && npx vitest run src/session/actions.test.ts`
 Expected: PASS (full file — confirms no other call site broke). Then run `cd web && npx tsc --noEmit` to confirm the Task 3 compile error is gone.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
-```bash
-git add web/src/session/actions.ts web/src/session/actions.test.ts
-git commit -m "feat: thread detectedBigApple through the upload pipeline"
-```
+See Task 3 Step 5 — committed together as `ba52c46`.
 
 ---
 
