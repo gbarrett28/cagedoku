@@ -40,7 +40,7 @@
 **Interfaces:**
 - Produces: `BoardState.extraPeers(r: number, c: number): readonly Cell[]` — default `[]`, overridden by `BigAppleBoardState` in Task 2.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `web/src/engine/boardState.test.ts`, inside the existing `describe('BoardState (plain) construction', ...)` block (after the `'removeCandidate works without any cage bookkeeping'` test, before the closing `});` at line 85):
 
@@ -53,12 +53,12 @@ Add to `web/src/engine/boardState.test.ts`, inside the existing `describe('Board
   });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd web && npx vitest run src/engine/boardState.test.ts -t "extraPeers returns empty"`
 Expected: FAIL with `bs.extraPeers is not a function`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `web/src/engine/boardState.ts`, insert immediately before the `cageConstraints()` method (currently at line 184-190):
 
@@ -72,12 +72,12 @@ In `web/src/engine/boardState.ts`, insert immediately before the `cageConstraint
 
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd web && npx vitest run src/engine/boardState.test.ts -t "extraPeers returns empty"`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/engine/boardState.ts web/src/engine/boardState.test.ts
@@ -97,7 +97,7 @@ git commit -m "feat: add BoardState.extraPeers() virtual method"
 - Consumes: `UnitKind`, `Cell`, `Unit` from `web/src/engine/types.ts`.
 - Produces: `export class BigAppleBoardState extends BoardState` with `extraPeers(r, c): readonly Cell[]` override, for Sprint 2's `buildEngine` dispatch and Sprint 1 Task 4 (backtracker) to consume.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `web/src/engine/bigAppleBoardState.test.ts`:
 
@@ -170,12 +170,12 @@ describe('BigAppleBoardState.extraPeers', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd web && npx vitest run src/engine/bigAppleBoardState.test.ts`
 Expected: FAIL — `Cannot find module './bigAppleBoardState.js'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Create `web/src/engine/bigAppleBoardState.ts`:
 
@@ -230,12 +230,12 @@ export class BigAppleBoardState extends BoardState {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd web && npx vitest run src/engine/bigAppleBoardState.test.ts`
 Expected: PASS (7 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/engine/bigAppleBoardState.ts web/src/engine/bigAppleBoardState.test.ts
@@ -254,7 +254,7 @@ git commit -m "feat: add BigAppleBoardState with 4 window units"
 - Consumes: `BigAppleBoardState` (Task 2), `SolverEngine` (existing, `web/src/engine/solverEngine.ts`).
 - Produces: no public API change — `unitKindFromId` is deleted; `SolverEngine._routeEvents()`'s trigger routing now reads `this.board.units[uid]!.kind` directly, correctly classifying window units (id ≥27 on a `BigAppleBoardState`) as `UnitKind.BOX` instead of the wrong `UnitKind.CAGE` fallback.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `web/src/engine/solverEngine.test.ts`, after the existing `describe('SolverEngine init', ...)` block (after line 29):
 
@@ -292,12 +292,12 @@ Add the import at the top of the file:
 import { BigAppleBoardState } from './bigAppleBoardState.js';
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd web && npx vitest run src/engine/solverEngine.test.ts -t "routes COUNT_DECREASED events for window units"`
 Expected: FAIL — `routedUnitId` is `null` (the probe never fires, because `unitKindFromId(27)` returns `UnitKind.CAGE`, not `UnitKind.BOX`, so the `rule.unitKinds.has(kind)` check in `_routeEvents()` excludes it)
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `web/src/engine/solverEngine.ts`, delete the `unitKindFromId` function (lines 44-49):
 
@@ -322,12 +322,12 @@ to:
         const kind = this.board.units[uid]!.kind;
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd web && npx vitest run src/engine/solverEngine.test.ts`
 Expected: PASS (all tests, including the new one)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/engine/solverEngine.ts web/src/engine/solverEngine.test.ts
@@ -346,7 +346,7 @@ git commit -m "fix: classify unit kind from board.units instead of numeric id ra
 - Consumes: `BigAppleBoardState.extraPeers()` (Task 2).
 - Produces: no public API change — `mrvBacktrack(board: BoardState)` signature is unchanged; window constraints are now respected internally when `board instanceof BigAppleBoardState`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `web/src/engine/backtracker.test.ts`, after the existing `describe('mrvBacktrack', ...)` tests (after line 54, before the next `it` at line 56-60, or simply appended inside the same `describe` block):
 
@@ -377,12 +377,12 @@ Add the import at the top of the file:
 import { BigAppleBoardState } from './bigAppleBoardState.js';
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd web && npx vitest run src/engine/backtracker.test.ts -t "respects window constraints"`
 Expected: FAIL — `mrvBacktrack` returns a non-null (invalid) grid, since `assign()` only consults the static `PEERS` table and never calls `board.extraPeers()`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `web/src/engine/backtracker.ts`:
 
@@ -466,12 +466,12 @@ function search(
     }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd web && npx vitest run src/engine/backtracker.test.ts`
 Expected: PASS (all tests, including the new one)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/engine/backtracker.ts web/src/engine/backtracker.test.ts
@@ -490,7 +490,7 @@ git commit -m "fix: thread window-peer elimination through MRV backtracker"
 - Consumes: nothing new — pure label arithmetic on `Unit.cells`.
 - Produces: `unitLabel(unit: Unit): string` now returns `"top-left window"` / `"bottom-left window"` / `"top-right window"` / `"bottom-right window"` for the 4 window units instead of colliding with or misrepresenting a standard box label.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `web/src/engine/rules/_labels.test.ts`, inside the existing `describe('unitLabel', ...)` block (after the `'BOX: labels by 1-based box row and col'` test, before the `'CAGE: lists sorted cell labels'` test):
 
@@ -508,12 +508,12 @@ Add to `web/src/engine/rules/_labels.test.ts`, inside the existing `describe('un
   });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd web && npx vitest run src/engine/rules/_labels.test.ts -t "labels the 4 Big Apple windows"`
 Expected: FAIL — `unitLabel(windowAt(1,1))` returns `'box (1,1)'` (wrong: `(1/3|0)+1 = 1`, `(1/3|0)+1 = 1`, colliding with the actual standard box (1,1))
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `web/src/engine/rules/_labels.ts`, add a module-level lookup and use it in `unitLabel`'s `BOX` case:
 
@@ -547,12 +547,12 @@ export function unitLabel(unit: Unit): string {
 
 This relies on `cells[0]` being each unit's top-left corner — true both for standard boxes (`BOX_CELLS` in `boardState.ts` builds cells starting at `(b/3|0)*3, (b%3)*3`) and for windows (`buildWindowCells` in `bigAppleBoardState.ts`, Task 2, builds cells starting at `[r0, c0]`).
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd web && npx vitest run src/engine/rules/_labels.test.ts`
 Expected: PASS (all tests, including the new one)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/engine/rules/_labels.ts web/src/engine/rules/_labels.test.ts
