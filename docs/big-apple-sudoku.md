@@ -33,6 +33,16 @@ from a less-reliable digit pass (see `solveCurrentSpec`'s comment on
 false-positive digit detection near cage-total text), and because a real Big
 Apple photo never has cage borders to begin with.
 
+Detection runs again on every given-digit edit during OCR review
+(`handleGivenDigitEdit`, `web/src/main.ts`), not just once at upload time. A
+digit-recognition error can make `detectBigApple` return false on the raw
+OCR output even though the puzzle is genuinely Big Apple; once the user
+corrects the misread digit, re-running detection on the corrected grid
+catches it and switches the active candidate + banner. This auto
+re-detection is suppressed for the rest of the review session as soon as the
+user touches the Type dropdown (`userOverrodePuzzleType`) — an explicit
+choice always wins over the heuristic.
+
 `buildCandidatesFromParseResult` (`web/src/session/actions.ts`) prepends a
 `PuzzleState.createBigApple(...)` candidate when detection fires, making it
 the default `activeCandidate`, and reports `detectedBigApple: boolean`
@@ -94,9 +104,10 @@ so that type correctly stays binary and must not be widened.
 
 ## Rendering
 
-Window cells get a light background tint (`drawWindowTint`, `web/src/main.ts`)
-gated on `PuzzleState.isBigApple(state)` — a plain `fillRect` per window cell
-with no border math, since window units need no boundary lines. Standard
+Window cells get a light green background tint (`drawWindowTint`,
+`web/src/main.ts`, `rgba(34, 197, 94, 0.12)`) gated on
+`PuzzleState.isBigApple(state)` — a plain `fillRect` per window cell with no
+border math, since window units need no boundary lines. Standard
 3×3 box lines render unconditionally, same as for classic and killer.
 `WINDOW_STARTS` (the 4 window top-left corners) is defined once in
 `bigAppleBoardState.ts` and exported; `main.ts` imports it rather than

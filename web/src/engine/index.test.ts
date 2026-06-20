@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { solveFromStall, solveFromCandidates, detectBigApple, solveBigApple } from './index.js';
-import { makeTrivialSpec, makeClassicGivenDigits, makeBigAppleGivenDigits, BIG_APPLE_SOLUTION } from './fixtures.js';
+import {
+  makeTrivialSpec, makeClassicGivenDigits, makeBigAppleGivenDigits, makeBigAppleMisreadGivenDigits,
+  BIG_APPLE_SOLUTION,
+} from './fixtures.js';
 
 describe('solveFromStall', () => {
   it('returns usedBacktracking=false and 81 solved cells for a fully-solved grid', () => {
@@ -72,6 +75,16 @@ describe('detectBigApple', () => {
 
   it('returns true for a deadly-rectangle grid that only windows can resolve', () => {
     expect(detectBigApple(makeBigAppleGivenDigits())).toBe(true);
+  });
+
+  it('returns false when a misread given masks an otherwise-detectable Big Apple grid', () => {
+    expect(detectBigApple(makeBigAppleMisreadGivenDigits())).toBe(false);
+  });
+
+  it('returns true once the misread given is corrected back', () => {
+    const grid = makeBigAppleMisreadGivenDigits();
+    grid[1]![4] = 6;
+    expect(detectBigApple(grid)).toBe(true);
   });
 });
 

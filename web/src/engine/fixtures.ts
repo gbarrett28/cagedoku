@@ -168,6 +168,21 @@ export function makeBigAppleGivenDigits(): number[][] {
   return grid;
 }
 
+/**
+ * `makeBigAppleGivenDigits()` with one OCR-misread given: (row2, col5),
+ * correctly 6, replaced with 7. The corruption makes both the classic-only
+ * and window-rules passes stall, so `detectBigApple` returns false on this
+ * grid — simulating a real digit-recognition error that masks a Big Apple
+ * puzzle until the user corrects it during OCR review. Restoring (row2,
+ * col5) to 6 makes `detectBigApple` true again. Used by the review-screen
+ * regression test for re-running Big Apple detection on given-digit edits.
+ */
+export function makeBigAppleMisreadGivenDigits(): number[][] {
+  const grid = makeBigAppleGivenDigits();
+  grid[1]![4] = 7;
+  return grid;
+}
+
 // ---------------------------------------------------------------------------
 // Lower-level helpers (mirrors Python's make_trivial_cage_totals etc.)
 // ---------------------------------------------------------------------------

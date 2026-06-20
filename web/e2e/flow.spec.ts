@@ -208,6 +208,25 @@ test('big apple: manual dropdown switch synthesizes state and confirms to playin
   await expect(page.locator('#virtual-cage-btn')).toBeHidden();
 });
 
+test('big apple: misread given is detected once corrected during review', async ({ page }) => {
+  await loadSpec(page, 'bigAppleMisread');
+  // Detection ran once on the OCR-misread digits and concluded false: banner hidden, dropdown defaults to classic.
+  await expect(page.locator('#bigapple-banner')).toBeHidden();
+  await expect(page.locator('#puzzle-type-select')).toHaveValue('classic');
+
+  // Correct the misread given at (row2, col5) — 0-based [1][4] — from 7 back to 6.
+  const canvas = page.locator('#grid-canvas');
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  const cellSize = box!.width / 9;
+  await canvas.click({ position: { x: cellSize * 4.5, y: cellSize * 1.5 } });
+  await page.locator('#digit-6').click();
+
+  // Re-running detection on the corrected grid should now flag Big Apple.
+  await expect(page.locator('#bigapple-banner')).toBeVisible();
+  await expect(page.locator('#puzzle-type-select')).toHaveValue('bigapple');
+});
+
 test('classic puzzle: digit pad visible during review (action buttons hidden)', async ({ page }) => {
   await loadClassicPuzzle(page);
   // The digit pad is inside #playing-actions which is shown for Classic review

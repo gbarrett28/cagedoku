@@ -18,7 +18,10 @@ import { initiateUpload, grantConsent, revokeConsent, uploadTrainingData, submit
 import { dataToSpec, classicSyntheticSpec, specToData, specToCageStates } from './session/specUtils.js';
 import { analyseKernels } from './engine/kernelAnalysis.js';
 import { WINDOW_STARTS } from './engine/bigAppleBoardState.js';
-import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec, makeClassicGivenDigits, makeClassicPartialGivenDigits } from './engine/fixtures.js';
+import {
+  makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec, makeClassicGivenDigits, makeClassicPartialGivenDigits,
+  makeBigAppleMisreadGivenDigits,
+} from './engine/fixtures.js';
 import {
   uploadPuzzle,
   loadSpecDirect,
@@ -57,6 +60,7 @@ import type {
 } from './session/types.js';
 import { buildEngine } from './session/engine.js';
 import type { BoardState } from './engine/index.js';
+import { detectBigApple } from './engine/index.js';
 import type { Cell } from './engine/types.js';
 import { GridNotFoundError } from './image/inpImage.js';
 import { UserFacingError } from './session/errors.js';
@@ -158,6 +162,7 @@ let totalEditPrev = 0;
 let reviewErrorCells = new Set<string>(); // "row,col" keys — cages failing Confirm validation
 let reviewSuspectCells = new Set<string>(); // "row,col" keys — cells suspected of OCR misread (amber)
 let kernelWarningShown = false; // true after first-confirm kernel warning; skips analysis on re-confirm
+let userOverrodePuzzleType = false; // true once the user touches the Type dropdown; suppresses auto re-detection on further edits
 
 // Bug reporting state
 let pendingBug: { info: string } | null = null;
@@ -326,7 +331,7 @@ function drawCageBorders(
 }
 
 function drawWindowTint(ctx: CanvasRenderingContext2D): void {
-  ctx.fillStyle = 'rgba(37, 99, 235, 0.10)';
+  ctx.fillStyle = 'rgba(34, 197, 94, 0.12)';
   for (const [r0, c0] of WINDOW_STARTS) {
     ctx.fillRect(MARGIN + c0 * CELL, MARGIN + r0 * CELL, 3 * CELL, 3 * CELL);
   }
@@ -1167,6 +1172,7 @@ function applyUploadResult(
   reviewErrorCells = new Set();
   reviewSuspectCells = new Set();
   kernelWarningShown = false;
+  userOverrodePuzzleType = false;
   renderState(state);
   const warpedCol = el<HTMLElement>('warped-col');
   const warpedImg = el<HTMLImageElement>('warped-img');
@@ -1670,6 +1676,24 @@ async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number)
   currentState = { ...currentState, givenDigits };
   setState(currentState);
   reviewErrorCells = findDuplicateCells(givenDigits);
+
+  // Detection only runs once at OCR time, on the (possibly misread) raw digits.
+  // Correcting a misread digit during review can flip a puzzle's true type, so
+  // re-run it on every edit — unless the user has already made an explicit
+  // Type-dropdown choice, which always wins.
+  if (!userOverrodePuzzleType && !PuzzleState.isKiller(currentState)) {
+    const detected = detectBigApple(givenDigits);
+    el<HTMLElement>('bigapple-banner').hidden = !detected;
+    if (detected !== PuzzleState.isBigApple(currentState)) {
+      const updated = detected
+        ? PuzzleState.createBigApple(givenDigits, currentState.alwaysApplyRules, currentState.originalImageUrl)
+        : PuzzleState.createClassic(givenDigits, currentState.alwaysApplyRules, currentState.originalImageUrl);
+      setState(updated);
+      currentState = updated;
+      renderState(updated);
+    }
+  }
+
   redrawGrid();
 }
 
@@ -2183,6 +2207,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const state = currentState;
     if (state === null) return;
     const type = (e.target as HTMLSelectElement).value as 'killer' | 'classic' | 'bigapple';
+    userOverrodePuzzleType = true;
     el<HTMLElement>('bigapple-banner').hidden = true;
     const candidates = getStateCandidates();
     const found = activeCandidate(candidates, type);
@@ -2700,12 +2725,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 'trivial'     — all 81 cells are single-cell cages; all auto-placed after confirm.
     // 'twoCellCage' — top-left two cells share a cage (sum 8); still over-constrained.
     // 'boxCage'     — 9 box cages (3×3 each, sum 45); no cell auto-placed → digit entry works.
-    // 'classic'     — Classic sudoku with one blank cell; always goes to review screen.
+    // 'classic'         — Classic sudoku with one blank cell; always goes to review screen.
+    // 'bigAppleMisread' — Big Apple grid with one OCR-misread given; detection misses it
+    //                      until the user corrects that cell during review.
     (window as unknown as Record<string, unknown>)['__testLoad'] = (specName?: string) => {
-      if (specName === 'classic' || specName === 'classicPartial') {
-        const givenDigits = specName === 'classicPartial'
-          ? makeClassicPartialGivenDigits()
-          : makeClassicGivenDigits();
+      if (specName === 'classic' || specName === 'classicPartial' || specName === 'bigAppleMisread') {
+        const givenDigits =
+          specName === 'classicPartial' ? makeClassicPartialGivenDigits() :
+          specName === 'bigAppleMisread' ? makeBigAppleMisreadGivenDigits() :
+          makeClassicGivenDigits();
         const { state, warpedImageUrl, warning } = loadClassicDirect(givenDigits);
         // Classic borders: all walls present; values don't affect Classic rendering/confirm.
         draftBorderX = Array.from({ length: 9 }, () => Array.from({ length: 8 }, () => true));
