@@ -45,7 +45,7 @@
 
 The fixture is a "deadly rectangle" (Unique Rectangle): cells `(3,3)=2`, `(3,4)=7`, `(7,3)=7`, `(7,4)=2` are blanked from an otherwise-complete valid Big Apple grid. Swapping `2↔7` across those 4 cells produces a second grid that is also fully valid under plain row/column/box rules (the swap only permutes values within the same 2 rows and same 2 columns, so no row/column/box ever sees a duplicate) — so no classic-only technique (naked/hidden single, pair, triple, pointing pairs, etc.) can resolve it without assuming a unique solution; classic-only propagation provably stalls. Under classic+window rules, the swap fails: `(3,3)` is the only blank cell in the top-left window (rows 1–3, cols 1–3), so it resolves immediately to `2` (the value the swap would have placed there is invalid because the window's other 8 cells already account for every digit except `2`); symmetrically `(7,3)` resolves to `7` in the bottom-left window. With those two cells fixed, row 3's only remaining blank `(3,4)` resolves to `7` by ordinary naked single, and row 7's `(7,4)` resolves to `2`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `web/src/engine/fixtures.ts` (after `makeClassicPartialGivenDigits`, before the `Lower-level helpers` section comment at line 136):
 
@@ -117,12 +117,12 @@ import { makeTrivialSpec, makeClassicGivenDigits, makeBigAppleGivenDigits } from
 
 (Remove the standalone `import { detectBigApple } from './index.js';` and `import { makeClassicGivenDigits, makeBigAppleGivenDigits } from './fixtures.js';` lines shown above the `describe` block — they were shown separately only to make the new symbols explicit; merge them into the file's existing import lines instead of adding duplicate imports.)
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd web && npx vitest run src/engine/index.test.ts -t detectBigApple`
 Expected: FAIL — `detectBigApple is not exported by './index.js'` (or a TypeScript error if compiled first).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `web/src/engine/index.ts`, add the import (after the existing `import { BoardState, KillerBoardState } from './boardState.js';` line):
 
@@ -158,12 +158,12 @@ export function detectBigApple(givenDigits: number[][]): boolean {
 
 `checkStalled` is defined further down in the file (line 54) — since this is a same-file function declaration, hoisting makes it available regardless of declaration order, but for readability move `detectBigApple` below `checkStalled`'s definition instead: insert it immediately after `checkStalled` (after line 58) rather than after `seedGivenDigits`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd web && npx vitest run src/engine/index.test.ts -t detectBigApple`
 Expected: PASS (all 3 new tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/engine/fixtures.ts web/src/engine/index.ts web/src/engine/index.test.ts
