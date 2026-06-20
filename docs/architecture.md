@@ -111,6 +111,23 @@ PuzzleState` adds `specData`, `cageStates`, `virtualCages`, and `warpedImageUrl`
 Fresh states are built via `PuzzleState.createClassic(...)` and
 `PuzzleState.createKiller(...)` factories rather than synthetic specs.
 
+`BigAppleBoardState extends BoardState` (`web/src/engine/bigAppleBoardState.ts`)
+adds a third axis orthogonal to killer/classic: 4 extra offset 3×3 "window"
+units (rows/cols `[1..3]`/`[5..7]` crossed with `[1..3]`/`[5..7]`, 0-based),
+registered via the same `UnitKind.BOX` every box-aware rule already gates on
+— no per-rule changes were needed to cover them. `PuzzleState.isBigApple`
+(`'bigApple' in state`, mirroring `isKiller`'s `'specData' in state` pattern)
+makes `buildEngine`'s `isKiller` ternary 3-way: killer → `KillerBoardState` +
+`KillerSolverEngine`; Big Apple → `BigAppleBoardState` + plain `SolverEngine`;
+classic → plain `BoardState` + plain `SolverEngine`. Big Apple shares
+classic's `PuzzleState` shape exactly (no cage fields, same `givenDigits`),
+so it needs no new serialized fields beyond the `bigApple: true` discriminant.
+A virtual method, `BoardState.extraPeers(r, c): readonly Cell[]` (default
+`[]`, overridden by `BigAppleBoardState` to return the cell's window peers),
+lets `mrvBacktrack`'s forward-checking respect window constraints without an
+`instanceof` check — the same template-method shape `cageConstraints()`
+already established for cage validity in the backtracker.
+
 `userGrid` is always a real 9×9 grid — all-zero before `/confirm` (OCR review
 phase). The "has this session been confirmed?" signal is
 `state.goldenSolution === null` / `!== null` (an existing field that is `null`
@@ -704,19 +721,21 @@ and by a dev-only replay hook.
 ```typescript
 export type SerializedPuzzleState =
   | (PuzzleState & { readonly kind: 'classic'; readonly version: 1 })
+  | (BigApplePuzzleState & { readonly kind: 'bigapple'; readonly version: 1 })
   | (KillerPuzzleState & { readonly kind: 'killer'; readonly version: 1 });
 
 export function serialize(state: PuzzleState): SerializedPuzzleState
 export function deserialize(data: unknown): PuzzleState
 ```
 
-- `serialize` is a total, structural transform: `{ kind: isKiller(state) ? 'killer'
-  : 'classic', version: 1, ...state }`. It includes `originalImageUrl`/
-  `warpedImageUrl` as-is — callers that need a smaller payload (e.g. the
-  feedback handler, to avoid embedding large data URLs in a GitHub issue body)
-  null those fields out on their own copy.
+- `serialize` is a total, structural transform: `isKiller(state) ? { kind:
+  'killer', ... } : isBigApple(state) ? { kind: 'bigapple', ... } : { kind:
+  'classic', ... }`, each spreading `version: 1, ...state`. It includes
+  `originalImageUrl`/`warpedImageUrl` as-is — callers that need a smaller
+  payload (e.g. the feedback handler, to avoid embedding large data URLs in a
+  GitHub issue body) null those fields out on their own copy.
 - `deserialize` throws immediately if `data` is not an object, `kind` is not
-  `'classic' | 'killer'`, or `version !== 1` — no migration path; pre-redesign
+  `'classic' | 'bigapple' | 'killer'`, or `version !== 1` — no migration path; pre-redesign
   reports and any future format change simply fail `deserialize`. It validates
   gross shape (array dimensions, primitive element types) of each top-level
   field at the same rigor as `shared/src/reports/*.ts`'s `is()` functions, but
