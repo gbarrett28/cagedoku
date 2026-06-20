@@ -68,7 +68,7 @@ function runTriggerValidation(
 
   // Full session snapshot — shared by both miss reports and violation reports.
   // Replayable via PuzzleState.deserialize + buildEngine (see RuleBugFixture).
-  const puzzleType = PuzzleState.isKiller(state) ? 'killer' : 'classic';
+  const puzzleType = PuzzleState.kind(state);
   const serialized = PuzzleState.serialize(state);
 
   for (const miss of misses) {
@@ -232,7 +232,7 @@ export function buildEngine(
         submitRuleBugReport({
           ruleName,
           offendingEliminations: offending.map(e => ({ cell: [e.cell[0], e.cell[1]] as [number, number], digit: e.digit })),
-          puzzleType: PuzzleState.isKiller(state) ? 'killer' : 'classic',
+          puzzleType: PuzzleState.kind(state),
           state: PuzzleState.serialize(state),
         });
       }

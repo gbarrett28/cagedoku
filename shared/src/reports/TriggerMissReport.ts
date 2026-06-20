@@ -23,7 +23,7 @@ export namespace TriggerMissReport {
     if (typeof v['ruleName'] !== 'string' || v['ruleName'].length === 0) return false;
     if (typeof v['missedContext'] !== 'string' || v['missedContext'].length === 0) return false;
     if (!Array.isArray(v['missedEliminations'])) return false;
-    if (v['puzzleType'] !== 'killer' && v['puzzleType'] !== 'classic') return false;
+    if (v['puzzleType'] !== 'killer' && v['puzzleType'] !== 'classic' && v['puzzleType'] !== 'bigapple') return false;
     if (typeof v['state'] !== 'object' || v['state'] === null) return false;
     return true;
   }

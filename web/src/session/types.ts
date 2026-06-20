@@ -368,6 +368,11 @@ export namespace PuzzleState {
     return 'bigApple' in state;
   }
 
+  /** The puzzle-type label for telemetry/UI — not the OCR-detected layout type. */
+  export function kind(state: PuzzleState): 'killer' | 'classic' | 'bigapple' {
+    return isKiller(state) ? 'killer' : isBigApple(state) ? 'bigapple' : 'classic';
+  }
+
   /** Enabled rules for this puzzle's type: killer yields all; classic excludes `killerOnly`. */
   export function* rules(state: PuzzleState): Iterable<SolverRule> {
     const disabled = new Set(DISABLED_RULES);

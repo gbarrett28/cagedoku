@@ -24,7 +24,7 @@ export interface ReportBase {
  */
 export interface PuzzleRuleReport extends ReportBase {
   readonly ruleName: string;
-  readonly puzzleType: 'killer' | 'classic';
+  readonly puzzleType: 'killer' | 'classic' | 'bigapple';
   readonly state: unknown;
 }
 
@@ -34,6 +34,6 @@ export interface PuzzleRuleReport extends ReportBase {
  */
 export interface ReproductionBundle {
   readonly ruleName: string;
-  readonly puzzleType: 'killer' | 'classic';
+  readonly puzzleType: 'killer' | 'classic' | 'bigapple';
   readonly state: unknown;
 }

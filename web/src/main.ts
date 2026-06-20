@@ -17,6 +17,7 @@ import { defaultImagePipelineConfig } from './image/config.js';
 import { initiateUpload, grantConsent, revokeConsent, uploadTrainingData, submitStallReport, hasConsent } from './image/trainingUpload.js';
 import { dataToSpec, classicSyntheticSpec, specToData, specToCageStates } from './session/specUtils.js';
 import { analyseKernels } from './engine/kernelAnalysis.js';
+import { WINDOW_STARTS } from './engine/bigAppleBoardState.js';
 import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec, makeClassicGivenDigits, makeClassicPartialGivenDigits } from './engine/fixtures.js';
 import {
   uploadPuzzle,
@@ -323,15 +324,6 @@ function drawCageBorders(
     }
   }
 }
-
-// 0-based top-left corner of each Big Apple window, in row-major reading
-// order — mirrors BigAppleBoardState's WINDOW_STARTS (web/src/engine/bigAppleBoardState.ts).
-const WINDOW_STARTS: readonly (readonly [number, number])[] = [
-  [1, 1], // top-left
-  [5, 1], // bottom-left
-  [1, 5], // top-right
-  [5, 5], // bottom-right
-];
 
 function drawWindowTint(ctx: CanvasRenderingContext2D): void {
   ctx.fillStyle = 'rgba(37, 99, 235, 0.10)';
@@ -643,7 +635,7 @@ function renderState(state: PuzzleState): void {
   currentState = state;
   drawGrid(el<HTMLCanvasElement>('grid-canvas'), state);
 
-  const puzzleType = PuzzleState.isKiller(state) ? 'killer' : PuzzleState.isBigApple(state) ? 'bigapple' : 'classic';
+  const puzzleType = PuzzleState.kind(state);
 
   const heading = document.getElementById('detected-layout-heading');
   if (heading !== null) {
@@ -1292,7 +1284,7 @@ async function handleProcess(file?: File): Promise<void> {
     };
 
     const nCages = Math.max(...ocrSpec.regions.flat()) + 1;
-    logAction('ocr_complete', `${PuzzleState.isKiller(state) ? 'killer' : 'classic'}, ${nCages} cage(s)${warning ? ', warning: ' + warning : ''}`);
+    logAction('ocr_complete', `${PuzzleState.kind(state)}, ${nCages} cage(s)${warning ? ', warning: ' + warning : ''}`);
 
     // Attempt auto-confirm (Killer only): skip the review screen when OCR is clean,
     // the cage layout is valid, and the solver finds a complete solution.
@@ -1388,7 +1380,7 @@ async function handleProcess(file?: File): Promise<void> {
         if (boardComplete) {
           lastOcrCandidates = getStateCandidates();
           lastWarpedUrl = warpedImageUrl;
-          logAction('auto_confirmed', 'classic');
+          logAction('auto_confirmed', PuzzleState.kind(state));
           const classicPlaying = confirmPuzzle(classicBoard);
           renderPlayingMode(classicPlaying);
           appendCallouts(buildPlayingCallouts(false));
@@ -1402,7 +1394,7 @@ async function handleProcess(file?: File): Promise<void> {
           // 81/81-digit OCR result); coverage comes from the manual-confirm path
           // tests and the underlying upload-function unit tests.
           if (classicUsedBt && classicStalled && state.originalImageUrl !== null) {
-            const classicStallReport = { puzzleType: 'classic' as const, stalledCandidates: classicStalled };
+            const classicStallReport = { puzzleType: PuzzleState.kind(state), stalledCandidates: classicStalled };
             if (hasConsent()) {
               submitStallReport(classicStallReport);
             } else {
@@ -1534,7 +1526,7 @@ async function handleConfirm(): Promise<void> {
     }
 
     const playing = confirmPuzzle(confirmedBoard);
-    logAction('confirmed', PuzzleState.isKiller(state) ? 'killer' : 'classic');
+    logAction('confirmed', PuzzleState.kind(state));
     renderPlayingMode(playing);
     appendCallouts(buildPlayingCallouts(PuzzleState.isKiller(playing)));
     setStatus('');
@@ -1543,7 +1535,7 @@ async function handleConfirm(): Promise<void> {
 
     // Upload puzzle spec when backtracking was needed (rules alone couldn't solve it).
     if (confirmUsedBacktracking && confirmStalledCandidates && state.originalImageUrl !== null) {
-      const stallReport = { puzzleType: PuzzleState.isKiller(state) ? 'killer' as const : 'classic' as const, stalledCandidates: confirmStalledCandidates };
+      const stallReport = { puzzleType: PuzzleState.kind(state), stalledCandidates: confirmStalledCandidates };
       if (hasConsent()) {
         submitStallReport(stallReport);
       } else {

@@ -3,7 +3,7 @@ import type { CandidateGrid } from '../grid.js';
 
 export interface StallStateExport extends ReportBase {
   readonly reportType: 'stall';
-  readonly puzzleType: 'killer' | 'classic';
+  readonly puzzleType: 'killer' | 'classic' | 'bigapple';
   readonly stalledCandidates: CandidateGrid;
 }
 
@@ -15,7 +15,7 @@ export namespace StallStateExport {
     if (typeof v['reportedAt'] !== 'string') return false;
     if (typeof v['appVersion'] !== 'string') return false;
     if (typeof v['userAgent'] !== 'string') return false;
-    if (v['puzzleType'] !== 'killer' && v['puzzleType'] !== 'classic') return false;
+    if (v['puzzleType'] !== 'killer' && v['puzzleType'] !== 'classic' && v['puzzleType'] !== 'bigapple') return false;
     if (!isStallCandidates(v['stalledCandidates'])) return false;
     return true;
   }

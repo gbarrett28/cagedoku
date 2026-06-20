@@ -80,12 +80,27 @@ geometrically (`board.boxUnitId(br*3, bc*3)`) rather than by iterating
 get full coverage from every other `UnitKind.BOX`-aware rule; this is an
 accepted, documented gap, not a blocker.
 
+`PuzzleState.kind(state)` (`web/src/session/types.ts`) returns
+`'killer' | 'classic' | 'bigapple'` and is the single source of truth for
+this label wherever it's needed for telemetry or UI display (the puzzle-type
+dropdown, rule-bug/trigger-miss/stall reports, action logging). Do not
+reintroduce an inline `isKiller(state) ? 'killer' : 'classic'` ternary — it
+silently mislabels Big Apple states as classic, since `isKiller` is false
+for both. This is distinct from the OCR-detected *layout* type
+(`ParseResult.puzzleType`, `'killer' | 'classic'` only) used during the
+upload/detection pipeline before a candidate `PuzzleState` exists — Big
+Apple images are always OCR-detected as classic layout (no cage borders),
+so that type correctly stays binary and must not be widened.
+
 ## Rendering
 
 Window cells get a light background tint (`drawWindowTint`, `web/src/main.ts`)
 gated on `PuzzleState.isBigApple(state)` — a plain `fillRect` per window cell
 with no border math, since window units need no boundary lines. Standard
 3×3 box lines render unconditionally, same as for classic and killer.
+`WINDOW_STARTS` (the 4 window top-left corners) is defined once in
+`bigAppleBoardState.ts` and exported; `main.ts` imports it rather than
+keeping its own copy.
 
 ## Out of scope
 

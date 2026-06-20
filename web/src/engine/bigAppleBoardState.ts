@@ -4,15 +4,14 @@
  * Big Apple Sudoku (aka Hyper Sudoku / Windoku): classic sudoku rules plus 4
  * extra non-aligned 3×3 regions, each requiring digits 1-9 exactly once.
  * Windows reuse UnitKind.BOX (not a new enum value) so every rule already
- * gating on UnitKind.BOX automatically covers them — see
- * docs/superpowers/specs/2026-06-20-big-apple-sudoku-design.md §2.
+ * gating on UnitKind.BOX automatically covers them — see docs/big-apple-sudoku.md.
  */
 
 import { BoardState } from './boardState.js';
 import { Cell, UnitKind } from './types.js';
 
 // 0-based top-left corner of each window, in row-major reading order.
-const WINDOW_STARTS: readonly (readonly [number, number])[] = [
+export const WINDOW_STARTS: readonly (readonly [number, number])[] = [
   [1, 1], // top-left
   [5, 1], // bottom-left
   [1, 5], // top-right

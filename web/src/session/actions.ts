@@ -610,9 +610,7 @@ export function activeCandidate(
   candidates: readonly PuzzleState[],
   selectedType: 'killer' | 'classic' | 'bigapple',
 ): PuzzleState | undefined {
-  const kindOf = (c: PuzzleState): 'killer' | 'classic' | 'bigapple' =>
-    PuzzleState.isKiller(c) ? 'killer' : PuzzleState.isBigApple(c) ? 'bigapple' : 'classic';
-  return candidates.find(c => kindOf(c) === selectedType);
+  return candidates.find(c => PuzzleState.kind(c) === selectedType);
 }
 
 /**
