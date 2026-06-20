@@ -1148,7 +1148,12 @@ function openFeedbackModal(): void {
   (el<HTMLDialogElement>('feedback-modal') as HTMLDialogElement).showModal();
 }
 
-function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, warning: string | null): void {
+function applyUploadResult(
+  state: PuzzleState,
+  warpedImageUrl: string | null,
+  warning: string | null,
+  detectedBigApple = false,
+): void {
   reviewErrorCells = new Set();
   reviewSuspectCells = new Set();
   kernelWarningShown = false;
@@ -1173,6 +1178,7 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
   el<HTMLButtonElement>('new-puzzle-btn').hidden = false;
   el<HTMLButtonElement>('edit-ocr-btn').hidden = true;
   setStatus(warning ? `Warning: ${warning}` : '');
+  el<HTMLElement>('bigapple-banner').hidden = !detectedBigApple;
 }
 
 /**
@@ -1251,7 +1257,7 @@ async function handleProcess(file?: File): Promise<void> {
   setStatus('Processing image…');
   setLoading(true);
   try {
-    const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs } = await uploadPuzzle(f);
+    const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs, detectedBigApple } = await uploadPuzzle(f);
     pendingCellThumbs = new Map(cellThumbs);
     pendingMergedThumbs = new Map(mergedThumbs);
 
@@ -1341,7 +1347,7 @@ async function handleProcess(file?: File): Promise<void> {
       if (allFilled) {
         const dupCells = findDuplicateCells(state.givenDigits);
         if (dupCells.size > 0) {
-          applyUploadResult(state, warpedImageUrl, null);
+          applyUploadResult(state, warpedImageUrl, null, detectedBigApple);
           appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
           logAction('review_shown', 'classic duplicates');
           reviewErrorCells = dupCells;
@@ -1393,7 +1399,7 @@ async function handleProcess(file?: File): Promise<void> {
           ));
           return;
         }
-        applyUploadResult(state, warpedImageUrl, null);
+        applyUploadResult(state, warpedImageUrl, null, detectedBigApple);
         appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
         logAction('review_shown', 'classic solver incomplete');
         setStatus('Solver could not process the detected digits — please review and confirm manually', true);
@@ -1404,7 +1410,7 @@ async function handleProcess(file?: File): Promise<void> {
     // Reach here when: OCR produced a warning, Classic grid is incomplete/invalid,
     // or this is a Classic puzzle the user needs to review.
     logAction('review_shown', !PuzzleState.isKiller(state) ? 'classic' : 'ocr warning');
-    applyUploadResult(state, warpedImageUrl, warning ?? 'Review the detected digits and press Confirm & Solve');
+    applyUploadResult(state, warpedImageUrl, warning ?? 'Review the detected digits and press Confirm & Solve', detectedBigApple);
     appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
   } catch (e) {
     if (e instanceof GridNotFoundError) {
@@ -2142,6 +2148,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   el<HTMLButtonElement>('install-dismiss-btn').addEventListener('click', () => {
     localStorage.setItem(INSTALL_DISMISSED_KEY, '1');
     hideInstallBanner();
+  });
+  el<HTMLButtonElement>('bigapple-banner-dismiss-btn').addEventListener('click', () => {
+    el<HTMLElement>('bigapple-banner').hidden = true;
   });
 
   // Web Share Target: consume any image stashed in IDB by the service worker.
