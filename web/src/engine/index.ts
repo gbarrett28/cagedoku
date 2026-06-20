@@ -118,6 +118,21 @@ export function solve(spec: PuzzleSpec, givenDigits?: number[][]): SolveResult {
 }
 
 /**
+ * Run the full classic rule engine on a Big Apple puzzle (classic rules plus
+ * the 4 extra window units). Falls back to MRV backtracking if it stalls.
+ */
+export function solveBigApple(givenDigits?: number[][]): SolveResult {
+  const board = new BigAppleBoardState();
+  const engine = new SolverEngine(board, defaultRules().filter(r => !r.killerOnly));
+
+  if (givenDigits) seedGivenDigits(engine, board, givenDigits);
+
+  engine.solve();
+
+  return runWithBacktrack(board, checkStalled(board));
+}
+
+/**
  * Load a pre-computed candidate grid and run the full rule engine from that state.
  *
  * `candidates` is a 9×9 array where each cell is a sorted array of remaining

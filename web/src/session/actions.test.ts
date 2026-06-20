@@ -59,6 +59,8 @@ import {
   makeTrivialSpec,
   makeTwoCellCageSpec,
   makeClassicGivenDigits,
+  makeBigAppleGivenDigits,
+  BIG_APPLE_SOLUTION,
   KNOWN_SOLUTION,
 } from '../engine/fixtures.js';
 import { specToData, specToCageStates, classicSyntheticSpec } from './specUtils.js';
@@ -99,6 +101,22 @@ function makeClassicConfirmed(): PuzzleState {
   return confirmPuzzle(board);
 }
 
+
+// ---------------------------------------------------------------------------
+// solveCurrentSpec — Big Apple dispatch
+// ---------------------------------------------------------------------------
+
+describe('solveCurrentSpec — Big Apple', () => {
+  it('dispatches to solveBigApple for a Big Apple state', () => {
+    const givenDigits = makeBigAppleGivenDigits();
+    const state = PuzzleState.createBigApple(givenDigits, [], null);
+    setState(state);
+    const result = solveCurrentSpec();
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++)
+        expect([...result.board.cands(r, c)]).toEqual([BIG_APPLE_SOLUTION[r]![c]!]);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // #13 – Classic candidates

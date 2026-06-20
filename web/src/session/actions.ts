@@ -7,7 +7,7 @@
  * main.ts can call them as drop-in replacements.
  */
 
-import { solve, BoardState, KillerBoardState, intersectAll, SolveResult } from '../engine/index.js';
+import { solve, solveBigApple, BoardState, KillerBoardState, intersectAll, SolveResult } from '../engine/index.js';
 import { mrvBacktrack } from '../engine/backtracker.js';
 import { solSums, solDiffs } from '../solver/equation.js';
 import type { DiffSolution } from '../solver/equation.js';
@@ -517,6 +517,7 @@ export function applyDraftLayout(
 export function solveCurrentSpec(): SolveResult {
   const state = requireState();
   if (state.goldenSolution !== null) throw new Error('Already confirmed');
+  if (PuzzleState.isBigApple(state)) return solveBigApple(state.givenDigits ?? undefined);
   const spec = PuzzleState.isKiller(state)
     ? cageStatesToSpec(state.cageStates, state.specData)
     : classicSyntheticSpec();
