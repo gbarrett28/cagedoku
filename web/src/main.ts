@@ -1681,7 +1681,7 @@ async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number)
   // Correcting a misread digit during review can flip a puzzle's true type, so
   // re-run it on every edit — unless the user has already made an explicit
   // Type-dropdown choice, which always wins.
-  if (!userOverrodePuzzleType && !PuzzleState.isKiller(currentState)) {
+  if (!userOverrodePuzzleType) {
     const detected = detectBigApple(givenDigits);
     el<HTMLElement>('bigapple-banner').hidden = !detected;
     if (detected !== PuzzleState.isBigApple(currentState)) {
