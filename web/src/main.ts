@@ -324,6 +324,22 @@ function drawCageBorders(
   }
 }
 
+// 0-based top-left corner of each Big Apple window, in row-major reading
+// order — mirrors BigAppleBoardState's WINDOW_STARTS (web/src/engine/bigAppleBoardState.ts).
+const WINDOW_STARTS: readonly (readonly [number, number])[] = [
+  [1, 1], // top-left
+  [5, 1], // bottom-left
+  [1, 5], // top-right
+  [5, 5], // bottom-right
+];
+
+function drawWindowTint(ctx: CanvasRenderingContext2D): void {
+  ctx.fillStyle = 'rgba(37, 99, 235, 0.10)';
+  for (const [r0, c0] of WINDOW_STARTS) {
+    ctx.fillRect(MARGIN + c0 * CELL, MARGIN + r0 * CELL, 3 * CELL, 3 * CELL);
+  }
+}
+
 function drawGridLines(ctx: CanvasRenderingContext2D): void {
   ctx.strokeStyle = '#000'; ctx.lineWidth = 0.5; ctx.setLineDash([3, 3]);
   for (let i = 1; i < 9; i++) {
@@ -510,6 +526,7 @@ function drawGrid(
   ctx.fillRect(0, 0, GRID_PX, GRID_PX);
   drawUnderlays(ctx, candidatesData, vcSelection, highlightKeys, selected, errorCells, suspectCells, vcNegSelection);
   if (PuzzleState.isKiller(state)) drawCageBorders(ctx, state, draft);
+  if (PuzzleState.isBigApple(state)) drawWindowTint(ctx);
   drawGridLines(ctx);
   if (PuzzleState.isKiller(state)) drawCageTotals(ctx, state);
   const cheapBoard = buildEngine(state, { skipSolve: true }).board;
