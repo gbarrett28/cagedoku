@@ -41,13 +41,6 @@ export function toDisplayName(ruleName: string): string {
   return ruleName.replace(/([A-Z])/g, ' $1').trim();
 }
 
-function unitKindFromId(unitId: number): UnitKind {
-  if (unitId < 9)  return UnitKind.ROW;
-  if (unitId < 18) return UnitKind.COL;
-  if (unitId < 27) return UnitKind.BOX;
-  return UnitKind.CAGE;
-}
-
 function dedupHints(hints: HintResult[]): HintResult[] {
   const seenElims = new Set<string>();
   const seenPlacements = new Set<string>();
@@ -193,7 +186,7 @@ export class SolverEngine {
             this.board.unitVersions[uid]! - 1, Trigger.SOLUTION_PRUNED, null);
       } else {
         const uid = event.payload as number;
-        const kind = unitKindFromId(uid);
+        const kind = this.board.units[uid]!.kind;
         for (const rule of this._triggerMap.get(event.trigger) ?? []) {
           if (rule.unitKinds.size === 0 || rule.unitKinds.has(kind))
             this.queue.enqueueUnit(rule.priority, rule, this._ruleIndex.get(rule)!, uid,

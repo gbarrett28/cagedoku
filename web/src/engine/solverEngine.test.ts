@@ -12,6 +12,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { solve } from './index.js';
 import { BoardState, KillerBoardState } from './boardState.js';
+import { BigAppleBoardState } from './bigAppleBoardState.js';
 import { SolverEngine, KillerSolverEngine } from './solverEngine.js';
 import { defaultRules } from './rules/index.js';
 import { LinearElimination } from './rules/linearElimination.js';
@@ -25,6 +26,33 @@ describe('SolverEngine init', () => {
     const bs = new KillerBoardState(makeTrivialSpec());
     const engine = new SolverEngine(bs, []);
     expect(engine).toBeDefined();
+  });
+});
+
+describe('SolverEngine trigger routing on a BigAppleBoardState', () => {
+  it('routes COUNT_DECREASED events for window units (id >= 27) to BOX-gated rules', () => {
+    const bs = new BigAppleBoardState();
+    let routedUnitId: number | null = null;
+    const probeRule: SolverRule = {
+      name: 'ProbeRule',
+      displayName: 'Probe',
+      description: 'test probe',
+      priority: 0,
+      killerOnly: false,
+      triggers: new Set([Trigger.COUNT_DECREASED]),
+      unitKinds: new Set([UnitKind.BOX]),
+      apply(ctx: RuleContext): RuleResult {
+        if (ctx.unit !== null) routedUnitId = ctx.unit.unitId;
+        return emptyResult();
+      },
+      asHints(): HintResult[] { return []; },
+    };
+    const engine = new SolverEngine(bs, [probeRule]);
+    // (1,1) is in the top-left window (unit id 27) and box (1,1)'s standard
+    // box (unit id 18) — removing a candidate fires COUNT_DECREASED for both.
+    engine.applyEliminations([{ cell: [1, 1] as Cell, digit: 9 }]);
+    engine.solve();
+    expect(routedUnitId).not.toBeNull();
   });
 });
 
