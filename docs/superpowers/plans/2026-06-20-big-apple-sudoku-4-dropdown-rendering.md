@@ -43,7 +43,7 @@ No e2e test is added for the OCR-pipeline-triggered detection path in this sprin
 - Consumes: `PuzzleState.isKiller`, `PuzzleState.isBigApple` (Sprint 2).
 - Produces: `activeCandidate(candidates: readonly PuzzleState[], selectedType: 'killer' | 'classic' | 'bigapple'): PuzzleState | undefined` — widened from the current `'killer' | 'classic'` signature. Consumed by Task 2's dropdown change handler.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to the existing `describe('activeCandidate', ...)` block in `web/src/session/actions.test.ts` (currently lines 1007-1023), after the existing 3 tests, before the closing `});`:
 
@@ -58,12 +58,12 @@ Add to the existing `describe('activeCandidate', ...)` block in `web/src/session
   });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd web && npx vitest run src/session/actions.test.ts -t "selectedType is bigapple"`
 Expected: FAIL — current `activeCandidate(candidates, selectedType: 'killer' | 'classic')` has no `'bigapple'` member in its parameter type, so this is a TypeScript compile error (`npx tsc --noEmit` will also report it); under plain `vitest run` without a prior `tsc` pass, the runtime behaviour is wrong instead: `PuzzleState.isKiller(c) === (selectedType === 'killer')` evaluates `selectedType === 'killer'` to `false` for `'bigapple'`, so it matches the **first non-killer** candidate (the classic one), making `toBe(bigAppleCandidate)` fail.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Replace `activeCandidate` in `web/src/session/actions.ts` (currently lines 586-591):
 
@@ -84,12 +84,12 @@ export function activeCandidate(
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd web && npx vitest run src/session/actions.test.ts -t activeCandidate`
 Expected: PASS (all 5 tests — 3 existing, 2 new).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/session/actions.ts web/src/session/actions.test.ts
@@ -108,7 +108,7 @@ git commit -m "feat: widen activeCandidate to a 3-way killer/classic/bigapple di
 - Consumes: `activeCandidate` (Task 1), `PuzzleState.isBigApple`/`createBigApple` (Sprint 2).
 - Produces: the puzzle-type dropdown can select/display `'bigapple'`; no new exports. Verified manually + via Playwright (DOM wiring, same convention as Sprint 3 Task 5 — no isolated unit-testable surface).
 
-- [ ] **Step 1: Add the dropdown option**
+- [x] **Step 1: Add the dropdown option**
 
 In `web/index.html`, add a third `<option>` to `#puzzle-type-select` (currently lines 165-168):
 
@@ -120,7 +120,7 @@ In `web/index.html`, add a third `<option>` to `#puzzle-type-select` (currently 
       </select>
 ```
 
-- [ ] **Step 2: Widen `renderState`'s `puzzleType` to 3-way**
+- [x] **Step 2: Widen `renderState`'s `puzzleType` to 3-way**
 
 In `web/src/main.ts`, replace the `puzzleType` derivation in `renderState` (currently line 629):
 
@@ -149,7 +149,7 @@ The line just below, `el<HTMLElement>('classic-edit-hint').hidden = puzzleType !
 
 The two lines after that (currently lines 645-646, `el('puzzle-type-select').value = puzzleType;` and `el('review-panel').dataset['puzzleType'] = puzzleType;`) need no code change — `puzzleType` is now correctly `'killer' | 'classic' | 'bigapple'` and both lines already just assign it through.
 
-- [ ] **Step 3: Widen the dropdown change handler to 3-way**
+- [x] **Step 3: Widen the dropdown change handler to 3-way**
 
 In `web/src/main.ts`, replace the change handler (currently lines 2163-2189):
 
@@ -192,18 +192,22 @@ In `web/src/main.ts`, replace the change handler (currently lines 2163-2189):
 
 The new `el<HTMLElement>('bigapple-banner').hidden = true;` line is the Sprint-3-deferred behaviour noted in that sprint's plan: switching the dropdown to any type (including back to Big Apple manually) clears the auto-detection banner, since the user has now taken an explicit action on the type.
 
-- [ ] **Step 4: Manual verification**
+- [x] **Step 4: Manual verification**
 
-Run: `cd web && npm run dev -- --port 5175`
+Deviation: same Playwright MCP limitation as Sprint 3 Task 5 — the sandbox's
+MCP browser can't launch (no system Chrome channel installed). Verified by
+code inspection instead: confirmed the dropdown markup now has 3 `<option>`s,
+`puzzleType`'s 3-way ternary and the heading's 3-way text dispatch are
+consistent with `PuzzleState.isBigApple`, the change handler's `'bigapple'`
+branch mirrors the existing `'classic'`/`'killer'` branches exactly (same
+given-digits-preservation logic), and the new `bigapple-banner` hide line
+runs unconditionally on every change. `tsc --noEmit` and the full Vitest
+suite (777 passed) confirm no regressions. Defer to the Silver Gate's
+Playwright suites for live regression coverage of the existing killer/classic
+dropdown paths (`flow.spec.ts:195`, `flow.spec.ts:425` already assert on
+`#puzzle-type-select`).
 
-Using the existing `__testLoad` dev hook or a real upload, confirm:
-1. The dropdown shows 3 options: Killer, Classic, Big Apple.
-2. Selecting "Big Apple" on a plain classic state synthesizes a `BigApplePuzzleState` from the current given digits, updates the heading to "Detected Layout — Big Apple Sudoku", and shows the classic-style edit hint (not hidden).
-3. Switching away from "Big Apple" back to "Classic" preserves the given digits and hides the banner if it was showing.
-
-Defer to the Silver Gate's Playwright suites for regression coverage of the existing killer/classic dropdown paths (`flow.spec.ts:195`, `flow.spec.ts:425` already assert on `#puzzle-type-select`).
-
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/index.html web/src/main.ts
@@ -223,7 +227,7 @@ git commit -m "feat: add Big Apple option to the puzzle-type dropdown"
 
 The 4 window corners (0-based, top-left of each 3×3 window) mirror `BigAppleBoardState`'s own `WINDOW_STARTS` constant (`web/src/engine/bigAppleBoardState.ts`, Sprint 1) — duplicated here rather than imported/exported across the engine/UI boundary, since it is 4 fixed numbers unlikely to ever change independently in only one of the two places.
 
-- [ ] **Step 1: Add `drawWindowTint`**
+- [x] **Step 1: Add `drawWindowTint`**
 
 In `web/src/main.ts`, add a new function immediately after `drawCageBorders` (after line 325, before `drawGridLines`):
 
@@ -245,7 +249,7 @@ function drawWindowTint(ctx: CanvasRenderingContext2D): void {
 }
 ```
 
-- [ ] **Step 2: Wire it into `drawGrid`**
+- [x] **Step 2: Wire it into `drawGrid`**
 
 In `web/src/main.ts`, update `drawGrid` (currently lines 511-514) to call it right after the cage-border draw call, before grid lines:
 
@@ -257,13 +261,20 @@ In `web/src/main.ts`, update `drawGrid` (currently lines 511-514) to call it rig
   if (PuzzleState.isKiller(state)) drawCageTotals(ctx, state);
 ```
 
-- [ ] **Step 3: Manual verification**
+- [x] **Step 3: Manual verification**
 
-Run: `cd web && npm run dev -- --port 5175`. Switch the puzzle-type dropdown to "Big Apple" (per Task 2) and confirm 4 lightly-tinted 3×3 regions appear at the expected offset positions (rows/cols 2–4 and 6–8 in 1-based terms), with standard grid lines drawn on top of the tint (not obscured by it) and digits still fully legible.
+Deviation: same Playwright MCP limitation as Sprint 3 Task 5 / Sprint 4 Task
+2 — verified by code inspection instead. `WINDOW_STARTS` in `main.ts` matches
+`BigAppleBoardState`'s window corners exactly (`[1,1]`, `[5,1]`, `[1,5]`,
+`[5,5]`, 0-based — rows/cols 2–4 and 6–8 in 1-based terms), `drawWindowTint`
+is called after `drawCageBorders` and before `drawGridLines` in `drawGrid`
+(so grid lines and digits draw on top of the tint, not obscured by it), and
+the fill is a low-alpha (`0.10`) overlay that won't interfere with digit
+legibility. `tsc --noEmit` and the full Vitest suite (777 passed) confirm no
+regressions. Defer to the Silver Gate's Playwright suites plus a manual
+dev-server check before merging.
 
-This is a pure canvas-drawing change with no DOM state to unit-test; defer to manual verification plus the Silver Gate's Playwright suites (which already exercise `drawGrid` indirectly via screenshot-free DOM assertions — no pixel-level test exists for cage borders either, so none is added here for consistency).
-
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add web/src/main.ts
@@ -282,7 +293,7 @@ git commit -m "feat: render Big Apple window regions with a background tint"
 
 This task has no test — it is documentation and repo hygiene, run once all 3 implementation sprints are verified complete (all checkboxes ticked across all 4 plan files).
 
-- [ ] **Step 1: Amend `docs/architecture.md`**
+- [x] **Step 1: Amend `docs/architecture.md`**
 
 In the "Board State Hierarchy" section, insert a new paragraph after the existing one ending "...Fresh states are built via `PuzzleState.createClassic(...)` and `PuzzleState.createKiller(...)` factories rather than synthetic specs." (currently `docs/architecture.md:111-112`), before the `userGrid is always a real 9×9 grid...` paragraph:
 
@@ -305,7 +316,7 @@ lets `mrvBacktrack`'s forward-checking respect window constraints without an
 already established for cage validity in the backtracker.
 ```
 
-- [ ] **Step 2: Write `docs/big-apple-sudoku.md`**
+- [x] **Step 2: Write `docs/big-apple-sudoku.md`**
 
 Create the file, mirroring `docs/classic-sudoku.md`'s structure:
 
@@ -398,7 +409,7 @@ with no border math, since window units need no boundary lines. Standard
 - Orientation correction, already deferred for classic, remains deferred.
 ```
 
-- [ ] **Step 3: Run the Silver Gate doc-hygiene check**
+- [x] **Step 3: Run the Silver Gate doc-hygiene check**
 
 Confirm (manually) that every implementation detail in
 `docs/superpowers/specs/2026-06-20-big-apple-sudoku-design.md` is now reflected
@@ -406,7 +417,20 @@ in either `docs/architecture.md` (Step 1) or `docs/big-apple-sudoku.md`
 (Step 2). Confirm every `- [ ]` checkbox is ticked across all 4 sprint plan
 files (`docs/superpowers/plans/2026-06-20-big-apple-sudoku-{1,2,3,4}-*.md`).
 
-- [ ] **Step 4: Delete the spec and plan files**
+Cross-referenced the spec's §2 "landmine fixes" against the actual codebase:
+`unitLabel` (`web/src/engine/rules/_labels.ts:22`) already detects window
+corners and emits "top-left window" etc. before falling back to `box (r,c)` —
+confirmed via its own test (`_labels.test.ts:44-47`) — and is now documented in
+`docs/big-apple-sudoku.md`'s Engine section. `unitKindFromId` does not exist
+anywhere in the codebase (zero matches); `solverEngine.ts` already does direct
+`.kind` lookups, so the spec's described landmine was either never a real
+issue here or was already avoided in Sprint 1 — nothing to document. Also
+found §4's Serialization section (`SerializedPuzzleState`'s `'bigapple'`
+branch) was not yet reflected in `docs/architecture.md`'s serialization
+section — added it. Sprints 1-3's plan files confirmed fully ticked
+(`grep -c "^\- \[ \]"` → 0 for all three).
+
+- [x] **Step 4: Delete the spec and plan files**
 
 ```bash
 git rm docs/superpowers/specs/2026-06-20-big-apple-sudoku-design.md
@@ -416,7 +440,7 @@ git rm docs/superpowers/plans/2026-06-20-big-apple-sudoku-3-ocr-detection.md
 git rm docs/superpowers/plans/2026-06-20-big-apple-sudoku-4-dropdown-rendering.md
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/architecture.md docs/big-apple-sudoku.md docs/superpowers/
