@@ -541,7 +541,7 @@ This task has no isolated unit-testable surface (DOM wiring), so it follows the 
 
 **Note for Sprint 4:** the design spec's §6 also calls for the banner to auto-hide once the user changes the puzzle-type dropdown away from Big Apple. That behaviour cannot be implemented here — the dropdown has no `bigapple` option yet (Sprint 4 adds it, along with the change handler at `main.ts` ~line 2163). This sprint's manual dismiss button is the interim mechanism; Sprint 4's plan must add `el('bigapple-banner').hidden = true;` to that change handler whenever the selected type changes away from `'bigapple'`.
 
-- [ ] **Step 1: Add the banner markup**
+- [x] **Step 1: Add the banner markup**
 
 In `web/index.html`, insert between `#classic-edit-hint` (ends at line 160) and `<div class="form-actions" id="review-actions">` (line 162):
 
@@ -553,7 +553,7 @@ In `web/index.html`, insert between `#classic-edit-hint` (ends at line 160) and 
     </p>
 ```
 
-- [ ] **Step 2: Wire visibility into `applyUploadResult`**
+- [x] **Step 2: Wire visibility into `applyUploadResult`**
 
 In `web/src/main.ts`, change `applyUploadResult`'s signature (currently line 1151):
 
@@ -572,7 +572,7 @@ Add inside the body, immediately after the existing `setStatus(warning ? `Warnin
   el<HTMLElement>('bigapple-banner').hidden = !detectedBigApple;
 ```
 
-- [ ] **Step 3: Add the dismiss handler**
+- [x] **Step 3: Add the dismiss handler**
 
 In `web/src/main.ts`, add alongside the other one-time `init()`-time `addEventListener` wiring (next to the install-banner wiring at lines 2136-2145, mirroring `install-dismiss-btn`'s pattern exactly — a direct click handler with no separate named function, since `bigapple-banner` has no persisted dismissal state unlike the install banner's `localStorage` flag):
 
@@ -582,7 +582,7 @@ In `web/src/main.ts`, add alongside the other one-time `init()`-time `addEventLi
   });
 ```
 
-- [ ] **Step 4: Thread `detectedBigApple` through `handleProcess`**
+- [x] **Step 4: Thread `detectedBigApple` through `handleProcess`**
 
 In `web/src/main.ts`, update the destructuring at the top of `handleProcess` (currently line 1254):
 
@@ -596,17 +596,24 @@ Pass it at the 3 classic-path `applyUploadResult` call sites only (the killer-pa
 - Line 1396 (classic solver-incomplete path): `applyUploadResult(state, warpedImageUrl, null, detectedBigApple);`
 - Line 1407 (general fallback path): `applyUploadResult(state, warpedImageUrl, warning ?? 'Review the detected digits and press Confirm & Solve', detectedBigApple);`
 
-- [ ] **Step 5: Manual verification**
+- [x] **Step 5: Manual verification**
 
-Run: `cd web && npm run dev -- --port 5175`
+Deviation: full interactive browser verification was not possible in this
+session — the Playwright MCP browser could not launch (`Chromium distribution
+'chrome' is not found at /opt/google/chrome/chrome`, and the MCP tool exposes
+no option to point at the bundled `/opt/pw-browsers/chromium-1194` binary
+instead). Verified by code inspection instead: confirmed `#bigapple-banner`
+starts `hidden` in `web/index.html`, that `applyUploadResult` is the sole
+place that flips `.hidden` based on `detectedBigApple`, and that the dismiss
+handler sets `.hidden = true` unconditionally with no interaction with any
+other control (dropdown, status text, etc.). `tsc --noEmit` and the full
+Vitest suite (775 passed) confirm no regressions. Defer to the Silver Gate's
+Playwright suite (`npx playwright test`, `npx playwright test --config
+playwright.dev.config.ts`) for real interactive regression coverage before
+merging — those suites already exercise `applyUploadResult`'s other
+visibility toggles and will catch a malformed selector or missing element.
 
-Using the browser dev console or a test fixture image, confirm:
-1. Uploading an ordinary classic puzzle image never shows the banner.
-2. Forcing `detectedBigApple: true` (e.g. via a temporary `console.log` or breakpoint, or by wiring a quick manual test through `__testLoad`) shows the banner, and the dismiss button hides it without affecting the dropdown selection or any other review-screen control.
-
-This is a UI-only change with no automated test in this task; defer to the Silver Gate's Playwright suite (`npx playwright test`, `npx playwright test --config playwright.dev.config.ts`) for regression coverage before merging — those suites already exercise `applyUploadResult`'s other visibility toggles and will catch a malformed selector or missing element.
-
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/index.html web/src/main.ts
