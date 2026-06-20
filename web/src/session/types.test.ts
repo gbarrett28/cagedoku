@@ -67,3 +67,24 @@ describe('PuzzleState.isBigApple', () => {
     expect(PuzzleState.isBigApple(bigApple)).toBe(true);
   });
 });
+
+describe('PuzzleState.serialize / deserialize — bigapple', () => {
+  it('round-trips a BigApplePuzzleState with kind "bigapple"', () => {
+    const givenDigits = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    givenDigits[0]![0] = 1;
+    const state = PuzzleState.createBigApple(givenDigits, ['nakedSingle'], null);
+    const serialized = PuzzleState.serialize(state);
+    expect(serialized.kind).toBe('bigapple');
+    expect(serialized.version).toBe(1);
+
+    const restored = PuzzleState.deserialize(serialized);
+    expect(PuzzleState.isBigApple(restored)).toBe(true);
+    expect(restored).toEqual(state);
+  });
+
+  it('rejects a "bigapple" payload with a malformed userGrid', () => {
+    const state = PuzzleState.createBigApple(null, [], null);
+    const serialized = { ...PuzzleState.serialize(state), userGrid: 'not-a-grid' };
+    expect(() => PuzzleState.deserialize(serialized)).toThrow(/userGrid/);
+  });
+});

@@ -314,7 +314,8 @@ export interface BigApplePuzzleState extends PuzzleState {
  */
 export type SerializedPuzzleState =
   | (PuzzleState & { readonly kind: 'classic'; readonly version: 1 })
-  | (KillerPuzzleState & { readonly kind: 'killer'; readonly version: 1 });
+  | (KillerPuzzleState & { readonly kind: 'killer'; readonly version: 1 })
+  | (BigApplePuzzleState & { readonly kind: 'bigapple'; readonly version: 1 });
 
 /** UI commands whose availability depends on puzzle state. */
 export type Command = 'undo' | 'inspectCage' | 'virtualCage' | 'reveal';
@@ -473,9 +474,9 @@ export namespace PuzzleState {
    * smaller payload strip those fields from their own copy.
    */
   export function serialize(state: PuzzleState): SerializedPuzzleState {
-    return isKiller(state)
-      ? { kind: 'killer', version: 1, ...state }
-      : { kind: 'classic', version: 1, ...state };
+    if (isKiller(state)) return { kind: 'killer', version: 1, ...state };
+    if (isBigApple(state)) return { kind: 'bigapple', version: 1, ...state };
+    return { kind: 'classic', version: 1, ...state };
   }
 
   /**
@@ -491,7 +492,7 @@ export namespace PuzzleState {
     }
     const v = data as Record<string, unknown>;
 
-    if (v['kind'] !== 'classic' && v['kind'] !== 'killer') {
+    if (v['kind'] !== 'classic' && v['kind'] !== 'killer' && v['kind'] !== 'bigapple') {
       throw new Error(`PuzzleState.deserialize: unrecognised kind ${JSON.stringify(v['kind'])}`);
     }
     if (v['version'] !== 1) {
@@ -530,6 +531,10 @@ export namespace PuzzleState {
     };
 
     if (v['kind'] === 'classic') return base;
+    if (v['kind'] === 'bigapple') {
+      const bigAppleState: BigApplePuzzleState = { ...base, bigApple: true };
+      return bigAppleState;
+    }
 
     const specData = v['specData'];
     if (typeof specData !== 'object' || specData === null) {
