@@ -196,6 +196,18 @@ test('classic puzzle: review panel shows Classic heading and type dropdown', asy
   expect(dropdownValue).toBe('classic');
 });
 
+test('big apple: manual dropdown switch synthesizes state and confirms to playing mode', async ({ page }) => {
+  await loadClassicPuzzle(page);
+  await page.locator('#puzzle-type-select').selectOption('bigapple');
+  await expect(page.locator('#puzzle-type-select')).toHaveValue('bigapple');
+  await expect(page.locator('#review-panel')).toHaveAttribute('data-puzzle-type', 'bigapple');
+  await page.locator('#confirm-btn').click();
+  await expect(page.locator('#playing-actions')).toBeVisible({ timeout: 5_000 });
+  // Killer-only controls stay hidden for Big Apple, same as Classic.
+  await expect(page.locator('#inspect-cage-btn')).toBeHidden();
+  await expect(page.locator('#virtual-cage-btn')).toBeHidden();
+});
+
 test('classic puzzle: digit pad visible during review (action buttons hidden)', async ({ page }) => {
   await loadClassicPuzzle(page);
   // The digit pad is inside #playing-actions which is shown for Classic review
