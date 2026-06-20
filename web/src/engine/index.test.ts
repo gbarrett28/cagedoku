@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { solveFromStall, solveFromCandidates } from './index.js';
-import { makeTrivialSpec } from './fixtures.js';
+import { solveFromStall, solveFromCandidates, detectBigApple } from './index.js';
+import { makeTrivialSpec, makeClassicGivenDigits, makeBigAppleGivenDigits } from './fixtures.js';
 
 describe('solveFromStall', () => {
   it('returns usedBacktracking=false and 81 solved cells for a fully-solved grid', () => {
@@ -57,5 +57,20 @@ describe('solveFromCandidates', () => {
     );
     const result = solveFromCandidates(makeTrivialSpec(), solved);
     expect(result.stalledCandidates).toBeUndefined();
+  });
+});
+
+describe('detectBigApple', () => {
+  it('returns false for an all-blank grid (both passes stall identically)', () => {
+    const blank = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    expect(detectBigApple(blank)).toBe(false);
+  });
+
+  it('returns false when classic rules alone already solve the grid', () => {
+    expect(detectBigApple(makeClassicGivenDigits())).toBe(false);
+  });
+
+  it('returns true for a deadly-rectangle grid that only windows can resolve', () => {
+    expect(detectBigApple(makeBigAppleGivenDigits())).toBe(true);
   });
 });

@@ -11,6 +11,7 @@
  */
 
 import { BoardState, KillerBoardState } from './boardState.js';
+import { BigAppleBoardState } from './bigAppleBoardState.js';
 import { mrvBacktrack } from './backtracker.js';
 import { SolverEngine, KillerSolverEngine } from './solverEngine.js';
 import type { HintResult } from './hint.js';
@@ -55,6 +56,29 @@ function checkStalled(board: BoardState): boolean {
   return Array.from({ length: 9 }, (_, r) =>
     Array.from({ length: 9 }, (_, c) => board.cands(r, c).size !== 1)
   ).some(row => row.some(Boolean));
+}
+
+
+/**
+ * Heuristic Big Apple detector: runs classic-only constraint propagation; if
+ * it stalls before every cell is solved, retries with the 4 extra window
+ * units (BigAppleBoardState). Concludes "Big Apple" only if the window retry
+ * completes the grid. Backtracking is deliberately excluded from both passes
+ * — brute-force search would solve a valid classic puzzle regardless of
+ * windows, making it useless as a discriminator.
+ */
+export function detectBigApple(givenDigits: number[][]): boolean {
+  const classicBoard = new BoardState();
+  const classicEngine = new SolverEngine(classicBoard, defaultRules().filter(r => !r.killerOnly));
+  seedGivenDigits(classicEngine, classicBoard, givenDigits);
+  classicEngine.solve();
+  if (!checkStalled(classicBoard)) return false;
+
+  const windowBoard = new BigAppleBoardState();
+  const windowEngine = new SolverEngine(windowBoard, defaultRules().filter(r => !r.killerOnly));
+  seedGivenDigits(windowEngine, windowBoard, givenDigits);
+  windowEngine.solve();
+  return !checkStalled(windowBoard);
 }
 
 function snapshotCandidates(board: BoardState): number[][][] {

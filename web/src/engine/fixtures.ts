@@ -133,6 +133,41 @@ export function makeClassicPartialGivenDigits(): number[][] {
   return grid;
 }
 
+/**
+ * A valid Big Apple sudoku solution (classic rules + 4 offset windows at
+ * rows/cols [1..3] and [5..7], 0-based).
+ */
+export const BIG_APPLE_SOLUTION: readonly (readonly number[])[] = [
+  [4, 8, 3, 9, 5, 7, 2, 6, 1],
+  [9, 1, 5, 3, 6, 2, 7, 4, 8],
+  [2, 6, 7, 8, 4, 1, 9, 5, 3],
+  [1, 9, 4, 2, 7, 3, 6, 8, 5],
+  [6, 5, 2, 4, 9, 8, 3, 1, 7],
+  [7, 3, 8, 6, 1, 5, 4, 2, 9],
+  [3, 2, 9, 5, 8, 6, 1, 7, 4],
+  [5, 4, 1, 7, 2, 9, 8, 3, 6],
+  [8, 7, 6, 1, 3, 4, 5, 9, 2],
+];
+
+/**
+ * BIG_APPLE_SOLUTION with a deadly rectangle blanked at (3,3),(3,4),(7,3),(7,4)
+ * (values 2 and 7). Classic-only constraint propagation cannot resolve this —
+ * swapping 2↔7 across all 4 cells produces an equally valid classic grid — but
+ * the Big Apple windows can: (3,3) is the only blank in the top-left window
+ * and (7,3) is the only blank in the bottom-left window, so both resolve
+ * immediately, cascading to ordinary row naked singles at (3,4) and (7,4).
+ * Used as the positive case for detectBigApple's classic-stalls/window-completes
+ * heuristic.
+ */
+export function makeBigAppleGivenDigits(): number[][] {
+  const grid = BIG_APPLE_SOLUTION.map(row => [...row]);
+  grid[3]![3] = 0;
+  grid[3]![4] = 0;
+  grid[7]![3] = 0;
+  grid[7]![4] = 0;
+  return grid;
+}
+
 // ---------------------------------------------------------------------------
 // Lower-level helpers (mirrors Python's make_trivial_cage_totals etc.)
 // ---------------------------------------------------------------------------
