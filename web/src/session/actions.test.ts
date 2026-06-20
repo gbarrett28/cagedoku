@@ -1076,6 +1076,15 @@ describe('activeCandidate', () => {
   it('returns undefined when no candidate of the selected type exists', () => {
     expect(activeCandidate([classicCandidate], 'killer')).toBeUndefined();
   });
+
+  it('returns the Big Apple candidate when selectedType is bigapple', () => {
+    const bigAppleCandidate = PuzzleState.createBigApple(null, [], null);
+    expect(activeCandidate([killerCandidate, classicCandidate, bigAppleCandidate], 'bigapple')).toBe(bigAppleCandidate);
+  });
+
+  it('does not return the classic candidate when selectedType is bigapple', () => {
+    expect(activeCandidate([classicCandidate], 'bigapple')).toBeUndefined();
+  });
 });
 
 describe('revertToOcr', () => {

@@ -608,9 +608,11 @@ export function confirmPuzzle(board: BoardState, fixtureStalledCandidates?: numb
  */
 export function activeCandidate(
   candidates: readonly PuzzleState[],
-  selectedType: 'killer' | 'classic',
+  selectedType: 'killer' | 'classic' | 'bigapple',
 ): PuzzleState | undefined {
-  return candidates.find(c => PuzzleState.isKiller(c) === (selectedType === 'killer'));
+  const kindOf = (c: PuzzleState): 'killer' | 'classic' | 'bigapple' =>
+    PuzzleState.isKiller(c) ? 'killer' : PuzzleState.isBigApple(c) ? 'bigapple' : 'classic';
+  return candidates.find(c => kindOf(c) === selectedType);
 }
 
 /**
