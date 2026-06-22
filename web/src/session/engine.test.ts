@@ -564,6 +564,36 @@ describe('isUserCorrupted', () => {
     };
     expect(isUserCorrupted(state)).toBe(false);
   });
+
+  it('returns true when a virtual cage total contradicts the golden solution', () => {
+    const gs: number[][] = KNOWN_SOLUTION.map(row => [...row]);
+    const badVc: VirtualCage = {
+      cells: [[0, 0], [0, 1]] as Cell[],
+      total: gs[0]![0]! + gs[0]![1]! + 1,
+      eliminatedSolns: [],
+    };
+    const state: KillerPuzzleState = {
+      ...makeState(),
+      goldenSolution: gs,
+      virtualCages: [badVc],
+    };
+    expect(isUserCorrupted(state)).toBe(true);
+  });
+
+  it('returns false when a virtual cage total matches the golden solution', () => {
+    const gs: number[][] = KNOWN_SOLUTION.map(row => [...row]);
+    const goodVc: VirtualCage = {
+      cells: [[0, 0], [0, 1]] as Cell[],
+      total: gs[0]![0]! + gs[0]![1]!,
+      eliminatedSolns: [],
+    };
+    const state: KillerPuzzleState = {
+      ...makeState(),
+      goldenSolution: gs,
+      virtualCages: [goodVc],
+    };
+    expect(isUserCorrupted(state)).toBe(false);
+  });
 });
 
 describe('buildEngine — golden check disabled when user-corrupted', () => {
