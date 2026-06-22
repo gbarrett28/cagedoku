@@ -31,7 +31,7 @@ JSON schema (`<puzzle>.json` alongside each `.jpg`):
 ```
 `cage_totals` remains column-major (`[col][row]`) to match `.jpk` access convention.
 
-- [ ] **Step 1: Create `web/migrate_pic_cache.py`**
+- [x] **Step 1: Create `web/migrate_pic_cache.py`**
 
 ```python
 #!/usr/bin/env python3
@@ -116,7 +116,7 @@ if __name__ == '__main__':
     main()
 ```
 
-- [ ] **Step 2: Run the migration**
+- [x] **Step 2: Run the migration**
 
 ```bash
 cd /c/Users/geoff/PycharmProjects/killer_sudoku
@@ -129,7 +129,7 @@ INFO guardian: 465 converted, 0 already up to date
 INFO observer: 424 converted, 0 already up to date
 ```
 
-- [ ] **Step 3: Spot-check one converted file**
+- [x] **Step 3: Spot-check one converted file**
 
 ```bash
 python3 -c "
@@ -143,7 +143,7 @@ print('cage_totals nonzero:', sum(1 for col in d['cage_totals'] for v in col if 
 
 Expected: keys `['grid', 'cage_totals', 'border_x', 'border_y', 'brdrs']`, grid shows 4 corner points, nonzero ~30.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add web/migrate_pic_cache.py
@@ -158,7 +158,7 @@ git commit -m "feat: migrate_pic_cache.py converts .jpk to plain JSON"
 - Create: `web/extract_guardian_samples.py`
 - Create: `tests/test_extract_guardian_samples.py`
 
-- [ ] **Step 1: Write failing tests for pure helper functions**
+- [x] **Step 1: Write failing tests for pure helper functions**
 
 Create `tests/test_extract_guardian_samples.py`:
 
@@ -204,7 +204,7 @@ def test_is_num_contour_rejects_too_short():
     assert is_num_contour(20, 5, subres=128) is False   # h=5 < 16
 ```
 
-- [ ] **Step 2: Run tests — expect ImportError**
+- [x] **Step 2: Run tests — expect ImportError**
 
 ```bash
 cd /c/Users/geoff/PycharmProjects/killer_sudoku && python -m pytest tests/test_extract_guardian_samples.py -v 2>&1 | head -10
@@ -212,7 +212,7 @@ cd /c/Users/geoff/PycharmProjects/killer_sudoku && python -m pytest tests/test_e
 
 Expected: `ModuleNotFoundError: No module named 'extract_guardian_samples'`
 
-- [ ] **Step 3: Create `web/extract_guardian_samples.py` with helpers only**
+- [x] **Step 3: Create `web/extract_guardian_samples.py` with helpers only**
 
 ```python
 #!/usr/bin/env python3
@@ -324,7 +324,7 @@ if __name__ == '__main__':
     pass  # CLI added in Task 2
 ```
 
-- [ ] **Step 4: Run tests — expect 7 passing**
+- [x] **Step 4: Run tests — expect 7 passing**
 
 ```bash
 python -m pytest tests/test_extract_guardian_samples.py -v
@@ -332,7 +332,7 @@ python -m pytest tests/test_extract_guardian_samples.py -v
 
 Expected: 7 tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/extract_guardian_samples.py tests/test_extract_guardian_samples.py
@@ -346,7 +346,7 @@ git commit -m "feat: add square_pad_src and is_num_contour helpers for guardian 
 **Files:**
 - Modify: `web/extract_guardian_samples.py` (replace `if __name__ == '__main__': pass` with full pipeline)
 
-- [ ] **Step 1: Replace the stub `__main__` block with the full pipeline**
+- [x] **Step 1: Replace the stub `__main__` block with the full pipeline**
 
 Replace the `if __name__ == '__main__': pass` at the bottom of `web/extract_guardian_samples.py` with:
 
@@ -546,7 +546,7 @@ if __name__ == '__main__':
     main()
 ```
 
-- [ ] **Step 2: Run existing unit tests to confirm helpers still pass**
+- [x] **Step 2: Run existing unit tests to confirm helpers still pass**
 
 ```bash
 python -m pytest tests/test_extract_guardian_samples.py -v
@@ -554,7 +554,7 @@ python -m pytest tests/test_extract_guardian_samples.py -v
 
 Expected: 7 tests pass.
 
-- [ ] **Step 3: Run the extraction**
+- [x] **Step 3: Run the extraction**
 
 ```bash
 cd /c/Users/geoff/PycharmProjects/killer_sudoku
@@ -571,7 +571,7 @@ INFO Wrote ~18000 samples to observer/observer_train_sq.json
 
 Flag if either directory reports fewer than 15 000 samples.
 
-- [ ] **Step 4: Spot-check digit distribution**
+- [x] **Step 4: Spot-check digit distribution**
 
 ```bash
 python3 -c "
@@ -586,7 +586,7 @@ for f in ['guardian/guardian_train_sq.json', 'observer/observer_train_sq.json']:
 
 Expected: all digits 1–9 present, reasonable distribution.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/extract_guardian_samples.py tests/test_extract_guardian_samples.py
