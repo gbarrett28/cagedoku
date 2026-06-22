@@ -152,9 +152,23 @@ export function userEliminations(board: BoardState, userGrid: number[][]): Elimi
 // ---------------------------------------------------------------------------
 
 /**
- * Returns true when the user has placed a wrong digit or manually removed a
- * golden-solution digit from the candidates — i.e. the board state has
- * diverged from the golden solution through user action, not rule error.
+ * Sum of `golden` over `cage.cells`, with `cage.negativeCells` subtracted —
+ * the value `cage.total` must equal for the cage to be golden-consistent.
+ */
+function virtualCageGoldenSum(cage: { cells: readonly Cell[]; negativeCells?: readonly Cell[] }, golden: readonly (readonly number[])[]): number {
+  const negKeys = new Set((cage.negativeCells ?? []).map(([r, c]) => `${r},${c}`));
+  let sum = 0;
+  for (const [r, c] of cage.cells) {
+    sum += negKeys.has(`${r},${c}`) ? -golden[r]![c]! : golden[r]![c]!;
+  }
+  return sum;
+}
+
+/**
+ * Returns true when the user has placed a wrong digit, manually removed a
+ * golden-solution digit from the candidates, or added a virtual cage whose
+ * total contradicts the golden solution — i.e. the board state has diverged
+ * from the golden solution through user action, not rule error.
  *
  * When true, `buildEngine` omits `goldenSolution` from the engine so rule
  * checks are disabled; there is no point filing a rule-bug report when the
@@ -174,6 +188,12 @@ export function isUserCorrupted(state: PuzzleState): boolean {
 
   for (const [r, c, d] of userRemoved(state)) {
     if (goldenSolution[r]![c]! === d) return true;
+  }
+
+  if (PuzzleState.isKiller(state)) {
+    for (const vc of state.virtualCages) {
+      if (virtualCageGoldenSum(vc, goldenSolution) !== vc.total) return true;
+    }
   }
 
   return false;
@@ -646,13 +666,7 @@ export function findWrongVirtualCageTurnIdx(state: PuzzleState): number | null {
   for (let i = 0; i < state.turns.length; i++) {
     const a = state.turns[i]!.action;
     if (a.type !== 'addVirtualCage') continue;
-    const { cells, total, negativeCells } = a.cage;
-    const negKeys = new Set((negativeCells ?? []).map(([r, c]) => `${r},${c}`));
-    let goldSum = 0;
-    for (const [r, c] of cells) {
-      goldSum += negKeys.has(`${r},${c}`) ? -gs[r]![c]! : gs[r]![c]!;
-    }
-    if (goldSum !== total) return i;
+    if (virtualCageGoldenSum(a.cage, gs) !== a.cage.total) return i;
   }
   return null;
 }
