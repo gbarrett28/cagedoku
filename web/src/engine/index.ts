@@ -1,7 +1,7 @@
 /**
  * Engine entry point — mirrors Python's `killer_sudoku.solver.engine` module.
  *
- * `solve()` constructs a BoardState, seeds given digits, runs the rule engine,
+ * `solve()` constructs a KillerBoardState, seeds given digits, runs the rule engine,
  * and falls back to MRV backtracking if the engine stalls.
  *
  * `solveFromStall()` loads a pre-computed candidate grid and re-runs the rule
@@ -10,17 +10,20 @@
  * `getHints()` runs a hint-mode pass and returns the first available hint result.
  */
 
-import { BoardState } from './boardState.js';
+import { BoardState, KillerBoardState } from './boardState.js';
+import { BigAppleBoardState } from './bigAppleBoardState.js';
 import { mrvBacktrack } from './backtracker.js';
-import { SolverEngine } from './solverEngine.js';
+import { SolverEngine, KillerSolverEngine } from './solverEngine.js';
 import type { HintResult } from './hint.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import { defaultRules } from './rules/index.js';
+import { DISABLED_RULES } from './rules/disabled-rules.js';
 import { Cell, Elimination } from './types.js';
 
-export { BoardState } from './boardState.js';
+export { BoardState, KillerBoardState, intersectAll } from './boardState.js';
 export { SolverEngine } from './solverEngine.js';
 export { defaultRules } from './rules/index.js';
+export { mrvBacktrack } from './backtracker.js';
 export type { HintResult } from './hint.js';
 
 function seedGivenDigits(engine: SolverEngine, board: BoardState, givenDigits: number[][]): void {
@@ -49,23 +52,33 @@ export interface SolveResult {
   stalledCandidates?: number[][][];
 }
 
-/** Build a classic spec for use as a neutral board container in solveFromStall.
- *  Nine row-cages (total=45 each), all vertical walls, no horizontal walls. */
-function makeClassicSpec(): PuzzleSpec {
-  const cageTotals = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-  for (let r = 0; r < 9; r++) cageTotals[r]![0] = 45;
-  return {
-    regions: Array.from({ length: 9 }, (_, r) => new Array<number>(9).fill(r + 1)),
-    cageTotals,
-    borderX: Array.from({ length: 9 }, () => new Array<boolean>(8).fill(true)),
-    borderY: Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false)),
-  };
-}
-
 function checkStalled(board: BoardState): boolean {
   return Array.from({ length: 9 }, (_, r) =>
     Array.from({ length: 9 }, (_, c) => board.cands(r, c).size !== 1)
   ).some(row => row.some(Boolean));
+}
+
+
+/**
+ * Heuristic Big Apple detector: runs classic-only constraint propagation; if
+ * it stalls before every cell is solved, retries with the 4 extra window
+ * units (BigAppleBoardState). Concludes "Big Apple" only if the window retry
+ * completes the grid. Backtracking is deliberately excluded from both passes
+ * — brute-force search would solve a valid classic puzzle regardless of
+ * windows, making it useless as a discriminator.
+ */
+export function detectBigApple(givenDigits: number[][]): boolean {
+  const classicBoard = new BoardState();
+  const classicEngine = new SolverEngine(classicBoard, defaultRules().filter(r => !r.killerOnly));
+  seedGivenDigits(classicEngine, classicBoard, givenDigits);
+  classicEngine.solve();
+  if (!checkStalled(classicBoard)) return false;
+
+  const windowBoard = new BigAppleBoardState();
+  const windowEngine = new SolverEngine(windowBoard, defaultRules().filter(r => !r.killerOnly));
+  seedGivenDigits(windowEngine, windowBoard, givenDigits);
+  windowEngine.solve();
+  return !checkStalled(windowBoard);
 }
 
 function snapshotCandidates(board: BoardState): number[][][] {
@@ -94,8 +107,23 @@ function runWithBacktrack(board: BoardState, stalled: boolean): SolveResult {
  * candidate grid as it was at the moment the engine stalled.
  */
 export function solve(spec: PuzzleSpec, givenDigits?: number[][]): SolveResult {
-  const board = new BoardState(spec, { includeVirtualCages: false });
-  const engine = new SolverEngine(board, defaultRules());
+  const board = new KillerBoardState(spec, { includeVirtualCages: false });
+  const engine = new KillerSolverEngine(board, defaultRules());
+
+  if (givenDigits) seedGivenDigits(engine, board, givenDigits);
+
+  engine.solve();
+
+  return runWithBacktrack(board, checkStalled(board));
+}
+
+/**
+ * Run the full classic rule engine on a Big Apple puzzle (classic rules plus
+ * the 4 extra window units). Falls back to MRV backtracking if it stalls.
+ */
+export function solveBigApple(givenDigits?: number[][]): SolveResult {
+  const board = new BigAppleBoardState();
+  const engine = new SolverEngine(board, defaultRules().filter(r => !r.killerOnly));
 
   if (givenDigits) seedGivenDigits(engine, board, givenDigits);
 
@@ -115,8 +143,39 @@ export function solve(spec: PuzzleSpec, givenDigits?: number[][]): SolveResult {
  * whether a newly added rule makes progress.
  */
 export function solveFromStall(candidates: number[][][]): SolveResult {
-  const board = new BoardState(makeClassicSpec(), { includeVirtualCages: false });
-  const engine = new SolverEngine(board, defaultRules());
+  const board = new BoardState();
+  const engine = new SolverEngine(board, defaultRules().filter(r => !r.killerOnly));
+
+  for (let r = 0; r < 9; r++)
+    for (let c = 0; c < 9; c++) {
+      const keep = new Set(candidates[r]![c]!);
+      const elims: Elimination[] = [];
+      for (let d = 1; d <= 9; d++)
+        if (!keep.has(d) && board.cands(r, c).has(d))
+          elims.push({ cell: [r, c] as Cell, digit: d });
+      if (elims.length) engine.applyEliminations(elims);
+    }
+
+  engine.solve();
+
+  return runWithBacktrack(board, checkStalled(board));
+}
+
+/**
+ * Load a pre-computed candidate grid onto the actual puzzle spec board and
+ * run the full rule engine from that state.
+ *
+ * Unlike `solveFromStall`, this function uses the original puzzle spec so that
+ * cage-specific rules (sum constraints, cage intersections, etc.) fire in
+ * addition to standard row/column/box rules. Use this when the spec is known —
+ * for example, when generating focused fixtures from a committed stall fixture.
+ *
+ * `candidates` is a 9×9 array where each cell is a sorted array of remaining
+ * candidates. Single-element arrays represent solved cells.
+ */
+export function solveFromCandidates(spec: PuzzleSpec, candidates: number[][][]): SolveResult {
+  const board = new KillerBoardState(spec, { includeVirtualCages: false });
+  const engine = new KillerSolverEngine(board, defaultRules());
 
   for (let r = 0; r < 9; r++)
     for (let c = 0; c < 9; c++) {
@@ -141,8 +200,9 @@ export function getHints(
   givenDigits: number[][] | undefined,
   hintRuleNames: ReadonlySet<string>,
 ): HintResult[] {
-  const board = new BoardState(spec, { includeVirtualCages: false });
-  const engine = new SolverEngine(board, defaultRules(), { hintRules: hintRuleNames });
+  const _disabled = new Set(DISABLED_RULES);
+  const board = new KillerBoardState(spec, { includeVirtualCages: false });
+  const engine = new KillerSolverEngine(board, defaultRules().filter(r => !_disabled.has(r.name)), { hintRules: hintRuleNames });
 
   if (givenDigits) seedGivenDigits(engine, board, givenDigits);
 

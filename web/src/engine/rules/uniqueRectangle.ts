@@ -12,10 +12,24 @@ import { cellLabel } from './_labels.js';
 
 export class UniqueRectangle {
   readonly name = 'UniqueRectangle';
-  readonly description =
-    'When four cells forming a rectangle would create two identical solutions, ' +
-    'eliminates candidates that would cause the ambiguity.';
-  readonly priority = 17;
+  readonly killerOnly = false;
+  readonly displayName = 'Unique Rectangle';
+  readonly description = `
+Unique Rectangle — assumes the puzzle has a unique solution; eliminates candidates that would create a deadly pattern.
+
+Setup: four cells forming a rectangle across exactly 2 boxes (rows R1,R2 × cols C1,C2). Digit pair {a,b} is the UR pair.
+
+Type 1 proof: if three corners each hold exactly {a,b}, the floor corner cannot also hold only {a,b} — because then swapping a and b across all four corners would yield a second valid solution, contradicting uniqueness. Therefore a and b are eliminated from the floor.
+
+Type 2 proof: if two corners (bases) hold {a,b} and two corners (extras) hold {a,b,x} for the same extra digit x, then x must be placed in exactly one of the two extra corners (the UR pair is locked in the other positions). Any cell seeing both extra corners cannot hold x.
+
+Guards:
+  boxes.size === 2   rectangle must span exactly 2 boxes
+  roofIndices.length === 3   Type 1 requires exactly 3 corners with {a,b}
+  baseIndices.length === 2 && extraIndices.length === 2   Type 2 requires exactly 2 base + 2 extra corners
+  extra0.size === 1 && extra0[0] === extra1[0]   extra corners must share the same single extra digit
+`.trim();
+  readonly priority = 20;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
 
@@ -31,6 +45,8 @@ export class UniqueRectangle {
       for (const cPair of combinations(cols, 2)) {
         const [c1, c2] = cPair as [number, number];
         const corners: [number, number][] = [[r1, c1], [r1, c2], [r2, c1], [r2, c2]];
+        const boxes = new Set(corners.map(([r, c]) => Math.floor(r / 3) * 3 + Math.floor(c / 3)));
+        if (boxes.size !== 2) continue;
         const cands = corners.map(([r, c]) => board.cands(r, c));
 
         // Union of all candidates across all four corners
@@ -97,6 +113,8 @@ export class UniqueRectangle {
     for (const [r1, r2] of combinations(rows, 2) as [number, number][]) {
       for (const [c1, c2] of combinations(cols, 2) as [number, number][]) {
         const corners: Cell[] = [[r1, c1], [r1, c2], [r2, c1], [r2, c2]];
+        const boxes = new Set(corners.map(([r, c]) => Math.floor(r / 3) * 3 + Math.floor(c / 3)));
+        if (boxes.size !== 2) continue;
         const cands = corners.map(([r, c]) => board.cands(r, c));
         const allCands = new Set<number>();
         for (const s of cands) for (const d of s) allCands.add(d);
@@ -115,7 +133,7 @@ export class UniqueRectangle {
               hints.push({
                 ruleName: this.name, displayName: 'Unique Rectangle',
                 explanation: `Unique Rectangle (Type 1): {${a},${b}} locked in ${roofIdx.map(i => cellLabel(corners[i]!)).join(', ')}. Remove {${a},${b}} from floor cell ${cellLabel(floor)}.`,
-                highlightCells: [...corners, ...elims.map(e => e.cell)],
+                highlightCells: roofIdx.map(i => corners[i]!),
                 eliminations: elims, placement: null, virtualCageSuggestion: null,
               });
             }
@@ -143,7 +161,7 @@ export class UniqueRectangle {
                 hints.push({
                   ruleName: this.name, displayName: 'Unique Rectangle',
                   explanation: `Unique Rectangle (Type 2): extra digit ${x} in ${cellLabel(ea)} and ${cellLabel(eb)} — remove ${x} from cells seeing both.`,
-                  highlightCells: [...corners, ...elims.map(e => e.cell)],
+                  highlightCells: [...corners],
                   eliminations: elims, placement: null, virtualCageSuggestion: null,
                 });
               }

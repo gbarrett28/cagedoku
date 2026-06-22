@@ -318,6 +318,67 @@ button:hover:not(:disabled) {
   color: var(--error);
 }
 
+.upload-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.upload-privacy {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+#upload-panel.drag-over {
+  outline: 2px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+
+#install-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.install-banner-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.install-banner-title {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.install-banner-features {
+  margin: 0 0 0.35rem 1.1rem;
+  padding: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.install-banner-features li { margin: 0.1rem 0; }
+
+.install-banner-privacy {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.install-banner-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
 /* ── Review panel: image columns ── */
 
 #images-row {
@@ -751,6 +812,7 @@ body:has(#playing-actions:not([hidden])) #side-panel {
 
   /* canvas-col: full-height flex row — canvas left, side-panel right */
   body:has(#playing-actions:not([hidden])) #canvas-col {
+    position: relative;
     max-width: none;
     height: 100dvh;
     display: flex;
@@ -758,6 +820,18 @@ body:has(#playing-actions:not([hidden])) #side-panel {
     align-items: center;
     justify-content: center;
     overflow: hidden;
+  }
+
+  /* Landscape: pill is absolute-positioned at the bottom of the canvas area.
+     left: 0; right: 7.5rem subtracts the side-panel width so margin:auto
+     centres the pill on the canvas portion, not the full canvas-col. */
+  body:has(#playing-actions:not([hidden])) #hint-pill {
+    position: absolute;
+    bottom: 0.5rem;
+    left: 0;
+    right: 7.5rem;
+    margin: auto;
+    width: max-content;
   }
 
   /* canvas-wrapper: fill remaining width, bounded by container height.
@@ -796,6 +870,20 @@ body:has(#playing-actions:not([hidden])) #side-panel {
 
   body:has(#playing-actions:not([hidden])) #completion-msg {
     text-align: center;
+  }
+
+  /* Classic OCR review on landscape: #playing-actions (digit pad) and #review-actions
+     (confirm button) are visible simultaneously.
+     - position:static demotes #canvas-col from the "positioned stacking contexts" paint
+       layer (step 6) to the normal-flow block layer (step 3), so the later-in-DOM
+       #review-actions paints on top and its buttons are clickable.
+     - height:auto + container-type:inline-size removes the 100dvh forced height and the
+       "size" containment that collapses the canvas to 0px when height is auto.
+       inline-size containment lets cqw units still work for #canvas-wrapper sizing. */
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #canvas-col {
+    position: static;
+    height: auto;
+    container-type: inline-size;
   }
 }
 
@@ -907,6 +995,7 @@ body:has(#playing-actions:not([hidden])) #side-panel {
     flex-wrap: nowrap;
   }
   body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #canvas-col {
+    position: static; /* cancel position:relative from the landscape-playing rule — avoids stacking-context interference with #review-actions */
     flex: none;
     max-width: 100%;
     display: flex;
@@ -975,25 +1064,36 @@ dialog::backdrop {
   background: rgba(0, 0, 0, 0.6);
 }
 
-/* ── Hints dropdown ── */
+/* ── Share / QR modal ── */
 
-.hints-anchor {
-  position: relative;
+.share-qr-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 1rem 0 0.5rem;
 }
 
-.hints-dropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 100;
-  background: var(--surface);
-  border: 1px solid var(--border);
+.share-qr-wrap canvas {
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  min-width: 260px;
-  max-width: 380px;
-  padding: 0.35rem 0;
-  overflow: hidden;
+}
+
+.share-url-text {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  word-break: break-all;
+  text-align: center;
+  margin: 0 0 1rem;
+}
+
+/* ── Hints dropdown ── */
+
+.hints-area {
+  position: relative;
+  display: inline-flex;
+}
+
+#fast-forward-btn {
+  position: absolute;
+  inset: 0;
 }
 
 .hint-item {
@@ -1015,11 +1115,28 @@ dialog::backdrop {
   opacity: 1;
 }
 
+.hint-list-row { display: flex; align-items: center; }
+.hint-list-row .hint-item { flex: 1; width: auto; }
+.hint-list-row .btn-rule-info { flex-shrink: 0; padding: 0 0.5rem; }
+
 .hints-empty {
   padding: 0.6rem 1rem;
   color: var(--text-muted);
   font-size: 0.85rem;
   margin: 0;
+}
+
+/* ── Hints list modal ── */
+
+#hints-list-modal {
+  max-width: 520px;
+  width: 90vw;
+}
+
+#hints-list-content {
+  max-height: 60vh;
+  overflow-y: auto;
+  margin: 0.5rem 0;
 }
 
 /* ── Hint explanation modal ── */
@@ -1088,6 +1205,13 @@ dialog::backdrop {
 
 .hint-modal-header h2 { margin: 0; }
 
+.hint-modal-header-btns {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
 #hint-minimize-btn {
   flex-shrink: 0;
   font-size: 1.2rem;
@@ -1096,10 +1220,8 @@ dialog::backdrop {
 }
 
 #hint-pill {
-  position: fixed;
-  bottom: 5rem;
-  left: 50%;
-  transform: translateX(-50%);
+  align-self: center;
+  margin-top: 0.35rem;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -1239,4 +1361,45 @@ dialog::backdrop {
   padding: 0.5rem;
   color: var(--text-muted);
   white-space: pre;
+}
+
+/* Fixture panel */
+#fixture-list-content {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.fixture-intro {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+}
+
+.fixture-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.fixture-table th {
+  text-align: left;
+  padding: 0.3rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.fixture-table td {
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.fixture-table tbody tr {
+  cursor: pointer;
+}
+
+.fixture-table tbody tr:hover {
+  background: var(--surface-raised, var(--border));
 }

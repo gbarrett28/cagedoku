@@ -46,13 +46,13 @@ export function makeTrivialSpec(): PuzzleSpec {
 }
 
 /**
- * Return a PuzzleSpec where BoardState cells (0,0) and (0,1) form one cage.
+ * Return a PuzzleSpec where KillerBoardState cells (0,0) and (0,1) form one cage.
  *
  * All other cells remain as single-cell cages.
  * Cage total = 8 (KNOWN_SOLUTION[0][0] + KNOWN_SOLUTION[0][1] = 5 + 3).
  *
  * Border removal: borderX[col=0][rowGap=0] = false removes the wall between
- * validation (col=0, row=0) and (col=0, row=1), which equals BoardState cells
+ * validation (col=0, row=0) and (col=0, row=1), which equals KillerBoardState cells
  * (0,0) and (0,1).
  */
 export function makeTwoCellCageSpec(): PuzzleSpec {
@@ -114,6 +114,75 @@ export function makeClassicGivenDigits(): number[][] {
   return grid;
 }
 
+/**
+ * Classic given-digits grid with rows 0–2 entirely blank.
+ *
+ * With 27 blank cells spread across three rows, no cell is immediately
+ * deterministic by naked-single logic (each blank cell has ≥3 candidates
+ * from col constraints alone, with no row or box candidates to narrow
+ * further). applyAutoPlacements stalls immediately, leaving the grid
+ * partially filled — used by UI tests that need an unsolved playing state.
+ */
+export function makeClassicPartialGivenDigits(): number[][] {
+  const grid = KNOWN_SOLUTION.map(row => [...row]);
+  for (let c = 0; c < 9; c++) {
+    grid[0]![c] = 0;
+    grid[1]![c] = 0;
+    grid[2]![c] = 0;
+  }
+  return grid;
+}
+
+/**
+ * A valid Big Apple sudoku solution (classic rules + 4 offset windows at
+ * rows/cols [1..3] and [5..7], 0-based).
+ */
+export const BIG_APPLE_SOLUTION: readonly (readonly number[])[] = [
+  [4, 8, 3, 9, 5, 7, 2, 6, 1],
+  [9, 1, 5, 3, 6, 2, 7, 4, 8],
+  [2, 6, 7, 8, 4, 1, 9, 5, 3],
+  [1, 9, 4, 2, 7, 3, 6, 8, 5],
+  [6, 5, 2, 4, 9, 8, 3, 1, 7],
+  [7, 3, 8, 6, 1, 5, 4, 2, 9],
+  [3, 2, 9, 5, 8, 6, 1, 7, 4],
+  [5, 4, 1, 7, 2, 9, 8, 3, 6],
+  [8, 7, 6, 1, 3, 4, 5, 9, 2],
+];
+
+/**
+ * BIG_APPLE_SOLUTION with a deadly rectangle blanked at (3,3),(3,4),(7,3),(7,4)
+ * (values 2 and 7). Classic-only constraint propagation cannot resolve this —
+ * swapping 2↔7 across all 4 cells produces an equally valid classic grid — but
+ * the Big Apple windows can: (3,3) is the only blank in the top-left window
+ * and (7,3) is the only blank in the bottom-left window, so both resolve
+ * immediately, cascading to ordinary row naked singles at (3,4) and (7,4).
+ * Used as the positive case for detectBigApple's classic-stalls/window-completes
+ * heuristic.
+ */
+export function makeBigAppleGivenDigits(): number[][] {
+  const grid = BIG_APPLE_SOLUTION.map(row => [...row]);
+  grid[3]![3] = 0;
+  grid[3]![4] = 0;
+  grid[7]![3] = 0;
+  grid[7]![4] = 0;
+  return grid;
+}
+
+/**
+ * `makeBigAppleGivenDigits()` with one OCR-misread given: (row2, col5),
+ * correctly 6, replaced with 7. The corruption makes both the classic-only
+ * and window-rules passes stall, so `detectBigApple` returns false on this
+ * grid — simulating a real digit-recognition error that masks a Big Apple
+ * puzzle until the user corrects it during OCR review. Restoring (row2,
+ * col5) to 6 makes `detectBigApple` true again. Used by the review-screen
+ * regression test for re-running Big Apple detection on given-digit edits.
+ */
+export function makeBigAppleMisreadGivenDigits(): number[][] {
+  const grid = makeBigAppleGivenDigits();
+  grid[1]![4] = 7;
+  return grid;
+}
+
 // ---------------------------------------------------------------------------
 // Lower-level helpers (mirrors Python's make_trivial_cage_totals etc.)
 // ---------------------------------------------------------------------------
@@ -134,7 +203,7 @@ export function makeTrivialBorderY(): boolean[][] {
 }
 
 /**
- * Return a PuzzleSpec where BoardState cells (0,0), (0,1), (0,2) form one cage.
+ * Return a PuzzleSpec where KillerBoardState cells (0,0), (0,1), (0,2) form one cage.
  *
  * All other cells remain as single-cell cages.
  * Cage total = 12 (KNOWN_SOLUTION[0][0]+[0][1]+[0][2] = 5+3+4).

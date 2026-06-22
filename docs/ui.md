@@ -96,9 +96,33 @@ button is hidden on every new upload and on every review-screen entry.
 
 | Element | Description |
 |---|---|
-| File input | Accepts any image file (`image/*`). PDF support planned (see below). |
-| Process button | Runs the image pipeline locally (no server required). |
-| Status message | Shows progress and warnings inline. Never blocks on error — see Behaviour. |
+| Choose image button (`#choose-btn`) | Opens the file picker. On Chrome/Edge uses `showOpenFilePicker` with `startIn` set to the last-used file's directory; falls back to a hidden `#file-input` on other browsers. Disabled while the pipeline is running. |
+| Use last image button (`#use-last-btn`) | Shown (Chrome/Edge only) when a `FileSystemFileHandle` from the previous session is stored in IndexedDB and read permission is still granted. Label shows the filename. Clicking it re-reads the file and starts processing immediately. Hidden by default; hidden while processing. |
+| Hidden file input (`#file-input`) | `accept="image/*,application/pdf"`. Used as fallback when `showOpenFilePicker` is unavailable. A `change` event auto-triggers `handleProcess()`. |
+| Upload hint | Static `<p class="upload-hint">` describing drag-drop and paste alternatives. |
+| Install banner (`#install-banner`) | Shown when the browser fires `beforeinstallprompt` (PWA installable) and the user has not previously dismissed it. Contains a label, an **Install** button (`#install-btn`), and a **✕** dismiss button (`#install-dismiss-btn`). Dismissed state is stored in `localStorage` under `coach_install_dismissed`. |
+| Status message (`#status-msg`) | Shows progress and warnings inline. Never blocks on error — see Behaviour. |
+
+**Alternative input methods**
+
+- **Paste** (`Ctrl+V` / `⌘V`): a `paste` listener on `document` captures the first `image/*` clipboard item and calls `handleProcess()` directly. Active only while `#upload-panel` is visible.
+- **Drag and drop**: `#upload-panel` handles `dragover` / `drop`. While a drag is in progress, the panel gains a `drag-over` CSS class (dashed outline). On drop, the first image file is passed to `handleProcess()`.
+- **Web Share Target** (installed PWA only): when the user shares an image to COACH from another app, the service worker intercepts the POST `/share-target` request, stashes `{ buffer, name, type }` in IndexedDB (`coach-share-inbox / pending`), and redirects to `/`. On load, `checkShareInbox()` reads and deletes the entry, reconstructs a `File`, and passes it to `handleProcess()`.
+- **File Handling API** (installed PWA, Chromium desktop): when the user opens an image file via "Open with → COACH", the browser fires `window.launchQueue`. The `setConsumer` callback retrieves the file via `params.files[0].getFile()` and calls `handleProcess()`.
+- All paths call `handleProcess(file)` with an explicit `File` argument; the legacy `#file-input` change path calls `handleProcess()` without one and reads `fileInput.files[0]` as before.
+- **Pending-file queue**: if any of the OS-integration paths fires before the image pipeline is ready, the file is stored in `pendingShareFile`. The CV-ready callback flushes it immediately after the pipeline loads.
+
+**Browser support summary**
+
+| Feature | Desktop | Android | iOS |
+|---|---|---|---|
+| Clipboard paste | All modern browsers | Chrome (user-gesture paste) | Limited |
+| Drag-and-drop | All modern browsers | N/A | N/A |
+| Auto-process on file select | All browsers | All browsers | All browsers |
+| File System Access API (Use last) | Chrome, Edge | Chrome | N/A |
+| PWA install | Chrome, Edge, Firefox, Safari 17+ | Chrome | Safari 16.4+ |
+| Web Share Target | N/A | Chrome | Safari 16.4+ (installed PWA) |
+| File Handling API | Chrome, Edge (installed PWA) | N/A | N/A |
 
 **Behaviour**
 
@@ -234,16 +258,18 @@ Renders the 9×9 sudoku grid with the following layers (back → front):
 2. Virtual cage underlays (teal/violet/pink/orange tints, one per cage)
 3. Virtual cage selection underlay (indigo, while drawing a new cage)
 4. Selected cell highlight (light blue)
-5. Hint highlight cells (yellow)
-6. Thin dashed lines for internal cell boundaries
-7. Medium solid lines for 3×3 box boundaries
-8. Thick outer border
-9. Red cage boundary lines
-10. Cage total numbers (top-left of first cell in cage)
-11. Placed digits (large, centred) — coloured by state:
+5. Hint chain cells (blue / green — from `HintResult.chainCells`, see below)
+6. User colouring tool cells (blue / green — manually coloured cells)
+7. Hint highlight cells (yellow — elimination targets)
+8. Thin dashed lines for internal cell boundaries
+9. Medium solid lines for 3×3 box boundaries
+10. Thick outer border
+11. Red cage boundary lines
+12. Cage total numbers (top-left of first cell in cage)
+13. Placed digits (large, centred) — coloured by state:
     - **Blue**: user-placed
     - **Red text + red background tint**: row/col/box duplicate (structurally impossible)
-12. Candidate sub-grid (3×3 keypad layout per cell, when candidates shown)
+14. Candidate sub-grid (3×3 keypad layout per cell, when candidates shown)
     - Grey: possible but not essential
     - Salmon: essential (must appear in every valid cage solution) — toggleable via config
     - Struck-through: user-removed
@@ -271,10 +297,11 @@ pseudo-element. Tooltips are suppressed on touch-sized viewports.
 | Button | Symbol | Condition | Description |
 |---|---|---|---|
 | `#undo-btn` | ↩ | Always (disabled until a move exists) | Revert the last digit entry |
-| `#hints-btn` | 💡 | Always (disabled until confirmed) | Open hints dropdown |
+| `#hints-btn` | 💡 | Always (disabled until confirmed) | Open hints list modal |
 | `#mode-toggle` | N\|C pill | Visible when `showCandidates = true` | Toggle between Normal entry and Candidates editing mode. Active side is highlighted. |
 | `#inspect-cage-btn` | 🔍 | **Killer** playing mode only | Enter cage inspection mode. Gets `.active` class while active; tooltip changes to "Done inspecting". |
 | `#virtual-cage-btn` | ➕ | **Killer** playing mode only | Enter virtual cage drawing mode. Gets `.active` class while active; tooltip changes to "Cancel virtual cage". |
+| `#colour-btn` | ◑ | Always (playing mode) | Enter cell-colouring mode — see **Cell Colouring Tool** below |
 | `#reveal-btn` | 👁 | Only while a cell is selected | Reveal the solution digit for the selected cell after a confirmation popup |
 | `#new-puzzle-btn` | 🏠 | Review or Playing screen | Return to the upload screen |
 | `#help-btn` | ? | Always | Open general help modal |
@@ -359,6 +386,35 @@ canvas (same `#side-panel` wrapper) rather than as separate columns in `#images-
 **N|C pill in landscape:** `transform: rotate(90deg)` applied so the pill reads
 vertically within the sidebar.
 
+**`#hint-pill`** sits inside `#canvas-col`, between `#canvas-wrapper` and
+`#side-panel`. This means it tracks the canvas area regardless of orientation
+rather than centering on the full viewport.
+
+- **Portrait:** in-flow flex child of `#canvas-col` (`align-self: center;
+  margin-top: 0.35rem`). Appears below the canvas, above the digit pad.
+- **Landscape (playing only):** `position: absolute; bottom: 0.5rem;
+  left: 0; right: 7.5rem; margin: auto; width: max-content` — centres the
+  pill on the canvas portion (subtracting the `#side-panel` width). Requires
+  `position: relative` on `#canvas-col` in the landscape playing rule.
+- **Landscape + classic OCR review (combined state):** when both
+  `#playing-actions` and `#review-actions` are visible, a combined-state
+  override inside `@media (orientation: landscape)` resets `#canvas-col` to
+  `position: static; height: auto; container-type: inline-size`. Without this,
+  `position: relative` + `container-type: size` promotes `#canvas-col` to a
+  positioned stacking context (paint layer 6) that covers the non-positioned
+  `#review-actions` (layer 3), blocking the Confirm button. The hint pill is
+  always `hidden` in this combined state so the absolute positioning is moot.
+
+### Fast-Forward Button Overlay
+
+`#fast-forward-btn` is wrapped in the same `.hints-area` `<div>` as `#hints-btn`.
+`.hints-area` has `position: relative; display: inline-flex`. The fast-forward button
+is positioned absolutely with `inset: 0` so it overlays exactly the hints button slot.
+When animation is running, `#hints-btn` is disabled (part of the auto-apply lock) and
+`#fast-forward-btn` becomes visible — it appears in the same space with zero layout
+shift. When animation completes, `#fast-forward-btn` is hidden and `#hints-btn` is
+re-enabled.
+
 ### Reveal
 
 Pressing **Reveal** with a cell selected opens a small confirmation popup:
@@ -366,14 +422,21 @@ Pressing **Reveal** with a cell selected opens a small confirmation popup:
 read from `goldenSolution` (cached at confirm time) and placed via the normal
 `enterCell` path so that undo works as expected.
 
-### Hints Dropdown
+### Hints List Modal (`#hints-list-modal`)
 
-Lists all currently applicable hints sorted by impact. Each hint shows:
-- Rule display name
-- Brief explanation
-- Elimination count (or placement action)
+A native `<dialog>` opened by `showModal()` when `#hints-btn` is clicked. Lists all
+currently applicable hints. Each hint appears as a `.hint-item` button showing the
+rule display name. If no hints are available, a `.hints-empty` paragraph is shown
+instead.
 
-Clicking a hint opens the **Hint Modal**.
+Clicking a hint closes the list modal and opens the **Hint Detail Modal**.
+
+The modal is dismissed by:
+- Clicking the **Close** button (`#hints-list-close-btn`)
+- Clicking the backdrop (the `<dialog>` element itself — `e.target === hintsListModal`)
+
+`#hints-list-content` (`max-height: 60vh; overflow-y: auto`) keeps the list scrollable
+on puzzles with many applicable hints.
 
 ### Hint Modal
 
@@ -422,6 +485,51 @@ User-eliminated solutions in the virtual cage panel appear and behave identicall
 to user-eliminated solutions in the Cage Inspector (struck through, restorable by
 clicking).
 
+### Cell Colouring Tool (`#colour-btn`)
+
+Lets the user manually colour cells blue or green to trace conjugate-pair chains —
+the same visual notation used by SimpleColouring, Skyscraper, TwoStringKite, and
+W-Wing hints.
+
+**State machine** (`colourMode`):
+
+| State | Meaning |
+|---|---|
+| `'off'` | Default — button inactive, no colouring |
+| `'blue-next'` | Next cell click colours blue; button shows `.active` |
+| `'green-next'` | Next cell click colours green; button shows `.active` |
+
+**Button press behaviour**:
+- `off → blue-next`: enters colouring mode; button gets `.active`; tooltip changes to "Colouring active (press to stop and clear)"
+- Active → exits and clears all colours; single press is sufficient
+
+**Cell click in colouring mode**:
+- Uncoloured cell: coloured in the current next-colour; `colourMode` flips to the opposite colour
+- Already-coloured cell: colour is toggled (blue↔green); `colourMode` set to the opposite of the new colour
+- The cell is also selected normally so the digit pad remains usable
+- The **selection highlight** shows the next colour (blue/green at 0.45 opacity) rather than the usual pale blue `#dbeafe`, so the colour preview is clear
+
+Cell colours are stored in `cellColours: Map<string, 'blue' | 'green'>` keyed by
+`"r,c"` (0-based). They are rendered as semi-transparent overlays (layer 6 in
+`drawUnderlays`) and cleared on puzzle reset, solve completion, or button press.
+
+**Hint chain colouring**: rules with structurally distinct chain cells (XYWing,
+XYZWing, WWing, TwoStringKite, Skyscraper, SimpleColouring) populate
+`HintResult.chainCells` — one entry per structurally significant cell, each tagging
+its own relevant digit(s) and an optional `'blue' | 'green'` wash colour. Coloured
+entries are rendered as layer 5 in `drawUnderlays`, beneath both user colours (layer 6)
+and yellow elimination highlights (layer 7). Colours: blue = `rgba(59,130,246,0.45)`,
+green = `rgba(34,197,94,0.45)`.
+
+`drawHintDigitMarkers` draws a digit square for each cell in the union of
+`highlightCells` and `chainCells`: if the cell has a `chainCells` entry, it draws that
+entry's own `digits`; otherwise it falls back to the rule-wide `patternDigits` list (or
+digits derived from `eliminations`/`placement`). This lets cells in the same hint —
+e.g. an XY-Wing's pivot and its two pincers — each show only the digits actually
+relevant to that cell, instead of one digit set applied uniformly to every highlighted
+cell. Elimination-target cells always get a red circle instead of a square, regardless
+of which set they came from.
+
 ---
 
 ## Config Modal
@@ -435,11 +543,20 @@ to inessential.
 **Auto-apply step delay** slider (0 – 2 000 ms, step 50 ms):
 - **0 (Off)**: default — all auto-placements are applied instantly after each
   user placement, exactly as before.
-- **> 0**: after the user places a digit, each auto-deduced placement is
-  applied one-at-a-time with the configured delay between steps and the grid
-  redrawn after each one. This creates a step-through "teaching" effect.
-  The delay applies between the user's placement and the first
-  auto-placement, and between each subsequent auto-placement.
+- **> 0**: after the user places a digit the auto-apply rules fire one rule
+  at a time, each with the configured delay. For each rule step:
+  1. The hint pill appears with the rule's display name (e.g. "Cage Candidate
+     Filter") and the affected cells are highlighted.
+  2. After the delay the rule's candidate eliminations are removed from the
+     grid and any forced digit placements are filled in.
+  3. The pill clears and the next rule step starts immediately.
+  Candidates narrow progressively — one rule's worth of eliminations at a
+  time — matching the manual hint→apply flow. `autoRemovedCandidates` in
+  `PuzzleState` accumulates each step's eliminations so subsequent
+  `buildEngine` calls see them pre-applied and do not re-fire the same rule.
+  The fast-forward button drains all remaining steps instantly. One undo
+  rolls back the entire animation sequence (all auto-placements and
+  candidate eliminations) to before the user's digit.
 
 **Rule list**: one row per hintable rule.
 - Dropdown: toggles the rule between `Auto-apply` and `Hint-only`.
@@ -487,8 +604,13 @@ The element IDs match the HTML (`index.html`).
 
 | Element | ID | Notes |
 |---|---|---|
-| File input | `#file-input` | `accept="image/*"` |
-| Process button | `#process-btn` | Triggers OCR pipeline |
+| Hidden file input | `#file-input` | `accept="image/*,application/pdf"` — fallback for non-FSA browsers |
+| Choose image button | `#choose-btn` | Opens file picker; uses FSA `showOpenFilePicker` on Chrome/Edge |
+| Use last image button | `#use-last-btn` | Chrome/Edge only; hidden by default |
+| Upload hint | `.upload-hint` | Static text describing drag-drop / paste |
+| Install banner | `#install-banner` | Hidden by default; shown when PWA is installable and not dismissed |
+| Install button | `#install-btn` | Triggers `deferredInstallPrompt.prompt()` |
+| Dismiss button | `#install-dismiss-btn` | Sets `coach_install_dismissed` in localStorage |
 | Status message | `#status-msg` | Shows progress / error |
 | Pipeline progress | `#cv-loading-row` | Visible while OpenCV is loading |
 
@@ -515,7 +637,6 @@ The element IDs match the HTML (`index.html`).
 |---|---|---|
 | Undo | `#undo-btn` | Always (disabled until a user turn exists) |
 | Hints | `#hints-btn` | Always (disabled before confirm) |
-| Hints dropdown | `#hints-dropdown` | While `#hints-btn` is toggled on |
 | Mode toggle pill | `#mode-toggle` | When `showCandidates = true` |
 | Inspect cage | `#inspect-cage-btn` | **Killer only** — visible from the start of playing mode |
 | Virtual cage | `#virtual-cage-btn` | **Killer only** — visible from the start of playing mode |
@@ -528,7 +649,8 @@ The element IDs match the HTML (`index.html`).
 |---|---|---|
 | General help | `#general-help-modal` | `#help-btn` |
 | Config | `#config-modal` | `#config-btn` |
-| Hint detail | `#hint-modal` | Clicking a hint in `#hints-dropdown` |
+| Hints list | `#hints-list-modal` | `#hints-btn` |
+| Hint detail | `#hint-modal` | Clicking a hint in `#hints-list-modal` |
 | Rule info | `#rule-info-modal` | ⓘ button in `#config-modal` |
 | Candidates help | `#help-candidates-modal` | `#help-candidates-btn` |
 | Training consent | `#training-consent-modal` | After first upload that produces training data |
@@ -604,3 +726,190 @@ Clicking `#logo-k` (the K badge in the header) resets the tutorial in-place:
 
 Puzzle state is fully preserved — no page reload occurs. The `logo-k` callout step at the end of the playing-screen sequence ("Tap the K badge at any time to restart this tutorial.") teaches users about this mechanism.
 
+
+
+## Hard Puzzles Panel
+
+A 🔥 button in the header (`#hard-puzzles-btn`) gives users direct access to the stall fixture corpus — puzzles that defeat the rule engine and that may benefit from new rules.
+
+### Toggle Behaviour
+
+Clicking `#hard-puzzles-btn` swaps the home screen between two mutually exclusive panels:
+
+- **Upload view** (`#upload-panel`) — default; shown when the app loads.
+- **Fixture view** (`#fixture-panel`) — shown while the flame button is active.
+
+Pressing the button again while in fixture view returns to the upload view. Any action that starts a new puzzle via the normal image pipeline (`handleProcess()`) always returns to the upload view and clears the active fixture state (see below).
+
+The `#hard-puzzles-btn` tutorial callout ("Browse puzzles the rule engine cannot solve — try one and suggest a new rule.") is registered in `buildUploadCallouts()` alongside the other header buttons.
+
+### Fixture List
+
+On first open the panel fetches `./stall-fixtures/index.json` — a sorted metadata array emitted by the `stallFixturesPlugin` Vite plugin at build time and served by its dev middleware in development. The result is cached in memory for the session (`cachedFixtures`).
+
+The table has three columns: **Puzzle**, **Unsolved cells**, **Total candidates**. Rows are sorted by `(unsolvedCells ASC, totalCandidates ASC)`.
+
+Clicking a row:
+1. Fetches `./stall-fixtures/<name>.stall.json` (the full `StallFixtureFile`).
+2. Calls `loadSpecDirect(fixture.spec)` to load the puzzle.
+3. Sets `currentFixtureName`, `currentFixtureUnsolvedCells`, `currentFixtureTotalCandidates`.
+4. Runs the solver and transitions to playing mode (`solveCurrentSpec()` → `confirmPuzzle()` → `renderPlayingMode()`).
+
+### Active Fixture State
+
+Three module-level variables in `main.ts` track the currently-loaded fixture:
+
+```ts
+let currentFixtureName: string | null = null;
+let currentFixtureUnsolvedCells: number | null = null;
+let currentFixtureTotalCandidates: number | null = null;
+```
+
+`activeFixtureContext()` reads all three and returns a typed object (or `null` when no fixture is active). It is exposed on `window.__activeFixture` in dev builds for Playwright tests and browser-console inspection.
+
+All three variables are cleared to `null` at the top of `handleProcess()`.
+
+### Focused Fixtures
+
+**Focused fixtures** (files named `<source>-f<NNN>.stall.json`) are generated
+automatically at deploy time by `web/scripts/focus-stall-fixtures.ts`. For each
+source fixture where `unsolvedCells < 50` (the threshold for likely OCR errors), the
+script pins each unsolved cell to its ground-truth solution value one at a time,
+re-runs the full killer engine via `solveFromCandidates`, and collects any new stall
+states that emerge. This is a single flat pass — no recursion into discovered states.
+
+Focused fixtures have fewer unsolved cells than their sources and sort to the top of
+the Hard Puzzles panel list, making them the most actionable starting points for rule
+development. They are gitignored (`*-f*.stall.json`) and regenerated on every CI
+deploy so they always reflect the current rule engine.
+
+The script is added as a step in `pages.yml` between "Run tests" and "Build":
+
+```yaml
+- name: Generate focused stall fixtures
+  working-directory: web
+  run: npx vite-node scripts/focus-stall-fixtures.ts
+```
+
+The existing `stallFixturesPlugin.generateBundle` Vite hook picks up all `*.stall.json`
+files from `web/stall-fixtures/` at build time — no plugin changes are needed.
+
+**Note:** As of 2026-05-24, roughly 80% of the committed source fixtures have
+`unsolvedCells ≥ 50`, indicating OCR errors in the cage totals from the image pipeline.
+These are skipped by the script. Focused generation becomes more valuable as
+correctly-validated R2-uploaded puzzles accumulate.
+
+### Static Serving (Production)
+
+`stallFixturesPlugin` in `vite.config.ts` serves fixtures at two URLs:
+
+| URL | Content |
+|---|---|
+| `./stall-fixtures/index.json` | Sorted metadata array (all fields except `spec` and `stalledCandidates`) |
+| `./stall-fixtures/<name>.stall.json` | Full fixture JSON |
+
+In dev mode: Connect middleware at `/stall-fixtures`. In production: `generateBundle` Rollup hook emits both the individual fixture files and `stall-fixtures/index.json` into `dist/`.
+
+Relative URLs (`./stall-fixtures/…`) are used throughout so they resolve correctly at any GitHub Pages subpath.
+
+---
+
+## Rule Suggestion Feedback
+
+The feedback modal's **Type** radio group has a third option — **Rule suggestion** (`value="new-rule"`). It is shown in the same modal as Bug report and Enhancement request.
+
+When selected:
+- Bug-specific fields (`#feedback-bug-fields`) are hidden (same as Enhancement).
+- The description label changes to *"Describe the rule you think would unlock this puzzle"*.
+
+### Payload
+
+`FeedbackReport` (version 3) gains three optional fields populated from `activeFixtureContext()` when the type is `'new-rule'` and a fixture is loaded:
+
+```ts
+fixtureName?: string;
+unsolvedCells?: number;
+totalCandidates?: number;
+```
+
+### Worker / GitHub Issue
+
+In `worker/src/index.ts`, `createFeedbackIssue` handles the `'new-rule'` type:
+
+- **Labels:** `['feedback', 'new-rule']`
+- **Title:** `[Rule suggestion] <fixtureName>: <description snippet>` when a fixture is named; `[Rule suggestion] <snippet>` otherwise.
+- **Body:** When `fixtureName` is present, a fixture reference block is prepended before the standard metadata:
+
+  ```
+  **Fixture:** `<fixtureName>`
+  **Unsolved cells:** N
+  **Total candidates:** N
+  ```
+
+Bug-specific sections (`bugCategory` line, expected behaviour, exception) are omitted. Session trace and config sections are retained.
+
+---
+
+## PWA OS Integration
+
+The app is a Progressive Web App. Once installed, two OS-level hooks allow images to be opened directly without going through the file picker.
+
+### Web Share Target
+
+Declared in `manifest.webmanifest` as a `share_target` entry:
+
+```json
+"share_target": {
+  "action": "/share-target",
+  "method": "POST",
+  "enctype": "multipart/form-data",
+  "params": { "files": [{ "name": "image", "accept": ["image/*"] }] }
+}
+```
+
+Flow:
+1. User long-presses an image on Android → Share → COACH.
+2. The OS sends a `POST /share-target` multipart request to the installed scope.
+3. The service worker intercepts it (before the GET-only guard), reads the `image` field from `FormData`, converts it to an `ArrayBuffer`, and stores `{ buffer, name, type }` at key `'item'` in IndexedDB `coach-share-inbox / pending`. It then responds with `Response.redirect('/', 303)`.
+4. The page loads. `checkShareInbox()` (called inside `DOMContentLoaded`) opens the same database, reads and deletes the item, reconstructs a `File`, and calls `handleOrQueueFile()`.
+5. If the image pipeline is not yet ready, the file is held in `pendingShareFile` and processed as soon as the pipeline finishes loading.
+
+In dev mode, a Vite plugin middleware (`devShareTargetPlugin` in `vite.config.ts`) redirects `POST /share-target` to `GET /` so the redirect leg can be tested without a real service worker.
+
+**Browser support:** Android Chrome (with installed PWA). Not supported on Safari/Firefox.
+
+### File Handling API
+
+Declared in `manifest.webmanifest` as a `file_handlers` entry:
+
+```json
+"file_handlers": [
+  { "action": "/", "accept": { "image/*": [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"] } }
+]
+```
+
+Flow:
+1. User right-clicks an image file on desktop → Open with → COACH (or sets COACH as the default image opener).
+2. Chromium launches the installed PWA and populates `window.launchQueue`.
+3. The `setConsumer` callback (registered in `DOMContentLoaded`) calls `fileFromLaunchParams(params.files)` to get the `File`, then `handleOrQueueFile()`.
+4. Same `pendingShareFile` guard as the share-target path applies.
+
+**Browser support:** Chromium-based desktop browsers (Chrome, Edge) with the PWA installed. Not supported on Safari/Firefox.
+
+---
+
+## Offline Service Worker
+
+The app registers `sw.js` as a service worker (production builds only; skipped in dev mode). It uses a cache-first strategy, precaching all static assets at install time so the app works offline.
+
+### Update Deferral
+
+The service worker no longer calls `skipWaiting()` on install. Instead it parks in the `waiting` state until the user explicitly starts a new puzzle:
+
+1. A new deploy lands → the new SW installs and enters `waiting`.
+2. The active SW (and the user's puzzle session) are undisturbed.
+3. When the user clicks **New Puzzle**, all puzzle state is cleared, then `main.ts` posts `{ type: 'SKIP_WAITING' }` to the waiting worker.
+4. The SW calls `self.skipWaiting()`, activates, and claims all clients.
+5. A one-shot `controllerchange` listener calls `location.reload()` — the page reloads to the upload screen with fresh code.
+
+If the user never clicks New Puzzle in a session, the old version continues serving from its cache (which remains valid). The update applies on the next New Puzzle click, or automatically when all tabs using the old SW are closed.

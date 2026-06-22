@@ -1,0 +1,75 @@
+name: Sync rule-bug fixtures
+
+on:
+  schedule:
+    # Run nightly at 03:00 UTC
+    - cron: '0 3 * * *'
+  # Allow manual trigger from the Actions tab
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-rule-fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Push back to master; needs a token with write access
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Fetch new fixtures from worker
+        env:
+          TRAINING_WORKER_URL: ${{ secrets.TRAINING_WORKER_URL }}
+        run: npx vite-node web/scripts/sync-rule-fixtures.ts
+
+      - name: Bronze gate
+        working-directory: web
+        run: |
+          npx tsc --noEmit
+          npx tsc -p tsconfig.node.json --noEmit
+          npm test
+
+      - name: Commit and push
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          git add web/src/engine/rules/__fixtures__/index.ts web/src/engine/rules/__fixtures__/needs-triage.ts
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+          else
+            git commit -m "chore: sync rule-bug fixtures"
+            git push
+          fi
+
+      - name: Set up Python
+        if: success()
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Drain synced fixtures from R2
+        if: success()
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          if [ -s /tmp/rule-fixture-keys.txt ]; then
+            pip install --quiet boto3
+            python3 scripts/_r2_delete.py cagedoku-training < /tmp/rule-fixture-keys.txt
+          else
+            echo "No fixtures fetched; nothing to drain."
+          fi

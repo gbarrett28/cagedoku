@@ -110,7 +110,9 @@ test('undo after digit entry re-disables undo button', async ({ page }) => {
 });
 
 test('mode-toggle pill visible and toggles active state', async ({ page }) => {
-  await loadAndConfirm(page);
+  // Use box-cage spec: no cells are auto-placed after confirm, so the puzzle
+  // is not immediately solved and mode-toggle remains enabled.
+  await loadBoxCageAndConfirm(page);
   const pill = page.locator('#mode-toggle');
   await expect(pill).toBeVisible();
   await expect(pill).not.toBeDisabled();
@@ -132,6 +134,31 @@ test('new puzzle button returns to upload panel', async ({ page }) => {
   await expect(page.locator('#review-panel')).toBeHidden();
 });
 
+test('new puzzle with pending SW update posts SKIP_WAITING to waiting worker', async ({ page }) => {
+  await loadTrivialPuzzle(page);
+
+  // Inject a fake waiting SW via the dev-only hook exposed by main.ts.
+  await page.evaluate(() => {
+    const messages: unknown[] = [];
+    const fakeSW = {
+      postMessage: (msg: unknown) => { messages.push(msg); },
+    } as unknown as ServiceWorker;
+    (window as unknown as Record<string, unknown>)['__swPostedMessages'] = messages;
+    const hook = (window as unknown as Record<string, unknown>)['__setWaitingSW'] as
+      ((sw: ServiceWorker) => void) | undefined;
+    if (!hook) throw new Error('__setWaitingSW not found — dev hook missing in main.ts');
+    hook(fakeSW);
+  });
+
+  await page.locator('#new-puzzle-btn').click();
+  await expect(page.locator('#upload-panel')).toBeVisible();
+
+  const posted = await page.evaluate(
+    () => (window as unknown as Record<string, unknown>)['__swPostedMessages'] as unknown[],
+  );
+  expect(posted).toContainEqual({ type: 'SKIP_WAITING' });
+});
+
 // ---------------------------------------------------------------------------
 // Classic puzzle flow
 // ---------------------------------------------------------------------------
@@ -148,6 +175,18 @@ async function loadClassicAndConfirm(page: Page): Promise<void> {
   await expect(page.locator('#playing-actions')).toBeVisible({ timeout: 5_000 });
 }
 
+/**
+ * Load the partial classic spec (rows 0–2 blank) then confirm.
+ * No cells are auto-placed because naked-single stalls with ≥3 candidates
+ * per blank cell, so the puzzle is not immediately solved and action buttons
+ * remain enabled.
+ */
+async function loadClassicPartialAndConfirm(page: Page): Promise<void> {
+  await loadSpec(page, 'classicPartial');
+  await page.locator('#confirm-btn').click();
+  await expect(page.locator('#playing-actions')).toBeVisible({ timeout: 5_000 });
+}
+
 test('classic puzzle: review panel shows Classic heading and type dropdown', async ({ page }) => {
   await loadClassicPuzzle(page);
   // Heading changes to "Classic Sudoku" for classic puzzles
@@ -155,6 +194,37 @@ test('classic puzzle: review panel shows Classic heading and type dropdown', asy
   // Type dropdown reflects the detected type
   const dropdownValue = await page.locator('#puzzle-type-select').inputValue();
   expect(dropdownValue).toBe('classic');
+});
+
+test('big apple: manual dropdown switch synthesizes state and confirms to playing mode', async ({ page }) => {
+  await loadClassicPuzzle(page);
+  await page.locator('#puzzle-type-select').selectOption('bigapple');
+  await expect(page.locator('#puzzle-type-select')).toHaveValue('bigapple');
+  await expect(page.locator('#review-panel')).toHaveAttribute('data-puzzle-type', 'bigapple');
+  await page.locator('#confirm-btn').click();
+  await expect(page.locator('#playing-actions')).toBeVisible({ timeout: 5_000 });
+  // Killer-only controls stay hidden for Big Apple, same as Classic.
+  await expect(page.locator('#inspect-cage-btn')).toBeHidden();
+  await expect(page.locator('#virtual-cage-btn')).toBeHidden();
+});
+
+test('big apple: misread given is detected once corrected during review', async ({ page }) => {
+  await loadSpec(page, 'bigAppleMisread');
+  // Detection ran once on the OCR-misread digits and concluded false: banner hidden, dropdown defaults to classic.
+  await expect(page.locator('#bigapple-banner')).toBeHidden();
+  await expect(page.locator('#puzzle-type-select')).toHaveValue('classic');
+
+  // Correct the misread given at (row2, col5) — 0-based [1][4] — from 7 back to 6.
+  const canvas = page.locator('#grid-canvas');
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  const cellSize = box!.width / 9;
+  await canvas.click({ position: { x: cellSize * 4.5, y: cellSize * 1.5 } });
+  await page.locator('#digit-6').click();
+
+  // Re-running detection on the corrected grid should now flag Big Apple.
+  await expect(page.locator('#bigapple-banner')).toBeVisible();
+  await expect(page.locator('#puzzle-type-select')).toHaveValue('bigapple');
 });
 
 test('classic puzzle: digit pad visible during review (action buttons hidden)', async ({ page }) => {
@@ -280,6 +350,32 @@ test('digit-0 button clears a placed digit', async ({ page }) => {
 });
 
 // ---------------------------------------------------------------------------
+// Hard puzzles panel toggle
+// ---------------------------------------------------------------------------
+
+/** Navigate to the home screen without loading a spec. */
+async function goHome(page: Page): Promise<void> {
+  await page.addInitScript(() => localStorage.setItem('coach_tutorial_suppressed', 'true'));
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#upload-panel')).toBeVisible({ timeout: 5_000 });
+}
+
+test('hard-puzzles-btn toggles fixture panel and hides upload panel', async ({ page }) => {
+  await goHome(page);
+  await expect(page.locator('#fixture-panel')).toBeHidden();
+
+  // First click — show fixture panel
+  await page.locator('#hard-puzzles-btn').click();
+  await expect(page.locator('#fixture-panel')).toBeVisible();
+  await expect(page.locator('#upload-panel')).toBeHidden();
+
+  // Second click — return to upload panel
+  await page.locator('#hard-puzzles-btn').click();
+  await expect(page.locator('#upload-panel')).toBeVisible();
+  await expect(page.locator('#fixture-panel')).toBeHidden();
+});
+
+// ---------------------------------------------------------------------------
 // Header modals
 // ---------------------------------------------------------------------------
 
@@ -299,19 +395,38 @@ test('config button opens config-modal', async ({ page }) => {
   await expect(page.locator('#config-modal')).toBeHidden();
 });
 
-// ---------------------------------------------------------------------------
-// Hints dropdown
-// ---------------------------------------------------------------------------
-
-
-test('hints button opens dropdown after confirm', async ({ page }) => {
+test('config modal consent checkbox grants and revokes training_consent cookie immediately', async ({ page }) => {
   await loadAndConfirm(page);
-  await expect(page.locator('#hints-dropdown')).toBeHidden();
+  await page.locator('#config-btn').click();
+  await expect(page.locator('#config-modal')).toBeVisible();
+
+  const checkbox = page.locator('#consent-toggle');
+  await expect(checkbox).not.toBeChecked();
+
+  await checkbox.check();
+  let cookies = await page.context().cookies();
+  expect(cookies.find(c => c.name === 'training_consent')?.value).toBe('granted');
+
+  await checkbox.uncheck();
+  cookies = await page.context().cookies();
+  expect(cookies.find(c => c.name === 'training_consent')).toBeUndefined();
+});
+
+// ---------------------------------------------------------------------------
+// Hints list modal
+// ---------------------------------------------------------------------------
+
+
+test('hints button opens hints-list-modal dialog after confirm', async ({ page }) => {
+  await loadAndConfirm(page);
+  // Dialog is initially closed — no 'open' attribute
+  await expect(page.locator('#hints-list-modal')).not.toHaveAttribute('open');
   await page.locator('#hints-btn').click();
-  await expect(page.locator('#hints-dropdown')).toBeVisible();
-  // Toggle off
-  await page.locator('#hints-btn').click();
-  await expect(page.locator('#hints-dropdown')).toBeHidden();
+  // showModal() adds the 'open' attribute
+  await expect(page.locator('#hints-list-modal')).toHaveAttribute('open', '');
+  // Close button dismisses the dialog
+  await page.locator('#hints-list-close-btn').click();
+  await expect(page.locator('#hints-list-modal')).not.toHaveAttribute('open');
 });
 
 // ---------------------------------------------------------------------------
@@ -319,7 +434,9 @@ test('hints button opens dropdown after confirm', async ({ page }) => {
 // ---------------------------------------------------------------------------
 
 test('classic playing: hints and mode-toggle enabled after confirm', async ({ page }) => {
-  await loadClassicAndConfirm(page);
+  // Use the partial fixture (rows 0–2 blank) so the puzzle is not immediately
+  // auto-solved; buttons remain enabled until the user solves it.
+  await loadClassicPartialAndConfirm(page);
   // These are valid for Classic — candidates use row/col/box rules, hints work without cages.
   await expect(page.locator('#hints-btn')).not.toBeDisabled();
   await expect(page.locator('#mode-toggle')).not.toBeDisabled();
@@ -437,6 +554,40 @@ test('mobile: header buttons visible at 375 px', async ({ page }) => {
 // ---------------------------------------------------------------------------
 // Training consent modal
 // ---------------------------------------------------------------------------
+
+test('classic confirm triggers training-consent modal when OCR thumbnails are pending', async ({ page }) => {
+  // This test covers the manual-confirm path for Classic puzzles.  The classic
+  // auto-confirm path (all 81 given digits detected) is not exercisable via
+  // __testLoad because loadClassicDirect always returns warning != null, which
+  // bypasses auto-confirm; a dedicated image-pipeline test with a fully-filled
+  // puzzle image would be needed for that branch.
+  //
+  // Key: "0,1" → row 0, col 1; KNOWN_SOLUTION[0][1] = 3 (single digit).
+  // One thumbnail entry per digit so extractTrainingData produces sampleCount=1.
+  const fakePixels = Array<number>(4096).fill(128);
+
+  await page.addInitScript(() => localStorage.setItem('coach_tutorial_suppressed', 'true'));
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => '__testLoad' in window && '__testSetPendingThumbs' in window);
+
+  // Inject fake thumbnails BEFORE __testLoad so they survive into the confirm step.
+  // (__testLoad('classic') does not reset pendingCellThumbs.)
+  await page.evaluate((pixels) => {
+    type SetThumbs = (e: Record<string, number[][]>) => void;
+    (window as unknown as Record<string, SetThumbs>)['__testSetPendingThumbs']!({ '0,1': [pixels] });
+    (window as unknown as Record<string, (s?: string) => void>)['__testLoad']!('classic');
+  }, fakePixels);
+
+  await expect(page.locator('#review-panel')).toBeVisible({ timeout: 5_000 });
+
+  // Confirm without a consent cookie — the training modal must appear.
+  await page.locator('#confirm-btn').click();
+  await expect(page.locator('#training-consent-modal')).toBeVisible({ timeout: 3_000 });
+
+  // Clean up.
+  await page.locator('#training-consent-skip-btn').click();
+  await expect(page.locator('#training-consent-modal')).toBeHidden();
+});
 
 async function openConsentModal(page: Page): Promise<void> {
   await page.goto('/', { waitUntil: 'domcontentloaded' });

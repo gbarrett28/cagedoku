@@ -19,11 +19,26 @@ import { cellLabel } from './_labels.js';
 
 export class Skyscraper {
   readonly name = 'Skyscraper';
-  readonly description =
-    'When a digit appears in exactly two cells in each of two rows (or columns) ' +
-    'and those rows share exactly one of those columns (or rows), the digit can ' +
-    'be eliminated from any cell that sees both of the non-shared cells.';
-  readonly priority = 21;
+  readonly killerOnly = false;
+  readonly displayName = 'Skyscraper';
+  readonly description = `
+Skyscraper — asymmetric two-row (or two-column) chain elimination.
+
+Setup (row variant): rows R1 and R2 each have d in exactly 2 cells. They share one column B (the base). The non-shared cells are the roof: (R1,A) and (R2,C) where A ≠ C.
+
+Proof (2 cases, exhaustive because d must go in one of the two base cells):
+  Case d in (R1,B): d is not in (R2,B); since R2 holds d in exactly {(R2,B),(R2,C)}, d goes in (R2,C). Any cell T ≠ (R2,C) seeing (R2,C) cannot hold d.
+  Case d in (R2,B): symmetric; d goes in (R1,A). Any cell T ≠ (R1,A) seeing (R1,A) cannot hold d.
+Either way, any cell T that sees both roof cells cannot hold d.
+
+Column variant is identical with rows and columns transposed.
+
+Guards:
+  cols.length === 2   row must have d in exactly 2 cells
+  shared column detection   rows must share at least one column (else continue skips the pair)
+  explicit roof-cell skip   roof cells themselves are not elimination targets
+`.trim();
+  readonly priority = 24;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
 
@@ -127,11 +142,19 @@ export class Skyscraper {
           const roof2 = [r2, roofC2] as Cell;
           const base1 = [r1, baseC] as Cell;
           const base2 = [r2, baseC] as Cell;
+          // BFS chain: roof1→base1→base2→roof2 → blue:[roof1,base2] green:[base1,roof2]
+          // All four pattern cells are only relevant for digit d.
           hints.push({
             ruleName: this.name, displayName: 'Skyscraper',
             explanation: `Skyscraper on ${d}: rows r${r1+1} and r${r2+1} share base column c${baseC+1}. Roof cells ${cellLabel(roof1)} and ${cellLabel(roof2)} — ${d} eliminated from cells seeing both.`,
-            highlightCells: [base1, base2, roof1, roof2, ...elims.map(e => e.cell)],
+            highlightCells: elims.map(e => e.cell),
             eliminations: elims, placement: null, virtualCageSuggestion: null,
+            chainCells: [
+              { cell: roof1, digits: [d], colour: 'blue' },
+              { cell: base2, digits: [d], colour: 'blue' },
+              { cell: base1, digits: [d], colour: 'green' },
+              { cell: roof2, digits: [d], colour: 'green' },
+            ],
           });
         }
       }
@@ -168,11 +191,18 @@ export class Skyscraper {
           const roof2 = [roofR2, c2] as Cell;
           const base1 = [baseR, c1] as Cell;
           const base2 = [baseR, c2] as Cell;
+          // BFS chain: roof1→base1→base2→roof2 → blue:[roof1,base2] green:[base1,roof2]
           hints.push({
             ruleName: this.name, displayName: 'Skyscraper',
             explanation: `Skyscraper on ${d}: cols c${c1+1} and c${c2+1} share base row r${baseR+1}. Roof cells ${cellLabel(roof1)} and ${cellLabel(roof2)} — ${d} eliminated from cells seeing both.`,
-            highlightCells: [base1, base2, roof1, roof2, ...elims.map(e => e.cell)],
+            highlightCells: elims.map(e => e.cell),
             eliminations: elims, placement: null, virtualCageSuggestion: null,
+            chainCells: [
+              { cell: roof1, digits: [d], colour: 'blue' },
+              { cell: base2, digits: [d], colour: 'blue' },
+              { cell: base1, digits: [d], colour: 'green' },
+              { cell: roof2, digits: [d], colour: 'green' },
+            ],
           });
         }
       }

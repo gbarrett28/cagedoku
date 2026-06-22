@@ -37,6 +37,102 @@ triggered rules to the queue.
 It is important to maintain as much sharing as possible between the autonomous and
 interactive modes in order to assure correctness of the interactive mode.
 
+### Board State Hierarchy
+
+`BoardState` (`web/src/engine/boardState.ts`) is the plain 9×9 sudoku skeleton — it
+needs no `PuzzleSpec` to construct, owns only the 27 ROW/COL/BOX `units`,
+`candidates`/`counts`/`unitVersions`, and `removeCandidate`'s row/col/box bookkeeping.
+It has no notion of cages: no `regions`, `cageSolns`, `linearSystem`, or `spec`.
+
+`KillerBoardState extends BoardState` adds every cage-related concept: `spec`,
+`regions`, `cageSolns`, `linearSystem`, CAGE `units` (id ≥ 27), `addVirtualCage`,
+`removeCageSolution`, and an `override removeCandidate` that additionally prunes cage
+solutions. Classic puzzles run on a plain `BoardState`; killer puzzles (and the
+one-shot OCR-validation/full-solve paths in `engine/index.ts`, which always receive a
+real `PuzzleSpec`) run on `KillerBoardState`.
+
+This split makes "classic has no cages" a structural fact enforced by the type
+system — but generic infrastructure (`SolverEngine`, `mrvBacktrack`, the rule
+contract) still needs to ask cage-shaped questions sometimes. Every such question is
+routed through one of two channels, so that **no consumer ever tests
+`instanceof KillerBoardState` to decide what to do** (the one exception —
+`candidatesFromBoard`'s display-data extraction — is documented below as the single
+deliberate exception):
+
+- **A virtual method on the board itself**, when the answer depends only on the board
+  (the board "knows what it is", the same template-method shape `removeCandidate`
+  already used for cage-solution pruning):
+  - `cageConstraints(): CageConstraints | null` — `KillerBoardState` builds
+    `{ cageOf, cageTotal, cageCells }` from `regions`/`spec.cageTotals`; plain
+    `BoardState` returns `null`. `mrvBacktrack` (`backtracker.ts`) calls this once and
+    degrades to pure row/col/box backtracking when it gets `null` — it never asks
+    what kind of board it has, the same way it already asks `board.cands(r, c)`.
+  - `protected _onCellDetermined(cell, val)` on `SolverEngine` — a no-op hook;
+    `KillerSolverEngine` overrides it to call `board.linearSystem.substituteLiveRows(cell,
+    val)`, which is now **bookkeeping-only**: it returns derived `[cells, total,
+    distinct]` constraints without mutating the board. For each `distinct` constraint,
+    a single-cell result is golden-checked immediately via
+    `_checkAgainstGolden('DerivedVirtualCage', cell, total)` (catches a determined cell
+    whose value contradicts the golden solution as soon as it's derived, rather than
+    waiting for a rule to act on it); multi-cell results are deduplicated against the
+    cell-sets/totals of existing ROW/COL/BOX/CAGE units (ROW/COL/BOX always sum to 45)
+    and, if genuinely new, pushed onto `board.linearSystem.pendingVirtualCages` for the
+    `DerivedVirtualCage` rule to apply later. This replaced a `_linearSystemActive`
+    boolean flag that gated the same block inline — the virtual hook makes "does this
+    engine propagate through a `LinearSystem`" a property of *which engine class you
+    have*, not a runtime flag that could drift out of sync with the board it was
+    constructed against. `substituteCell` (which used to mutate candidates directly)
+    has been removed entirely — all candidate narrowing for derived constraints now
+    flows through `DerivedVirtualCage` + the existing cage rules (`SumPairConstraint`,
+    `CageCandidateFilter`, etc.) reacting to the new virtual cage unit.
+- **The single canonical `PuzzleState.isKiller(state)` predicate**
+  (`session/types.ts`, a type guard — `'specData' in state`, narrowing to
+  `KillerPuzzleState`), consulted once by `buildEngine` to decide which entire
+  matching bundle to construct together:
+  `KillerBoardState` + `KillerSolverEngine` + the full rule list, or `BoardState` +
+  `SolverEngine` + `PuzzleState.rules(state)` (which excludes `killerOnly` rules for
+  classic puzzles — see "`PuzzleState.rules()` and `Command` / `availableCommands`"
+  below). No other call site re-derives "is this killer" from `state` or from `board`.
+
+**`KillerOnlyRule`** (`web/src/engine/rule.ts`) is the one place a runtime
+`instanceof KillerBoardState` narrow exists for rules — see Rule Contract below.
+
+**`candidatesFromBoard`** (`session/actions.ts`) is the one deliberate exception that
+*does* use `instanceof KillerBoardState` directly: it needs to decide whether the
+board carries cage display data (`regions`/`cageSolns`) at all, which is a structural
+question about the board's shape, not a "what kind of puzzle is this" dispatch — and
+`buildEngine`'s `isKiller`-driven construction already guarantees the two always agree.
+This replaced a `state.puzzleType === 'classic'` proxy test (with a
+"cage solutions are always empty (dummy spec)" comment) that was testing the wrong
+thing, because every board used to carry cage fields regardless of puzzle type. The
+`puzzleType` discriminant has since been removed entirely: `PuzzleState` is the base
+shape (no cage fields, `userGrid: number[][]`), and `KillerPuzzleState extends
+PuzzleState` adds `specData`, `cageStates`, `virtualCages`, and `warpedImageUrl`.
+Fresh states are built via `PuzzleState.createClassic(...)` and
+`PuzzleState.createKiller(...)` factories rather than synthetic specs.
+
+`BigAppleBoardState extends BoardState` (`web/src/engine/bigAppleBoardState.ts`)
+adds a third axis orthogonal to killer/classic: 4 extra offset 3×3 "window"
+units (rows/cols `[1..3]`/`[5..7]` crossed with `[1..3]`/`[5..7]`, 0-based),
+registered via the same `UnitKind.BOX` every box-aware rule already gates on
+— no per-rule changes were needed to cover them. `PuzzleState.isBigApple`
+(`'bigApple' in state`, mirroring `isKiller`'s `'specData' in state` pattern)
+makes `buildEngine`'s `isKiller` ternary 3-way: killer → `KillerBoardState` +
+`KillerSolverEngine`; Big Apple → `BigAppleBoardState` + plain `SolverEngine`;
+classic → plain `BoardState` + plain `SolverEngine`. Big Apple shares
+classic's `PuzzleState` shape exactly (no cage fields, same `givenDigits`),
+so it needs no new serialized fields beyond the `bigApple: true` discriminant.
+A virtual method, `BoardState.extraPeers(r, c): readonly Cell[]` (default
+`[]`, overridden by `BigAppleBoardState` to return the cell's window peers),
+lets `mrvBacktrack`'s forward-checking respect window constraints without an
+`instanceof` check — the same template-method shape `cageConstraints()`
+already established for cage validity in the backtracker.
+
+`userGrid` is always a real 9×9 grid — all-zero before `/confirm` (OCR review
+phase). The "has this session been confirmed?" signal is
+`state.goldenSolution === null` / `!== null` (an existing field that is `null`
+until `confirmPuzzle` populates it), not `userGrid`.
+
 ---
 
 ## TypeScript Array Conventions
@@ -54,7 +150,7 @@ This applies to every named array in `PuzzleSpec`, `BoardState`, and the engine:
 | `PuzzleSpec.borderX` | `boolean[][]` | `borderX[col][rowGap]` — wall between rows `rowGap` / `rowGap+1` in column `col` (shape 9×8) |
 | `PuzzleSpec.borderY` | `boolean[][]` | `borderY[colGap][row]` — wall between cols `colGap` / `colGap+1` in row `row` (shape 8×9) |
 | `BoardState.candidates` | `Set<number>[][]` | `candidates[row][col]` — remaining digit set |
-| `BoardState.regions` | `number[][]` | `regions[row][col]` — 0-based cage index |
+| `KillerBoardState.regions` | `number[][]` | `regions[row][col]` — 0-based cage index |
 | `Cell` (engine type) | `[number, number]` | `[row, col]` — 0-based |
 
 **Why the `[col][row]` comments in some source files are misleading:**
@@ -147,6 +243,7 @@ Key files:
 |---|---|
 | `web/src/image/trainingExport.ts` | `TrainingExport`, `PuzzleSpecExport`, `StallStateExport`, `extractTrainingData`, `buildPuzzleSpecExport`, `buildStallStateExport` |
 | `web/src/image/trainingUpload.ts` | `hasConsent`, `grantConsent`, `uploadTrainingData`, `uploadPuzzleSpec`, `uploadStallState`, `initiateUpload`, `initiateStallUpload` |
+| `web/src/session/feedbackSubmit.ts` | `buildFeedbackPayload`, `submitFeedback` — feedback payload construction and POST |
 | `web/src/engine/rules/stall-fixtures.ts` | Known stall states as named `candidates` arrays |
 | `web/src/engine/rules/stall-fixtures.test.ts` | Forward-failing replay tests (skipped until rule added) |
 | `worker/src/index.ts` | Cloudflare Worker fetch handler — routes by schema version |
@@ -197,6 +294,12 @@ a failure Issue on regression. Requires `CLOUDFLARE_API_TOKEN` and
 | Worker secrets | `GITHUB_TOKEN` (issues:write PAT) |
 | GitHub Actions secrets | `TRAINING_WORKER_URL`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` |
 
+**Worker tests:** `worker/src/index.test.ts` exercises the real worker `fetch`
+handler against a `miniflare`-backed `R2Bucket` (in-memory, fresh per test —
+no persistence/cleanup needed) rather than a hand-rolled mock, so R2 `put`/
+`get`/`list` behaviour is real. `globalThis.fetch` (the GitHub API call)
+remains mocked — tests never create real GitHub issues or comments.
+
 See **`docs/classic-sudoku.md`** for the classic sudoku recognition feature design
 (puzzle type detection, center digit reading, locked given digits, cage-structure
 suppression in the UI).
@@ -230,7 +333,9 @@ Four tiers applied consistently across all production code:
 
 **Prohibited:** Bare `catch {}` or `catch (e) { /* comment */ }` with no log and no rethrow. Every catch must contain at least one of: a log call, a rethrow, or a `setStatus` call.
 
-**Bug reporting:** `reportBug(e, context)` (in `main.ts`) stores the exception for the next feedback modal open. When the user submits feedback via the Feedback button, the exception string is included in the worker payload and appears in the generated GitHub issue.
+**Bug reporting:** `reportBug(e, context)` (in `main.ts`) stores the exception for the next feedback modal open. When the user submits feedback via the Feedback button, `handleFeedbackSubmit` reads the form fields and calls `buildFeedbackPayload()` (`session/feedbackSubmit.ts`) to construct a `FeedbackReport` — including `reportType: 'feedback'`, the exception string (if any), and (for `new-rule` suggestions with an active fixture) `fixtureName`/`unsolvedCells`/`totalCandidates`. `submitFeedback()` POSTs the payload to the training worker, which opens a GitHub issue via `FeedbackReport.githubAction()`.
+
+**Active hint capture:** `showHintModal` (in `main.ts`) logs a `hint_shown` action (the hint's `displayName`) every time a hint is displayed, so the session trace shows when it appeared. If a hint is on screen when feedback is submitted, `handleFeedbackSubmit` includes the full `HintItem` as `FeedbackReport.activeHint`, rendered as a JSON "Active hint" section in the GitHub issue — this lets a report submitted with no turns still identify exactly which hint it refers to.
 
 **Assertion violations:** `checkSolutionAssertions()` (in `session/actions.ts`) validates the `goldenSolution` after every confirm. If the solution is incomplete or fails `validateSudokuSolution()`, an `AssertionViolation` is raised and shown in the assertion modal. The modal's "Submit bug report" button pre-fills `exceptionForSubmission` with the violation details and programmatically opens the feedback modal — no GitHub login required.
 
@@ -280,6 +385,425 @@ The solver has no tunable thresholds — it is exact by construction.
 
 **MRV backtracker (`web/src/engine/backtracker.ts`):** The TypeScript coaching engine falls back to `mrvBacktrack()` when the rule engine stalls. It applies Minimum Remaining Values cell selection with arc-consistency propagation via `assign()`. After `search()` returns, a `gridValid()` defensive guard re-checks the extracted `number[][]` for row/column/box uniqueness before returning it — if the check fails the function logs a `console.error` and returns `null`, converting a corrupt `goldenSolution` into an `UnsolvedByRules` assertion instead of an `InvalidSolution` one.
 
+**`LinearSystem` virtual-cage derivation (`web/src/engine/linearSystem.ts`):**
+`_deriveNonburbVirtualCages` derives additional ("virtual") cages beyond the
+puzzle's real cages by combining row/column/box/cage sum equations — e.g. "this
+row sums to 45, this cage inside it sums to 14, so the remaining 6 cells sum to
+31". Each candidate group is a `DeriveEq { cells: Set<string>; total: number }`.
+`_reduceDerive` repeatedly subtracts one equation's cell-set from another when it
+is a subset (`ej.cells = ej.cells.difference(ei.cells)`, `ej.total -= ei.total`)
+until no further reduction is possible — pure cell-set/total arithmetic, the kind
+of pencil-and-paper deduction a human solver performs.
+
+For each surviving equation, `isBurb(cells)` determines whether the cells share a
+row/column/box (`distinct: true`, digits must be distinct). For non-distinct
+groups, `solSums(cells.length, 0, total)` is computed once to find the
+intersection of possible digit-sets (`must`); the group is only emitted as a
+virtual cage if `must` is non-empty. All derived virtual cages are pushed with
+`precomputedSolns: null` — `KillerBoardState` computes `solSums(cells.length, 0,
+total)` lazily when building `cageSolns` for the cage, so no information is lost.
+
+This derivation intentionally does **not** track or recombine per-equation
+solution sets across reduction steps (an earlier design did this and caused
+exponential blow-up for cage layouts with cages larger than 2 cells — see
+`web/scripts/fuzz-cage-rules.ts`). The resulting `precomputedSolns` values are a
+superset of what the earlier cross-equation-narrowed values would have been,
+which is strictly safer (cannot cause a new incorrect elimination) at the cost of
+deriving fewer virtual cages / slightly less pruning power.
+
+**`pendingVirtualCages` and `DerivedVirtualCage`:** `_deriveNonburbVirtualCages` runs
+once at construction time from the puzzle's starting RREF. As the solve progresses,
+`KillerSolverEngine._onCellDetermined` calls `substituteLiveRows(cell, val)` to
+re-derive constraints against the *current* live rows (cells not yet determined) and
+appends genuinely-new `{ cells, total }` pairs to the public field
+`board.linearSystem.pendingVirtualCages: VirtualCageAddition[]` — a queue, not a
+side-effecting mutation. `web/src/engine/rules/derivedVirtualCage.ts`
+(`DerivedVirtualCage extends KillerOnlyRule`, GLOBAL trigger, priority 1) drains this
+queue one entry per firing, returning it as a `virtualCageAdditions` entry in its
+`RuleResult` (and surfacing every still-pending entry as a virtual-cage-suggestion
+hint via `asHintsKiller`). `SolverEngine.solve()` is the only place that actually
+applies a `virtualCageAdditions` entry: it golden-checks the cage's sum against
+`_goldenSolution` (throwing/reporting a violation on mismatch, the same as any other
+rule result), then calls `board.addVirtualCage(cells, total, [])`, shifts the entry off
+`pendingVirtualCages`, and seeds `COUNT_DECREASED`/`SOLUTION_PRUNED` for the new CAGE
+unit so cage rules (`SumPairConstraint`, `CageCandidateFilter`, etc.) react to it
+within the same pass.
+
+---
+
+## Rule Mutations and Rule Steps
+
+`web/src/session/ruleMutation.ts` represents rule effects as data rather than as an
+external switch. Each concrete mutation type is an open interface carrying its own
+`apply(state: PuzzleState): PuzzleState`, so dispatch lives on the value itself —
+callers always write `mutation.apply(state)`:
+
+```typescript
+interface RuleMutation {
+  readonly type: string;
+  apply(state: PuzzleState): PuzzleState;
+}
+
+interface PlaceDigitMutation extends RuleMutation { readonly type: 'placeDigit'; readonly row: number; readonly col: number; readonly digit: number; }
+interface EliminateCandidateMutation extends RuleMutation { readonly type: 'eliminateCandidate'; readonly row: number; readonly col: number; readonly digit: number; }
+interface AddVirtualCageMutation extends RuleMutation { readonly type: 'addVirtualCage'; readonly cage: VirtualCage; }
+interface EliminateCageSolutionMutation extends RuleMutation { readonly type: 'eliminateCageSolution'; readonly cageId: string; readonly solution: readonly number[]; }
+```
+
+`namespace RuleMutation` provides one factory per mutation type (`placeDigit`,
+`eliminateCandidate`, `addVirtualCage`, `eliminateCageSolution`) plus `revive(data)`
+— the single type-keyed switch in the system, used to reconstruct a mutation after a
+JSON round-trip (`JSON.stringify` drops the `apply` closure a factory attaches).
+
+**`RuleStep`** groups the consecutive same-rule mutations produced by one rule firing
+during a solve pass:
+
+```typescript
+interface RuleStep {
+  readonly ruleName: string;
+  readonly displayName: string;
+  readonly highlightCells: readonly Cell[];
+  readonly mutations: readonly RuleMutation[];
+}
+```
+
+**`buildEngine(state, opts?)`** (`web/src/session/engine.ts`) returns
+`{ board, engine, ruleSteps, validationContext }`. `ruleSteps` is the ordered
+transcript of every always-apply rule firing computed during the engine's `solve()`
+pass, each wrapped as a `RuleStep`. `validationContext` is `null` unless a golden
+solution is present and the board is not user-corrupted; when non-null it carries
+`{ rules, golden, spec }` for the brute-force trigger-miss check. Folding every
+`ruleSteps[i].mutations` via `.apply()` onto the pre-solve state reproduces `board`.
+
+`opts.skipValidation` (default `false`) suppresses `buildEngine`'s own scheduling
+of the brute-force trigger-miss check while still returning `validationContext`.
+`recordTurn` (`web/src/session/engine.ts`) passes `skipValidation: true` and
+schedules the check itself afterwards, against `finalState` (the state including
+the newly recorded turn) rather than the pre-turn state passed into `buildEngine` —
+`PuzzleState.isKiller`, the only state-derived field the check reads, is invariant
+between the two.
+
+**`ApplyHintAction`** (`web/src/session/types.ts`) carries
+`mutations: readonly RuleMutation[]` — the same mutation objects produced by
+`ruleSteps`. `UserAction.apply`'s `'applyHint'` case folds each mutation via
+`.apply()` onto state, so a hint can place a digit, eliminate a candidate, add a
+virtual cage, or eliminate a cage solution uniformly. `UserAction.updateRemovedList`
+and `findFirstElimTurnIdx` (`web/src/session/actions.ts`) read the
+`eliminateCandidate`-typed mutations out of `action.mutations` when replaying turn
+history.
+
+### `applyRuleSteps` and `recordTurn`'s contract
+
+`applyRuleSteps(state)` (`web/src/session/engine.ts`) is the single primitive for
+folding a `buildEngine()` solve pass onto state:
+
+```typescript
+export function applyRuleSteps(state: PuzzleState): { state: PuzzleState; ruleSteps: readonly RuleStep[]; board: BoardState }
+```
+
+It runs `buildEngine(state, { skipValidation: true })` once and reduces every
+`ruleSteps[i].mutations` via `.apply()` onto `state` — placements, candidate
+eliminations, virtual cages, and cage-solution eliminations alike. Folding
+eliminations into `userRemovedCandidates` is what stops the *next* `buildEngine`
+call from re-deriving and re-presenting the same deductions as new rule steps.
+Calling `applyRuleSteps` again on its own output is a no-op (`ruleSteps` empty,
+`state` unchanged). The returned `board` is `buildEngine`'s board for the
+pre-fold `state` — by the no-op invariant above, this is identical to the board
+`buildEngine(folded state)` would produce, so callers get a renderable `board`
+for free.
+
+`recordTurn(state, action)` returns
+`{ state: PuzzleState; ruleSteps: readonly RuleStep[]; baseState: PuzzleState; board: BoardState }`:
+
+1. `baseState = UserAction.apply(action, state)`.
+2. `{ state: finalState, ruleSteps, board } = applyRuleSteps(baseState)` plus the
+   new turn appended to `finalState.turns` — this is the only `buildEngine` call
+   for the action.
+3. Trigger validation is scheduled against `finalState` as before.
+
+All `recordTurn`-based actions in `session/actions.ts` (`enterCell`,
+`cycleCandidate`, the `eliminate*` family, `addVirtualCage`, `applyHint`,
+`confirmPuzzle`, `refresh`) use `.state` directly — no separate
+auto-placement pass is layered on afterwards. History-rewrite actions (`undo`,
+`rewind`) call `applyRuleSteps(rebuildUserGrid(trimmed)).state`. `enterCellStep`
+(the animated entry point used by `main.ts`) returns the full
+`{ state, ruleSteps, baseState }` so the UI can drive an `AnimationPlayer` while
+`state` is already the final, committed result.
+
+### `checkPuzzleInvariant` and Rewind hints
+
+`checkPuzzleInvariant(state)` (`web/src/session/engine.ts`) is the single entry point
+`getHints()` (`web/src/session/actions.ts`) uses to detect that `state` has drifted
+from `state.goldenSolution`. It returns `null` if `state.goldenSolution === null` (not
+yet confirmed) or if no inconsistency is found, otherwise a
+`PuzzleInvariantViolation`:
+
+```typescript
+export interface PuzzleInvariantViolation {
+  readonly rewindTurnIdx: number | null;
+  readonly missingCell: { r: number; c: number; gold: number } | null;
+}
+```
+
+It runs three checks in order, returning on the first hit:
+
+0. **(killer only)** `findWrongVirtualCageTurnIdx(state)` scans `state.turns` for an
+   `addVirtualCage` action whose cage cells (accounting for `negativeCells`) don't sum
+   to `total` against `goldenSolution`. Gated by `PuzzleState.isKiller(state)` — a user
+   can only add virtual cages in a killer puzzle, so this check is meaningless (and
+   `state.virtualCages`/`negativeCells` don't exist) for classic puzzles. On a hit,
+   returns `{ rewindTurnIdx: <that turn's index>, missingCell: null }`.
+1. A placed `userGrid` digit that disagrees with `goldenSolution` →
+   `{ rewindTurnIdx: findLastConsistentTurnIdx(state), missingCell: null }`.
+2. `findMissingGoldenCandidate(state)` — a cell whose golden digit has been eliminated
+   from its candidate set → `{ rewindTurnIdx: findFirstElimTurnIdx(...), missingCell:
+   {r, c, gold} }`.
+
+`findFirstElimTurnIdx` and `findMissingGoldenCandidate` (moved here from
+`actions.ts`) are otherwise unchanged from their pre-refactor behaviour.
+
+**`getHints()`'s dispatch on the result** distinguishes Check 0 from Checks 1/2 by
+*shape*, not by a discriminant field on `PuzzleInvariantViolation` — per project
+convention (ask before adding a discriminant to a shared type; prefer deriving
+per-puzzle-type behaviour from existing predicates at the call site):
+
+```typescript
+const violation = checkPuzzleInvariant(state);
+if (violation !== null) {
+  const { rewindTurnIdx, missingCell } = violation;
+  if (missingCell === null && PuzzleState.isKiller(state) && findWrongVirtualCageTurnIdx(state) !== null) {
+    return { hints: [makeRewindHint(rewindTurnIdx ?? 0)] };
+  }
+  // missingCell !== null -> Check 2's alt-solution search (unchanged)
+  // missingCell === null, not a wrong-cage case -> Check 1's Rewind dispatch (unchanged)
+}
+```
+
+Check 0 is handled with an immediate `Rewind` hint rather than falling into Check 2's
+alt-solution search: that search assumes a wrong *placed or eliminated* digit and runs
+`mrvBacktrack` to look for an alternative consistent grid, but a wrong virtual-cage
+total leaves `userGrid` itself fully consistent with `goldenSolution` — `mrvBacktrack`
+would just return `goldenSolution` again, the search would conclude "multiple/no new
+solutions", and no hint would be produced at all.
+
+### `SessionResult` and `namespace PuzzleStateOps`
+
+`SessionResult` (`web/src/session/types.ts`) is the unified return type for
+user-facing puzzle operations:
+
+```typescript
+export interface SessionResult {
+  readonly state: PuzzleState;
+  readonly board: BoardState;
+  readonly ruleSteps: readonly RuleStep[];
+}
+```
+
+`namespace PuzzleStateOps` (`web/src/session/engine.ts`, a separate namespace from
+`namespace PuzzleState` in `types.ts` — TS only merges a `namespace` with a
+same-named `interface`/`class` in the *same file*, and the two live in different
+files for dependency-cycle reasons) provides one `SessionResult`-returning method
+per user action: `placeDigit`, `removeDigit`, `eliminateCandidate`,
+`restoreCandidate`, `resetCellCandidates`, `addVirtualCage`, `removeVirtualCage`,
+`applyHint`, `undo`. Each calls a private `requireConfirmed(state)` guard (throws
+`Error('Session not yet confirmed')` if `state.goldenSolution === null`), then
+delegates to `recordTurn`/`applyRuleSteps` and repackages the result as a
+`SessionResult`. `undo` additionally throws `UserFacingError('Nothing to undo')` if
+`state.turns` is empty, and `UserFacingError('Cannot undo given digits')` if the
+last turn is a given-digit `placeDigit`.
+
+`session/actions.ts` wraps each `PuzzleStateOps` method in a thin function
+(`enterCell`, `cycleCandidate`, `addVirtualCage`, `applyHint`, `undo`,
+`removeVirtualCage`) that resolves the current `PuzzleState` via
+`requireConfirmed()`, calls the corresponding `PuzzleStateOps` method, calls
+`setState(result.state)`, and returns `result.state` — the `board` and
+`ruleSteps` fields of the `SessionResult` are currently unused by these wrappers
+but are available for future callers that need to render without a follow-up
+`buildEngine` call. `enterCellStep` and `rewind` are unchanged — `enterCellStep`
+still calls `recordTurn` directly because it needs `baseState` for
+`AnimationPlayer`, which `SessionResult` doesn't carry.
+
+### `PuzzleState.rules()` and `Command` / `availableCommands`
+
+`namespace PuzzleState` (`session/types.ts`) provides two additional members:
+
+- `rules(state): Iterable<SolverRule>` — yields the enabled rule set for `state`'s puzzle
+  type (killer yields all non-`DISABLED_RULES` rules; classic additionally excludes
+  `killerOnly` rules). `buildEngine` consumes this directly: `const rules = [...PuzzleState.rules(state)]`.
+- `Command = 'undo' | 'inspectCage' | 'virtualCage' | 'reveal'` and
+  `availableCommands(state): ReadonlySet<Command>` — centralizes the UI-gating conditions
+  for these four commands (turn history / `source: 'given'` for undo, `isKiller` for the
+  cage commands, `goldenSolution !== null` for reveal). `main.ts`'s `updateUndoButton`,
+  `renderPlayingMode`, and `updateRevealButton` consume this instead of repeating the
+  underlying state checks. UI-local concerns (e.g. `selectedCell` for the reveal button)
+  remain in `main.ts`.
+
+### `PuzzleState.candidateDisplay(state, board)`
+
+Returns a 9×9 `readonly CellRender[][]` (row-major) of per-cell render
+attributes, consolidating the digit/candidate "case analysis" (killer vs
+classic, given vs user-placed, duplicate detection, must-contain
+highlighting) that `main.ts`'s `drawDigits`/`drawCandidates` previously
+computed themselves.
+
+```typescript
+export type RenderColour = 'black' | 'blue' | 'red' | 'grey' | 'essential';
+
+export interface CandidateRender {
+  readonly digit: number;        // 1-9
+  readonly colour: RenderColour; // 'essential' if must-contain for its cage, else 'grey'
+}
+
+export interface CellRender {
+  readonly placed: { readonly digit: number; readonly colour: RenderColour; readonly locked: boolean } | null;
+  readonly candidates: readonly CandidateRender[];
+}
+```
+
+- `candidates` only includes digits that are live candidates (`board.cands(r, c)`
+  has the digit AND it is not in `state.userRemovedCandidates`). Both
+  solver-eliminated and user-removed digits render blank — there is no
+  strikethrough rendering for removed candidates.
+- `placed.colour` is `'red'` for duplicate digits (row/col/box), `'blue'` for
+  non-given cells once `goldenSolution` is set, else `'black'`.
+- `placed.locked` is `true` only for classic given digits; always `false` for
+  killer (which has no givens).
+- `'essential'` candidates are digits in the must-contain set for their cage
+  (`intersectAll` over `board.cageSolns[cageIdx]`); classic boards
+  (`board.cageConstraints() === null`) never produce `'essential'`.
+
+`main.ts`'s `drawGrid` computes a cheap `buildEngine(state, { skipSolve: true }).board`
+for `drawDigits` (always called) and uses the fully-solved `currentBoard` (via
+`computeBoard(state)`, set in `fetchCandidates`) for `drawCandidates` (called only
+when `showCandidates` is on).
+
+### `PuzzleState.cageBoundaries(state)` / `PuzzleState.cageLabels(state)`
+
+Two more pure `PuzzleState` functions consolidating killer-cage geometry,
+previously computed inline (with `isKiller`/`specData` checks) in `main.ts`'s
+`drawCageBorders`/`drawCageTotals`. Both return `[]` for classic puzzles.
+
+```typescript
+export interface BorderSegment {
+  readonly row: number;    // 0-8
+  readonly col: number;    // 0-8
+  readonly edge: 'bottom' | 'right'; // boundary on this cell's bottom or right edge
+}
+
+export interface CageLabelRender {
+  readonly row: number;  // 0-8, head cell of the cage
+  readonly col: number;  // 0-8
+  readonly total: number;
+}
+```
+
+- `cageBoundaries` compares `state.specData.regions[r][c]` against its bottom
+  and right neighbours; a mismatch emits a `BorderSegment` for that edge.
+- `cageLabels` emits one entry per non-zero `state.specData.cageTotals[r][c]`.
+- `main.ts`'s `drawCageBorders`/`drawCageTotals` iterate these and draw; no
+  `isKiller`/`specData` access remains in either drawing function (the empty
+  array for classic makes the loop body a no-op).
+
+`cageDisplay`/`virtualCageDisplay` from the original redesign spec are
+satisfied by `candidatesFromBoard`'s existing `cages`/`virtualCages` output
+(`session/actions.ts`), which already returns the same shape (label, cells,
+total, solutions, allSolutions, autoImpossible, userEliminated, mustContain) —
+no separate `PuzzleState` methods were added for these.
+
+---
+
+### `PuzzleState.serialize(state)` / `PuzzleState.deserialize(data)`
+
+`SerializedPuzzleState` is the wire format for a complete `PuzzleState`/
+`KillerPuzzleState` snapshot — used by bug reports (`FeedbackReport.puzzleSpec`)
+and by a dev-only replay hook.
+
+```typescript
+export type SerializedPuzzleState =
+  | (PuzzleState & { readonly kind: 'classic'; readonly version: 1 })
+  | (BigApplePuzzleState & { readonly kind: 'bigapple'; readonly version: 1 })
+  | (KillerPuzzleState & { readonly kind: 'killer'; readonly version: 1 });
+
+export function serialize(state: PuzzleState): SerializedPuzzleState
+export function deserialize(data: unknown): PuzzleState
+```
+
+- `serialize` is a total, structural transform: `isKiller(state) ? { kind:
+  'killer', ... } : isBigApple(state) ? { kind: 'bigapple', ... } : { kind:
+  'classic', ... }`, each spreading `version: 1, ...state`. It includes
+  `originalImageUrl`/`warpedImageUrl` as-is — callers that need a smaller
+  payload (e.g. the feedback handler, to avoid embedding large data URLs in a
+  GitHub issue body) null those fields out on their own copy.
+- `deserialize` throws immediately if `data` is not an object, `kind` is not
+  `'classic' | 'bigapple' | 'killer'`, or `version !== 1` — no migration path; pre-redesign
+  reports and any future format change simply fail `deserialize`. It validates
+  gross shape (array dimensions, primitive element types) of each top-level
+  field at the same rigor as `shared/src/reports/*.ts`'s `is()` functions, but
+  does **not** recursively validate `turns`/`UserAction`/`RuleMutation`/
+  `AutoMutation` union variants — a malformed `turns` entry surfaces as a
+  runtime error inside `buildEngine`, an acceptable failure mode for this
+  debugging tool.
+- The `kind` dispatch inside `serialize`/`deserialize` is the only place that
+  knows about puzzle-type variants. `main.ts` and `shared/src/reports/` only
+  ever call `PuzzleState.serialize`/`deserialize`.
+
+`main.ts`'s `handleFeedbackSubmit` builds its `puzzleSpec` via
+`{ ...PuzzleState.serialize(currentState), originalImageUrl: null, ...(isKiller
+? { warpedImageUrl: null } : {}) }`. A dev-only `window.__loadSerializedState(data)`
+(same dead-code-elimination pattern as `window.__testLoad`) calls `deserialize`
+then `renderPlayingMode` to reproduce a reported state in the browser console.
+
+---
+
+## Animation Player
+
+`web/src/session/animationPlayer.ts` is a pure-data module for navigating a
+`buildEngine()`-produced `ruleSteps` list — the foundation for the rule-by-rule
+auto-apply animation. It is never persisted (UI-only state) and follows the
+namespace-merging pattern: `AnimationPlayer` is plain data, all behaviour lives in
+the same-named namespace.
+
+```typescript
+interface AnimationPlayer {
+  readonly baseState: PuzzleState;   // state right after the user's action, before any rule steps
+  readonly ruleSteps: readonly RuleStep[];
+  readonly cursor: number;            // 0..ruleSteps.length — steps fully applied so far
+  readonly playing: boolean;
+}
+```
+
+**Derivation:**
+- `stateAtCursor(player)` folds `ruleSteps[0..cursor)` mutations onto `baseState` via
+  `RuleMutation.apply`.
+- `boardAtCursor(player)` is `computeAnimationCandidates(stateAtCursor(player))` —
+  the existing lightweight board derivation (`session/actions.ts`), which calls
+  `buildEngine(state, { skipSolve: true })` so scrubbing never re-triggers a full
+  solve or validation.
+- `currentStep(player)` is `ruleSteps[cursor] ?? null` — the step about to be (or
+  being) animated, `null` once the cursor reaches the end.
+
+**VCR cursor transitions** (all pure, returning a new `AnimationPlayer`):
+- `rewind(player)` — if `cursor > 0`, resets to `{ cursor: 0, playing: false }`; if
+  `cursor === 0`, returns `null` (the caller closes the player with no commit).
+- `stepBack(player)` / `stepForward(player)` — move the cursor by one step, clamped
+  to `[0, ruleSteps.length]`, forcing `playing: false`.
+- `togglePlay(player)` — flips `playing`.
+- `tick(player)` — auto-play step: advances `cursor` by one while
+  `cursor < ruleSteps.length`; at the end, sets `playing: false` without advancing
+  (a pause point, not a close/commit action).
+
+**`main.ts` wiring:** `handleCellEntry`'s animated branch (`autoPlacementDelay > 0`)
+calls `enterCellStep(row, col, digit)`, which both commits `finalState` via
+`setState` and returns `{ state: finalState, ruleSteps, baseState }`. The UI builds
+`{ baseState, ruleSteps, cursor: 0, playing: true }` and drives it with `tick()` in a
+loop: each iteration reads `currentStep(player)` for the hint pill
+(`displayName`), highlight cells, and eliminated-candidate cells, waits `delay` ms
+(or `0` ms if fast-forward was requested), then advances via `tick()` and redraws
+via `boardAtCursor(player)`. The loop is a pure visual replay — `finalState` was
+already committed before the loop starts, so the animation never feeds back into
+`currentState`. The `»` (fold-remaining-and-commit) control and manual
+`rewind`/`stepBack`/`stepForward`/`togglePlay` scrubbing UI remain future work.
+
 ---
 
 ## Rule Contract
@@ -292,6 +816,7 @@ interface SolverRule {
   readonly name: string;           // matches class name exactly
   readonly description: string;    // shown in the config modal (i) tooltip
   readonly priority: number;       // lower = higher priority = fired first
+  readonly killerOnly: boolean;    // true = rule requires cage constraints; excluded for classic puzzles
   readonly triggers: ReadonlySet<Trigger>;
   readonly unitKinds: ReadonlySet<UnitKind>; // empty = GLOBAL or cell-scoped
 
@@ -309,6 +834,20 @@ must not mutate board state.
 just produced, so both paths share the same detection logic.  Return `[]` if the
 rule should not surface hints (always-apply-only rules).
 
+A GLOBAL-triggered rule that scans `ctx.board.units` itself (`ctx.unit === null`)
+can find more than one independent instance of its pattern in a single
+invocation — `apply()`'s flat `eliminations` array is then the union of all of
+them. `asHints()` must not pick one instance and attach the whole array to it;
+each returned `HintResult.eliminations` must contain only the eliminations that
+its own `explanation`/`highlightCells` actually justify. Return one `HintResult`
+per distinct instance (`solverEngine.ts` already spreads `asHints()`'s array into
+`pendingHints` and runs `dedupHints()` over the combined list, so 0..N hints per
+invocation is a supported case). `NakedPair` is the reference implementation: it
+groups each unit's pair by the pair's own two cells via `_distinctPairs()` —
+merging units where the same two cells satisfy more than one at once (e.g. a
+row-pair that's also a box-pair) into a single hint — and filters the incoming
+`eliminations` down to each pair's own peer cells before emitting its hint.
+
 **`RuleResult`** (`web/src/engine/types.ts`):
 
 ```typescript
@@ -325,21 +864,73 @@ Use `emptyResult()` to return no progress.
 **`HintResult`** (`web/src/engine/hint.ts`):
 
 ```typescript
+interface ChainCell {
+  cell:    Cell;
+  digits:  readonly number[];   // digit(s) relevant to *this* cell
+  colour?: CellColour;          // optional 'blue' | 'green' wash
+}
+
 interface HintResult {
   ruleName:     string;
   displayName:  string;
   explanation:  string;                              // plain English; use cellLabel()
-  highlightCells: readonly Cell[];                   // 0-based [row, col]
+  highlightCells: readonly Cell[];                   // elimination targets only (0-based [row, col])
   eliminations: readonly Elimination[];
   placement:    readonly [number, number, number] | null;  // [row, col, digit] or null
   virtualCageSuggestion: readonly [readonly Cell[], number] | null;
+  chainCells?: readonly ChainCell[];                 // optional — per-cell chain digits/colour
+  secondaryHighlightCells?: readonly Cell[];         // optional — pale-blue unit-context cells
+  patternDigits?: readonly number[];                 // optional — fallback digit list for highlightCells
 }
 ```
+
+**`chainCells`** is populated by rules whose structurally significant cells each carry
+a different digit (XYWing, XYZWing, WWing, TwoStringKite, Skyscraper, SimpleColouring).
+Each entry tags one cell with the digit(s) relevant to *that* cell and an optional
+`colour` wash. The renderer (`drawHintDigitMarkers` / `drawUnderlays` in
+`web/src/main.ts`) draws squares for a cell's own `chainCells` digits when present, and
+paints the `colour` wash, instead of relying on one rule-wide digit list. Chain cells
+that need a wash but no orange highlight (e.g. wing/pincer cells) are deliberately
+omitted from `highlightCells`; the renderer unions `highlightCells` and `chainCells`
+when deciding which cells get digit squares. `highlightCells` otherwise contains only
+the elimination targets (rendered yellow) plus any orange-highlighted pattern cells
+that don't need a `chainCells` entry (e.g. pivot/knot cells with a single relevant
+digit set).
+
+**`patternDigits`** is the non-chain fallback: when a `highlightCells` cell has no
+matching `chainCells` entry, the renderer marks that cell's own live candidates that
+appear in `patternDigits` (or, if absent, derives them from `eliminations`/
+`placement[2]`). Used by HiddenSingle/HiddenPair/HiddenTriple/HiddenQuad, where the
+keying digits differ from the elimination digits.
+
+**`secondaryHighlightCells`** gives the unit context for "hidden" deductions
+(HiddenSingle, HiddenPair, HiddenTriple, and HiddenQuad): the rest of
+`ctx.unit.cells`, excluding the cells already in `highlightCells`. Rendered as a
+pale-blue wash underneath the orange/yellow overlays, so the user sees "this is
+the unit the deduction is about" without it competing visually with the actual
+target cell(s).
+
+**`KillerOnlyRule`** (`web/src/engine/rule.ts`) is an abstract base class for rules
+that require `KillerBoardState` (cage sums, cage solutions, the linear system —
+`deltaConstraint`, `linearElimination`, `sumPairConstraint`, `cageCandidateFilter`,
+`cageConfinement`, `cageIntersection`, `mustContain`, `mustContainOutie`,
+`solutionMapFilter`, `unitPartitionFilter`). It sets `readonly killerOnly = true` once
+(rather than each subclass repeating it), performs the one runtime
+`ctx.board instanceof KillerBoardState` narrow that the type system requires to expose
+`KillerBoardState`'s members, and hands subclasses a `KillerRuleContext` (whose `board`
+is typed `KillerBoardState`) through `applyKiller`/`asHintsKiller`. In practice this
+narrow is unreachable — `buildEngine` only ever constructs `killerOnly` rules with a
+`KillerBoardState` (via `PuzzleState.isKiller`) — but it is the codebase's single point
+of defense-in-depth for that invariant, exercised directly in `rule.test.ts` rather
+than relying on it never being hit.
 
 **Adding a new rule:**
 
 1. Create `web/src/engine/rules/<camelCaseName>.ts` — one class per file.
-2. Implement `SolverRule`.  Import types from `../types.js`, `../rule.js`, `../hint.js`.
+2. Implement `SolverRule` directly for classic-compatible rules
+   (`readonly killerOnly = false`), or extend `KillerOnlyRule` (implementing
+   `applyKiller`/`asHintsKiller` against `KillerRuleContext`) for rules that require
+   cage constraints. Import types from `../types.js`, `../rule.js`, `../hint.js`.
 3. Add it to `defaultRules()` in `web/src/engine/rules/index.ts` at the right priority.
 4. Co-locate tests as `<camelCaseName>.test.ts` using `makeTrivialSpec()` from
    `web/src/engine/fixtures.ts`.
@@ -348,3 +939,397 @@ interface HintResult {
 
 The priority order and trigger assignments for all active rules are listed in the
 comment block at the top of `web/src/engine/rules/index.ts`.
+
+### Disabled rules
+
+`web/src/engine/rules/disabled-rules.ts` (`DISABLED_RULES`) is **manually curated** —
+no automation adds or removes entries. `buildEngine()` in `web/src/session/engine.ts`
+and `getHints()` in `web/src/engine/index.ts` both filter `defaultRules()` by
+`DISABLED_RULES` before constructing a `SolverEngine`. The spec validator (`solve()`)
+is intentionally **not** filtered so corrupted-spec detection still uses all rules.
+
+A rule is added to `DISABLED_RULES` only as a deliberate product decision (e.g.
+`UniqueRectangle`, whose Type 1/2 proofs depend on "the puzzle has a unique
+solution" — a meta-assumption no other active rule makes). Its regression-fixture
+tests (see below) use the same `it.skip` convention while disabled.
+
+### Rule-bug fixture pipeline (for debugging stalls)
+
+**Goal:** every rule-bug/trigger-miss report carries the *entire session*
+(`SerializedPuzzleState`, including full `turns` history) so the exact board at
+the moment the bug was detected can be reproduced byte-for-byte offline — not
+just a single candidate-grid snapshot. This is what makes
+`web/src/engine/rules/__fixtures__/regression.test.ts` a faithful reproduction
+rather than an approximation.
+
+When a rule produces an elimination that contradicts the known golden solution at
+runtime, `SolverEngine` (with `goldenSolution` + `onViolation` options set by
+`buildEngine()`) detects it, suppresses the elimination so it is **never applied**,
+and reports it for offline debugging:
+
+1. **Runtime detection** — `onViolation` (a plain function, constructed once per
+   `buildEngine()` call — no longer a `board`-capturing factory) adds the rule name
+   to the in-memory `_sessionDisabledRules` set in `web/src/session/store.ts`
+   (fast-path: the rule won't be passed to any future `SolverEngine` constructed in
+   this tab), and POSTs a `RuleBugReport` to the Cloudflare Worker. Likewise,
+   `runTriggerValidation` (`web/src/session/engine.ts` — a debounced background
+   brute-force check scheduled by `scheduleTriggerValidation` after each turn,
+   using `findTriggerMisses` from `triggerValidator.ts`) POSTs a
+   `TriggerMissReport` when a rule misses a valid elimination.
+
+   Both report shapes carry:
+   ```typescript
+   {
+     ruleName: string;
+     puzzleType: 'killer' | 'classic';
+     state: SerializedPuzzleState;   // PuzzleState.serialize(state) — full turn history
+     // RuleBugReport only:
+     offendingEliminations: { cell: [number, number]; digit: number }[];
+     // TriggerMissReport only:
+     missedContext: string;
+     missedEliminations: { cell: [number, number]; digit: number }[];
+   }
+   ```
+   `state` is produced by `PuzzleState.serialize(state)` (see
+   "`PuzzleState.serialize`/`deserialize`" below) — the same total, structural
+   transform used for feedback reports and the dev replay hook. No separate
+   candidate-grid/region/cage-total snapshot is captured; replaying `state` through
+   `buildEngine` reconstructs all of that.
+
+2. **Worker ingestion** — `POST /` with a `RuleBugReport` or `TriggerMissReport`
+   body stores the raw report under `rule-bugs/<ruleName>/` or
+   `trigger-misses/<ruleName>/` respectively, and a `RuleBugFixture`-shaped JSON
+   (via `.toFixture()`) under `rule-fixtures/<ruleName>/` in R2. Worker dispatch is
+   fully generic — it calls `.is()`/`.toFixture()`/`.storageKey()`/`.r2Metadata()`/
+   `.githubAction()` on whichever report type `parseAnyReport` returns, with no
+   per-field knowledge of the report shape.
+
+3. **`RuleBugFixture` (version 2)** — defined in `shared/src/fixture.ts`:
+   ```typescript
+   export interface RuleBugFixture {
+     readonly version: 2;
+     readonly source: 'issue' | 'r2' | 'trigger-miss';
+     readonly name: string;
+     readonly addedAt: string;
+     readonly issueNumber?: number;
+     readonly ruleName: string;
+     readonly puzzleType: 'killer' | 'classic';
+     readonly missedContext?: string;       // trigger-miss fixtures only
+     readonly state: unknown;               // SerializedPuzzleState
+   }
+   ```
+   - `fixtureFingerprint(f)` is `JSON.stringify([f.ruleName, f.state])` — two
+     fixtures describing the same session (same rule, same serialized state)
+     dedupe to the same fingerprint regardless of `name`/`addedAt`/`source`.
+   - `fixtureToTypeScript(f)` emits the TS object literal used to append a fixture
+     to `web/src/engine/rules/__fixtures__/index.ts`.
+   - `FixtureRecord { readonly key: string; readonly fixture: RuleBugFixture }` pairs
+     a fixture with its R2 object key — the shape returned by
+     `GET /rule-fixtures/<ruleName>` (see below).
+
+4. **Nightly Action** — `.github/workflows/rule-regression.yml` runs
+   `npx vite-node web/scripts/sync-rule-fixtures.ts`, which derives the rule list
+   dynamically from `defaultRules()` and fetches all `GET /rule-fixtures/<ruleName>`
+   responses, each an array of `FixtureRecord` (`{ key, fixture }`). For each
+   record:
+   - every key fetched (new or already-synced duplicate) is recorded;
+   - fixtures are deduplicated against existing ones by `fixtureFingerprint()`;
+     newly-seen fixtures are appended to
+     `web/src/engine/rules/__fixtures__/index.ts` **and** their `name` is appended
+     to `web/src/engine/rules/__fixtures__/needs-triage.ts` — unconditionally, with
+     no pass/fail check, so a freshly-reported (possibly still-buggy) fixture never
+     fails the bronze gate.
+
+   The script does **not** touch `disabled-rules.ts`. All fetched R2 keys are
+   written to `/tmp/rule-fixture-keys.txt`. The Action then runs the bronze gate,
+   commits and pushes `index.ts`/`needs-triage.ts` (the next `pages.yml`
+   deployment picks up the change), and — only if the bronze gate and commit/push
+   both succeeded — deletes every key in `/tmp/rule-fixture-keys.txt` from R2 via
+   `scripts/_r2_delete.py` (existing `R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY`
+   secrets). This drains R2 of both newly-synced fixtures and any pre-existing
+   duplicates, while never deleting from R2 if the job fails for unrelated
+   reasons.
+
+5. **Replay** — `boardFromFixture(fixture)` (in
+   `web/src/engine/rules/__fixtures__/replay.ts`) is the single entry point for
+   reproducing a fixture:
+   ```typescript
+   export function boardFromFixture(fixture: RuleBugFixture): { board: BoardState; state: PuzzleState }
+   ```
+   It calls `PuzzleState.deserialize(fixture.state)` to reconstruct the exact
+   `PuzzleState`/`KillerPuzzleState` (including `turns`, `goldenSolution`,
+   `userRemovedCandidates`, and — for killer — `specData`/`cageStates`/
+   `virtualCages`), then `buildEngine(state, { skipValidation: true })` to rebuild
+   the board exactly as the live app would. `skipValidation` prevents the replay
+   itself from scheduling another background trigger-validation pass. The returned
+   `board` is the board at the moment the bug was detected; `state.goldenSolution`
+   is the known-correct solution for that puzzle.
+
+6. **Regression tests** — `web/src/engine/rules/__fixtures__/regression.test.ts`
+   generically replays every fixture via `boardFromFixture()` and asserts
+   `fixture.ruleName`'s rule produces no golden-contradicting elimination against
+   `state.goldenSolution`. Each fixture's `it`/`it.skip` is decided by
+   `shouldSkipFixture(fixture, rule, knownFailingFixtures)` (in
+   `__fixtures__/skipPolicy.ts`), which skips when: no rule matches the fixture's
+   `ruleName`; the rule is in `DISABLED_RULES`; the fixture is listed in the local
+   `KNOWN_FAILING_FIXTURES` (a tracked, still-open rule bug); or the fixture's name
+   is listed in `__fixtures__/needs-triage.ts`'s `NEEDS_TRIAGE_FIXTURES` (freshly
+   synced from R2, not yet reviewed by a human — see "Nightly Action" above). When
+   `ruleBugFixtures` is empty the suite contains a single `it.skip` placeholder so
+   the test file doesn't fail with "no test found in suite".
+
+   Periodic human review of `NEEDS_TRIAGE_FIXTURES`: for each entry, either remove
+   it (the fixture's rule now passes, so it becomes a live regression test), move
+   it to `KNOWN_FAILING_FIXTURES` with an explanatory comment (real, still-open
+   rule bug), or delete the fixture from `index.ts` entirely and remove its name
+   here (unactionable — its R2 copy was already drained, so it cannot resurface).
+
+See [`docs/debugging-fixtures.md`](./debugging-fixtures.md) for how to run the
+regression tests and debug a specific fixture.
+
+### Telemetry-failure surfacing (dev diagnostic)
+
+The fixture pipeline above depends entirely on `submitRuleBugReport`/
+`submitTriggerMissReport` (`web/src/image/trainingUpload.ts`) actually reaching
+R2. Both calls fail silently for two reasons that have nothing to do with rule
+correctness:
+
+- **No consent** — both functions no-op when `hasConsent()` is false. Unlike
+  `submitStallReport`/`uploadTrainingData`, there is no consent-modal flow
+  wired to either of these call paths, so a rule bug detected before the user
+  has granted training consent is dropped with no trace.
+- **Upload failure** — `postToWorker`'s fetch rejection handler only
+  `console.error`s, invisible to anyone but a developer with devtools open.
+
+Because of this, an empty `ruleBugFixtures`/`NEEDS_TRIAGE_FIXTURES` cannot be
+read as proof that no rule bugs exist — it is equally consistent with the
+pipeline silently dropping reports.
+
+`CoachSettings.devSurfaceTelemetryFailures` (default `false`, toggled via the
+"Surface telemetry failures (dev)" checkbox in the rules/config modal) closes
+this gap. When enabled, `trainingUpload.ts`'s `surfaceTelemetryFailure()`
+queues a message via `enqueueTelemetryFailure()` (`web/src/session/store.ts`)
+on either failure mode, scoped to `rule-bug`/`trigger-miss` reports only (the
+two paths with no other recourse). `enqueueTelemetryFailure()` immediately
+invokes a handler registered via `onTelemetryFailure()` — `main.ts` registers
+`openFeedbackModal` for this at startup, so the failure forces the feedback
+modal open immediately (mirroring how `showAssertionModal` forces itself
+open), rather than waiting for the user to click the feedback button and
+risking the single-slot queue being overwritten or lost on reload first.
+`openFeedbackModal()` drains the queue and prefills the bug report exactly as
+it does for `pendingBug`/`exceptionForSubmission` (see "Bug reporting" in the
+Exception Handling Policy above) — so a developer debugging the pipeline gets
+an actionable report instead of a silent drop, while normal users (flag off)
+see no behaviour change at all.
+
+Because the no-consent case forces the feedback modal open on every new
+distinct rule-bug/trigger-miss with no way to address the root cause from
+within that modal, the config modal's "Privacy" section exposes a
+`consent-toggle` checkbox to all users (not gated behind the dev flag). It
+reads `hasConsent()` when the modal opens and calls `grantConsent()`/
+`revokeConsent()` immediately on change — independent of the modal's
+Save/Cancel buttons, since consent is cookie-based and applies right away
+rather than being part of `CoachSettings`. Granting consent here breaks the
+loop: subsequent `submitRuleBugReport`/`submitTriggerMissReport` calls
+succeed instead of dropping.
+
+---
+
+## Stress-Test Tooling
+
+### Scraper
+
+`killer_sudoku/training/scrape_puzzles.py` downloads puzzle images from any
+Guardian/Observer series index page.
+
+```bash
+# Classic sudoku, sorted into subdirectories by difficulty keyword in URL
+python -m killer_sudoku.training.scrape_puzzles \
+    --output-dir classic_guardian \
+    --series-url "https://www.theguardian.com/lifeandstyle/series/sudoku?page={}" \
+    --subdir-keywords easy medium hard diabolical
+```
+
+`--subdir-keywords` detects the first matching keyword in each article URL and
+saves images into `<output-dir>/<keyword>/`. Articles matching none of the
+keywords go into `other/`. The per-subdirectory guard (skip if directory already
+exists) means re-runs are safe — existing images are never overwritten.
+
+### Stress-Test Runner
+
+`scripts/run-stress-test.sh <puzzle-dir> [workers] [--copy-stalls <dest>]` processes
+every `.jpg`/`.png` in a directory through the production app via Playwright and
+writes `eval_report.json` alongside the images.
+
+```bash
+bash scripts/run-stress-test.sh classic_guardian/diabolical 4
+bash scripts/run-stress-test.sh classic_guardian 4 --copy-stalls web/stall-fixtures
+```
+
+Each Playwright worker compiles OpenCV.js WASM once (~60 s); 4 workers on
+~500 images takes ~20 minutes at ~450 MB per worker.
+
+Internally the runner:
+1. Sets `STRESS_PUZZLE_DIR` and runs `web/e2e/stress.spec.ts` via
+   `npx playwright test --workers=N`.
+2. Each worker writes `eval_results_<pid>.json` to the puzzle directory.
+3. `scripts/merge-stress-results.mjs` combines the worker files into
+   `eval_report.json` and deletes the intermediates.
+
+### Report Format
+
+```json
+{
+  "timestamp": "...",
+  "source": "diabolical",
+  "total": 500,
+  "pipeline_ok": 498,
+  "solution_found": 496,
+  "backtracker_required": 41,
+  "pipeline_errors": 2,
+  "work_queue": [
+    { "file": "killer_sudoku_312.jpg", "unsolved_cells": 1, "total_candidates": 2 }
+  ],
+  "per_image": { ... }
+}
+```
+
+`work_queue` lists backtracker puzzles sorted by `(unsolved_cells ASC,
+total_candidates ASC)` — the easiest rule gaps to close first. A puzzle with
+1 unsolved cell and 2 candidates needs only one new rule to eliminate one
+candidate and place the digit. Rules found there often propagate to reduce
+candidates in harder puzzles.
+
+### Implementation Notes
+
+`window.__lastSolverResult` is exposed by `main.ts` immediately after every
+`solveCurrentSpec()` call in `handleProcess()`. It holds
+`{ usedBacktracking: boolean, stalledCandidates: number[][][] | null, spec: PuzzleSpecData | null }`
+where `stalledCandidates` is the candidate grid captured just before backtracking
+(undefined when the rule engine solves the puzzle completely) and `spec` is the
+full puzzle spec used for stall fixture capture. The stress runner reads this via
+`page.evaluate()` after the review panel or playing mode appears.
+
+When `usedBacktracking` is true, the stress test writes a `<name>.stall.json` file
+alongside the source image. The `--copy-stalls <dest>` flag then copies these into
+`web/stall-fixtures/` for regression testing.
+
+---
+
+## Stall Fixture Pipeline
+
+Puzzle states where the rule engine cannot solve without MRV backtracking are
+committed as **stall fixtures** in `web/stall-fixtures/`. They serve two purposes:
+(a) regression tests that auto-delete solved fixtures when a new rule is added, and
+(b) a dev-mode panel for loading fixtures directly into the solution screen.
+
+### StallFixtureFile format
+
+Each `<name>.stall.json` file contains:
+
+```ts
+interface StallFixtureFile {
+  version: 1;
+  source: string;            // corpus name: "guardian", "observer", "r2", …
+  name: string;              // image filename without extension
+  addedAt: string;           // ISO date (YYYY-MM-DD)
+  puzzleType: 'killer' | 'classic';
+  imagePath?: string;        // repo-root-relative; omitted for R2 uploads
+  spec: PuzzleSpec;          // full puzzle spec
+  stalledCandidates: number[][][];  // 9×9 candidate grid at stall time
+  unsolvedCells: number;     // cells with >1 candidate at stall time
+  totalCandidates: number;   // sum of candidate-list lengths for unsolved cells
+}
+```
+
+Defined in `web/src/engine/rules/stallFixtureFile.ts`. The `spec` field matches
+`web/src/solver/puzzleSpec.ts` and follows the project's row-major coordinate
+convention (`spec.borderX[col][rowGap]` and `spec.borderY[colGap][row]` remain
+col-first per the documented border exception).
+
+### Regression test
+
+`web/stall-fixtures/stall-fixtures-dir.test.ts` (Vitest) runs `solve(fixture.spec)`
+for every `*.stall.json`. If a fixture now solves without backtracking,
+the test **auto-deletes the file** and fails with a message naming the closed gap.
+The developer commits the deletion to record which fixtures a new rule resolved.
+If the directory is empty the test emits a single passing no-op.
+
+### Dev panel
+
+When the app runs under `vite dev` with `?dev=1` in the URL, a collapsible "Stall
+Fixtures" panel appears at the top of the page. It calls:
+
+- `GET /dev/stall-fixtures` — list endpoint (sorted by `unsolvedCells ASC,
+  totalCandidates ASC`); strips `spec` and `stalledCandidates` for fast load
+- `GET /dev/stall-fixtures/:name` — full fixture JSON
+
+Clicking a row calls `loadSpecDirect(spec)` and transitions straight to the
+solution screen, bypassing the image pipeline. The Vite middleware (`apply: 'serve'`)
+is absent from production builds; the fetch returns 404 and the panel renders nothing.
+
+### R2 review workflow
+
+`.github/workflows/puzzle-spec-review.yml` (manual `workflow_dispatch`) downloads
+`puzzle-spec/` objects from the `cagedoku-training` R2 bucket, runs
+`web/scripts/check-puzzle-specs.ts` via vite-node to check each spec, commits any
+stall fixtures to `web/stall-fixtures/`, and deletes all processed R2 objects.
+`check-puzzle-specs.ts` deduplicates specs by content
+(`JSON.stringify([spec.regions, spec.cageTotals])`) so identical puzzles uploaded
+from different sessions produce only one fixture. Uses `R2_ACCESS_KEY_ID` and
+`R2_SECRET_ACCESS_KEY` GitHub Actions secrets (same as the retrain workflow).
+
+---
+
+## E2E Test Environment
+
+Playwright tests (`web/e2e/`) require a Chromium binary. The project pins
+`@playwright/test` to a specific version that matches the browser revision
+pre-installed in the Claude Code cloud execution environment.
+
+| Playwright version | Chromium revision | Binary location (cloud) |
+|---|---|---|
+| `1.56.1` (current pin) | `1194` | `/opt/pw-browsers/chromium_headless_shell-1194/` |
+
+Both `playwright.config.ts` and `playwright.dev.config.ts` set
+`PLAYWRIGHT_BROWSERS_PATH ??= '/opt/pw-browsers'` so the correct binary is
+found automatically without downloading anything. The `??=` guard is a no-op
+when the variable is already set (developer machines, CI with its own cache).
+
+**Upgrading Playwright:** when the cloud environment is updated to provide a
+newer revision, bump the pin in `web/package.json` to the matching
+`@playwright/test` version (revision→version mapping: check
+`node_modules/playwright-core/browsers.json` after install), then remove or
+update the `PLAYWRIGHT_BROWSERS_PATH` override if the path changes. Tracked
+in issue #134.
+
+---
+
+## Deferred Work
+
+Items considered during the §1-§7 puzzle-state redesign but deliberately not
+implemented as part of it:
+
+- **Big Apple puzzle type** — the extension point exists (`PuzzleState` is the
+  base type; `KillerPuzzleState` shows the pattern for extending it with
+  puzzle-type-specific fields and an `isX`-style guard), but no implementation
+  is planned yet.
+- **Performance monitoring** — `RuleStats` (`web/src/engine/`) already records
+  per-rule timing; surfacing it in a bug report or dev panel is separate,
+  not-yet-scoped work.
+- **OCR pipeline symmetry** — the classic OCR path (`inpImage.ts:213-232`)
+  never attempts cage-border/total detection, so a misdetected-as-classic
+  image can never offer a real Killer candidate (the reverse direction works
+  today, since the killer path also runs `readClassicDigits`). Closing this
+  gap would require running cage detection unconditionally — real pipeline
+  scope, deferred alongside the broader "make the OCR review screen fully
+  editable" idea.
+- **Hybrid-from-OCR candidate construction** — OCR-driven candidate
+  construction always builds Killer candidates with `givenDigits: null`, even
+  when digit artefacts were detected (which can be false positives on a Killer
+  image). Building a hybrid candidate from OCR requires a digit-correction UI
+  for the Killer review screen first — deferred.
+
+The unified digit recogniser continues independently on
+`feature/unified-digit-recogniser`, orthogonal to the puzzle-state redesign.
+

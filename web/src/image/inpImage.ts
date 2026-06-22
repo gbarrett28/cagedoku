@@ -22,8 +22,10 @@ type Cv = OpenCVModule;
 import { defaultImagePipelineConfig, subres as cfgSubres, resolution as cfgResolution } from './config.js';
 import type { ImagePipelineConfig } from './config.js';
 import { locateGrid } from './gridLocation.js';
-import { scanCells, detectRotation, detectPuzzleType } from './cellScan.js';
-import { clusterBorders } from './borderClustering.js';
+import {
+  collectCageTotalContours, scanClassicDigits, calibrateCageTotalThreshold,
+  contourFillRatios, detectRotation, detectPuzzleType,
+} from './cellScan.js';
 import type { GrayImage } from './borderClustering.js';
 import {
   recognise, splitNum, contourHier, getNumContours, readClassicDigits,
@@ -35,6 +37,7 @@ import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import { ProcessingError } from '../solver/errors.js';
 import type { Brdrs } from '../solver/errors.js';
 import { boundaryKind, BoundaryKind } from './borderClustering.js';
+import { submitCageThresholdCalibrationReport } from './trainingUpload.js';
 
 // ---------------------------------------------------------------------------
 // Error types
@@ -205,9 +208,8 @@ export async function parsePuzzleImage(
   warpedImgMat.delete();
 
   // --- Stage 3: Puzzle type detection ---
-  const [cageConf, classicConf] = scanCells(
-    cv, warpedGryMat, subres, config.cellScan.classicMinSizeFraction,
-  );
+  const contourMetrics = collectCageTotalContours(cv, warpedGryMat, subres);
+  const classicConf = scanClassicDigits(cv, warpedGryMat, subres, config.cellScan.classicMinSizeFraction);
   const puzzleType = detectPuzzleType(warpedGryMat, subres, config.cellScan.tlFractionThreshold);
 
   // --- Classic path ---
@@ -232,17 +234,28 @@ export async function parsePuzzleImage(
     return { spec, specError, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: classicThumbs, mergedThumbs: new Map() };
   }
 
-  // --- Killer path: Stage 4 border clustering ---
+  // --- Killer path: Stage 4 border clustering (via per-image calibration) ---
   const gryImg: GrayImage = { data: new Uint8Array(warpedGryMat.data), size: dstSize };
 
-  const [bxProb, byProb] = clusterBorders(
-    gryImg, cageConf, subres, config.borderClustering,
-    config.cellScan.anchorConfidenceThreshold,
+  const calibration = calibrateCageTotalThreshold(
+    contourMetrics, gryImg, subres,
+    config.cellScan.cageTotalFillRatioCandidates,
+    config.borderClustering, config.cellScan.anchorConfidenceThreshold,
+    config.cellScan.cageTotalMinFillRatio,
   );
+  const bxProb = calibration.borderXProb;
+  const byProb = calibration.borderYProb;
+
+  submitCageThresholdCalibrationReport({
+    chosenThreshold: calibration.threshold,
+    fallbackUsed: calibration.fallbackUsed,
+    candidates: calibration.candidateResults,
+    contourFillRatios: contourFillRatios(contourMetrics),
+  });
 
   // Compute cage totals once (image-dependent only).
-  let initialBorderX = bxProb.map(row => row.map(v => v > 0.5));
-  let initialBorderY = byProb.map(row => row.map(v => v > 0.5));
+  let initialBorderX = calibration.borderX;
+  let initialBorderY = calibration.borderY;
 
   let cageTotals: number[][] | null = null;
   let cellThumbs = new Map<string, Uint8Array[]>();

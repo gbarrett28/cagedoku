@@ -10,7 +10,8 @@
  */
 
 import type { HintResult } from '../hint.js';
-import type { RuleContext } from '../rule.js';
+import { KillerOnlyRule } from '../rule.js';
+import type { KillerRuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { cellLabel } from './_labels.js';
 
@@ -36,15 +37,26 @@ function perCellPossible(
   return result;
 }
 
-export class SolutionMapFilter {
+export class SolutionMapFilter extends KillerOnlyRule {
   readonly name = 'SolutionMapFilter';
-  readonly description =
-    'Removes cage solutions that are now impossible because one of their digits has been eliminated from the relevant cell.';
+  readonly displayName = 'Solution Map Filter';
+  readonly description = `
+Solution Map Filter — per-cell feasibility filter for cage solutions.
+
+Setup: cage C has surviving solutions S₁…Sₖ. Each solution is a set of digits (one per cell). A (cell, digit) pair is feasible for solution Sᵢ iff there exists a valid assignment of Sᵢ's digits to C's cells, respecting current cell candidates, that places digit d at that cell.
+
+Proof: if no valid assignment of any surviving solution places digit d at cell X, then d cannot appear at X in any valid completion of C. Therefore d can be eliminated from X. Additionally, any solution for which no valid assignment exists can be pruned from C's solution set (side-effect).
+
+Guards:
+  ctx.unit?.distinctDigits   non-distinct cages skip per-cell filtering
+  solns.length > 0   cage must have at least one surviving solution
+  perCellPoss.get(key).size > 0   solution is pruned if any cell has no valid assignment
+`.trim();
   readonly priority = 3;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED, Trigger.SOLUTION_PRUNED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.CAGE]);
 
-  apply(ctx: RuleContext): RuleResult {
+  applyKiller(ctx: KillerRuleContext): RuleResult {
     if (!ctx.unit?.distinctDigits) return emptyResult();
     const board = ctx.board;
     const cageIdx = ctx.unit.unitId - 27;
@@ -83,7 +95,7 @@ export class SolutionMapFilter {
     return { ...emptyResult(), eliminations: elims };
   }
 
-  asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
+  asHintsKiller(ctx: KillerRuleContext, eliminations: readonly Elimination[]): HintResult[] {
     if (!eliminations.length || !ctx.unit) return [];
     const board = ctx.board;
     const cageIdx = ctx.unit.unitId - 27;

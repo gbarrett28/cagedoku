@@ -21,9 +21,20 @@ interface _Match {
 
 export class PointingPairs {
   readonly name = 'PointingPairs';
-  readonly description =
-    'When a digit in a box is confined to one row or column, it can be removed from other cells in that row or column outside the box.';
-  readonly priority = 9;
+  readonly killerOnly = false;
+  readonly displayName = 'Pointing Pairs';
+  readonly description = `\
+Pointing Pairs — a digit confined to one row (or column) within a box cannot appear in that row (or column) outside the box.
+
+If all remaining candidates for digit d in a 3×3 box lie in the same row R, then d must be placed somewhere in that row within the box (the box constraint requires d). But since d is already confined to row R within the box, the row constraint forbids d from appearing anywhere else in row R. The same logic applies if all d-candidates in the box share a column.
+
+Proof (row case):
+  All d-candidates in box B lie in row R → d must go in B∩R → row R already has d covered by B → d ≠ any other cell in R outside B.
+
+Guards:
+  carriers.length >= 2     at least two box cells must hold d for the row/col confinement to be non-trivial (one cell would be a Hidden Single)
+  rows.size === 1          all d-candidates share one row (or cols.size === 1 for the column variant)`.trim();
+  readonly priority = 12;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.BOX]);
 

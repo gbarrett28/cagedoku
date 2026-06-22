@@ -21,6 +21,15 @@ These three skills **must always** be invoked at the moments described — no ex
 Do **not** use git worktrees — not all tools work correctly inside them.
 Use a feature branch in the main working directory instead.
 
+## Document Review Requests
+
+Whenever a workflow step asks the user to review a committed document (a spec,
+plan, or other doc produced via `superpowers:brainstorming` /
+`superpowers:writing-plans` etc.), first `git push` the branch, then give the
+user the GitHub URL to the file on that branch
+(`https://github.com/gbarrett28/cagedoku/blob/<branch>/<path>`), not just the
+local path.
+
 ## Token Efficiency
 
 When there is a choice of approaches, always prefer the one that achieves the final
@@ -31,6 +40,21 @@ When choosing a plan execution mode, always choose **inline execution** (executi
 over subagent-driven execution — it uses fewer total tokens.
 
 Never offer the visual companion feature during brainstorming — use Playwright MCP directly.
+
+## Plan Sprint Size
+
+When writing an implementation plan, **strongly prefer** breaking it into sprints of at
+most ~3 hours of inline execution tokens. Sprints are separate plan files, each
+producing working, independently-testable software.
+
+- If a spec covers multiple independent subsystems, each subsystem is its own sprint.
+- If a single subsystem exceeds ~3 hours, break it at a natural integration point
+  (e.g., after the data layer is done and tested, before the UI layer).
+- Only combine into a single sprint when splitting would produce code that cannot be
+  meaningfully tested on its own (rare — usually a sign the design needs refinement).
+
+This is a strong preference, not an absolute rule: if a feature is genuinely simpler
+to implement atomically and the token cost is low, a single sprint is fine.
 
 ## UI Visual Verification
 
@@ -185,6 +209,64 @@ Untitled.png"), it is at the project root. Read it with the Read tool. Never com
 - Keep JSDoc comments up to date; tiered: short summary first, then detail
 - Inline comments should explain WHY or WHAT, not HOW (mechanics are visible in the code)
 
+## OO Over Discriminated Unions
+
+**Strong preference: use the namespace-merging pattern instead of bare discriminated unions** whenever a type has per-variant behaviour.
+
+### Why
+
+A bare discriminated union (`type Foo = A | B | C`) scatters behaviour into switch statements elsewhere in the codebase. The compiler cannot enforce that every variant is handled in every dispatch site. The result is:
+
+- Silent fallthrough (`default: return state`) — new variants do nothing, no compile error
+- External metadata that drifts (`Set<string>`, `string[]` tracking which variants have a property)
+- Behaviour spread across multiple files, far from the type definition
+
+### The namespace-merging pattern
+
+Keep the type as plain data (serialisable, no class instances) and put per-variant static methods in a same-name namespace:
+
+```typescript
+// Each variant is a named interface + namespace
+export interface PlaceDigitAction {
+  readonly type: 'placeDigit';
+  readonly row: number; readonly col: number; readonly digit: number;
+}
+export namespace PlaceDigitAction {
+  export function apply(a: PlaceDigitAction, state: PuzzleState): PuzzleState { ... }
+}
+
+// The union gets its own namespace with an exhaustiveness guard
+export type UserAction = PlaceDigitAction | RemoveDigitAction | ...;
+export namespace UserAction {
+  export function apply(action: UserAction, state: PuzzleState): PuzzleState {
+    switch (action.type) {
+      case 'placeDigit': return PlaceDigitAction.apply(action, state);
+      // ...
+      default: assertNeverAction(action);  // compile error on missing case
+    }
+  }
+}
+```
+
+The compiler now **enforces** that every variant defines all required methods. Adding a new variant without updating every dispatch function is a type error.
+
+### When a property belongs on the type itself
+
+If code elsewhere maintains a `Set<string>` or `string[]` to track which variants of a type have a given property — that is a red flag. The property belongs on the type. Example: `CLASSIC_EXCLUDED_RULES: Set<string>` should be `rule.killerOnly: boolean` on `SolverRule`.
+
+### When a plain discriminated union is still fine
+
+- Very small, stable unions (2–3 variants) with no per-variant behaviour
+- Pure structural narrowing with no dispatch (e.g. `type GitHubAction = CommentAction | IssueAction`)
+- When all dispatch is in a single, focused location and the union will never grow
+
+### Warning signs to refactor
+
+- Any `default: return x` (silent fallthrough) in a switch over a union discriminant
+- An external `Set<string>` / `string[]` tracking which variants of a type have a property
+- More than one `switch` / `if-else` chain dispatching on the same discriminant across the codebase
+- Behaviour relevant to a type variant living in a different file from the type definition
+
 ## Type Safety
 
 - Always use the strongest possible return type annotation
@@ -216,8 +298,8 @@ Untitled.png"), it is at the project root. Read it with the Read tool. Never com
 
 | Kind | Location | Lifecycle |
 |---|---|---|
-| **Spec** | `docs/specs/<name>.md` | Design intent for a feature under development. Deleted once incorporated into a live doc. |
-| **Plan** | `docs/plans/<name>.md` | Step-by-step implementation plan with `- [ ]` checkboxes. Deleted once all steps are done. |
+| **Spec** | `docs/superpowers/specs/YYYY-MM-DD-<topic>.md` | Design intent for a feature under development (per `superpowers:brainstorming` defaults). Deleted once incorporated into a live doc. |
+| **Plan** | `docs/superpowers/plans/YYYY-MM-DD-<feature>.md` | Step-by-step implementation plan with `- [ ]` checkboxes (per `superpowers:writing-plans` defaults). Deleted once all steps are done. |
 | **Live doc** | `docs/architecture.md`, `docs/image-pipeline.md`, etc. | Permanent reference; always reflects the current codebase. |
 
 ---

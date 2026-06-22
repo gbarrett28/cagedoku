@@ -7,10 +7,18 @@
  * browser build.
  */
 
+/** One valid digit assignment for a difference virtual cage. */
+export interface DiffSolution {
+  /** Sorted ascending digits assigned to positive-role cells. */
+  readonly pos: readonly number[];
+  /** Sorted ascending digits assigned to negative-role cells. */
+  readonly neg: readonly number[];
+}
+
 /**
  * Enumerate all sets of n distinct digits > m whose elements sum to v.
  *
- * Mirrors Python's sol_sums(). Used by BoardState to populate cage_solns and
+ * Mirrors Python's sol_sums(). Used by KillerBoardState to populate cage_solns and
  * by the LinearSystem for virtual cage derivation.
  *
  * @param n    Number of cells in the cage.
@@ -37,4 +45,57 @@ export function solSums(
     }
   }
   return solns;
+}
+
+/**
+ * Enumerate all ways to assign distinct digits to two groups (positive/negative)
+ * such that sum(pos) − sum(neg) = target and target >= 0.
+ *
+ * All posCount + negCount digits are distinct (from 1–9). Each returned
+ * DiffSolution has sorted ascending pos and neg arrays.
+ */
+export function solDiffs(posCount: number, negCount: number, target: number): DiffSolution[] {
+  if (target < 0 || posCount < 1 || negCount < 1) return [];
+  const n = posCount + negCount;
+  if (n > 9) return [];
+  const results: DiffSolution[] = [];
+
+  // Enumerate all size-n subsets S of {1..9}
+  function pickAll(start: number, chosen: number[]): void {
+    if (chosen.length === n) {
+      const s = chosen.reduce((a, b) => a + b, 0);
+      // sum(pos) = (target + s) / 2 must be a positive integer
+      const posSum = (target + s);
+      if (posSum % 2 !== 0) return;
+      const ps = posSum / 2;
+      // Find all subsets of chosen with size=posCount that sum to ps
+      function pickPos(idx: number, remaining: number, current: number[]): void {
+        if (current.length === posCount) {
+          if (remaining !== 0) return;
+          const posSet = new Set(current);
+          const neg = chosen.filter(d => !posSet.has(d));
+          results.push({ pos: [...current].sort((a, b) => a - b), neg: neg.sort((a, b) => a - b) });
+          return;
+        }
+        const left = posCount - current.length;
+        if (idx > chosen.length - left) return;
+        // Include chosen[idx]
+        current.push(chosen[idx]!);
+        pickPos(idx + 1, remaining - chosen[idx]!, current);
+        current.pop();
+        // Skip chosen[idx]
+        pickPos(idx + 1, remaining, current);
+      }
+      pickPos(0, ps, []);
+      return;
+    }
+    const need = n - chosen.length;
+    for (let d = start; d <= 9 - need + 1; d++) {
+      chosen.push(d);
+      pickAll(d + 1, chosen);
+      chosen.pop();
+    }
+  }
+  pickAll(1, []);
+  return results;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateSudokuSolution, AssertionViolation, hasDuplicateDigits } from './assertions.js';
+import { validateSudokuSolution, AssertionViolation, hasDuplicateDigits, findDuplicateCells, isCageSumCorrect } from './assertions.js';
 
 // A minimal valid 9×9 sudoku solution for testing
 const VALID_SOLUTION: number[][] = [
@@ -116,6 +116,121 @@ describe('hasDuplicateDigits', () => {
     grid[0]![0] = 0;
     grid[0]![1] = 0;
     expect(hasDuplicateDigits(grid)).toBe(false);
+  });
+});
+
+describe('findDuplicateCells', () => {
+  const empty: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+
+  it('returns an empty set when there are no duplicates', () => {
+    expect(findDuplicateCells(VALID_SOLUTION)).toEqual(new Set());
+  });
+
+  it('returns an empty set for an all-zero grid', () => {
+    expect(findDuplicateCells(empty)).toEqual(new Set());
+  });
+
+  it('returns both cells when a row has a repeated digit', () => {
+    const grid = empty.map(r => [...r]);
+    grid[2]![0] = 5;
+    grid[2]![7] = 5;
+    expect(findDuplicateCells(grid)).toEqual(new Set(['2,0', '2,7']));
+  });
+
+  it('returns both cells when a column has a repeated digit', () => {
+    const grid = empty.map(r => [...r]);
+    grid[1]![3] = 9;
+    grid[6]![3] = 9;
+    expect(findDuplicateCells(grid)).toEqual(new Set(['1,3', '6,3']));
+  });
+
+  it('returns both cells when a 3×3 box has a repeated digit', () => {
+    const grid = empty.map(r => [...r]);
+    grid[3]![3] = 4; // middle-centre box
+    grid[5]![5] = 4; // same box
+    expect(findDuplicateCells(grid)).toEqual(new Set(['3,3', '5,5']));
+  });
+
+  it('includes all three cells when a digit appears three times in a row', () => {
+    const grid = empty.map(r => [...r]);
+    grid[0]![0] = 5;
+    grid[0]![4] = 5;
+    grid[0]![8] = 5;
+    const result = findDuplicateCells(grid);
+    expect(result).toEqual(new Set(['0,0', '0,4', '0,8']));
+  });
+
+  it('a cell in multiple duplicate constraints appears only once in the set', () => {
+    const grid = empty.map(r => [...r]);
+    grid[0]![0] = 5;
+    grid[0]![4] = 5; // row duplicate with (0,0)
+    grid[4]![0] = 5; // col duplicate with (0,0)
+    const result = findDuplicateCells(grid);
+    expect(result.has('0,0')).toBe(true);
+    expect(result.has('0,4')).toBe(true);
+    expect(result.has('4,0')).toBe(true);
+  });
+
+  it('ignores zeros — zeros are not duplicates', () => {
+    const grid = empty.map(r => [...r]);
+    grid[0]![0] = 1;
+    expect(findDuplicateCells(grid)).toEqual(new Set());
+  });
+});
+
+describe('isCageSumCorrect', () => {
+  // Helper: build a flat 9×9 grid filled with zeros, then apply overrides.
+  const makeGrid = (overrides: [number, number, number][]): number[][] => {
+    const g = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    for (const [r, c, d] of overrides) g[r]![c] = d;
+    return g;
+  };
+  const makeRegions = (map: [number, number, number][]): number[][] => {
+    const g = Array.from({ length: 9 }, () => new Array<number>(9).fill(-1));
+    for (const [r, c, id] of map) g[r]![c] = id;
+    return g;
+  };
+  const makeTotals = (map: [number, number, number][]): number[][] => {
+    const g = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    for (const [r, c, t] of map) g[r]![c] = t;
+    return g;
+  };
+
+  it('returns true when a single cage sums to its total', () => {
+    const grid = makeGrid([[0, 0, 3], [0, 1, 4]]);
+    const regions = makeRegions([[0, 0, 1], [0, 1, 1]]);
+    const totals = makeTotals([[0, 0, 7]]);
+    expect(isCageSumCorrect(grid, regions, totals)).toBe(true);
+  });
+
+  it('returns false when a cage sum does not match its total', () => {
+    const grid = makeGrid([[0, 0, 3], [0, 1, 4]]);
+    const regions = makeRegions([[0, 0, 1], [0, 1, 1]]);
+    const totals = makeTotals([[0, 0, 8]]); // 3+4=7, not 8
+    expect(isCageSumCorrect(grid, regions, totals)).toBe(false);
+  });
+
+  it('returns true when all of several cages sum correctly', () => {
+    const grid = makeGrid([[0, 0, 5], [0, 1, 2], [1, 0, 1], [1, 1, 9]]);
+    const regions = makeRegions([[0, 0, 1], [0, 1, 1], [1, 0, 2], [1, 1, 2]]);
+    const totals = makeTotals([[0, 0, 7], [1, 0, 10]]);
+    expect(isCageSumCorrect(grid, regions, totals)).toBe(true);
+  });
+
+  it('returns false when one cage is wrong among several correct ones', () => {
+    const grid = makeGrid([[0, 0, 5], [0, 1, 2], [1, 0, 1], [1, 1, 9]]);
+    const regions = makeRegions([[0, 0, 1], [0, 1, 1], [1, 0, 2], [1, 1, 2]]);
+    const totals = makeTotals([[0, 0, 7], [1, 0, 99]]); // cage 2 wrong
+    expect(isCageSumCorrect(grid, regions, totals)).toBe(false);
+  });
+
+  it('returns true when cageTotals is all-zeros — the Classic puzzle case', () => {
+    // Classic puzzles use fixed row-cages with total=0; the zero-skip must never
+    // produce a false negative when isGridSolved delegates to this function.
+    const grid = makeGrid([[0, 0, 5], [0, 1, 3]]);
+    const regions = makeRegions([[0, 0, 1], [0, 1, 1]]);
+    const totals = makeTotals([]); // all zeros
+    expect(isCageSumCorrect(grid, regions, totals)).toBe(true);
   });
 });
 

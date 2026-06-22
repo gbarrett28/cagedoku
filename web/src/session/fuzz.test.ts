@@ -9,7 +9,7 @@
  * Invariants checked after every operation:
  *   1. userGrid contains only digits 0–9.
  *   2. No sentinel (row=-1) turns in history — they were removed in the refactor.
- *   3. Round-trip consistency: rebuildUserGrid + applyAutoPlacements reproduces
+ *   3. Round-trip consistency: rebuildUserGrid + applyRuleSteps reproduces
  *      the same userGrid as the current state.
  *   4. computeCandidates() does not throw.
  */
@@ -25,9 +25,9 @@ import {
   undo,
   computeCandidates,
 } from './actions.js';
-import { rebuildUserGrid, applyAutoPlacements } from './engine.js';
+import { rebuildUserGrid, applyRuleSteps } from './engine.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
-import type { PuzzleState } from './types.js';
+import type { KillerPuzzleState, PuzzleState } from './types.js';
 import { specToData, specToCageStates } from './specUtils.js';
 
 // ---------------------------------------------------------------------------
@@ -36,18 +36,18 @@ import { specToData, specToCageStates } from './specUtils.js';
 
 function makeConfirmedState(): PuzzleState {
   const spec = makeThreeCellCageSpec();
-  const pre: PuzzleState = {
+  const pre: KillerPuzzleState = {
     specData: specToData(spec),
     cageStates: specToCageStates(spec),
-    userGrid: null,
+    userGrid: Array.from({ length: 9 }, () => new Array<number>(9).fill(0)),
     virtualCages: [],
     turns: [],
     alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],
     goldenSolution: null,
-    puzzleType: 'killer',
     givenDigits: null,
     originalImageUrl: null,
     warpedImageUrl: null,
+    userRemovedCandidates: [],
   };
   setState(pre);
   return confirmPuzzle(solveCurrentSpec().board);
@@ -83,10 +83,10 @@ function checkInvariants(state: PuzzleState, label: string): void {
     }
   }
 
-  // 3. Round-trip: rebuildUserGrid + applyAutoPlacements == current userGrid.
+  // 3. Round-trip: rebuildUserGrid + applyRuleSteps == current userGrid.
   //    This verifies that the turn history fully encodes the explicit user
-  //    placements and that auto-placements are deterministically re-derived.
-  const rebuilt = applyAutoPlacements(rebuildUserGrid(state));
+  //    placements and that rule-driven deductions are deterministically re-derived.
+  const rebuilt = applyRuleSteps(rebuildUserGrid(state)).state;
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
       expect(

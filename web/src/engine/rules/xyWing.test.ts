@@ -3,19 +3,19 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { XYWing } from './xyWing.js';
 import type { RuleContext } from '../rule.js';
 import { Trigger } from '../types.js';
 import { makeTrivialSpec } from '../fixtures.js';
 
-function globalCtx(bs: BoardState): RuleContext {
+function globalCtx(bs: KillerBoardState): RuleContext {
   return { unit: null, cell: null, board: bs, hint: Trigger.GLOBAL, hintDigit: null };
 }
 
 describe('XYWing', () => {
   it('eliminates z from cells seeing both pincers', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     // Clear all candidates to isolate the pattern
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
 
@@ -38,7 +38,7 @@ describe('XYWing', () => {
   });
 
   it('asHints: returns hint with correct shape for a valid XY-Wing', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
     bs.candidates[0]![0]! = new Set([1, 2]);
     bs.candidates[0]![1]! = new Set([1, 3]);
@@ -54,12 +54,27 @@ describe('XYWing', () => {
     expect(hints[0]!.displayName).toBe('XY-Wing');
     expect(hints[0]!.explanation).toContain('XY-Wing');
     expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
-    expect(hints[0]!.highlightCells.length).toBeGreaterThanOrEqual(3);
     expect(hints[0]!.placement).toBeNull();
+    // chainCells: pivot has its own bivalue digits (no wash); pincers carry
+    // their shared+z digits with blue/green wash.
+    expect(hints[0]!.chainCells?.length).toBe(3);
+    const pivotCC = hints[0]!.chainCells!.find(cc => cc.cell[0] === 0 && cc.cell[1] === 0);
+    expect(pivotCC).toEqual({ cell: [0, 0], digits: [1, 2] });
+    const pinACC = hints[0]!.chainCells!.find(cc => cc.cell[0] === 0 && cc.cell[1] === 1);
+    expect(pinACC).toEqual({ cell: [0, 1], digits: [1, 3], colour: 'blue' });
+    const pinBCC = hints[0]!.chainCells!.find(cc => cc.cell[0] === 1 && cc.cell[1] === 0);
+    expect(pinBCC).toEqual({ cell: [1, 0], digits: [2, 3], colour: 'green' });
+    // Pincers must NOT be in highlightCells (they're chain-coloured, not orange);
+    // pivot (0,0) and elim target MUST be.
+    for (const [r, c] of [[0, 1], [1, 0]] as [number, number][]) {
+      expect(hints[0]!.highlightCells.some(([hr, hc]) => hr === r && hc === c)).toBe(false);
+    }
+    expect(hints[0]!.highlightCells.some(([hr, hc]) => hr === 0 && hc === 0)).toBe(true); // pivot is orange
+    expect(hints[0]!.highlightCells.length).toBeGreaterThan(0);
   });
 
   it('returns empty when no bivalue cells form a valid chain', () => {
-    const bs = new BoardState(makeTrivialSpec());
+    const bs = new KillerBoardState(makeTrivialSpec());
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
 
     // Pivot {1,2}, A {1,3}, B {2,4} — B has z=4 ≠ A's z=3, no matching z
@@ -69,5 +84,24 @@ describe('XYWing', () => {
     bs.candidates[1]![1]! = new Set([3, 4]);
 
     expect(new XYWing().apply(globalCtx(bs)).eliminations).toHaveLength(0);
+  });
+
+  it('near-miss: trivalue pivot {x,y,z} is not used — no elimination even though pincers match', () => {
+    // XY-Wing requires a bivalue pivot. A trivalue pivot {1,2,3} with pincers {1,3}
+    // and {2,3} looks like the pattern but changing the pivot to trivalue means the
+    // standard XY-Wing proof breaks: if P=3, target T not seeing P could still have 3.
+    // The rule must not fire.
+    const bs = new KillerBoardState(makeTrivialSpec());
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) bs.candidates[r]![c]! = new Set();
+
+    bs.candidates[0]![0]! = new Set([1, 2, 3]); // trivalue "pivot" — must NOT be used
+    bs.candidates[0]![6]! = new Set([1, 3]);     // would-be pincer A (sees [0,0] via row)
+    bs.candidates[6]![0]! = new Set([2, 3]);     // would-be pincer B (sees [0,0] via col)
+    // Target sees A via col 6 and B via row 6, but does NOT see [0,0] (different box/row/col)
+    bs.candidates[6]![6]! = new Set([3, 5]);
+
+    const elims = new XYWing().apply(globalCtx(bs)).eliminations;
+    // No bivalue pivot exists, so no XY-Wing can fire
+    expect(elims.every(e => !(e.cell[0] === 6 && e.cell[1] === 6 && e.digit === 3))).toBe(true);
   });
 });

@@ -25,77 +25,72 @@ if (typeof globalThis.localStorage === 'undefined') {
     configurable: true,
   });
 }
-import { setState, getState } from './store.js';
+import { setState, getState, getStateCandidates } from './store.js';
 import {
+  buildCandidatesFromParseResult,
   confirmPuzzle,
   solveCurrentSpec,
+  loadSpecDirect,
+  loadClassicDirect,
   enterCell,
   enterCellStep,
-  stepAutoPlacement,
   undo,
   computeCandidates,
+  candidatesFromBoard,
   cycleCandidate,
   addVirtualCage,
+  removeVirtualCage,
   getSettingsData,
   saveSettingsData,
   getAutoPlacementDelay,
   applyHint,
   getHints,
+  solveAndValidateSpec,
+  extractAndValidateSolution,
+  activeCandidate,
+  revertToOcr,
 } from './actions.js';
 import { findLastConsistentTurnIdx } from './engine.js';
+import { BoardState } from '../engine/index.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
+import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
+import { defaultRules } from '../engine/rules/index.js';
 import {
   makeBoxCageSpec,
+  makeTrivialSpec,
+  makeTwoCellCageSpec,
   makeClassicGivenDigits,
+  makeBigAppleGivenDigits,
+  BIG_APPLE_SOLUTION,
   KNOWN_SOLUTION,
 } from '../engine/fixtures.js';
-import { specToData, specToCageStates } from './specUtils.js';
-import type { PuzzleState, Turn, UserAction } from './types.js';
+import { specToData, specToCageStates, classicSyntheticSpec } from './specUtils.js';
+import { PuzzleState } from './types.js';
+import type { ApplyHintAction, KillerPuzzleState, Turn, UserAction } from './types.js';
+import type { EliminateCandidateMutation } from './ruleMutation.js';
+import type { PuzzleSpec } from '../solver/puzzleSpec.js';
+import type { ParseResult } from '../image/inpImage.js';
+import { hasMultipleCageTotals } from '../image/validation.js';
+
+// Tests that depend on NakedSingle being active are skipped when the rule is
+// disabled (e.g. after sync-rule-fixtures adds it to DISABLED_RULES).
+const itNS = DISABLED_RULES.includes('NakedSingle') ? it.skip : it;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function makeClassicState(givenDigits: number[][]): PuzzleState {
-  // Build the same dummy spec that loadClassicDirect uses
-  const borderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(false));
-  const borderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
-  const cageTotals = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-  cageTotals[0]![0] = 1;
-  const regions = Array.from({ length: 9 }, () => new Array<number>(9).fill(1));
-  const spec = { regions, cageTotals, borderX, borderY };
-  const state: PuzzleState = {
-    specData: specToData(spec),
-    cageStates: specToCageStates(spec),
-    userGrid: null,
-    virtualCages: [],
-    turns: [],
-    alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],
-    goldenSolution: null,
-    puzzleType: 'classic',
-    givenDigits,
-    originalImageUrl: null,
-    warpedImageUrl: null,
-  };
+  const state = PuzzleState.createClassic(givenDigits, [...DEFAULT_ALWAYS_APPLY_RULES], null);
   setState(state);
   return state;
 }
 
 function makeKillerConfirmed(): PuzzleState {
   const spec = makeBoxCageSpec();
-  const pre: PuzzleState = {
-    specData: specToData(spec),
-    cageStates: specToCageStates(spec),
-    userGrid: null,
-    virtualCages: [],
-    turns: [],
-    alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],
-    goldenSolution: null,
-    puzzleType: 'killer',
-    givenDigits: null,
-    originalImageUrl: null,
-    warpedImageUrl: null,
-  };
+  const pre = PuzzleState.createKiller(
+    specToData(spec), specToCageStates(spec), [...DEFAULT_ALWAYS_APPLY_RULES], null, null,
+  );
   setState(pre);
   return confirmPuzzle(solveCurrentSpec().board);
 }
@@ -106,6 +101,23 @@ function makeClassicConfirmed(): PuzzleState {
   const { board } = solveCurrentSpec();
   return confirmPuzzle(board);
 }
+
+
+// ---------------------------------------------------------------------------
+// solveCurrentSpec — Big Apple dispatch
+// ---------------------------------------------------------------------------
+
+describe('solveCurrentSpec — Big Apple', () => {
+  it('dispatches to solveBigApple for a Big Apple state', () => {
+    const givenDigits = makeBigAppleGivenDigits();
+    const state = PuzzleState.createBigApple(givenDigits, [], null);
+    setState(state);
+    const result = solveCurrentSpec();
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++)
+        expect([...result.board.cands(r, c)]).toEqual([BIG_APPLE_SOLUTION[r]![c]!]);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // #13 – Classic candidates
@@ -122,10 +134,25 @@ describe('computeCandidates — classic mode (#13)', () => {
 
   it('blank cell (0,0) has digit 5 as its only candidate', () => {
     // KNOWN_SOLUTION[0][0] = 5; makeClassicGivenDigits blanks that cell.
-    // After CellSolutionElimination propagation only digit 5 should remain.
+    // After NakedSingle peer-elimination propagation only digit 5 should remain.
     const data = computeCandidates();
     const cell = data.cells[0]![0]!;
     expect(cell.candidates).toEqual([5]);
+  });
+});
+
+describe('candidatesFromBoard — instanceof KillerBoardState narrow', () => {
+  it('produces an empty cages array and solverCands === board.cands(r, c) for a plain BoardState', () => {
+    const givenDigits = makeClassicGivenDigits();
+    const state = makeClassicState(givenDigits);
+    const board = new BoardState();
+    const data = candidatesFromBoard(board, state);
+    expect(data.cages).toEqual([]);
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        expect(data.cells[r]![c]!.candidates).toEqual([...board.cands(r, c)].sort((a, b) => a - b));
+      }
+    }
   });
 });
 
@@ -351,18 +378,18 @@ describe('cycleCandidate — candidate editing (#25)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// #24 – CellSolutionElimination mandatory for Classic mode
+// #24 – Peer elimination is unconditional for placements
 //
-// If the user removes CellSolutionElimination from alwaysApplyRules (via Config),
-// Classic candidates must still be correct because buildEngine forces the rule on.
+// Placed digits (given or user) eliminate from peers regardless of which rules
+// are active. This is a fundamental sudoku constraint, not a rule.
 // ---------------------------------------------------------------------------
 
-describe('computeCandidates — CellSolutionElimination mandatory in Classic (#24)', () => {
-  it('given digits eliminate peers even when CellSolutionElimination is removed from alwaysApplyRules', () => {
+describe('computeCandidates — peer elimination unconditional for placements (#24)', () => {
+  it('given digits eliminate peers even when NakedSingle is removed from alwaysApplyRules', () => {
     const givenDigits = makeClassicGivenDigits(); // KNOWN_SOLUTION with (0,0) blanked
     makeClassicState(givenDigits);
 
-    // Simulate user disabling CellSolutionElimination in Config.
+    // Simulate user disabling NakedSingle in Config.
     const { board } = solveCurrentSpec();
     const state = confirmPuzzle(board);
     const withoutRule: PuzzleState = { ...state, alwaysApplyRules: [] };
@@ -384,7 +411,7 @@ describe('computeCandidates — CellSolutionElimination mandatory in Classic (#2
     const { board } = solveCurrentSpec();
     const state = confirmPuzzle(board);
 
-    // Simulate user disabling CellSolutionElimination, then placing a digit.
+    // Simulate user disabling NakedSingle, then placing a digit.
     setState({ ...state, alwaysApplyRules: [] });
     // User places 6 at r0c5 (box 1 — same as the two givens above).
     enterCell(1, 6, 6);
@@ -440,7 +467,7 @@ describe('findLastConsistentTurnIdx — bug #30: wrong fallback when no matching
     const correctDigit = goldenSolution[0]![0]!;
     userGrid[0]![0] = (correctDigit % 9) + 1; // deliberately wrong
 
-    const state: PuzzleState = {
+    const state: KillerPuzzleState = {
       specData: specToData(spec),
       cageStates: specToCageStates(spec),
       userGrid,
@@ -451,10 +478,10 @@ describe('findLastConsistentTurnIdx — bug #30: wrong fallback when no matching
       ],
       alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],
       goldenSolution,
-      puzzleType: 'killer',
       givenDigits: null,
       originalImageUrl: null,
       warpedImageUrl: null,
+      userRemovedCandidates: [],
     };
 
     // With the bug: returns turns.length - 1 = 1 (the last unrelated turn).
@@ -475,7 +502,7 @@ describe('findLastConsistentTurnIdx — bug #30: wrong fallback when no matching
     const wrongDigit = (goldenSolution[0]![0]! % 9) + 1;
     userGrid[0]![0] = wrongDigit;
 
-    const state: PuzzleState = {
+    const state: KillerPuzzleState = {
       specData: specToData(spec),
       cageStates: specToCageStates(spec),
       userGrid,
@@ -490,10 +517,10 @@ describe('findLastConsistentTurnIdx — bug #30: wrong fallback when no matching
       ],
       alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],
       goldenSolution,
-      puzzleType: 'killer',
       givenDigits: null,
       originalImageUrl: null,
       warpedImageUrl: null,
+      userRemovedCandidates: [],
     };
 
     expect(findLastConsistentTurnIdx(state)).toBe(1);
@@ -501,7 +528,7 @@ describe('findLastConsistentTurnIdx — bug #30: wrong fallback when no matching
 });
 
 // ---------------------------------------------------------------------------
-// Bug #60 — addVirtualCage skips applyAutoPlacements
+// Bug #60 — addVirtualCage skips the rule-folding pass
 // ---------------------------------------------------------------------------
 
 describe('Bug #60 regression — addVirtualCage triggers auto-placements', () => {
@@ -510,11 +537,11 @@ describe('Bug #60 regression — addVirtualCage triggers auto-placements', () =>
   // any individual cell (every permutation of {1..9} satisfies each box cage).
   //
   // We then directly set 8 of 9 cells in box-0 via setState (bypassing enterCell
-  // so applyAutoPlacements doesn't run yet). This leaves (0,0) as the sole empty
-  // cell in its box — a naked single whose digit NakedSingle can determine.
+  // so recordTurn's rule-folding doesn't run yet). This leaves (0,0) as the sole
+  // empty cell in its box — a naked single whose digit NakedSingle can determine.
   //
-  // addVirtualCage must call applyAutoPlacements so NakedSingle fires and (0,0)
-  // is placed. Before the fix it was missing that call so (0,0) stayed 0.
+  // addVirtualCage must fold ruleSteps via recordTurn so NakedSingle fires and
+  // (0,0) is placed. Before the fix it was missing that call so (0,0) stayed 0.
   //
   // Cells are populated from goldenSolution (not KNOWN_SOLUTION) so that the
   // candidate-soundness assertion in the engine never fires.
@@ -522,12 +549,13 @@ describe('Bug #60 regression — addVirtualCage triggers auto-placements', () =>
 
   function makeBox0WithPendingNakedSingle(): void {
     const spec = makeBoxCageSpec();
-    const pre: PuzzleState = {
+    const pre: KillerPuzzleState = {
       specData: specToData(spec), cageStates: specToCageStates(spec),
-      userGrid: null, virtualCages: [], turns: [],
+      userGrid: Array.from({ length: 9 }, () => new Array<number>(9).fill(0)), virtualCages: [], turns: [],
       alwaysApplyRules: ['NakedSingle', ...DEFAULT_ALWAYS_APPLY_RULES],
-      goldenSolution: null, puzzleType: 'killer',
+      goldenSolution: null,
       givenDigits: null, originalImageUrl: null, warpedImageUrl: null,
+      userRemovedCandidates: [],
     };
     setState(pre);
     baseState = confirmPuzzle(solveCurrentSpec().board);
@@ -545,13 +573,36 @@ describe('Bug #60 regression — addVirtualCage triggers auto-placements', () =>
     expect(getState()!.userGrid![0]![0]).toBe(0);
   });
 
-  it('addVirtualCage triggers applyAutoPlacements — NakedSingle places (0,0)', () => {
+  itNS('addVirtualCage triggers rule-folding — NakedSingle places (0,0)', () => {
     // Any valid VC triggers the auto-placement pass; use two unsolved cells
     // in box-3 so the VC itself plays no role in placing (0,0).
     const gs = baseState.goldenSolution!;
     const vcTotal = gs[3]![0]! + gs[3]![1]!;
     const state = addVirtualCage([[3, 0], [3, 1]], vcTotal);
     expect(state.userGrid![0]![0]).toBe(gs[0]![0]!);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// removeVirtualCage wrapper
+// ---------------------------------------------------------------------------
+
+describe('removeVirtualCage', () => {
+  it('removes a previously-added virtual cage', () => {
+    makeKillerConfirmed();
+    const state = addVirtualCage([[0, 0], [0, 1]], 10);
+    const key = '0,0:0,1:10';
+    expect(state.turns.some(t => t.action.type === 'addVirtualCage')).toBe(true);
+
+    const updated = removeVirtualCage(key);
+    const lastAction = updated.turns[updated.turns.length - 1]!.action;
+    expect(lastAction.type).toBe('removeVirtualCage');
+    if (lastAction.type === 'removeVirtualCage') expect(lastAction.key).toBe(key);
+  });
+
+  it('throws when not a killer puzzle', () => {
+    makeClassicConfirmed();
+    expect(() => removeVirtualCage('0,0:0,1:10')).toThrow('removeVirtualCage requires a killer puzzle state');
   });
 });
 
@@ -596,16 +647,32 @@ describe('Bug #61 regression — cycleCandidate records an undoable turn', () =>
 });
 
 // ---------------------------------------------------------------------------
-// #78 – Fast-forward drain invariant
-// Draining stepAutoPlacement() iteratively after enterCellStep() must reach
-// the same final userGrid as enterCell() in a single call. This is the
-// session-level contract the main.ts fast-forward fix relies on.
+// Undo bug regression — userRemovedCandidates must be restored after undo
 // ---------------------------------------------------------------------------
 
-describe('fast-forward drain invariant (#78)', () => {
+describe('undo after eliminateCandidate restores userRemovedCandidates', () => {
+  it('undoing a cycleCandidate elimination removes the triple from userRemovedCandidates', () => {
+    makeKillerConfirmed();
+
+    cycleCandidate(1, 1, 5); // eliminate digit 5 from r1c1 (0-based: row 0, col 0)
+    expect(getState()!.userRemovedCandidates).toContainEqual([0, 0, 5]);
+
+    undo();
+    expect(getState()!.userRemovedCandidates).not.toContainEqual([0, 0, 5]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #78 – Animated entry invariant
+// enterCellStep() must commit the same final userGrid as enterCell() in a
+// single call — the animated path folds the same ruleSteps via recordTurn,
+// it just also returns them for the UI to animate.
+// ---------------------------------------------------------------------------
+
+describe('animated entry invariant (#78)', () => {
   beforeEach(() => { makeKillerConfirmed(); });
 
-  it('stepAutoPlacement loop reaches same userGrid as enterCell', () => {
+  it('enterCellStep commits the same userGrid as enterCell', () => {
     const snapshot = getState()!;
     const r = 1, c = 1, digit = KNOWN_SOLUTION[0]![0]!;
 
@@ -614,13 +681,12 @@ describe('fast-forward drain invariant (#78)', () => {
     enterCell(r, c, digit);
     const singleGrid = getState()!.userGrid;
 
-    // Iterative drain path — what the fast-forward fix does in handleCellEntry
+    // Animated entry point
     setState(snapshot);
-    enterCellStep(r, c, digit);
-    while (stepAutoPlacement() !== null) { /* drain */ }
-    const drainGrid = getState()!.userGrid;
+    const { state } = enterCellStep(r, c, digit);
+    expect(getState()!.userGrid).toEqual(state.userGrid);
 
-    expect(drainGrid).toEqual(singleGrid);
+    expect(state.userGrid).toEqual(singleGrid);
   });
 });
 
@@ -639,10 +705,30 @@ describe('getSettingsData / getAutoPlacementDelay', () => {
   it('getAutoPlacementDelay returns a number', () => {
     expect(typeof getAutoPlacementDelay()).toBe('number');
   });
+
+  it('classic: killer-specific rules excluded from hintableRules', () => {
+    makeClassicConfirmed();
+    const data = getSettingsData();
+    for (const rule of defaultRules().filter(r => r.killerOnly)) {
+      expect(data.hintableRules.some(r => r.name === rule.name), `${rule.name} should be absent for classic`).toBe(false);
+    }
+  });
+
+  it('killer: killer-specific rules present in hintableRules', () => {
+    makeKillerConfirmed();
+    const data = getSettingsData();
+    expect(data.hintableRules.some(r => r.name === 'CageCandidateFilter')).toBe(true);
+  });
+});
+
+describe('DEFAULT_ALWAYS_APPLY_RULES', () => {
+  it('does not include NakedSingle', () => {
+    expect(DEFAULT_ALWAYS_APPLY_RULES).not.toContain('NakedSingle');
+  });
 });
 
 describe('applyHint', () => {
-  it('records hint eliminations as user-removed candidates and returns updated state', () => {
+  it('records hint eliminations as eliminateCandidate mutations and applies them to userRemovedCandidates', () => {
     const state = makeKillerConfirmed();
     setState(state);
     const [r, c] = [0, 0];
@@ -650,7 +736,14 @@ describe('applyHint', () => {
     if (candidates.length < 2) return; // guard: skip if cell already solved
     const digit = candidates[0]!;
     const result = applyHint([{ cell: [r, c], digit }]);
-    expect(result.turns.some(t => t.action.type === 'applyHint')).toBe(true);
+    const turn = result.turns.find(t => t.action.type === 'applyHint');
+    expect(turn).toBeDefined();
+    const action = turn!.action as ApplyHintAction;
+    expect(action.mutations).toHaveLength(1);
+    const mutation = action.mutations[0]! as EliminateCandidateMutation;
+    expect(mutation.type).toBe('eliminateCandidate');
+    expect([mutation.row, mutation.col, mutation.digit]).toEqual([r, c, digit]);
+    expect(result.userRemovedCandidates).toContainEqual([r, c, digit]);
   });
 });
 
@@ -681,18 +774,18 @@ describe('saveSettingsData', () => {
     // The simplest reliable approach: use a pre-confirm state (userGrid=null)
     // and verify saveSettingsData returns the updated state (not refresh()).
     const spec = makeBoxCageSpec();
-    const pre = {
+    const pre: KillerPuzzleState = {
       specData: specToData(spec),
       cageStates: specToCageStates(spec),
-      userGrid: null as number[][] | null,
-      virtualCages: [] as const,
-      turns: [] as const,
+      userGrid: Array.from({ length: 9 }, () => new Array<number>(9).fill(0)),
+      virtualCages: [],
+      turns: [],
       alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES],
-      goldenSolution: null as number[][] | null,
-      puzzleType: 'killer' as const,
-      givenDigits: null as number[][] | null,
-      originalImageUrl: null as string | null,
-      warpedImageUrl: null as string | null,
+      goldenSolution: null,
+      givenDigits: null,
+      originalImageUrl: null,
+      warpedImageUrl: null,
+      userRemovedCandidates: [],
     };
     setState(pre);
 
@@ -707,6 +800,23 @@ describe('saveSettingsData', () => {
     expect(result).not.toBeNull();
     expect(result!.alwaysApplyRules).toEqual(['NakedSingle', 'CageCandidateFilter']);
   });
+
+  // Regression: saveSettingsData must commit any NS cascade into the returned
+  // state. If the caller ignores the return value and redraws with the old
+  // state, placed-digit displays and candidate displays go out of sync —
+  // peers show the digit eliminated but no placed digit explains why.
+  itNS('commits NakedSingle cascade into the returned state', () => {
+    // 80 cells given, (0,0) blank. NS is not in alwaysApplyRules at confirm time
+    // so (0,0) stays blank. Adding NS via saveSettingsData must trigger refresh()
+    // which places (0,0) and returns the updated state.
+    makeClassicConfirmed();
+    expect(getState()!.userGrid![0]![0]).toBe(0);
+
+    // Adding NS to auto-apply must trigger refresh() which places (0,0).
+    const updated = saveSettingsData(['NakedSingle'], 0, false);
+    expect(updated).not.toBeNull();
+    expect(updated!.userGrid![0]![0]).toBe(KNOWN_SOLUTION[0]![0]!);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -715,16 +825,36 @@ describe('saveSettingsData', () => {
 
 describe('getHints — Rewind on wrong candidate elimination', () => {
   it('returns a Rewind hint when the user has eliminated the correct solution digit', () => {
-    // Classic puzzle with one blank cell (0,0). Golden solution has digit 5 at (0,0).
-    makeClassicConfirmed();
-    const gold = getState()!.goldenSolution![0]![0]!; // correct digit for (0,0)
+    // Killer puzzle with a unique golden solution. NakedSingle is intentionally
+    // excluded from alwaysApplyRules so (0,0) is NOT auto-placed after confirmPuzzle —
+    // the test needs a blank cell to eliminate the correct candidate from.
+    const spec = makeTrivialSpec();
+    const pre: KillerPuzzleState = {
+      specData: specToData(spec),
+      cageStates: specToCageStates(spec),
+      userGrid: Array.from({ length: 9 }, () => new Array<number>(9).fill(0)),
+      virtualCages: [],
+      turns: [],
+      alwaysApplyRules: ['CageCandidateFilter'],
+      goldenSolution: null,
+      givenDigits: null,
+      originalImageUrl: null,
+      warpedImageUrl: null,
+      userRemovedCandidates: [],
+    };
+    setState(pre);
+    const { board } = solveCurrentSpec();
+    confirmPuzzle(board);
+
+    const gold = getState()!.goldenSolution![0]![0]!;
     expect(gold).toBeGreaterThan(0);
+    expect(getState()!.userGrid![0]![0]).toBe(0); // must be blank (no auto-placement)
 
     // User explicitly eliminates the correct candidate at (0,0)
-    cycleCandidate(1, 1, gold); // eliminateCandidate action
+    cycleCandidate(1, 1, gold);
 
     const { hints } = getHints();
-    // The Rewind hint must appear (no other valid solution exists for this over-constrained classic puzzle)
+    // The Rewind hint must appear — no alternative valid solution for a fully-constrained puzzle
     const rewindHint = hints.find(h => h.rewindToTurnIdx !== null);
     expect(rewindHint).toBeDefined();
     expect(rewindHint!.displayName).toMatch(/[Rr]ewind/);
@@ -747,5 +877,228 @@ describe('getHints — Rewind on wrong candidate elimination', () => {
     // Must detect the wrong digit even though no placeDigit turn exists for it
     const rewindHint = hints.find(h => h.rewindToTurnIdx !== null);
     expect(rewindHint).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rewind hint — wrong virtual cage total (Check 0)
+// ---------------------------------------------------------------------------
+
+describe('getHints — Rewind on wrong virtual cage total', () => {
+  it('returns a Rewind hint when a user-added virtual cage total contradicts goldenSolution', () => {
+    makeKillerConfirmed();
+    const state = getState()!;
+    const gs = state.goldenSolution!;
+
+    // Pick two cells and a total within cageSumRange(2) = [3, 17] but that
+    // doesn't match the golden sum for those two cells.
+    const goldSum = gs[0]![0]! + gs[0]![1]!;
+    const wrongTotal = goldSum === 17 ? goldSum - 1 : goldSum + 1;
+
+    addVirtualCage([[0, 0], [0, 1]], wrongTotal);
+
+    const { hints } = getHints();
+    const rewindHint = hints.find(h => h.rewindToTurnIdx !== null);
+    expect(rewindHint).toBeDefined();
+    expect(rewindHint!.displayName).toMatch(/[Rr]ewind/);
+    expect(rewindHint!.rewindToTurnIdx).toBe(getState()!.turns.length - 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// solveAndValidateSpec / extractAndValidateSolution
+// ---------------------------------------------------------------------------
+
+describe('solveAndValidateSpec', () => {
+  it('returns null for a valid spec', () => {
+    expect(solveAndValidateSpec(makeTrivialSpec())).toBeNull();
+  });
+
+  it('returns a non-null string for a spec with a corrupted cage total', () => {
+    const spec = makeTrivialSpec();
+    // Corrupt cageTotals[0][0]: the trivial spec has every cell as its own
+    // single-cell cage, so incrementing any cage total creates a contradiction.
+    const corrupted: PuzzleSpec = {
+      ...spec,
+      cageTotals: spec.cageTotals.map((row, r) =>
+        r === 0 ? row.map((t, c) => (c === 0 ? t + 1 : t)) : row,
+      ),
+    };
+    expect(solveAndValidateSpec(corrupted)).not.toBeNull();
+  });
+});
+
+describe('extractAndValidateSolution', () => {
+  beforeEach(() => { loadSpecDirect(makeTrivialSpec()); });
+
+  it('returns null for a fully-solved valid board', () => {
+    const { board } = solveCurrentSpec();
+    expect(extractAndValidateSolution(board)).toBeNull();
+  });
+});
+
+describe('detectedBigApple — non-OCR loaders', () => {
+  it('loadClassicDirect reports detectedBigApple: false', () => {
+    const result = loadClassicDirect(makeClassicGivenDigits());
+    expect(result.detectedBigApple).toBe(false);
+  });
+
+  it('loadSpecDirect reports detectedBigApple: false', () => {
+    const result = loadSpecDirect(makeTwoCellCageSpec());
+    expect(result.detectedBigApple).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// hasMultipleCageTotals
+// ---------------------------------------------------------------------------
+
+describe('hasMultipleCageTotals', () => {
+  it('returns null for a spec where every cage has exactly one total', () => {
+    expect(hasMultipleCageTotals(makeTrivialSpec())).toBeNull();
+  });
+
+  it('returns null for a multi-cell cage spec with one total per cage', () => {
+    expect(hasMultipleCageTotals(makeTwoCellCageSpec())).toBeNull();
+  });
+
+  it('returns a non-null string when two cells in the same region both have non-zero totals', () => {
+    const spec = makeTwoCellCageSpec();
+    // makeTwoCellCageSpec puts cells (0,0) and (1,0) in the same region.
+    // cageTotals[0][0] = 11 (the head). cageTotals[1][0] = 0 (member, no head).
+    // Inject a second total at (1,0) to simulate the OCR error.
+    const corrupted: PuzzleSpec = {
+      ...spec,
+      cageTotals: spec.cageTotals.map((row, r) =>
+        r === 1 ? row.map((t, c) => (c === 0 ? 3 : t)) : row,
+      ),
+    };
+    expect(hasMultipleCageTotals(corrupted)).not.toBeNull();
+  });
+});
+
+describe('buildCandidatesFromParseResult', () => {
+  const blankGivenDigits = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+  const spec = classicSyntheticSpec();
+
+  function makeParseResult(puzzleType: 'killer' | 'classic'): ParseResult {
+    return {
+      spec,
+      specError: null,
+      puzzleType,
+      givenDigits: blankGivenDigits,
+      warpedImageData: null,
+      cellThumbs: new Map(),
+      mergedThumbs: new Map(),
+    };
+  }
+
+  it('returns [killerCandidate, classicCandidate] when OCR detects killer', () => {
+    const result = makeParseResult('killer');
+    const { candidates } = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
+
+    expect(candidates).toHaveLength(2);
+    expect(PuzzleState.isKiller(candidates[0]!)).toBe(true);
+    expect(PuzzleState.isKiller(candidates[1]!)).toBe(false);
+  });
+
+  it('killer candidate has givenDigits: null (never a hybrid from OCR)', () => {
+    const result = makeParseResult('killer');
+    const { candidates } = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
+
+    expect(candidates[0]!.givenDigits).toBeNull();
+  });
+
+  it('classic candidate is built from result.givenDigits', () => {
+    const givenDigits = blankGivenDigits.map((row, r) => row.map((_, c) => (r === 0 && c === 0 ? 5 : 0)));
+    const result = { ...makeParseResult('killer'), givenDigits };
+    const { candidates } = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
+
+    expect(candidates[1]!.givenDigits).toEqual(givenDigits);
+  });
+
+  it('returns only [classicCandidate] when OCR detects classic', () => {
+    const result = makeParseResult('classic');
+    const { candidates } = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
+
+    expect(candidates).toHaveLength(1);
+    expect(PuzzleState.isKiller(candidates[0]!)).toBe(false);
+  });
+
+  it('all candidates start with a blank userGrid and no golden solution', () => {
+    const result = makeParseResult('killer');
+    const blankGrid = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    for (const candidate of buildCandidatesFromParseResult(result, spec, [], null, null).candidates) {
+      expect(candidate.userGrid).toEqual(blankGrid);
+      expect(candidate.goldenSolution).toBeNull();
+    }
+  });
+
+  it('detects Big Apple from a classic-type scan and prepends a Big Apple candidate', () => {
+    const result = { ...makeParseResult('classic'), givenDigits: makeBigAppleGivenDigits() };
+    const { candidates, detectedBigApple } = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
+
+    expect(detectedBigApple).toBe(true);
+    expect(candidates).toHaveLength(2);
+    expect(PuzzleState.isBigApple(candidates[0]!)).toBe(true);
+    expect(PuzzleState.isBigApple(candidates[1]!)).toBe(false);
+  });
+
+  it('does not detect Big Apple from a killer-type scan, even with the same digits', () => {
+    const result = { ...makeParseResult('killer'), givenDigits: makeBigAppleGivenDigits() };
+    const { candidates, detectedBigApple } = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
+
+    expect(detectedBigApple).toBe(false);
+    expect(candidates.some(c => PuzzleState.isBigApple(c))).toBe(false);
+  });
+
+  it('reports detectedBigApple: false for an ordinary classic scan', () => {
+    const result = makeParseResult('classic');
+    const { detectedBigApple } = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
+
+    expect(detectedBigApple).toBe(false);
+  });
+});
+
+describe('activeCandidate', () => {
+  const spec = classicSyntheticSpec();
+  const killerCandidate = PuzzleState.createKiller(specToData(spec), specToCageStates(spec), [], null, null);
+  const classicCandidate = PuzzleState.createClassic(null, [], null);
+
+  it('returns the killer candidate when selectedType is killer', () => {
+    expect(activeCandidate([killerCandidate, classicCandidate], 'killer')).toBe(killerCandidate);
+  });
+
+  it('returns the classic candidate when selectedType is classic', () => {
+    expect(activeCandidate([killerCandidate, classicCandidate], 'classic')).toBe(classicCandidate);
+  });
+
+  it('returns undefined when no candidate of the selected type exists', () => {
+    expect(activeCandidate([classicCandidate], 'killer')).toBeUndefined();
+  });
+
+  it('returns the Big Apple candidate when selectedType is bigapple', () => {
+    const bigAppleCandidate = PuzzleState.createBigApple(null, [], null);
+    expect(activeCandidate([killerCandidate, classicCandidate, bigAppleCandidate], 'bigapple')).toBe(bigAppleCandidate);
+  });
+
+  it('does not return the classic candidate when selectedType is bigapple', () => {
+    expect(activeCandidate([classicCandidate], 'bigapple')).toBeUndefined();
+  });
+});
+
+describe('revertToOcr', () => {
+  beforeEach(() => {
+    setState(PuzzleState.createClassic(null, [], null));
+  });
+
+  it('replaces the candidate list with the given OCR candidates', () => {
+    const spec = classicSyntheticSpec();
+    const killerCandidate = PuzzleState.createKiller(specToData(spec), specToCageStates(spec), [], null, null);
+    const classicCandidate = PuzzleState.createClassic(null, [], null);
+
+    revertToOcr([killerCandidate, classicCandidate]);
+
+    expect(getStateCandidates()).toEqual([killerCandidate, classicCandidate]);
   });
 });

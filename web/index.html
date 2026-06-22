@@ -6,6 +6,13 @@
   <title>COACH — Sudoku</title>
   <link rel="stylesheet" href="/styles.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%232563eb'/><text x='16' y='23' font-size='18' font-family='sans-serif' font-weight='bold' fill='white' text-anchor='middle'>督</text></svg>">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="COACH">
 </head>
 <body>
 
@@ -16,20 +23,26 @@
     <span class="header-sub">Sudoku Coaching App</span>
     <span id="load-time" class="header-sub" style="font-size:0.75em;opacity:0.6;margin-left:auto;margin-right:0.5rem"></span>
     <!-- Action group: visible in playing mode only -->
-    <div id="action-group" class="hints-anchor" hidden>
+    <div id="action-group" hidden>
       <button id="undo-btn" class="btn-secondary btn-icon" disabled data-tooltip="Undo">↩</button>
-      <button id="hints-btn" class="btn-secondary btn-icon" disabled data-tooltip="Hints">💡</button>
-      <div id="hints-dropdown" class="hints-dropdown" hidden></div>
+      <div class="hints-area">
+        <button id="hints-btn" class="btn-secondary btn-icon" disabled data-tooltip="Hints">💡</button>
+        <button id="fast-forward-btn" class="btn-secondary btn-icon" hidden data-tooltip="Fast forward">⏩</button>
+      </div>
       <button id="mode-toggle" class="mode-toggle" hidden data-tooltip="Toggle candidate edit mode"><span class="mode-opt">N</span><span class="mode-sep">|</span><span class="mode-opt">C</span></button>
       <button id="inspect-cage-btn" class="btn-secondary btn-icon" hidden data-tooltip="Inspect cage">🔍</button>
       <button id="virtual-cage-btn" class="btn-secondary btn-icon" hidden data-tooltip="Virtual cage">➕</button>
+      <button id="colour-btn" class="btn-secondary btn-icon" hidden data-tooltip="Colour cells">◑</button>
       <button id="reveal-btn" class="btn-secondary btn-icon" hidden data-tooltip="Reveal">👁</button>
-      <button id="fast-forward-btn" class="btn-secondary" hidden data-tooltip="Skip animation">⏩ Fast Forward</button>
     </div>
     <button id="new-puzzle-btn" class="btn-secondary btn-icon" hidden data-tooltip="New puzzle">🏠</button>
     <button id="edit-ocr-btn" class="btn-secondary btn-icon" hidden data-tooltip="Edit OCR">✏</button>
+    <button id="hard-puzzles-btn" class="btn-secondary btn-icon" data-tooltip="Hard puzzles">&#x1F525;</button>
     <button id="help-btn" class="btn-secondary btn-icon" data-tooltip="Help">?</button>
     <button id="config-btn" class="btn-secondary btn-icon" data-tooltip="Config">⚙</button>
+    <button id="share-btn" class="btn-secondary btn-icon" data-tooltip="Share"><!--
+      --><svg xmlns="http://www.w3.org/2000/svg" width="1.1em" height="1.1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg><!--
+    --></button>
     <button id="feedback-btn" class="btn-secondary btn-icon" data-tooltip="Feedback">✉</button>
   </div>
 </header>
@@ -40,17 +53,41 @@
   <!-- ── Phase 1a: Upload ── -->
   <section id="upload-panel" class="card">
     <h2>Open Puzzle</h2>
-    <div class="form-row">
-      <label class="field-label" for="file-input">Puzzle image</label>
-      <input type="file" id="file-input" accept="image/*,application/pdf">
-    </div>
+    <input type="file" id="file-input" accept="image/*,application/pdf" style="display:none">
     <div class="form-actions">
-      <button id="process-btn">Process image</button>
+      <button id="use-last-btn" class="btn-secondary" hidden></button>
+      <button id="choose-btn">Choose image…</button>
       <span id="status-msg" class="status"></span>
+    </div>
+    <p class="upload-hint">or drag &amp; drop / paste (⌘V&thinsp;/&thinsp;Ctrl+V)</p>
+    <p class="upload-privacy">Images are processed on your device &mdash; nothing is uploaded. <a href="https://github.com/gbarrett28/cagedoku/blob/master/PRIVACY.md" target="_blank" rel="noopener">Privacy policy</a></p>
+    <div id="install-banner" hidden>
+      <div class="install-banner-body">
+        <strong class="install-banner-title">Install for the best experience</strong>
+        <ul class="install-banner-features">
+          <li>Share images directly from your gallery or browser (long-press&thinsp;→&thinsp;Share)</li>
+          <li>Works fully offline after first load</li>
+          <li>Opens instantly, like a native app</li>
+        </ul>
+        <a class="install-banner-privacy" href="https://github.com/gbarrett28/cagedoku/blob/master/PRIVACY.md" target="_blank" rel="noopener">Privacy policy</a>
+      </div>
+      <div class="install-banner-actions">
+        <button id="install-btn" class="btn-secondary">Install</button>
+        <button id="install-dismiss-btn" class="btn-secondary btn-icon" aria-label="Dismiss">✕</button>
+      </div>
     </div>
     <div id="cv-loading-row" class="form-row" style="display:none;align-items:center;gap:0.5rem;">
       <span id="cv-loading-label" class="field-label" style="min-width:12rem">Loading image pipeline…</span>
       <progress id="cv-progress" max="100" value="0" style="flex:1"></progress>
+    </div>
+  </section>
+
+  <!-- Hard Puzzles panel -->
+  <section id="fixture-panel" class="card" hidden>
+    <h2>Hard Puzzles</h2>
+    <p class="fixture-intro">These puzzles defeat the rule engine &#x2014; backtracking is needed to solve them. Load one, try to spot the missing rule, and share your idea via the feedback button.</p>
+    <div id="fixture-list-content">
+      <p id="fixture-loading" class="status">Loading&#x2026;</p>
     </div>
   </section>
 
@@ -72,6 +109,11 @@
           <canvas id="grid-canvas"></canvas>
           <input id="cage-total-edit" type="number" min="1" max="45">
         </div>
+
+        <div id="hint-pill" hidden role="status" aria-live="polite">
+          <span id="hint-pill-label"></span>
+        </div>
+
         <div id="side-panel">
         <!-- Playing mode actions: digit pad in Classic review; full action bar in playing mode -->
         <div id="playing-actions" hidden>
@@ -96,10 +138,10 @@
         <div id="virtual-cage-col" hidden>
           <h2>Virtual Cages</h2>
           <div id="vc-form" hidden>
-            <p id="vc-selection-status" class="hint-text">Click cells on the grid</p>
+            <p id="vc-selection-status" class="hint-text">Click to add positive cells, click again for negative</p>
             <div class="form-row">
               <label class="field-label" for="vc-total-input">Total</label>
-              <input type="number" id="vc-total-input" class="total-input" min="3" max="45" placeholder="e.g. 17">
+              <input type="number" id="vc-total-input" class="total-input" min="0" max="45" placeholder="e.g. 17">
             </div>
             <div class="form-actions">
               <button id="vc-add-btn">Add</button>
@@ -117,12 +159,19 @@
       Duplicate digits are highlighted in red.
     </p>
 
+    <p id="bigapple-banner" class="hint-text" hidden>
+      Detected as a Big Apple puzzle (classic sudoku plus 4 shaded "window"
+      regions) — already selected below. Change the Type dropdown if that's wrong.
+      <button id="bigapple-banner-dismiss-btn" class="btn-secondary btn-icon" aria-label="Dismiss" type="button">✕</button>
+    </p>
+
     <div class="form-actions" id="review-actions">
       <button id="confirm-btn">Confirm &amp; Solve</button>
       <label class="field-label" for="puzzle-type-select" style="margin-left:1rem">Type</label>
       <select id="puzzle-type-select" class="puzzle-type-select">
         <option value="killer">Killer</option>
         <option value="classic">Classic</option>
+        <option value="bigapple">Big Apple</option>
       </select>
       <span id="review-status-msg" class="status" style="margin-left:1rem"></span>
     </div>
@@ -168,6 +217,11 @@
 
 <dialog id="config-modal">
   <h2>Solver Rules</h2>
+  <h3>Privacy</h3>
+  <div class="form-row">
+    <label class="field-label" for="consent-toggle">Send anonymised training &amp; bug-fixing data</label>
+    <input type="checkbox" id="consent-toggle">
+  </div>
   <div class="form-row">
     <label class="field-label" for="candidates-default-toggle">Show candidates by default</label>
     <input type="checkbox" id="candidates-default-toggle" checked>
@@ -175,6 +229,10 @@
   <div class="form-row">
     <label class="field-label" for="essential-toggle">Essential digit highlight</label>
     <input type="checkbox" id="essential-toggle" checked>
+  </div>
+  <div class="form-row">
+    <label class="field-label" for="telemetry-failures-toggle">Surface telemetry failures (dev)</label>
+    <input type="checkbox" id="telemetry-failures-toggle">
   </div>
   <div class="form-row">
     <label class="field-label" for="config-delay-input">Auto-apply step delay</label>
@@ -193,13 +251,24 @@
 <dialog id="hint-modal">
   <div class="hint-modal-header">
     <h2 id="hint-modal-title"></h2>
-    <button id="hint-minimize-btn" class="btn-icon btn-secondary" aria-label="Minimise hint" data-tooltip="Minimise">&#x2013;</button>
+    <div class="hint-modal-header-btns">
+      <button id="hint-info-btn" class="btn-rule-info" aria-label="About this rule" data-tooltip="About this rule">ⓘ</button>
+      <button id="hint-minimize-btn" class="btn-icon btn-secondary" aria-label="Minimise hint" data-tooltip="Minimise">&#x2013;</button>
+    </div>
   </div>
   <p id="hint-modal-explanation" class="hint-modal-explanation"></p>
   <p id="hint-modal-summary" class="hint-modal-summary"></p>
   <div class="form-actions">
     <button id="hint-apply-btn">Apply automatically</button>
     <button id="hint-close-btn" class="btn-secondary">Close &amp; apply by hand</button>
+  </div>
+</dialog>
+
+<dialog id="hints-list-modal">
+  <h2>Available Hints</h2>
+  <div id="hints-list-content"></div>
+  <div class="form-actions">
+    <button id="hints-list-close-btn" class="btn-secondary">Close</button>
   </div>
 </dialog>
 
@@ -214,9 +283,22 @@
 
 <dialog id="rule-info-modal">
   <h2 id="rule-info-title"></h2>
-  <p id="rule-info-description"></p>
+  <div id="rule-info-description"></div>
   <div class="form-actions">
     <button id="rule-info-close-btn" class="btn-secondary">Close</button>
+  </div>
+</dialog>
+
+<dialog id="share-modal">
+  <h2>Share COACH</h2>
+  <div class="share-qr-wrap">
+    <canvas id="share-qr-canvas"></canvas>
+  </div>
+  <p id="share-url-display" class="share-url-text"></p>
+  <div class="form-actions">
+    <button id="share-native-btn" hidden>Share…</button>
+    <button id="share-copy-btn" class="btn-secondary">Copy link</button>
+    <button id="share-close-btn" class="btn-secondary">Close</button>
   </div>
 </dialog>
 
@@ -231,8 +313,8 @@
 
   <h3>Phases</h3>
   <ol>
-    <li><strong>Upload</strong> &mdash; Select a photo and press
-    <em>Process image</em>. COACH detects the grid layout.</li>
+    <li><strong>Upload</strong> &mdash; Choose a photo, drag and drop one, or paste
+    from the clipboard. COACH detects the grid layout.</li>
     <li><strong>Review</strong> &mdash; Check the detected layout against the photo.
     Make any necessary corrections. Press <em>Confirm &amp; Solve</em>
     when ready.</li>
@@ -268,6 +350,13 @@
     <tr><td>Arrow keys</td><td>Move selection</td></tr>
   </table>
 
+  <h3>Privacy</h3>
+  <p>All image processing runs locally on your device &mdash; your puzzle photos are
+  never uploaded. The only optional uploads are anonymised digit thumbnails for
+  training (requires explicit consent) and bug reports (requires your action).
+  No analytics, no tracking, no ads. Full details:
+  <a href="https://github.com/gbarrett28/cagedoku/blob/master/PRIVACY.md" target="_blank" rel="noopener">Privacy policy</a>.</p>
+
   <div class="tutorial-suppress-row">
     <label class="tutorial-suppress-label">
       <input type="checkbox" id="tutorial-suppress-cb"> Don't show this again
@@ -297,6 +386,7 @@
     <div class="feedback-type-row">
       <label><input type="radio" name="feedback-type" id="feedback-type-bug" value="bug"> Bug report</label>
       <label><input type="radio" name="feedback-type" id="feedback-type-enhancement" value="enhancement"> Enhancement request</label>
+      <label><input type="radio" name="feedback-type" id="feedback-type-new-rule" value="new-rule"> Rule suggestion</label>
     </div>
   </div>
 
@@ -332,9 +422,6 @@
   </div>
 </dialog>
 
-<div id="hint-pill" hidden role="status" aria-live="polite">
-  <span id="hint-pill-label"></span>
-</div>
 <div id="callout" hidden role="tooltip" aria-live="polite">
   <p id="callout-text"></p>
   <button id="callout-got-it">Got it</button>

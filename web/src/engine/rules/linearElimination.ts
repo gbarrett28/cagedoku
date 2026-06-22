@@ -10,34 +10,50 @@
  */
 
 import type { HintResult } from '../hint.js';
-import type { RuleContext } from '../rule.js';
+import { KillerOnlyRule } from '../rule.js';
+import type { KillerRuleContext, RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { cellLabel } from './_labels.js';
 
-export class LinearElimination {
+export class LinearElimination extends KillerOnlyRule {
   readonly name = 'LinearElimination';
-  readonly description = 'Uses linear equations derived from cage sums to eliminate impossible digit values from cells.';
+  readonly displayName = 'Linear Elimination';
+  readonly description = `
+Linear Elimination — placements and eliminations from the cage-sum linear system.
+
+Setup: cage-sum and unit-total equations form a linear system. RREF is computed once at puzzle-load and yields initial_eliminations (values inconsistent with uniquely-determined cells) and virtual cages (derived sub-group sum constraints).
+
+Proof: RREF produces an equivalent system — every valid solution of the original equations satisfies the RREF system and vice versa. If RREF uniquely determines a cell's value, all other candidate values are inconsistent with every valid solution and are safely eliminated. Virtual cages are sound because they are linear combinations of original constraints that every valid solution must satisfy.
+
+Hint types:
+  T1 (placement)   cell uniquely determined by the system
+  T3 (virtual cage)   derived sub-group sum not yet acknowledged by the user
+
+Guards:
+  initialEliminations   only eliminations produced at system-solve time
+  requiresVirtualCages = true   board must be built with includeVirtualCages=true
+`.trim();
   readonly priority = 1;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
-  /** BoardState must be constructed with includeVirtualCages=true for this rule to function. */
+  /** KillerBoardState must be constructed with includeVirtualCages=true for this rule to function. */
   readonly requiresVirtualCages = true;
 
-  apply(ctx: RuleContext): RuleResult {
+  applyKiller(ctx: KillerRuleContext): RuleResult {
     const elims = ctx.board.linearSystem.initialEliminations.filter(
       e => ctx.board.cands(e.cell[0], e.cell[1]).has(e.digit)
     );
     return { ...emptyResult(), eliminations: elims };
   }
 
-  asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
+  asHintsKiller(ctx: KillerRuleContext, eliminations: readonly Elimination[]): HintResult[] {
     const hints: HintResult[] = [];
     hints.push(...this._t1PlacementHints(ctx, eliminations));
     hints.push(...this._t3VirtualCageHints(ctx));
     return hints;
   }
 
-  private _t1PlacementHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
+  private _t1PlacementHints(ctx: RuleContext, eliminations: readonly Elimination[]): HintResult[] {
     if (!eliminations.length) return [];
     const byCell = new Map<string, Elimination[]>();
     for (const e of eliminations) {
@@ -65,7 +81,7 @@ export class LinearElimination {
     return hints;
   }
 
-  private _t3VirtualCageHints(ctx: RuleContext): HintResult[] {
+  private _t3VirtualCageHints(ctx: KillerRuleContext): HintResult[] {
     const nSpecCages = Math.max(...ctx.board.regions.flat()) + 1;
     const userVcThreshold = 27 + nSpecCages;
     const userVcCellSets = new Set(

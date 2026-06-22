@@ -1,17 +1,25 @@
 /guardian/
 /observer/
+/classic_guardian/
 __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
 .coverage
 .mypy_cache/
+
+# Vitest coverage reports — generated artifact
+web/coverage/
 .ruff_cache/
 dist/
 build/
 
 # Tool configuration — not part of the project source
-.claude/
+# Use .claude/* (not .claude/) so the !exceptions below can take effect.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+!.claude/hooks/*
 .serena/
 .mcp.json
 no_gutter.py
@@ -48,3 +56,7 @@ web/vitest.config.js
 web/playwright.config.js
 .silver-gate-ok
 .bronze-gate-ok
+classic_observer/
+
+# Focused stall fixtures — generated at deploy time, not committed
+web/stall-fixtures/*-f*.stall.json

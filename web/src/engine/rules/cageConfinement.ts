@@ -10,8 +10,10 @@
  * Fires as GLOBAL. Parameterised by maxN (default 2).
  */
 
+import type { KillerBoardState } from '../boardState.js';
 import type { HintResult } from '../hint.js';
-import type { RuleContext } from '../rule.js';
+import { KillerOnlyRule } from '../rule.js';
+import type { KillerRuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { cellLabel, typeUnitId, unitLabel, unitTypeLabel } from './_labels.js';
 
@@ -30,17 +32,29 @@ function combinations<T>(arr: T[], k: number): T[][] {
   return [...combinations(tail, k - 1).map(c => [head!, ...c]), ...combinations(tail, k)];
 }
 
-export class CageConfinement {
+export class CageConfinement extends KillerOnlyRule {
   readonly name = 'CageConfinement';
-  readonly description =
-    'Checks all groups of cages that together cover complete rows, columns, or boxes, and eliminates digits inconsistent with the resulting sum constraints.';
-  readonly priority = 12;
+  readonly displayName = 'Cage Confinement';
+  readonly description = `
+Cage Confinement — pigeonhole across cages covering N same-type units.
+
+Setup: select N cages C1…CN and N distinct same-type units U1…UN. Digit d is essential to every cage (every solution of Ci includes d). Every d-candidate in every cage lies within ⋃Uj.
+
+Proof: each cage must place d somewhere, all within ⋃Uj. The N units contain exactly N copies of d (one per unit by sudoku). The N cages collectively must use all N of those copies. By pigeonhole, no non-cage cell in ⋃Uj can hold d.
+
+Guards:
+  unit.distinctDigits   cage must enforce distinct digits
+  solns.every(s => s.includes(d))   d must be essential to the cage (present in every solution)
+  combinedUids.size === n   the cages' d-candidates must collectively span exactly N units
+  disjoint cage cells   cages in the combination must not overlap
+`.trim();
+  readonly priority = 15;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
 
-  constructor(private readonly maxN = 2) {}
+  constructor(private readonly maxN = 2) { super(); }
 
-  private _findAllMatches(board: RuleContext['board']): _ConfinementMatch[] {
+  private _findAllMatches(board: KillerBoardState): _ConfinementMatch[] {
     const matches: _ConfinementMatch[] = [];
     for (const kind of [UnitKind.ROW, UnitKind.COL, UnitKind.BOX] as UnitKind[]) {
       for (let d = 1; d <= 9; d++) {
@@ -50,7 +64,7 @@ export class CageConfinement {
     return matches;
   }
 
-  private _search(board: RuleContext['board'], kind: UnitKind, d: number): _ConfinementMatch[] {
+  private _search(board: KillerBoardState, kind: UnitKind, d: number): _ConfinementMatch[] {
     // For each cage where d is essential, record which same-type unit IDs have d-candidates
     const cageInfo: Array<{cells: Cell[]; dUnitIds: Set<number>}> = [];
     for (const unit of board.units) {
@@ -96,7 +110,7 @@ export class CageConfinement {
     return matches;
   }
 
-  apply(ctx: RuleContext): RuleResult {
+  applyKiller(ctx: KillerRuleContext): RuleResult {
     const seen = new Set<string>();
     const elims: Elimination[] = [];
     for (const m of this._findAllMatches(ctx.board)) {
@@ -108,7 +122,7 @@ export class CageConfinement {
     return { ...emptyResult(), eliminations: elims };
   }
 
-  asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
+  asHintsKiller(ctx: KillerRuleContext, eliminations: readonly Elimination[]): HintResult[] {
     if (!eliminations.length) return [];
     const seen = new Set<string>();
     const hints: HintResult[] = [];

@@ -591,7 +591,7 @@ export function splitNum(
  * @param warpedBlk - Warped binary image Mat (ink=255).
  * @param rec - Loaded digit classifier.
  * @param subres - Pixels per cell side.
- * @param classicConf - (9×9) [row][col] confidence from scanCells.
+ * @param classicConf - (9×9) [row][col] confidence from scanClassicDigits.
  * @returns (9×9) number[][] of given digits (0 for empty/unrecognised cells).
  */
 /**
@@ -620,7 +620,7 @@ export function readClassicDigits(
   classicConf: number[][],
 ): { digits: number[][]; thumbs: Map<string, Uint8Array[]> } {
   const half = subres >> 1;
-  // Match scanCells: use the same margin/patchSize so tall digits aren't clipped.
+  // Match scanClassicDigits: use the same margin/patchSize so tall digits aren't clipped.
   const margin = (subres / 6) | 0;
   const patchSize = subres - 2 * margin;
   const digits: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));

@@ -11,7 +11,9 @@
  */
 
 import type { HintResult } from '../hint.js';
-import type { RuleContext } from '../rule.js';
+import type { KillerBoardState } from '../boardState.js';
+import { KillerOnlyRule } from '../rule.js';
+import type { KillerRuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { cellLabel, unitLabel } from './_labels.js';
 import type { Unit } from '../types.js';
@@ -130,15 +132,26 @@ function expandCellLevel(
   return result;
 }
 
-export class UnitPartitionFilter {
+export class UnitPartitionFilter extends KillerOnlyRule {
   readonly name = 'UnitPartitionFilter';
-  readonly description =
-    'When cages partition a row, column, or box into known-sum groups, eliminates cage solutions inconsistent with those groups.';
-  readonly priority = 12;
+  readonly displayName = 'Unit Partition Filter';
+  readonly description = `
+Unit Partition Filter — cross-cage compatibility filter when cages tile a unit.
+
+Setup: cages C₁…Cₙ partition all cells of unit U (every cell belongs to exactly one Cᵢ, n ≥ 2). Each cage has known-sum solutions. The cages must collectively assign each digit 1–9 exactly once across U.
+
+Proof: a solution assignment (one multiset per cage) is valid only if it uses each of 1–9 exactly once across U. A DFS checks all such combinations. Any (cell, digit) pair absent from every valid complete assignment is infeasible and can be eliminated.
+
+Guards:
+  partition.length > 1   at least two cages must cover all cells of U
+  cells.length <= MAX_PARTITION_CAGE_SIZE (4)   large sub-cages skipped to bound DFS
+  nodes <= MAX_NODES (200)   DFS budget; surviving candidates preserved on cap hit
+`.trim();
+  readonly priority = 15;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
 
-  private _iterMatches(board: RuleContext['board']): _Match[] {
+  private _iterMatches(board: KillerBoardState): _Match[] {
     const matches: _Match[] = [];
     for (const unit of board.units) {
       if (unit.kind !== UnitKind.ROW && unit.kind !== UnitKind.COL && unit.kind !== UnitKind.BOX) continue;
@@ -184,14 +197,14 @@ export class UnitPartitionFilter {
     return matches;
   }
 
-  apply(ctx: RuleContext): RuleResult {
+  applyKiller(ctx: KillerRuleContext): RuleResult {
     const elims = this._iterMatches(ctx.board).flatMap(m => m.eliminations);
     const seen = new Set<string>();
     const dedup = elims.filter(e => { const k = `${e.cell[0]},${e.cell[1]}:${e.digit}`; if (seen.has(k)) return false; seen.add(k); return true; });
     return { ...emptyResult(), eliminations: dedup };
   }
 
-  asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
+  asHintsKiller(ctx: KillerRuleContext, eliminations: readonly Elimination[]): HintResult[] {
     if (!eliminations.length) return [];
     return this._iterMatches(ctx.board).map(m => {
       const uLbl = unitLabel(m.unit);

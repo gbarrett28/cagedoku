@@ -9,7 +9,8 @@
  */
 
 import type { HintResult } from '../hint.js';
-import type { RuleContext } from '../rule.js';
+import { KillerOnlyRule } from '../rule.js';
+import type { KillerRuleContext } from '../rule.js';
 import { cellLabel } from './_labels.js';
 import {
   Cell,
@@ -20,15 +21,24 @@ import {
   UnitKind,
 } from '../types.js';
 
-export class CageCandidateFilter {
+export class CageCandidateFilter extends KillerOnlyRule {
   readonly name = 'CageCandidateFilter';
-  readonly description =
-    'Removes cage solutions that are now impossible because a required digit has been eliminated.';
+  readonly displayName = 'Cage Candidate Filter';
+  readonly description = `\
+Cage Candidate Filter — a digit absent from every remaining cage solution cannot appear in any cage cell.
+
+Each cell in a cage must hold a digit that appears in at least one feasible cage solution. If digit d does not appear in any remaining solution for the cage, then no assignment can place d in the cage, so d is impossible in every cage cell.
+
+Proof: Let S be the set of remaining cage solutions. For any cell C in the cage, C's digit must be consistent with some solution s ∈ S, so C's digit must appear in at least one s. Therefore candidates(C) ⊆ ⋃S. Any d ∉ ⋃S can be eliminated from all cage cells.
+
+Guards:
+  ctx.unit?.distinctDigits   non-distinct cages allow repeated digits; their solutions are handled differently
+  solns.length > 0           empty solution set is a degenerate (already-failed) state`.trim();
   readonly priority = 1;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED, Trigger.SOLUTION_PRUNED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.CAGE]);
 
-  apply(ctx: RuleContext): RuleResult {
+  applyKiller(ctx: KillerRuleContext): RuleResult {
     if (!ctx.unit?.distinctDigits) return emptyResult();
     const board = ctx.board;
     const cageIdx = ctx.unit.unitId - 27;
@@ -45,7 +55,7 @@ export class CageCandidateFilter {
     return { ...emptyResult(), eliminations: elims };
   }
 
-  asHints(ctx: RuleContext, eliminations: readonly Elimination[]): HintResult[] {
+  asHintsKiller(ctx: KillerRuleContext, eliminations: readonly Elimination[]): HintResult[] {
     if (!eliminations.length || !ctx.unit) return [];
     const board = ctx.board;
     const cageIdx = ctx.unit.unitId - 27;

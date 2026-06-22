@@ -9,7 +9,8 @@
  */
 
 import type { HintResult } from '../hint.js';
-import type { RuleContext } from '../rule.js';
+import { KillerOnlyRule } from '../rule.js';
+import type { KillerRuleContext, RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { cellLabel, unitLabel } from './_labels.js';
 import type { Unit } from '../types.js';
@@ -55,15 +56,27 @@ function findMatch(
   return { cageCells, must, unit, outie, externalCell: qualifying[0]!, xCands, eliminations: elims };
 }
 
-export class MustContainOutie {
+export class MustContainOutie extends KillerOnlyRule {
   readonly name = 'MustContainOutie';
-  readonly description =
-    'Extension of must-contain: when a digit required by a cage can only be placed in cells shared with an adjacent cage, constrains the adjacent cage.';
+  readonly displayName = 'Must Contain Outie';
+  readonly description = `
+Must Contain Outie — single external cell with candidates ⊆ must-contain constrains the outie.
+
+Setup: a cage has exactly one cell outside unit U (the outie). The cage's must-contain set M = intersection of all cage solutions. Exactly one cell X in U (outside the cage) has candidates ⊆ M.
+
+Proof: X must hold some digit from M. That digit is blocked from all cage cells inside U (they share U with X). Since M must be placed somewhere in the cage, and the inside cells can no longer hold any digit that X holds, the outie must hold whatever X holds. Therefore the outie's candidates are restricted to X's candidates.
+
+Guards:
+  outside.length === 1   exactly one cage cell must be outside U (the outie)
+  qualifying.length === 1   exactly one external unit cell must have candidates ⊆ M
+  ctx.unit?.distinctDigits   non-distinct cages skipped
+  must.size > 0   cage must have a non-empty must-contain set
+`.trim();
   readonly priority = 4;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED, Trigger.SOLUTION_PRUNED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX, UnitKind.CAGE]);
 
-  private _iterMatches(ctx: RuleContext): _Match[] {
+  private _iterMatches(ctx: KillerRuleContext): _Match[] {
     if (!ctx.unit) return [];
     const board = ctx.board;
     const matches: _Match[] = [];
@@ -103,12 +116,12 @@ export class MustContainOutie {
     return matches;
   }
 
-  apply(ctx: RuleContext): RuleResult {
+  applyKiller(ctx: KillerRuleContext): RuleResult {
     const elims = this._iterMatches(ctx).flatMap(m => m.eliminations);
     return { ...emptyResult(), eliminations: elims };
   }
 
-  asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
+  asHintsKiller(ctx: KillerRuleContext, eliminations: readonly Elimination[]): HintResult[] {
     if (!eliminations.length) return [];
     const seen = new Set<string>();
     const hints: HintResult[] = [];

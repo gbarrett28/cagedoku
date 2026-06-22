@@ -10,19 +10,32 @@
  */
 
 import type { HintResult } from '../hint.js';
-import type { RuleContext } from '../rule.js';
+import { KillerOnlyRule } from '../rule.js';
+import type { KillerRuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { cellLabel, unitLabel } from './_labels.js';
 
-export class MustContain {
+export class MustContain extends KillerOnlyRule {
   readonly name = 'MustContain';
-  readonly description =
-    'When a digit must appear in a cage and is confined to cells that overlap another unit, it can be eliminated from that unit\'s other cells.';
+  readonly displayName = 'Must Contain';
+  readonly description = `
+Must Contain — cage must-contain digit confined to overlap with a unit.
+
+Setup: d ∈ must-contain(cage) and all cage cells holding d as a candidate lie in the overlap of the cage with unit U (no candidate for d exists in cage cells outside U).
+
+Proof: the cage must place d somewhere; since every d-candidate in the cage is inside U, d will be placed in U. By unit uniqueness, d cannot also appear in non-cage cells of U.
+
+Guards:
+  ctx.unit?.distinctDigits   unit must enforce distinct digits
+  d ∈ must-contain   d must appear in every cage solution
+  !otherElsewhere.has(d)   d must have no candidate in cage cells outside the unit
+  elims.length > 0   there must be non-cage cells in U that hold d as a candidate
+`.trim();
   readonly priority = 4;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX, UnitKind.CAGE]);
 
-  private _iterMatches(ctx: RuleContext): Array<{unit: typeof ctx.unit; cageUnitId: number; overlap: Cell[]; confinedDigits: Set<number>; eliminations: Elimination[]}> {
+  private _iterMatches(ctx: KillerRuleContext): Array<{unit: typeof ctx.unit; cageUnitId: number; overlap: Cell[]; confinedDigits: Set<number>; eliminations: Elimination[]}> {
     if (!ctx.unit?.distinctDigits) return [];
     const board = ctx.board;
     const unitCells = ctx.unit.cells as Cell[];
@@ -64,12 +77,12 @@ export class MustContain {
     return matches;
   }
 
-  apply(ctx: RuleContext): RuleResult {
+  applyKiller(ctx: KillerRuleContext): RuleResult {
     const elims = this._iterMatches(ctx).flatMap(m => m.eliminations);
     return { ...emptyResult(), eliminations: elims };
   }
 
-  asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
+  asHintsKiller(ctx: KillerRuleContext, eliminations: readonly Elimination[]): HintResult[] {
     if (!eliminations.length) return [];
     const seen = new Set<string>();
     const hints: HintResult[] = [];

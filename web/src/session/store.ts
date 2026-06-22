@@ -19,15 +19,32 @@ type Cv = OpenCVModule;
 // Puzzle session state
 // ---------------------------------------------------------------------------
 
-let _state: PuzzleState | null = null;
+/**
+ * OCR-review candidate list. Pre-confirm, holds every constructible
+ * PuzzleState candidate (e.g. Killer + Classic interpretations of the
+ * same scan). Post-confirm, holds exactly one element (the confirmed
+ * state). Empty when there is no active session.
+ */
+let _candidates: readonly PuzzleState[] = [];
 let _candidatesCache: CandidatesResponse | null = null;
+const _sessionDisabledRules = new Set<string>();
+/** Keys of trigger-miss reports already submitted this session: "${ruleName}:${missedContext}". */
+const _reportedTriggerMisses = new Set<string>();
 
-export function getState(): PuzzleState | null { return _state; }
+export function getStateCandidates(): readonly PuzzleState[] { return _candidates; }
 
-export function setState(state: PuzzleState): void {
-  _state = state;
+export function setStateCandidates(candidates: readonly PuzzleState[]): void {
+  _candidates = candidates;
   // Invalidate candidates cache whenever state changes
   _candidatesCache = null;
+}
+
+/** Post-confirm convenience accessor: the single confirmed state, or null if no session. */
+export function getState(): PuzzleState | null { return _candidates[0] ?? null; }
+
+/** Post-confirm convenience accessor: replaces the candidate list with a single confirmed state. */
+export function setState(state: PuzzleState): void {
+  setStateCandidates([state]);
 }
 
 export function getCandidatesCache(): CandidatesResponse | null { return _candidatesCache; }
@@ -35,8 +52,70 @@ export function getCandidatesCache(): CandidatesResponse | null { return _candid
 export function setCandidatesCache(c: CandidatesResponse): void { _candidatesCache = c; }
 
 export function clearSession(): void {
-  _state = null;
+  _candidates = [];
   _candidatesCache = null;
+  _sessionDisabledRules.clear();
+  _reportedTriggerMisses.clear();
+}
+
+/** Disable a rule for the rest of this browser session (in-memory only). */
+export function disableRuleForSession(ruleName: string): void {
+  _sessionDisabledRules.add(ruleName);
+}
+
+/** True if the named rule has been disabled at runtime during this session. */
+export function isRuleDisabledForSession(ruleName: string): boolean {
+  return _sessionDisabledRules.has(ruleName);
+}
+
+/** Snapshot of all rules disabled at runtime during this session. */
+export function getSessionDisabledRules(): ReadonlySet<string> {
+  return _sessionDisabledRules;
+}
+
+/** True if a trigger-miss report for this (ruleName, missedContext) key was already submitted. */
+export function hasTriggerMissBeenReported(key: string): boolean {
+  return _reportedTriggerMisses.has(key);
+}
+
+/** Mark a trigger-miss report as submitted so it is not re-sent this session. */
+export function markTriggerMissReported(key: string): void {
+  _reportedTriggerMisses.add(key);
+}
+
+// ---------------------------------------------------------------------------
+// Telemetry pipeline diagnostics (dev mode)
+// ---------------------------------------------------------------------------
+
+let _pendingTelemetryFailure: string | null = null;
+let _telemetryFailureHandler: (() => void) | null = null;
+
+/**
+ * Registers the UI-layer callback that forces the feedback modal open when a
+ * telemetry failure is queued. `main.ts` registers this once at startup so a
+ * dropped report can't go unnoticed even if the user never opens feedback
+ * manually. Only invoked when the user has opted into
+ * `CoachSettings.devSurfaceTelemetryFailures` — see trainingUpload.ts.
+ */
+export function onTelemetryFailure(handler: () => void): void {
+  _telemetryFailureHandler = handler;
+}
+
+/**
+ * Records a rule-bug/trigger-miss telemetry failure so it can be surfaced as
+ * a prefilled bug report, and immediately invokes the registered handler (if
+ * any) to force the feedback modal open.
+ */
+export function enqueueTelemetryFailure(message: string): void {
+  _pendingTelemetryFailure = message;
+  _telemetryFailureHandler?.();
+}
+
+/** Drains and returns the most recently queued telemetry failure, or null if none is pending. */
+export function drainTelemetryFailure(): string | null {
+  const message = _pendingTelemetryFailure;
+  _pendingTelemetryFailure = null;
+  return message;
 }
 
 // ---------------------------------------------------------------------------

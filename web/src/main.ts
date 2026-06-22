@@ -6,31 +6,38 @@
  * State lives in session/store.ts; no server required.
  */
 
-import { loadCV, loadRec, loadSplitRec, setCandidatesCache, setState } from './session/store.js';
+import { loadCV, loadRec, loadSplitRec, setCandidatesCache, setState, getStateCandidates, setStateCandidates, drainTelemetryFailure, onTelemetryFailure } from './session/store.js';
 import { logAction, clearActionLog, formatActionLog, getActionLog } from './session/actionLog.js';
 import { loadSettings } from './session/settings.js';
+import { buildFeedbackPayload, submitFeedback } from './session/feedbackSubmit.js';
 import { cellLabel } from './engine/rules/_labels.js';
-import { extractTrainingData, buildStallStateExport } from './image/trainingExport.js';
+import { extractTrainingData } from './image/trainingExport.js';
 import type { TrainingExport } from './image/trainingExport.js';
 import { defaultImagePipelineConfig } from './image/config.js';
-import { initiateUpload, grantConsent, uploadTrainingData, uploadStallState, initiateStallUpload } from './image/trainingUpload.js';
-import { dataToSpec } from './session/specUtils.js';
-import { makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec, makeClassicGivenDigits } from './engine/fixtures.js';
+import { initiateUpload, grantConsent, revokeConsent, uploadTrainingData, submitStallReport, hasConsent } from './image/trainingUpload.js';
+import { dataToSpec, classicSyntheticSpec, specToData, specToCageStates } from './session/specUtils.js';
+import { analyseKernels } from './engine/kernelAnalysis.js';
+import { WINDOW_STARTS } from './engine/bigAppleBoardState.js';
+import {
+  makeTrivialSpec, makeTwoCellCageSpec, makeBoxCageSpec, makeClassicGivenDigits, makeClassicPartialGivenDigits,
+  makeBigAppleMisreadGivenDigits,
+} from './engine/fixtures.js';
 import {
   uploadPuzzle,
   loadSpecDirect,
   loadClassicDirect,
   confirmPuzzle,
   computeCandidates,
+  computeBoard,
   enterCell,
   enterCellStep,
-  stepAutoPlacement,
   getAutoPlacementDelay,
   undo,
   rewind,
   cycleCandidate,
   eliminateCageSolution,
   eliminateVirtualCageSolution,
+  eliminateVirtualCageDiffSolution,
   addVirtualCage,
   getHints,
   applyHint,
@@ -40,21 +47,40 @@ import {
   saveSettingsData,
   checkSolutionAssertions,
   revertToOcr,
+  activeCandidate,
+  extractAndValidateSolution,
 } from './session/actions.js';
+import { PuzzleState } from './session/types.js';
 import type {
   CandidatesResponse,
+  DiffSolution,
   HintItem,
-  PuzzleState,
+  RenderColour,
   SolutionCategorization,
 } from './session/types.js';
+import { buildEngine } from './session/engine.js';
+import type { BoardState } from './engine/index.js';
+import { detectBigApple } from './engine/index.js';
 import type { Cell } from './engine/types.js';
 import { GridNotFoundError } from './image/inpImage.js';
 import { UserFacingError } from './session/errors.js';
 import { applyAutoApplyLock } from './autoApplyLock.js';
 import { showHintPill, hideHintPill } from './hintPill.js';
-import { AssertionViolation, hasDuplicateDigits, validateSudokuSolution } from './session/assertions.js';
+import { AnimationPlayer } from './session/animationPlayer.js';
+import type { EliminateCandidateMutation } from './session/ruleMutation.js';
+import { AssertionViolation, findDuplicateCells, hasDuplicateDigits, isCageSumCorrect } from './session/assertions.js';
 import { initTutorial, appendCallouts } from './tutorial.js';
 import { resolveDigitKey } from './resolveDigitKey.js';
+import type { StallFixtureFile } from './engine/rules/stallFixtureFile.js';
+import {
+  imageFileFromClipboard, imageFileFromDrop,
+  saveLastHandle, resolveLastHandle,
+  consumeShareInbox, fileFromLaunchParams,
+} from './imageInput.js';
+import type { FileSystemHandleWithPermission } from './imageInput.js';
+import { INSTALL_DISMISSED_KEY, shouldShowInstallBanner } from './installPrompt.js';
+import { saveSession, loadSession, clearPersistedSession } from './session/persistence.js';
+import { toCanvas as qrToCanvas } from 'qrcode';
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -88,33 +114,81 @@ const GRID_PX = MARGIN * 2 + 9 * CELL;
 
 let currentState: PuzzleState | null = null;
 let currentCandidates: CandidatesResponse | null = null;
+let currentBoard: BoardState | null = null;
 let selectedCell: { row: number; col: number } | null = null;  // 1-based
 let showCandidates = false;
 let showEssential = true;
 let candidateEditMode = false;
 let virtualCageMode = false;
-let virtualCageSelection = new Set<string>();   // "r,c" keys, 0-based
-let hintHighlightCells = new Set<string>();     // "r,c" keys, 0-based
+let virtualCageSelection = new Set<string>();   // "r,c" keys, 0-based — all selected cells
+let virtualCageNegCells = new Set<string>();    // "r,c" keys, 0-based — negative-role cells
+let hintHighlightCells = new Set<string>();     // "r,c" keys, 0-based — pattern cells (orange)
+let hintElimCells = new Set<string>();          // "r,c" keys, 0-based — elimination cells (yellow)
+let hintChainCells: readonly { cell: [number, number]; digits: readonly number[]; colour?: 'blue' | 'green' }[] = [];
+let hintSecondaryHighlightCells = new Set<string>(); // "r,c" keys, 0-based — pale-blue unit context
 let activeHintItem: HintItem | null = null;
 let inspectCageMode = false;
+
+// ── User colouring tool ──────────────────────────────────────────────────────
+type ColourMode = 'off' | 'blue-next' | 'green-next';
+let colourMode: ColourMode = 'off';
+/** "r,c" 0-based keys → colour applied by the user colouring tool. */
+const cellColours = new Map<string, 'blue' | 'green'>();
 
 let fastForwardRequested = false;
 
 let draftBorderX: boolean[][] = [];   // [col][rowGap] — cage horizontal walls
 let draftBorderY: boolean[][] = [];   // [colGap][row] — cage vertical walls
+
+// Active stall fixture — set when loaded from the fixture panel, cleared on normal pipeline start.
+let currentFixtureName: string | null = null;
+let currentFixtureUnsolvedCells: number | null = null;
+let currentFixtureTotalCandidates: number | null = null;
+
+/** Returns the active fixture context for feedback submission, or null when no fixture is loaded. */
+function activeFixtureContext(): { name: string; unsolvedCells: number; totalCandidates: number } | null {
+  if (currentFixtureName === null) return null;
+  return {
+    name: currentFixtureName,
+    unsolvedCells: currentFixtureUnsolvedCells!,
+    totalCandidates: currentFixtureTotalCandidates!,
+  };
+}
 let draftEdited = false;              // true once the user changes any total or border
 let pendingCellThumbs = new Map<string, Uint8Array[]>(); // OCR thumbnails, held until Confirm
 let pendingMergedThumbs = new Map<string, Uint8Array>(); // pre-split merged thumbnails, held until Confirm
 let totalEditCell: { row: number; col: number } | null = null;  // 0-based, active overlay
 let totalEditPrev = 0;
 let reviewErrorCells = new Set<string>(); // "row,col" keys — cages failing Confirm validation
+let reviewSuspectCells = new Set<string>(); // "row,col" keys — cells suspected of OCR misread (amber)
+let kernelWarningShown = false; // true after first-confirm kernel warning; skips analysis on re-confirm
+let userOverrodePuzzleType = false; // true once the user touches the Type dropdown; suppresses auto re-detection on further edits
 
 // Bug reporting state
 let pendingBug: { info: string } | null = null;
 let exceptionForSubmission: string | null = null;
 
-// OCR state preserved across auto-confirm for the Edit OCR button.
-let lastOcrState: PuzzleState | null = null;
+// Last FileSystemFileHandle from the File System Access API, persisted in
+// IndexedDB so the picker can reopen in the same directory next session.
+let lastFileHandle: FileSystemFileHandle | null = null;
+
+// PWA install prompt deferred from the beforeinstallprompt event.
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+}
+let deferredInstallPrompt: BeforeInstallPromptEvent | null = null;
+
+// File pending CV-pipeline readiness — set by share-target or launchQueue
+// consumer before the pipeline is ready; consumed once the pipeline loads.
+let pendingShareFile: File | null = null;
+
+// File Handling API type declarations (not yet in the TypeScript DOM lib).
+interface LaunchParams { readonly files: ReadonlyArray<FileSystemFileHandle>; }
+interface LaunchQueue { setConsumer(consumer: (params: LaunchParams) => void): void; }
+interface WindowWithLaunchQueue extends Window { launchQueue: LaunchQueue; }
+
+// OCR candidates preserved across auto-confirm for the Edit OCR button.
+let lastOcrCandidates: readonly PuzzleState[] = [];
 let lastWarpedUrl: string | null = null;
 
 // ---------------------------------------------------------------------------
@@ -128,6 +202,8 @@ function drawUnderlays(
   highlightKeys: Set<string> | null,
   selected: { row: number; col: number } | null,
   errorCells: Set<string> | undefined,
+  suspectCells?: Set<string>,
+  vcNegSelection?: Set<string>,
 ): void {
   const vcColors = [
     'rgba(20, 184, 166, 0.25)',
@@ -144,22 +220,54 @@ function drawUnderlays(
     }
   }
   if (vcSelection !== null && vcSelection.size > 0) {
-    ctx.fillStyle = 'rgba(99, 102, 241, 0.35)';
     for (const key of vcSelection) {
+      const parts = key.split(',').map(Number);
+      const r = parts[0]!, c = parts[1]!;
+      ctx.fillStyle = (vcNegSelection?.has(key))
+        ? 'rgba(239, 68, 68, 0.35)'     // red tint for negative cells
+        : 'rgba(99, 102, 241, 0.35)';   // indigo for positive cells
+      ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
+    }
+  }
+  // Chain-colouring: per-cell chain cells with their own wash colour
+  for (const cc of hintChainCells) {
+    if (!cc.colour) continue;
+    ctx.fillStyle = cc.colour === 'blue' ? 'rgba(59, 130, 246, 0.45)' : 'rgba(34, 197, 94, 0.45)';
+    const [r, c] = cc.cell;
+    ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
+  }
+  // User colouring tool: manually coloured cells (blue/green)
+  for (const [key, colour] of cellColours) {
+    const parts = key.split(',').map(Number);
+    const r = parts[0]!, c = parts[1]!;
+    ctx.fillStyle = colour === 'blue' ? 'rgba(59, 130, 246, 0.45)' : 'rgba(34, 197, 94, 0.45)';
+    ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
+  }
+  if (hintSecondaryHighlightCells.size > 0) {
+    ctx.fillStyle = 'rgba(96, 165, 240, 0.18)';
+    for (const key of hintSecondaryHighlightCells) {
       const parts = key.split(',').map(Number);
       const r = parts[0]!, c = parts[1]!;
       ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
     }
   }
   if (highlightKeys !== null && highlightKeys.size > 0) {
-    ctx.fillStyle = 'rgba(251, 191, 36, 0.45)';
+    ctx.fillStyle = 'rgba(249, 115, 22, 0.35)';
     for (const key of highlightKeys) {
       const parts = key.split(',').map(Number);
       const r = parts[0]!, c = parts[1]!;
       ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
     }
   }
-  if (selected !== null) {
+  if (hintElimCells.size > 0) {
+    ctx.fillStyle = 'rgba(251, 191, 36, 0.45)';
+    for (const key of hintElimCells) {
+      const parts = key.split(',').map(Number);
+      const r = parts[0]!, c = parts[1]!;
+      ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
+    }
+  }
+  if (selected !== null && colourMode === 'off') {
     ctx.fillStyle = '#dbeafe';
     ctx.fillRect(
       MARGIN + (selected.col - 1) * CELL,
@@ -175,6 +283,14 @@ function drawUnderlays(
       ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
     }
   }
+  if (suspectCells && suspectCells.size > 0) {
+    ctx.fillStyle = 'rgba(245, 158, 11, 0.45)';
+    for (const key of suspectCells) {
+      const parts = key.split(',').map(Number);
+      const r = parts[0]!, c = parts[1]!;
+      ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
+    }
+  }
 }
 
 function drawCageBorders(
@@ -182,7 +298,6 @@ function drawCageBorders(
   state: PuzzleState,
   draft: { borderX: boolean[][], borderY: boolean[][] } | undefined,
 ): void {
-  if (state.puzzleType === 'classic') return;
   ctx.strokeStyle = draft ? '#0055cc' : '#cc0000';
   ctx.lineWidth = 7.5;
   if (draft) {
@@ -203,23 +318,22 @@ function drawCageBorders(
       }
     }
   } else {
-    const reg = state.specData.regions;
-    for (let r = 0; r < 8; r++) {
-      for (let c = 0; c < 9; c++) {
-        if ((reg[r]?.[c] ?? 0) !== (reg[r + 1]?.[c] ?? 0)) {
-          const y = MARGIN + (r + 1) * CELL;
-          ctx.beginPath(); ctx.moveTo(MARGIN + c * CELL, y); ctx.lineTo(MARGIN + (c + 1) * CELL, y); ctx.stroke();
-        }
+    for (const seg of PuzzleState.cageBoundaries(state)) {
+      if (seg.edge === 'bottom') {
+        const y = MARGIN + (seg.row + 1) * CELL;
+        ctx.beginPath(); ctx.moveTo(MARGIN + seg.col * CELL, y); ctx.lineTo(MARGIN + (seg.col + 1) * CELL, y); ctx.stroke();
+      } else {
+        const x = MARGIN + (seg.col + 1) * CELL;
+        ctx.beginPath(); ctx.moveTo(x, MARGIN + seg.row * CELL); ctx.lineTo(x, MARGIN + (seg.row + 1) * CELL); ctx.stroke();
       }
     }
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 8; c++) {
-        if ((reg[r]?.[c] ?? 0) !== (reg[r]?.[c + 1] ?? 0)) {
-          const x = MARGIN + (c + 1) * CELL;
-          ctx.beginPath(); ctx.moveTo(x, MARGIN + r * CELL); ctx.lineTo(x, MARGIN + (r + 1) * CELL); ctx.stroke();
-        }
-      }
-    }
+  }
+}
+
+function drawWindowTint(ctx: CanvasRenderingContext2D): void {
+  ctx.fillStyle = 'rgba(34, 197, 94, 0.12)';
+  for (const [r0, c0] of WINDOW_STARTS) {
+    ctx.fillRect(MARGIN + c0 * CELL, MARGIN + r0 * CELL, 3 * CELL, 3 * CELL);
   }
 }
 
@@ -242,112 +356,146 @@ function drawGridLines(ctx: CanvasRenderingContext2D): void {
 }
 
 function drawCageTotals(ctx: CanvasRenderingContext2D, state: PuzzleState): void {
-  if (state.puzzleType === 'classic') return;
   const TOTAL_FONT_PX = Math.round(CELL * 0.36); // ~18px at CELL=50
   ctx.font = `bold ${TOTAL_FONT_PX}px sans-serif`;
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  const totals = state.specData.cageTotals;
-  for (let r = 0; r < 9; r++) {
-    for (let c = 0; c < 9; c++) {
-      const total = totals[r]?.[c] ?? 0;
-      if (total === 0) continue;
-      const x = MARGIN + c * CELL + 2;
-      const y = MARGIN + r * CELL + 2;
-      const label = String(total);
-      const tw = ctx.measureText(label).width;
-      // White chip behind the number so it reads cleanly over grid lines.
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(x - 1, y - 1, tw + 2, TOTAL_FONT_PX + 1);
-      ctx.fillStyle = '#111';
-      ctx.fillText(label, x, y);
-    }
+  for (const label of PuzzleState.cageLabels(state)) {
+    const x = MARGIN + label.col * CELL + 2;
+    const y = MARGIN + label.row * CELL + 2;
+    const text = String(label.total);
+    const tw = ctx.measureText(text).width;
+    // White chip behind the number so it reads cleanly over grid lines.
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(x - 1, y - 1, tw + 2, TOTAL_FONT_PX + 1);
+    ctx.fillStyle = '#111';
+    ctx.fillText(text, x, y);
   }
 }
 
-function drawDigits(ctx: CanvasRenderingContext2D, state: PuzzleState): void {
-  const digitGrid: number[][] | null =
-    state.userGrid !== null ? state.userGrid : (state.givenDigits ?? null);
-  if (digitGrid === null) return;
+function colourToCss(c: RenderColour): string {
+  switch (c) {
+    case 'black': return '#000';
+    case 'blue': return '#2563eb';
+    case 'red': return '#dc2626';
+    default: return '#000';
+  }
+}
 
-  const duplicateCells = new Set<string>();
+function drawDigits(ctx: CanvasRenderingContext2D, state: PuzzleState, board: BoardState): void {
+  const display = PuzzleState.candidateDisplay(state, board);
+
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
-      const d = digitGrid[r]?.[c] ?? 0;
-      if (d === 0) continue;
-      for (let cc = 0; cc < 9; cc++) { if (cc !== c && (digitGrid[r]?.[cc] ?? 0) === d) duplicateCells.add(`${r},${c}`); }
-      for (let rr = 0; rr < 9; rr++) { if (rr !== r && (digitGrid[rr]?.[c] ?? 0) === d) duplicateCells.add(`${r},${c}`); }
-      const br = Math.floor(r / 3) * 3; const bc = Math.floor(c / 3) * 3;
-      for (let dr = 0; dr < 3; dr++) for (let dc = 0; dc < 3; dc++) {
-        const rr = br + dr; const cc = bc + dc;
-        if ((rr !== r || cc !== c) && (digitGrid[rr]?.[cc] ?? 0) === d) duplicateCells.add(`${r},${c}`);
+      if (display[r]![c]!.placed?.colour === 'red') {
+        ctx.fillStyle = 'rgba(220, 38, 38, 0.15)';
+        ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
       }
     }
   }
-  if (duplicateCells.size > 0) {
-    ctx.fillStyle = 'rgba(220, 38, 38, 0.15)';
-    for (const key of duplicateCells) {
-      const parts = key.split(',').map(Number);
-      const r = parts[0]!, c = parts[1]!;
-      ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL);
-    }
-  }
 
-  const givenCells = new Set<string>();
-  if (state.puzzleType === 'classic' && state.userGrid !== null && state.givenDigits !== null) {
-    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
-      if ((state.givenDigits[r]?.[c] ?? 0) > 0) givenCells.add(`${r},${c}`);
-    }
-  }
   ctx.font = 'bold 28px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
-      const digit = digitGrid[r]?.[c] ?? 0;
-      if (digit > 0) {
-        const key = `${r},${c}`;
-        ctx.fillStyle = duplicateCells.has(key) ? '#dc2626'
-          : (state.userGrid !== null && !givenCells.has(key)) ? '#2563eb'
-          : '#000';
-        ctx.fillText(String(digit), MARGIN + c * CELL + CELL / 2, MARGIN + r * CELL + CELL / 2);
-      }
+      const { placed } = display[r]![c]!;
+      if (placed === null) continue;
+      ctx.fillStyle = colourToCss(placed.colour);
+      ctx.fillText(String(placed.digit), MARGIN + c * CELL + CELL / 2, MARGIN + r * CELL + CELL / 2);
     }
   }
 }
 
 function drawCandidates(
   ctx: CanvasRenderingContext2D,
-  userGrid: number[][],
-  candidatesData: CandidatesResponse,
+  state: PuzzleState,
+  board: BoardState,
   showEss: boolean,
 ): void {
-  const mustContainByCell = new Map<string, Set<number>>();
-  for (const cage of candidatesData.cages) {
-    const mc = new Set(cage.mustContain);
-    for (const [r, c] of cage.cells) mustContainByCell.set(`${r},${c}`, mc);
-  }
+  const display = PuzzleState.candidateDisplay(state, board);
   const CAND_TOP = 13;
   const SUB_W = CELL / 3; const SUB_H = (CELL - CAND_TOP) / 3;
   ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
-      if ((userGrid[r]?.[c] ?? 0) !== 0) continue;
-      const cell = candidatesData.cells[r]?.[c];
-      if (cell === undefined) continue;
-      const candSet = new Set(cell.candidates);
-      const removedSet = new Set(cell.userRemoved);
-      const essSet = mustContainByCell.get(`${r},${c}`) ?? new Set<number>();
-      for (let n = 1; n <= 9; n++) {
-        const subRow = Math.floor((n - 1) / 3); const subCol = (n - 1) % 3;
+      for (const cand of display[r]![c]!.candidates) {
+        const subRow = Math.floor((cand.digit - 1) / 3); const subCol = (cand.digit - 1) % 3;
         const cx = MARGIN + c * CELL + (subCol + 0.5) * SUB_W;
         const cy = MARGIN + r * CELL + CAND_TOP + (subRow + 0.5) * SUB_H;
-        if (removedSet.has(n)) {
-          ctx.fillStyle = '#d1d5db'; ctx.fillText(String(n), cx, cy);
-          const hw = SUB_W * 0.35;
-          ctx.strokeStyle = '#6b7280'; ctx.lineWidth = 1;
-          ctx.beginPath(); ctx.moveTo(cx - hw, cy); ctx.lineTo(cx + hw, cy); ctx.stroke();
-        } else if (candSet.has(n)) {
-          ctx.fillStyle = (essSet.has(n) && showEss) ? '#cc5a45' : '#888';
-          ctx.fillText(String(n), cx, cy);
-        }
+        ctx.fillStyle = (cand.colour === 'essential' && showEss) ? '#cc5a45' : '#888';
+        ctx.fillText(String(cand.digit), cx, cy);
+      }
+    }
+  }
+}
+
+/**
+ * Draws per-digit markers for the active hint:
+ *   circles (red)  — eliminated digits in elimination cells
+ *   squares (blue) — pattern digits in pattern (highlight) cells
+ */
+function drawHintDigitMarkers(
+  ctx: CanvasRenderingContext2D,
+  userGrid: number[][],
+  candidatesData: CandidatesResponse,
+): void {
+  if (activeHintItem === null) return;
+  const hint = activeHintItem;
+  const CAND_TOP = 13;
+  const SUB_W = CELL / 3;
+  const SUB_H = (CELL - CAND_TOP) / 3;
+  const R = Math.min(SUB_W, SUB_H) * 0.38;
+
+  // Red circles around eliminated (cell, digit) pairs
+  if (hint.eliminations.length > 0) {
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
+    ctx.lineWidth = 1.5;
+    for (const { cell: [r, c], digit: d } of hint.eliminations) {
+      if ((userGrid[r]?.[c] ?? 0) !== 0) continue;
+      const cellInfo = candidatesData.cells[r]?.[c];
+      if (!cellInfo) continue;
+      if (!cellInfo.candidates.includes(d) && !cellInfo.userRemoved.includes(d)) continue;
+      const subRow = Math.floor((d - 1) / 3);
+      const subCol = (d - 1) % 3;
+      const cx = MARGIN + c * CELL + (subCol + 0.5) * SUB_W;
+      const cy = MARGIN + r * CELL + CAND_TOP + (subRow + 0.5) * SUB_H;
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  // Blue squares around pattern digits in highlight (pattern) cells, plus any
+  // `chainCells` cell (chain rules tag structural cells, like wing pincers,
+  // that carry their own digits but aren't washed orange via highlightCells).
+  // Skip any cell that is also an elimination cell — it gets a circle, not a square.
+  // A cell with its own `chainCells` entry is marked with that cell's own digits;
+  // a `highlightCells` cell with no `chainCells` entry falls back to the
+  // rule-wide `patternDigits` list.
+  const fallbackPatternDigits: readonly number[] =
+    hint.patternDigits ??
+    (hint.placement !== null ? [hint.placement[2]] : [...new Set(hint.eliminations.map(e => e.digit))]);
+  const markerCells = new Map<string, Cell>();
+  for (const cell of hint.highlightCells) markerCells.set(`${cell[0]},${cell[1]}`, cell);
+  for (const cc of hintChainCells) markerCells.set(`${cc.cell[0]},${cc.cell[1]}`, cc.cell);
+  if (markerCells.size > 0) {
+    ctx.strokeStyle = 'rgba(59, 130, 246, 0.85)';
+    ctx.lineWidth = 1.5;
+    const hw = SUB_W * 0.38;
+    const hh = SUB_H * 0.38;
+    for (const [key, [r, c]] of markerCells) {
+      if (hintElimCells.has(key)) continue;   // elim cells get circles, not squares
+      if ((userGrid[r]?.[c] ?? 0) !== 0) continue;
+      const cellInfo = candidatesData.cells[r]?.[c];
+      if (!cellInfo) continue;
+      const candSet = new Set(cellInfo.candidates);
+      const chainCell = hintChainCells.find(cc => cc.cell[0] === r && cc.cell[1] === c);
+      const digits = chainCell ? chainCell.digits : fallbackPatternDigits;
+      for (const d of digits) {
+        if (!candSet.has(d)) continue;
+        const subRow = Math.floor((d - 1) / 3);
+        const subCol = (d - 1) % 3;
+        const cx = MARGIN + c * CELL + (subCol + 0.5) * SUB_W;
+        const cy = MARGIN + r * CELL + CAND_TOP + (subRow + 0.5) * SUB_H;
+        ctx.strokeRect(cx - hw, cy - hh, 2 * hw, 2 * hh);
       }
     }
   }
@@ -364,6 +512,8 @@ function drawGrid(
   showEss: boolean = true,
   draft?: { borderX: boolean[][], borderY: boolean[][] },
   errorCells?: Set<string>,
+  suspectCells?: Set<string>,
+  vcNegSelection?: Set<string>,
 ): void {
   canvas.width = GRID_PX;
   canvas.height = GRID_PX;
@@ -371,19 +521,21 @@ function drawGrid(
   if (!ctx) return;
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, GRID_PX, GRID_PX);
-  drawUnderlays(ctx, candidatesData, vcSelection, highlightKeys, selected, errorCells);
-  drawCageBorders(ctx, state, draft);
+  drawUnderlays(ctx, candidatesData, vcSelection, highlightKeys, selected, errorCells, suspectCells, vcNegSelection);
+  if (PuzzleState.isKiller(state)) drawCageBorders(ctx, state, draft);
+  if (PuzzleState.isBigApple(state)) drawWindowTint(ctx);
   drawGridLines(ctx);
-  drawCageTotals(ctx, state);
-  drawDigits(ctx, state);
-  if (showCands && candidatesData !== null && state.userGrid !== null) {
-    drawCandidates(ctx, state.userGrid, candidatesData, showEss);
+  if (PuzzleState.isKiller(state)) drawCageTotals(ctx, state);
+  const cheapBoard = buildEngine(state, { skipSolve: true }).board;
+  drawDigits(ctx, state, cheapBoard);
+  if (showCands && currentBoard !== null && candidatesData !== null && state.goldenSolution !== null) {
+    drawCandidates(ctx, state, currentBoard, showEss);
+    drawHintDigitMarkers(ctx, state.userGrid, candidatesData);
   }
 }
 
 function isGridSolved(state: PuzzleState): boolean {
   const grid = state.userGrid;
-  if (grid === null) return false;
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
       if ((grid[r]?.[c] ?? 0) === 0) return false;
@@ -405,18 +557,8 @@ function isGridSolved(state: PuzzleState): boolean {
       }
     }
   }
-  if (state.puzzleType !== 'classic') {
-    const sums = new Map<number, number>();
-    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
-      const id = state.specData.regions[r]?.[c] ?? -1;
-      if (id >= 0) sums.set(id, (sums.get(id) ?? 0) + grid[r]![c]!);
-    }
-    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
-      const total = state.specData.cageTotals[r]?.[c] ?? 0;
-      if (total === 0) continue;
-      const id = state.specData.regions[r]?.[c] ?? -1;
-      if (id >= 0 && (sums.get(id) ?? 0) !== total) return false;
-    }
+  if (PuzzleState.isKiller(state)) {
+    if (!isCageSumCorrect(grid, state.specData.regions, state.specData.cageTotals)) return false;
   }
   return true;
 }
@@ -425,6 +567,7 @@ function closeSidePanels(): void {
   inspectCageMode = false;
   el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');
   el<HTMLElement>('inspector-col').hidden = true;
+  el<HTMLElement>('playing-actions').hidden = false;
   el<HTMLElement>('side-panel').classList.remove('inspector-open');
   el<HTMLElement>('side-panel').classList.remove('virtual-cage-open');
 }
@@ -435,7 +578,7 @@ function checkCompletion(state: PuzzleState): void {
   if (solved) closeSidePanels();
   const actionIds = [
     'hints-btn', 'mode-toggle',
-    'inspect-cage-btn', 'virtual-cage-btn', 'reveal-btn',
+    'inspect-cage-btn', 'virtual-cage-btn', 'colour-btn', 'reveal-btn',
   ];
   for (const id of actionIds) {
     const btn = document.getElementById(id) as HTMLButtonElement | null;
@@ -458,8 +601,10 @@ function redrawGrid(): void {
     currentCandidates,
     virtualCageSelection.size > 0 ? virtualCageSelection : null,
     showEssential,
-    currentState?.userGrid === null ? { borderX: draftBorderX, borderY: draftBorderY } : undefined,
+    currentState?.goldenSolution === null ? { borderX: draftBorderX, borderY: draftBorderY } : undefined,
     reviewErrorCells.size > 0 ? reviewErrorCells : undefined,
+    reviewSuspectCells.size > 0 ? reviewSuspectCells : undefined,
+    virtualCageNegCells.size > 0 ? virtualCageNegCells : undefined,
   );
   checkCompletion(currentState);
 }
@@ -469,6 +614,7 @@ async function fetchCandidates(): Promise<void> {
   try {
     const data = computeCandidates();
     currentCandidates = data;
+    currentBoard = computeBoard(currentState);
     setCandidatesCache(data);
     redrawGrid();
     renderVirtualCagePanel();
@@ -494,22 +640,25 @@ function renderState(state: PuzzleState): void {
   currentState = state;
   drawGrid(el<HTMLCanvasElement>('grid-canvas'), state);
 
+  const puzzleType = PuzzleState.kind(state);
+
   const heading = document.getElementById('detected-layout-heading');
   if (heading !== null) {
-    heading.textContent = state.puzzleType === 'classic'
-      ? 'Detected Layout — Classic Sudoku'
-      : 'Detected Layout — Killer Sudoku';
+    heading.textContent =
+      puzzleType === 'classic' ? 'Detected Layout — Classic Sudoku' :
+      puzzleType === 'bigapple' ? 'Detected Layout — Big Apple Sudoku' :
+      'Detected Layout — Killer Sudoku';
   }
 
   el<HTMLElement>('classic-edit-hint').hidden =
-    state.puzzleType !== 'classic' || state.userGrid !== null;
+    puzzleType === 'killer' || state.goldenSolution !== null;
 
   if (state.originalImageUrl !== null) {
     el<HTMLImageElement>('original-img').src = state.originalImageUrl;
   }
 
-  el<HTMLSelectElement>('puzzle-type-select').value = state.puzzleType;
-  el<HTMLElement>('review-panel').dataset['puzzleType'] = state.puzzleType;
+  el<HTMLSelectElement>('puzzle-type-select').value = puzzleType;
+  el<HTMLElement>('review-panel').dataset['puzzleType'] = puzzleType;
 
   el<HTMLElement>('review-panel').hidden = false;
   el<HTMLElement>('solution-panel').hidden = true;
@@ -517,18 +666,21 @@ function renderState(state: PuzzleState): void {
 
 function buildUploadCallouts(): { id: string; text: string }[] {
   return [
-    { id: 'process-btn',  text: 'Tap here to analyse your photo and detect the grid and cages.' },
-    { id: 'help-btn',     text: 'Re-open this guide at any time.' },
-    { id: 'feedback-btn', text: 'Found a bug or have a suggestion? Tap the envelope to send feedback.' },
-    { id: 'config-btn',   text: 'Configure which logical rules run automatically.' },
+    { id: 'choose-btn',       text: 'Tap here to choose a photo, or drag and drop / paste one directly.' },
+    { id: 'hard-puzzles-btn', text: 'Browse puzzles the rule engine cannot solve — try one and suggest a new rule.' },
+    { id: 'help-btn',         text: 'Re-open this guide at any time.' },
+    { id: 'share-btn',        text: 'Share a link to this app with others.' },
+    { id: 'feedback-btn',     text: 'Found a bug or have a suggestion? Tap the envelope to send feedback.' },
+    { id: 'config-btn',       text: 'Configure which logical rules run automatically.' },
   ];
 }
 
-function buildPlayingCallouts(isKiller: boolean): { id: string; text: string }[] {
+function buildPlayingCallouts(isKiller: boolean, fromFixture = false): { id: string; text: string }[] {
   const callouts: { id: string; text: string }[] = [
     { id: 'undo-btn',       text: 'Undo your last move.' },
     { id: 'hints-btn',      text: 'Request a logical hint to guide your next step.' },
     { id: 'mode-toggle',    text: 'Switch between Normal mode (place digits) and Candidate mode (edit pencil marks). The digit buttons work the same way in both modes.' },
+    { id: 'colour-btn',     text: 'Colour cells blue/green to trace conjugate-pair chains. Tap a cell to colour it and auto-switch to the other colour. Tap a coloured cell to toggle it. Tap the button again to stop and clear.' },
     { id: 'reveal-btn',     text: 'Reveal the correct digit for the selected cell.' },
     { id: 'digit-1',        text: 'Use these buttons to enter digits. In Candidate mode, they toggle pencil marks instead. On a keyboard, Ctrl+digit works in the opposite mode.' },
     { id: 'new-puzzle-btn', text: 'Start a fresh puzzle.' },
@@ -541,12 +693,20 @@ function buildPlayingCallouts(isKiller: boolean): { id: string; text: string }[]
       { id: 'virtual-cage-btn', text: 'Add a virtual cage constraint derived from the current board state.' },
     );
   }
+  if (fromFixture) {
+    callouts.push({
+      id: 'feedback-btn',
+      text: 'This puzzle stalled the rule engine. If you spot a logical deduction it missed, tap the envelope and choose "Rule suggestion" to share your idea.',
+    });
+  }
   return callouts;
 }
 
 function renderPlayingMode(state: PuzzleState): void {
   currentState = state;
   reviewErrorCells = new Set();
+  reviewSuspectCells = new Set();
+  kernelWarningShown = false;
   const data = getSettingsData();
   showCandidates = data.showCandidatesByDefault;
   candidateEditMode = false;
@@ -563,23 +723,21 @@ function renderPlayingMode(state: PuzzleState): void {
   updateUndoButton(state);
   updateRevealButton();
   el<HTMLButtonElement>('hints-btn').disabled = false;
-  const isKiller = state.puzzleType !== 'classic';
-  el<HTMLButtonElement>('inspect-cage-btn').hidden = !isKiller;
-  el<HTMLButtonElement>('virtual-cage-btn').hidden = !isKiller;
+  const commands = PuzzleState.availableCommands(state);
+  el<HTMLButtonElement>('inspect-cage-btn').hidden = !commands.has('inspectCage');
+  el<HTMLButtonElement>('virtual-cage-btn').hidden = !commands.has('virtualCage');
+  el<HTMLButtonElement>('colour-btn').hidden = false;
   el<HTMLButtonElement>('mode-toggle').hidden = !showCandidates;
   el<HTMLButtonElement>('mode-toggle').classList.remove('active');
 }
 
 function updateUndoButton(state: PuzzleState): void {
-  const btn = el<HTMLButtonElement>('undo-btn');
-  if (state.turns.length === 0) { btn.disabled = true; return; }
-  const last = state.turns[state.turns.length - 1]!.action;
-  btn.disabled = last.type === 'placeDigit' && last.source === 'given';
+  el<HTMLButtonElement>('undo-btn').disabled = !PuzzleState.availableCommands(state).has('undo');
 }
 
 function updateRevealButton(): void {
   el<HTMLButtonElement>('reveal-btn').hidden =
-    currentState === null || currentState.userGrid === null || selectedCell === null;
+    currentState === null || !PuzzleState.availableCommands(currentState).has('reveal') || selectedCell === null;
 }
 
 function setAutoApplyLock(locked: boolean): void {
@@ -646,6 +804,35 @@ function renderSolutionList(
   }
 }
 
+function renderDiffSolutionList(
+  container: HTMLElement,
+  allDiff: readonly DiffSolution[],
+  eliminated: readonly DiffSolution[],
+  onToggle: (soln: DiffSolution) => void,
+): void {
+  if (allDiff.length === 0) {
+    const p = document.createElement('span');
+    p.className = 'soln-item auto-impossible';
+    p.textContent = '(no valid solutions)';
+    container.appendChild(p);
+    return;
+  }
+  const diffKey = (s: DiffSolution) => `${[...s.pos].join(',')}|${[...s.neg].join(',')}`;
+  const elimKeys = new Set(eliminated.map(diffKey));
+  for (const soln of allDiff) {
+    const span = document.createElement('span');
+    if (elimKeys.has(diffKey(soln))) {
+      span.className = 'soln-item user-eliminated';
+      span.addEventListener('click', () => onToggle(soln));
+    } else {
+      span.className = 'soln-item active';
+      span.addEventListener('click', () => onToggle(soln));
+    }
+    span.textContent = `{${soln.pos.join(',')}}−{${soln.neg.join(',')}}`;
+    container.appendChild(span);
+  }
+}
+
 function renderCageCard(
   container: HTMLElement,
   heading: string,
@@ -678,9 +865,29 @@ function renderVirtualCagePanel(): void {
   list.replaceChildren();
   for (const vc of vcs) {
     const item = document.createElement('div'); item.className = 'vc-item';
-    const heading = `total ${vc.total} — ${vc.cells.length} cells: ` +
-      vc.cells.map(cell => cellLabel(cell)).join(' ');
-    renderCageCard(item, heading, vc, (soln) => { void handleEliminateVirtualCageSolution(vc.key, soln); });
+    if (vc.negativeCells !== undefined && vc.negativeCells.length > 0) {
+      const negKeys = new Set(vc.negativeCells.map(([r, c]) => `${r},${c}`));
+      const posCells = vc.cells.filter(([r, c]) => !negKeys.has(`${r},${c}`));
+      const negCells = vc.negativeCells;
+      const heading = `[${posCells.map(c => cellLabel(c)).join(' ')}] − [${negCells.map(c => cellLabel(c)).join(' ')}] = ${vc.total}`;
+      const headingEl = document.createElement('div');
+      headingEl.className = 'vc-item-header';
+      headingEl.textContent = heading;
+      item.appendChild(headingEl);
+      const solnsEl = document.createElement('div');
+      solnsEl.className = 'vc-solutions';
+      item.appendChild(solnsEl);
+      renderDiffSolutionList(
+        solnsEl,
+        vc.allDiffSolutions ?? [],
+        vc.eliminatedDiffSolns ?? [],
+        (soln) => { void handleEliminateVirtualCageDiffSolution(vc.key, soln); },
+      );
+    } else {
+      const heading = `total ${vc.total} — ${vc.cells.length} cells: ` +
+        vc.cells.map(cell => cellLabel(cell)).join(' ');
+      renderCageCard(item, heading, vc, (soln) => { void handleEliminateVirtualCageSolution(vc.key, soln); });
+    }
     list.appendChild(item);
   }
 }
@@ -701,6 +908,7 @@ function renderCageInspector(label: string): void {
     clearChildren(inspector);
     el<HTMLElement>('inspector-heading').textContent = `Cage ${label}`;
     el<HTMLElement>('inspector-col').hidden = false;
+    el<HTMLElement>('playing-actions').hidden = true;
     el<HTMLElement>('side-panel').classList.add('inspector-open');
     renderSolutionList(
       inspector,
@@ -733,6 +941,13 @@ async function handleEliminateVirtualCageSolution(vcKey: string, solution: numbe
   } catch (e) { setStatus(String(e), true); }
 }
 
+async function handleEliminateVirtualCageDiffSolution(vcKey: string, solution: DiffSolution): Promise<void> {
+  try {
+    eliminateVirtualCageDiffSolution(vcKey, solution);
+    void fetchCandidates();
+  } catch (e) { setStatus(String(e), true); }
+}
+
 // ---------------------------------------------------------------------------
 // Status helpers
 // ---------------------------------------------------------------------------
@@ -746,19 +961,77 @@ function setStatus(msg: string, isError = false): void {
 }
 
 function setLoading(on: boolean): void {
-  el<HTMLButtonElement>('process-btn').disabled = on;
+  el<HTMLButtonElement>('choose-btn').disabled = on;
+}
+
+function showInstallBanner(): void {
+  if (!shouldShowInstallBanner(localStorage)) return;
+  el<HTMLElement>('install-banner').hidden = false;
+}
+
+function hideInstallBanner(): void {
+  el<HTMLElement>('install-banner').hidden = true;
+}
+
+async function initUseLastBtn(): Promise<void> {
+  const handle = await resolveLastHandle();
+  if (!handle) return;
+  lastFileHandle = handle;
+  const btn = el<HTMLButtonElement>('use-last-btn');
+  btn.textContent = `Use "${handle.name}"`;
+  btn.hidden = false;
+}
+
+/** Processes a file immediately if the pipeline is ready; otherwise queues it. */
+function handleOrQueueFile(file: File): void {
+  if ((window as unknown as Record<string, unknown>)['__pipelineReady']) {
+    void handleProcess(file);
+  } else {
+    pendingShareFile = file;
+  }
+}
+
+/** Drains the Web Share Target inbox written by the service worker. */
+async function checkShareInbox(): Promise<void> {
+  const file = await consumeShareInbox();
+  if (file) handleOrQueueFile(file);
 }
 
 // ---------------------------------------------------------------------------
 // Hint modal
 // ---------------------------------------------------------------------------
 
+function openRuleInfoModal(displayName: string, description: string): void {
+  el<HTMLHeadingElement>('rule-info-title').textContent = displayName;
+  const descEl = el<HTMLElement>('rule-info-description');
+  descEl.innerHTML = '';
+  for (const para of description.split('\n\n')) {
+    const p = document.createElement('p');
+    p.textContent = para;
+    descEl.appendChild(p);
+  }
+  (el<HTMLDialogElement>('rule-info-modal') as HTMLDialogElement).showModal();
+}
+
 function showHintModal(hint: HintItem): void {
+  logAction('hint_shown', hint.displayName);
   activeHintItem = hint;
   hintHighlightCells = new Set(hint.highlightCells.map(([r, c]) => `${r},${c}`));
+  hintElimCells = new Set(hint.eliminations.map(({ cell: [r, c] }) => `${r},${c}`));
+  hintChainCells = hint.chainCells ?? [];
+  hintSecondaryHighlightCells = new Set((hint.secondaryHighlightCells ?? []).map(([r, c]) => `${r},${c}`));
   redrawGrid();
   el<HTMLElement>('hint-modal-title').textContent = hint.displayName;
   el<HTMLElement>('hint-modal-explanation').textContent = hint.explanation;
+  const ruleInfo = getSettingsData().hintableRules.find(r => r.name === hint.ruleName);
+  const infoBtn = el<HTMLButtonElement>('hint-info-btn');
+  if (ruleInfo) {
+    infoBtn.hidden = false;
+    infoBtn.onclick = () => openRuleInfoModal(ruleInfo.displayName, ruleInfo.description);
+  } else {
+    infoBtn.hidden = true;
+    infoBtn.onclick = null;
+  }
   const applyBtn = el<HTMLButtonElement>('hint-apply-btn');
   if (hint.rewindToTurnIdx !== null) {
     el<HTMLElement>('hint-modal-summary').textContent = 'Rewinding will undo all moves back to the last correct state.';
@@ -779,6 +1052,9 @@ function showHintModal(hint: HintItem): void {
 
 function clearHintHighlight(): void {
   hintHighlightCells = new Set();
+  hintElimCells = new Set();
+  hintChainCells = [];
+  hintSecondaryHighlightCells = new Set();
   activeHintItem = null;
   hideHintPill(el('hint-pill'));
   redrawGrid();
@@ -806,6 +1082,8 @@ function openConfigModal(): void {
   clearChildren(list);
 
   el<HTMLInputElement>('candidates-default-toggle').checked = data.showCandidatesByDefault;
+  el<HTMLInputElement>('telemetry-failures-toggle').checked = data.devSurfaceTelemetryFailures;
+  el<HTMLInputElement>('consent-toggle').checked = hasConsent();
 
   const ess = el<HTMLInputElement>('essential-toggle');
   ess.checked = showEssential;
@@ -822,11 +1100,7 @@ function openConfigModal(): void {
     const row = document.createElement('div'); row.className = 'config-rule-row';
     const nameSpan = document.createElement('span'); nameSpan.className = 'config-rule-name'; nameSpan.textContent = rule.displayName;
     const infoBtn = document.createElement('button'); infoBtn.className = 'btn-rule-info'; infoBtn.textContent = 'ⓘ'; infoBtn.title = 'About this rule';
-    infoBtn.addEventListener('click', () => {
-      el<HTMLHeadingElement>('rule-info-title').textContent = rule.displayName;
-      el<HTMLParagraphElement>('rule-info-description').textContent = rule.description;
-      (el<HTMLDialogElement>('rule-info-modal') as HTMLDialogElement).showModal();
-    });
+    infoBtn.addEventListener('click', () => { openRuleInfoModal(rule.displayName, rule.description); });
     const select = document.createElement('select'); select.className = 'config-rule-select'; select.dataset['ruleName'] = rule.name;
     const optAuto = document.createElement('option'); optAuto.value = 'auto'; optAuto.textContent = 'Auto-apply';
     const optHint = document.createElement('option'); optHint.value = 'hint'; optHint.textContent = 'Hint-only';
@@ -851,8 +1125,54 @@ function reportBug(e: unknown, context: string): void {
   pendingBug = { info: `Exception in ${context}:\n${String(e)}${stack}` };
 }
 
-function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, warning: string | null): void {
+/**
+ * Opens the feedback modal, prefilled with `pendingBug` or a queued
+ * telemetry-pipeline failure if either is pending. Also registered with
+ * `onTelemetryFailure` so a dropped rule-bug/trigger-miss report (dev flag
+ * only) forces this open immediately rather than waiting for the user to
+ * click the feedback button.
+ */
+function openFeedbackModal(): void {
+  // Default to bug report
+  el<HTMLInputElement>('feedback-type-bug').checked = true;
+  el<HTMLElement>('feedback-bug-fields').style.display = '';
+  el<HTMLElement>('feedback-description-label').textContent = 'What happened?';
+  el<HTMLTextAreaElement>('feedback-description').value = '';
+  el<HTMLTextAreaElement>('feedback-expected').value = '';
+  el<HTMLInputElement>('bug-cat-wrong').checked = true;
+  el<HTMLElement>('feedback-status').textContent = '';
+
+  const entries = getActionLog();
+  el<HTMLElement>('feedback-trace-count').textContent = String(entries.length);
+  el<HTMLElement>('feedback-trace').textContent = formatActionLog();
+
+  if (pendingBug !== null) {
+    el<HTMLInputElement>('feedback-type-bug').click();
+    el<HTMLTextAreaElement>('feedback-description').value = pendingBug.info;
+    exceptionForSubmission = pendingBug.info;
+    pendingBug = null;
+  } else {
+    const telemetryFailure = drainTelemetryFailure();
+    if (telemetryFailure !== null) {
+      el<HTMLInputElement>('feedback-type-bug').click();
+      el<HTMLTextAreaElement>('feedback-description').value = telemetryFailure;
+      exceptionForSubmission = telemetryFailure;
+    }
+  }
+
+  (el<HTMLDialogElement>('feedback-modal') as HTMLDialogElement).showModal();
+}
+
+function applyUploadResult(
+  state: PuzzleState,
+  warpedImageUrl: string | null,
+  warning: string | null,
+  detectedBigApple = false,
+): void {
   reviewErrorCells = new Set();
+  reviewSuspectCells = new Set();
+  kernelWarningShown = false;
+  userOverrodePuzzleType = false;
   renderState(state);
   const warpedCol = el<HTMLElement>('warped-col');
   const warpedImg = el<HTMLImageElement>('warped-img');
@@ -863,65 +1183,140 @@ function applyUploadResult(state: PuzzleState, warpedImageUrl: string | null, wa
   // For Classic puzzles, show the digit pad so the user can correct OCR digits
   // by clicking buttons (not just keyboard). The action-group (undo, hints, etc.)
   // stays hidden — those controls are only active in playing mode.
-  const isClassicReview = state.puzzleType === 'classic';
+  const isClassicReview = !PuzzleState.isKiller(state);
   el<HTMLElement>('completion-msg').hidden = true;
   el<HTMLElement>('playing-actions').hidden = !isClassicReview;
+  if (isClassicReview) {
+    el<HTMLButtonElement>('inspect-cage-btn').hidden = true;
+    el<HTMLButtonElement>('virtual-cage-btn').hidden = true;
+  }
   el<HTMLElement>('upload-panel').hidden = true;
   el<HTMLButtonElement>('new-puzzle-btn').hidden = false;
   el<HTMLButtonElement>('edit-ocr-btn').hidden = true;
   setStatus(warning ? `Warning: ${warning}` : '');
+  el<HTMLElement>('bigapple-banner').hidden = !detectedBigApple;
 }
 
-async function handleProcess(): Promise<void> {
-  const fileInput = el<HTMLInputElement>('file-input');
-  if (!fileInput.files || fileInput.files.length === 0) { setStatus('Please select an image or PDF file.', true); return; }
+/**
+ * Returns the app to the pre-upload state: clears all puzzle-related module state,
+ * resets every panel/button to its pre-upload visibility, and applies any pending
+ * service-worker update. Used both by the "New Puzzle" button and at the start of
+ * `handleProcess()` so a new upload never leaves a previous puzzle on screen.
+ */
+function resetToUploadPanel(): void {
   clearActionLog();
-  const f = fileInput.files[0]!;
+  clearPersistedSession();
+  currentState = null; currentCandidates = null; currentBoard = null; selectedCell = null;
+  showCandidates = false; candidateEditMode = false;
+  virtualCageMode = false; virtualCageSelection = new Set(); virtualCageNegCells = new Set();
+  hintHighlightCells = new Set(); hintElimCells = new Set();
+  hintChainCells = []; hintSecondaryHighlightCells = new Set(); activeHintItem = null;
+  colourMode = 'off'; cellColours.clear();
+  inspectCageMode = false;
+  el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');
+  el<HTMLElement>('inspector-col').hidden = true;
+  el<HTMLElement>('side-panel').classList.remove('inspector-open');
+  el<HTMLElement>('side-panel').classList.remove('virtual-cage-open');
+  totalEditCell = null;
+  reviewErrorCells = new Set();
+  draftEdited = false;
+  pendingCellThumbs = new Map();
+  pendingMergedThumbs = new Map();
+  el<HTMLElement>('upload-panel').hidden = false;
+  el<HTMLElement>('review-panel').hidden = true;
+  el<HTMLElement>('solution-panel').hidden = true;
+  el<HTMLElement>('playing-actions').hidden = true;
+  el<HTMLElement>('action-group').hidden = true;
+  el<HTMLButtonElement>('new-puzzle-btn').hidden = true;
+  el<HTMLButtonElement>('hints-btn').disabled = true;
+  el<HTMLButtonElement>('inspect-cage-btn').hidden = true;
+  el<HTMLButtonElement>('virtual-cage-btn').hidden = true;
+  el<HTMLButtonElement>('colour-btn').hidden = true;
+  el<HTMLButtonElement>('colour-btn').classList.remove('active');
+  el<HTMLButtonElement>('reveal-btn').hidden = true;
+  el<HTMLInputElement>('file-input').value = '';
+  setStatus('');
+  // Re-show #use-last-btn if a valid handle is still available.
+  void initUseLastBtn();
+
+  // Apply any pending SW update now that all puzzle state has been cleared.
+  // The page will reload once the new SW activates and fires controllerchange.
+  // Trade-off: handleProcess() calls this before awaiting uploadPuzzle(), so a
+  // SW update that becomes waiting during that window can reload the page and
+  // silently discard the in-flight upload. Accepted as a narrow, low-probability
+  // race rather than deferring updates further (see design doc's non-goals).
+  if (waitingSW !== null) {
+    navigator.serviceWorker.addEventListener(
+      'controllerchange',
+      () => location.reload(),
+      { once: true },
+    );
+    waitingSW.postMessage({ type: 'SKIP_WAITING' });
+    waitingSW = null;
+  }
+}
+
+async function handleProcess(file?: File): Promise<void> {
+  const f = file ?? el<HTMLInputElement>('file-input').files?.[0];
+  if (!f) { setStatus('Please drop, paste, or select an image.', true); return; }
+  resetToUploadPanel();
+  // Clear any active fixture — the normal image pipeline takes over.
+  currentFixtureName = null;
+  currentFixtureUnsolvedCells = null;
+  currentFixtureTotalCandidates = null;
   logAction('file_selected', `${f.name} (${(f.size / 1024).toFixed(0)} KB)`);
   el<HTMLButtonElement>('edit-ocr-btn').hidden = true;
-  lastOcrState = null;
+  lastOcrCandidates = [];
   lastWarpedUrl = null;
+  // Reset solver result so stale data from a previous run is never read.
+  (window as unknown as Record<string, unknown>)['__lastSolverResult'] = null;
+  setStatus('Processing image…');
   setLoading(true);
   try {
-    const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs } = await uploadPuzzle(f);
+    const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs, detectedBigApple } = await uploadPuzzle(f);
     pendingCellThumbs = new Map(cellThumbs);
     pendingMergedThumbs = new Map(mergedThumbs);
 
     // Initialise draft borders from the OCR result (used in both paths below).
-    const ocrSpec = dataToSpec(state.specData);
+    const ocrSpec = PuzzleState.isKiller(state) ? dataToSpec(state.specData) : classicSyntheticSpec();
     draftBorderX = ocrSpec.borderX.map(col => [...col]);
     draftBorderY = ocrSpec.borderY.map(row => [...row]);
     draftEdited = false;
     // Expose pipeline result for Playwright integration tests (app.spec.ts).
     (window as unknown as Record<string, unknown>)['__lastPipelineResult'] = {
-      cageTotals: state.specData.cageTotals,
+      cageTotals: ocrSpec.cageTotals,
       borderX: draftBorderX,
       borderY: draftBorderY,
     };
 
-    const nCages = Math.max(...state.specData.regions.flat()) + 1;
-    logAction('ocr_complete', `${state.puzzleType}, ${nCages} cage(s)${warning ? ', warning: ' + warning : ''}`);
+    const nCages = Math.max(...ocrSpec.regions.flat()) + 1;
+    logAction('ocr_complete', `${PuzzleState.kind(state)}, ${nCages} cage(s)${warning ? ', warning: ' + warning : ''}`);
 
     // Attempt auto-confirm (Killer only): skip the review screen when OCR is clean,
     // the cage layout is valid, and the solver finds a complete solution.
     // Classic puzzles always go to the review screen so the user can verify digits.
-    if (warning === null && state.puzzleType !== 'classic') {
+    if (warning === null && PuzzleState.isKiller(state)) {
       const layoutResult = applyDraftLayout(draftBorderX, draftBorderY, state.specData.cageTotals);
       if (layoutResult.errorCells.size === 0 && layoutResult.warnings.length === 0) {
         // Yield to the browser so the loading indicator renders before the solve blocks.
         await new Promise<void>(resolve => setTimeout(resolve, 0));
         const { board, usedBacktracking, stalledCandidates } = solveCurrentSpec();
+        (window as unknown as Record<string, unknown>)['__lastSolverResult'] = {
+          usedBacktracking,
+          stalledCandidates: stalledCandidates ?? null,
+          spec: dataToSpec(state.specData),
+        };
         let boardComplete = true;
         for (let r = 0; r < 9 && boardComplete; r++)
           for (let c = 0; c < 9 && boardComplete; c++)
             if (board.cands(r, c).size !== 1) boardComplete = false;
         if (boardComplete) {
-          lastOcrState = state;
+          lastOcrCandidates = getStateCandidates();
           lastWarpedUrl = warpedImageUrl;
           logAction('auto_confirmed');
           const playing = confirmPuzzle(board);
           renderPlayingMode(playing);
-          appendCallouts(buildPlayingCallouts(playing.puzzleType !== 'classic'));
+          appendCallouts(buildPlayingCallouts(PuzzleState.isKiller(playing)));
           const autoViolation = checkSolutionAssertions(playing);
           if (autoViolation !== null) showAssertionModal(autoViolation);
           el<HTMLButtonElement>('edit-ocr-btn').hidden = false;
@@ -929,11 +1324,12 @@ async function handleProcess(): Promise<void> {
           pendingMergedThumbs = new Map();
           setStatus('');
           if (usedBacktracking && stalledCandidates && state.originalImageUrl !== null) {
-            const stallExport = buildStallStateExport(layoutResult.state.puzzleType, stalledCandidates);
-            initiateStallUpload(
-              stallExport,
-              () => showTrainingConsentModal(() => uploadStallState(stallExport)),
-            );
+            const stallReport = { puzzleType: 'killer' as const, stalledCandidates };
+            if (hasConsent()) {
+              submitStallReport(stallReport);
+            } else {
+              showTrainingConsentModal(() => submitStallReport(stallReport));
+            }
           }
           return;
         }
@@ -959,30 +1355,78 @@ async function handleProcess(): Promise<void> {
     }
 
     // Classic auto-confirm: if OCR is clean and given digits form a complete valid grid,
-    // skip review and go straight to playing mode.
-    if (warning === null && state.puzzleType === 'classic' && state.givenDigits !== null) {
+    // skip review and go straight to playing mode. When all 81 cells are filled we can give
+    // specific feedback (duplicate highlights or solver-incomplete message) rather than the
+    // generic review prompt — mirroring the Killer path's targeted error reporting.
+    if (warning === null && !PuzzleState.isKiller(state) && state.givenDigits !== null) {
       const allFilled = state.givenDigits.every(row => row.every(d => d > 0));
-      if (allFilled && validateSudokuSolution(state.givenDigits) === null) {
-        lastOcrState = state;
-        lastWarpedUrl = warpedImageUrl;
+      if (allFilled) {
+        const dupCells = findDuplicateCells(state.givenDigits);
+        if (dupCells.size > 0) {
+          applyUploadResult(state, warpedImageUrl, null, detectedBigApple);
+          appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
+          logAction('review_shown', 'classic duplicates');
+          reviewErrorCells = dupCells;
+          redrawGrid();
+          setStatus('Duplicate digits detected — correct the highlighted cells and press Confirm & Solve', true);
+          return;
+        }
+        // All 81 cells filled, no duplicates — run solver and verify completeness (mirrors Killer path).
         await new Promise<void>(resolve => setTimeout(resolve, 0));
-        const { board: classicBoard } = solveCurrentSpec();
-        logAction('auto_confirmed', 'classic');
-        const classicPlaying = confirmPuzzle(classicBoard);
-        renderPlayingMode(classicPlaying);
-        appendCallouts(buildPlayingCallouts(false));
-        const classicViolation = checkSolutionAssertions(classicPlaying);
-        if (classicViolation !== null) showAssertionModal(classicViolation);
-        el<HTMLButtonElement>('edit-ocr-btn').hidden = false;
-        setStatus('');
+        const { board: classicBoard, usedBacktracking: classicUsedBt, stalledCandidates: classicStalled } = solveCurrentSpec();
+        (window as unknown as Record<string, unknown>)['__lastSolverResult'] = {
+          usedBacktracking: classicUsedBt,
+          stalledCandidates: classicStalled ?? null,
+          spec: classicSyntheticSpec(),
+        };
+        let boardComplete = true;
+        for (let r = 0; r < 9 && boardComplete; r++)
+          for (let c = 0; c < 9 && boardComplete; c++)
+            if (classicBoard.cands(r, c).size !== 1) boardComplete = false;
+        if (boardComplete) {
+          lastOcrCandidates = getStateCandidates();
+          lastWarpedUrl = warpedImageUrl;
+          logAction('auto_confirmed', PuzzleState.kind(state));
+          const classicPlaying = confirmPuzzle(classicBoard);
+          renderPlayingMode(classicPlaying);
+          appendCallouts(buildPlayingCallouts(false));
+          const classicViolation = checkSolutionAssertions(classicPlaying);
+          if (classicViolation !== null) showAssertionModal(classicViolation);
+          el<HTMLButtonElement>('edit-ocr-btn').hidden = false;
+          setStatus('');
+          // Mirror the killer auto-confirm: upload stall state if backtracking
+          // was needed, and upload OCR thumbnails. Both paths trigger consent.
+          // Note: a direct E2E test of this path is impractical (requires a real
+          // 81/81-digit OCR result); coverage comes from the manual-confirm path
+          // tests and the underlying upload-function unit tests.
+          if (classicUsedBt && classicStalled && state.originalImageUrl !== null) {
+            const classicStallReport = { puzzleType: PuzzleState.kind(state), stalledCandidates: classicStalled };
+            if (hasConsent()) {
+              submitStallReport(classicStallReport);
+            } else {
+              showTrainingConsentModal(() => submitStallReport(classicStallReport));
+            }
+          }
+          clearAndUploadTrainingData(extractTrainingData(
+            pendingCellThumbs,
+            state.givenDigits,
+            'classic',
+            defaultImagePipelineConfig().numberRecognition.subres,
+          ));
+          return;
+        }
+        applyUploadResult(state, warpedImageUrl, null, detectedBigApple);
+        appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
+        logAction('review_shown', 'classic solver incomplete');
+        setStatus('Solver could not process the detected digits — please review and confirm manually', true);
         return;
       }
     }
 
     // Reach here when: OCR produced a warning, Classic grid is incomplete/invalid,
     // or this is a Classic puzzle the user needs to review.
-    logAction('review_shown', state.puzzleType === 'classic' ? 'classic' : 'ocr warning');
-    applyUploadResult(state, warpedImageUrl, warning ?? 'Review the detected digits and press Confirm & Solve');
+    logAction('review_shown', !PuzzleState.isKiller(state) ? 'classic' : 'ocr warning');
+    applyUploadResult(state, warpedImageUrl, warning ?? 'Review the detected digits and press Confirm & Solve', detectedBigApple);
     appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
   } catch (e) {
     if (e instanceof GridNotFoundError) {
@@ -1002,14 +1446,15 @@ async function handleProcess(): Promise<void> {
  */
 function validateCurrentReview(): string | null {
   if (currentState === null) return null;
-  if (currentState.puzzleType === 'classic') {
-    if (currentState.givenDigits !== null && hasDuplicateDigits(currentState.givenDigits)) {
+  const state = currentState;
+  if (!PuzzleState.isKiller(state)) {
+    if (state.givenDigits !== null && hasDuplicateDigits(state.givenDigits)) {
       return 'Fix the duplicate digits (highlighted in red) before confirming';
     }
     return null;
   }
   // Killer: validate cage layout, then check the sum advisory.
-  const result = applyDraftLayout(draftBorderX, draftBorderY, currentState.specData.cageTotals);
+  const result = applyDraftLayout(draftBorderX, draftBorderY, state.specData.cageTotals);
   if (result.errorCells.size > 0) {
     reviewErrorCells = result.errorCells;
     redrawGrid();
@@ -1024,8 +1469,17 @@ function validateCurrentReview(): string | null {
   return null;
 }
 
+function clearAndUploadTrainingData(data: TrainingExport | null): void {
+  pendingCellThumbs = new Map();
+  pendingMergedThumbs = new Map();
+  if (data !== null && data.sampleCount > 0) {
+    initiateUpload(data, d => showTrainingConsentModal(() => uploadTrainingData(d)));
+  }
+}
+
 async function handleConfirm(): Promise<void> {
   if (currentState === null) return;
+  const state = currentState;
   setLoading(true);
   try {
     const validationError = validateCurrentReview();
@@ -1037,53 +1491,83 @@ async function handleConfirm(): Promise<void> {
     // Yield so the loading indicator renders before the solve blocks the main thread.
     await new Promise<void>(resolve => setTimeout(resolve, 0));
     const { board: confirmedBoard, usedBacktracking: confirmUsedBacktracking, stalledCandidates: confirmStalledCandidates } = solveCurrentSpec();
+
+    // Guard: validate the solver's output before confirming. Corrupted cage totals
+    // can cause the rule engine to fill all cells with duplicate digits (invalid but
+    // appearing complete). Returning early prevents the playing screen and stall upload.
+    const solutionError = extractAndValidateSolution(confirmedBoard);
+    if (solutionError !== null) {
+      setStatus(
+        `Invalid puzzle — cage totals appear to have OCR errors (${solutionError}). Correct the totals and try again.`,
+        true,
+      );
+      return;
+    }
+
+    // Kernel analysis: if the solver stalled and this is the first confirm attempt,
+    // run a bounded DFS to identify cells that are ambiguous due to OCR misreads.
+    // Skip for classic puzzles (given digits are shown directly on the review screen)
+    // and if ≥50 cells are unsolved (corrupted totals / inherently ambiguous spec).
+    const stalledCount = confirmStalledCandidates?.flat().filter(c => c.length > 1).length ?? 0;
+    if (confirmUsedBacktracking && confirmStalledCandidates && !kernelWarningShown
+        && PuzzleState.isKiller(state) && stalledCount < 50) {
+      const spec = dataToSpec(state.specData);
+      const solution: number[][] = Array.from({ length: 9 }, (_, r) =>
+        Array.from({ length: 9 }, (_, c) => [...confirmedBoard.cands(r, c)][0]!),
+      );
+      const analysis = analyseKernels(spec, confirmStalledCandidates, solution);
+      if (analysis.ambiguousCells.length > 0) {
+        kernelWarningShown = true;
+        reviewSuspectCells = new Set(analysis.ambiguousCells.map(([r, c]) => `${r},${c}`));
+        redrawGrid();
+        const cellNames = analysis.ambiguousCells
+          .map(([r, c]) => cellLabel([r, c]))
+          .join(', ');
+        setStatus(
+          `OCR may have missed a digit in ${cellNames} (highlighted) — check the original image. Click Confirm again to proceed anyway.`,
+          true,
+        );
+        return;
+      }
+    }
+
     const playing = confirmPuzzle(confirmedBoard);
-    logAction('confirmed', currentState.puzzleType);
+    logAction('confirmed', PuzzleState.kind(state));
     renderPlayingMode(playing);
-    appendCallouts(buildPlayingCallouts(playing.puzzleType !== 'classic'));
+    appendCallouts(buildPlayingCallouts(PuzzleState.isKiller(playing)));
     setStatus('');
     const assertionViolation = checkSolutionAssertions(playing);
     if (assertionViolation !== null) showAssertionModal(assertionViolation);
 
     // Upload puzzle spec when backtracking was needed (rules alone couldn't solve it).
-    if (confirmUsedBacktracking && confirmStalledCandidates && currentState.originalImageUrl !== null) {
-      const stallExport = buildStallStateExport(currentState.puzzleType, confirmStalledCandidates);
-      initiateStallUpload(
-        stallExport,
-        () => showTrainingConsentModal(() => uploadStallState(stallExport)),
-      );
+    if (confirmUsedBacktracking && confirmStalledCandidates && state.originalImageUrl !== null) {
+      const stallReport = { puzzleType: PuzzleState.kind(state), stalledCandidates: confirmStalledCandidates };
+      if (hasConsent()) {
+        submitStallReport(stallReport);
+      } else {
+        showTrainingConsentModal(() => submitStallReport(stallReport));
+      }
     }
 
     // Upload training samples when the user confirmed a puzzle.
     // Thumbnails are captured before state replacement; clear them now regardless.
-    if (draftEdited && currentState.puzzleType !== 'classic') {
-      const data = extractTrainingData(
+    if (draftEdited && PuzzleState.isKiller(state)) {
+      clearAndUploadTrainingData(extractTrainingData(
         pendingCellThumbs,
-        currentState.specData.cageTotals,
-        currentState.puzzleType,
+        state.specData.cageTotals,
+        'killer',
         defaultImagePipelineConfig().numberRecognition.subres,
         pendingMergedThumbs,
-      );
-      pendingCellThumbs = new Map();
-      pendingMergedThumbs = new Map();
-      if (data.sampleCount > 0) {
-        initiateUpload(data, (d) => showTrainingConsentModal(() => uploadTrainingData(d)));
-      }
-    } else if (currentState.puzzleType === 'classic' && currentState.givenDigits !== null) {
-      const data = extractTrainingData(
+      ));
+    } else if (!PuzzleState.isKiller(state) && state.givenDigits !== null) {
+      clearAndUploadTrainingData(extractTrainingData(
         pendingCellThumbs,
-        currentState.givenDigits,
+        state.givenDigits,
         'classic',
         defaultImagePipelineConfig().numberRecognition.subres,
-      );
-      pendingCellThumbs = new Map();
-      pendingMergedThumbs = new Map();
-      if (data.sampleCount > 0) {
-        initiateUpload(data, (d) => showTrainingConsentModal(() => uploadTrainingData(d)));
-      }
+      ));
     } else {
-      pendingCellThumbs = new Map();
-      pendingMergedThumbs = new Map();
+      clearAndUploadTrainingData(null);
     }
   } catch (e) { setStatus(`Confirm failed: ${String(e)}`, true); }
   finally { setLoading(false); }
@@ -1113,30 +1597,48 @@ async function handleCellEntry(digit: number): Promise<void> {
       refreshDisplay();
       updateUndoButton(state);
     } else {
-      // Animated path: show the user's placement first, then step through auto-placements.
+      // Animated path: enterCellStep already computed and persisted the final,
+      // fully-folded state. The loop below is a pure visual replay of ruleSteps
+      // for hint pills/highlights/eliminations — it never feeds back into
+      // currentState beyond what enterCellStep already committed.
       setAutoApplyLock(true);
       try {
-        let state = enterCellStep(selectedCell.row, selectedCell.col, digit);
-        currentState = state;
-        refreshDisplay();
-        updateUndoButton(state);
-        await new Promise<void>(resolve => { setTimeout(resolve, fastForwardRequested ? 0 : delay); });
-        while (true) {
-          if (fastForwardRequested) {
-            // Drain all remaining auto-placements synchronously — one DOM update at the end.
-            let ff: PuzzleState | null;
-            while ((ff = stepAutoPlacement()) !== null) currentState = ff;
-            refreshDisplay();
-            updateUndoButton(currentState);
-            break;
+        const animRefresh = (player: AnimationPlayer): void => {
+          currentState = AnimationPlayer.stateAtCursor(player);
+          if (showCandidates) {
+            const data = AnimationPlayer.boardAtCursor(player);
+            currentCandidates = data;
+            setCandidatesCache(data);
           }
-          const next = stepAutoPlacement();
-          if (next === null) break;
-          currentState = next;
-          refreshDisplay();
-          updateUndoButton(next);
-          await new Promise<void>(resolve => { setTimeout(resolve, delay); });
+          redrawGrid();
+        };
+
+        const { state: finalState, ruleSteps, baseState } = enterCellStep(selectedCell.row, selectedCell.col, digit);
+        updateUndoButton(finalState);
+
+        let player: AnimationPlayer = { baseState, ruleSteps, cursor: 0, playing: true };
+        animRefresh(player);
+
+        while (player.cursor < ruleSteps.length) {
+          const step = AnimationPlayer.currentStep(player)!;
+          hintHighlightCells = new Set(step.highlightCells.map(([r, c]) => `${r},${c}`));
+          hintElimCells = new Set(
+            step.mutations
+              .filter((m): m is EliminateCandidateMutation => m.type === 'eliminateCandidate')
+              .map(m => `${m.row},${m.col}`),
+          );
+          showHintPill(el('hint-pill'), el('hint-pill-label'), step.displayName);
+          await new Promise<void>(resolve => { setTimeout(resolve, fastForwardRequested ? 0 : delay); });
+
+          player = AnimationPlayer.tick(player);
+          hintHighlightCells = new Set();
+          hintElimCells = new Set();
+          hideHintPill(el('hint-pill'));
+          animRefresh(player);
         }
+
+        currentState = finalState;
+        refreshDisplay();   // final redraw from the already-committed finalState
       } finally {
         setAutoApplyLock(false);
       }
@@ -1174,26 +1676,75 @@ async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number)
   givenDigits[row1b - 1]![col1b - 1] = digit;
   currentState = { ...currentState, givenDigits };
   setState(currentState);
+  reviewErrorCells = findDuplicateCells(givenDigits);
+
+  // Detection only runs once at OCR time, on the (possibly misread) raw digits.
+  // Correcting a misread digit during review can flip a puzzle's true type, so
+  // re-run it on every edit — unless the user has already made an explicit
+  // Type-dropdown choice, which always wins.
+  if (!userOverrodePuzzleType) {
+    const detected = detectBigApple(givenDigits);
+    el<HTMLElement>('bigapple-banner').hidden = !detected;
+    if (detected !== PuzzleState.isBigApple(currentState)) {
+      const updated = detected
+        ? PuzzleState.createBigApple(givenDigits, currentState.alwaysApplyRules, currentState.originalImageUrl)
+        : PuzzleState.createClassic(givenDigits, currentState.alwaysApplyRules, currentState.originalImageUrl);
+      setState(updated);
+      currentState = updated;
+      renderState(updated);
+    }
+  }
+
   redrawGrid();
+}
+
+function updateVcStatus(): void {
+  const vcStatus = el<HTMLElement>('vc-selection-status');
+  const posCount = virtualCageSelection.size - virtualCageNegCells.size;
+  const negCount = virtualCageNegCells.size;
+  const allSolved = virtualCageSelection.size >= 2 && currentState?.goldenSolution !== null &&
+    [...virtualCageSelection].every(k => {
+      const [kr, kc] = k.split(',').map(Number);
+      return (currentState!.userGrid[kr!]?.[kc!] ?? 0) !== 0;
+    });
+  if (virtualCageSelection.size < 2) {
+    vcStatus.textContent = 'Click to add positive cells, click again for negative';
+  } else if (allSolved) {
+    vcStatus.textContent = 'All cells already solved — select unsolved cells';
+  } else if (negCount > 0) {
+    vcStatus.textContent = `+${posCount} positive / −${negCount} negative`;
+  } else {
+    vcStatus.textContent = `${virtualCageSelection.size} cells selected (click again to mark negative)`;
+  }
+  el<HTMLButtonElement>('vc-add-btn').disabled = allSolved || virtualCageSelection.size < 2;
 }
 
 async function submitVirtualCage(): Promise<void> {
   if (virtualCageSelection.size < 2) return;
-  if (currentState?.userGrid !== null) {
+  if (currentState?.goldenSolution !== null) {
     const allSolved = [...virtualCageSelection].every(k => {
       const [kr, kc] = k.split(',').map(Number);
-      return (currentState!.userGrid![kr!]?.[kc!] ?? 0) !== 0;
+      return (currentState!.userGrid[kr!]?.[kc!] ?? 0) !== 0;
     });
     if (allSolved) { setStatus('Cannot add virtual cage: all selected cells are already solved.', true); return; }
   }
   const totalInput = el<HTMLInputElement>('vc-total-input');
-  const total = Number(totalInput.value);
-  if (!total || total < 3) { totalInput.focus(); return; }
+  const isDiff = virtualCageNegCells.size > 0;
+  const rawTotal = Number(totalInput.value);
+  if (isDiff ? (isNaN(rawTotal) || rawTotal < 0) : (!rawTotal || rawTotal < 3)) {
+    totalInput.focus(); return;
+  }
+  const total = rawTotal;
   const cells = [...virtualCageSelection].map(key => key.split(',').map(Number) as [number, number]);
+  const negativeCells = isDiff
+    ? [...virtualCageNegCells].map(key => key.split(',').map(Number) as [number, number])
+    : undefined;
   try {
-    logAction('virtual_cage_added', `${cells.length} cells, total=${total}`);
-    currentState = addVirtualCage(cells, total);
-    virtualCageMode = false; virtualCageSelection = new Set();
+    logAction('virtual_cage_added', `${cells.length} cells, total=${total}${isDiff ? ` (diff, neg=${negativeCells!.length})` : ''}`);
+    currentState = addVirtualCage(cells, total, negativeCells);
+    virtualCageMode = false;
+    virtualCageSelection = new Set();
+    virtualCageNegCells = new Set();
     el<HTMLElement>('vc-form').hidden = true;
     el<HTMLElement>('side-panel').classList.remove('virtual-cage-open');
     totalInput.value = '';
@@ -1209,7 +1760,6 @@ async function submitVirtualCage(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function handleFeedbackSubmit(): Promise<void> {
-  const workerUrl = import.meta.env['VITE_TRAINING_WORKER_URL'] as string | undefined;
   const description = el<HTMLTextAreaElement>('feedback-description').value.trim();
   if (!description) {
     el<HTMLElement>('feedback-status').textContent = 'Please enter a description.';
@@ -1218,37 +1768,42 @@ async function handleFeedbackSubmit(): Promise<void> {
   }
 
   const isBug = el<HTMLInputElement>('feedback-type-bug').checked;
-  const feedbackType = isBug ? 'bug' : 'enhancement';
+  const isNewRule = el<HTMLInputElement>('feedback-type-new-rule').checked;
+  const feedbackType: 'bug' | 'enhancement' | 'new-rule' = isBug ? 'bug' : isNewRule ? 'new-rule' : 'enhancement';
   const bugCategory = isBug
     ? (el<HTMLInputElement>('bug-cat-wrong').checked ? 'wrong-behaviour' : 'inaccurate-description')
     : undefined;
   const expected = isBug ? el<HTMLTextAreaElement>('feedback-expected').value.trim() || undefined : undefined;
 
-  const puzzleSpec = currentState !== null ? {
-    puzzleType: currentState.puzzleType,
-    regions: currentState.specData.regions,
-    cageTotals: currentState.specData.cageTotals,
-    userGrid: currentState.userGrid,
-    givenDigits: currentState.givenDigits,
-  } : null;
+  const puzzleSpec = currentState !== null
+    ? {
+        ...PuzzleState.serialize(currentState),
+        originalImageUrl: null,
+        ...(PuzzleState.isKiller(currentState) ? { warpedImageUrl: null } : {}),
+      }
+    : null;
 
   const settings = loadSettings();
 
-  const payload = {
-    version: 3 as const,
-    reportedAt: new Date().toISOString(),
-    appVersion: __BUILD_TIME__,
+  // When a fixture is active and the user is filing a rule suggestion, attach
+  // the fixture reference so it lands in the GitHub issue body.
+  const fixtureCtx = isNewRule ? activeFixtureContext() : null;
+
+  const payload = buildFeedbackPayload({
     feedbackType,
-    bugCategory,
     description,
-    expected,
     actionLog: formatActionLog(),
     puzzleSpec,
-    userAgent: navigator.userAgent,
     viewport: `${window.innerWidth}×${window.innerHeight}`,
     config: { alwaysApplyRules: settings.alwaysApplyRules, autoPlacementDelay: settings.autoPlacementDelay },
-    exception: exceptionForSubmission ?? undefined,
-  };
+    appVersion: __BUILD_TIME__,
+    userAgent: navigator.userAgent,
+    ...(bugCategory !== undefined && { bugCategory }),
+    ...(expected !== undefined && { expected }),
+    ...(exceptionForSubmission !== null && { exception: exceptionForSubmission }),
+    ...(fixtureCtx !== null && { fixtureContext: fixtureCtx }),
+    ...(activeHintItem !== null && { activeHint: activeHintItem }),
+  });
 
   const statusEl = el<HTMLElement>('feedback-status');
   const submitBtn = el<HTMLButtonElement>('feedback-submit-btn');
@@ -1256,50 +1811,196 @@ async function handleFeedbackSubmit(): Promise<void> {
   statusEl.textContent = 'Sending…';
   statusEl.className = 'status';
 
-  if (!workerUrl) {
-    // Dev fallback: log to console
-    console.log('[Feedback]', payload);
-    statusEl.textContent = 'Feedback logged to console (no worker URL configured).';
-    submitBtn.disabled = false;
-    return;
-  }
-
-  try {
-    const res = await fetch(workerUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
+  const result = await submitFeedback(payload);
+  switch (result.kind) {
+    case 'logged':
+      statusEl.textContent = 'Feedback logged to console (no worker URL configured).';
+      break;
+    case 'success':
       exceptionForSubmission = null;
       statusEl.textContent = 'Thank you — feedback submitted.';
       setTimeout(() => { el<HTMLDialogElement>('feedback-modal').close(); }, 1500);
-    } else {
-      const text = await res.text();
-      statusEl.textContent = `Submission failed (${res.status}): ${text}`;
+      break;
+    case 'http-error':
+      statusEl.textContent = `Submission failed (${result.status}): ${result.body}`;
       statusEl.className = 'status error';
-    }
-  } catch (e) {
-    statusEl.textContent = `Submission failed: ${String(e)}`;
-    statusEl.className = 'status error';
-  } finally {
-    submitBtn.disabled = false;
+      break;
+    case 'network-error':
+      statusEl.textContent = `Submission failed: ${result.message}`;
+      statusEl.className = 'status error';
+      break;
   }
+  submitBtn.disabled = false;
 }
 
 // ---------------------------------------------------------------------------
 // Event wiring
 // ---------------------------------------------------------------------------
 
+// Waiting service worker: set when a new SW installs but has not yet taken control.
+// Sent SKIP_WAITING via postMessage when the user clicks New Puzzle (state cleared).
+let waitingSW: ServiceWorker | null = null;
+
 // Register the offline service worker. Only runs in production builds — skipped
 // during Vite dev mode to prevent the SW from intercepting HMR/module requests.
-if ('serviceWorker' in navigator && !import.meta.env.DEV) {
-  void navigator.serviceWorker.register('./sw.js').catch(err => {
-    console.warn('[SW] Registration failed:', err);
-  });
+// The registration promise is captured (not just consumed via .then) so boot can
+// await it and apply an already-waiting update before anything renders — see the
+// DOMContentLoaded handler below.
+const swRegistration: Promise<ServiceWorkerRegistration | null> =
+  ('serviceWorker' in navigator && !import.meta.env.DEV)
+    ? navigator.serviceWorker.register('./sw.js')
+        .then((registration) => {
+          // Capture a SW that is already waiting (e.g. tab opened after a deploy
+          // landed but before the user interacted with the page).
+          if (registration.waiting) waitingSW = registration.waiting;
+
+          // Capture future updates: fires when a new SW begins installing.
+          registration.addEventListener('updatefound', () => {
+            const sw = registration.installing;
+            if (sw === null) return;
+            sw.addEventListener('statechange', () => {
+              // 'installed' means the SW finished installing and is now waiting.
+              if (sw.state === 'installed') waitingSW = sw;
+            });
+          });
+          return registration;
+        })
+        .catch(err => {
+          console.warn('[SW] Registration failed:', err);
+          return null;
+        })
+    : Promise.resolve(null);
+
+// Dev-only test hook: lets Playwright tests inject a fake waiting SW so the
+// SKIP_WAITING path can be exercised without a real service worker.
+if (import.meta.env.DEV) {
+  (window as unknown as Record<string, unknown>)['__setWaitingSW'] =
+    (sw: ServiceWorker | null) => { waitingSW = sw; };
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+// ---------------------------------------------------------------------------
+// Hard Puzzles fixture panel
+// ---------------------------------------------------------------------------
+
+type FixtureMeta = Omit<StallFixtureFile, 'spec' | 'stalledCandidates'>;
+let cachedFixtures: FixtureMeta[] | null = null;
+
+async function loadFixtureList(): Promise<void> {
+  if (cachedFixtures !== null) {
+    renderFixtureTable(cachedFixtures);
+    return;
+  }
+  try {
+    const resp = await fetch('./stall-fixtures/index.json');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    cachedFixtures = (await resp.json()) as FixtureMeta[];
+  } catch (err) {
+    el<HTMLElement>('fixture-loading').textContent = 'Failed to load puzzle list.';
+    console.error('[fixture-panel] fetch failed:', err);
+    return;
+  }
+  renderFixtureTable(cachedFixtures);
+}
+
+function renderFixtureTable(fixtures: FixtureMeta[]): void {
+  const container = el<HTMLElement>('fixture-list-content');
+  container.replaceChildren();
+
+  const table = document.createElement('table');
+  table.className = 'fixture-table';
+
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  for (const col of ['Puzzle', 'Unsolved', 'Candidates']) {
+    const th = document.createElement('th');
+    th.textContent = col;
+    headRow.appendChild(th);
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  for (const meta of fixtures) {
+    const tr = document.createElement('tr');
+
+    for (const val of [meta.name, String(meta.unsolvedCells), String(meta.totalCandidates)]) {
+      const td = document.createElement('td');
+      td.textContent = val;
+      tr.appendChild(td);
+    }
+
+    tr.addEventListener('click', () => {
+      void (async () => {
+        try {
+          const resp = await fetch(
+            `./stall-fixtures/${encodeURIComponent(meta.name)}.stall.json`,
+          );
+          if (!resp.ok) return;
+          const fixture = (await resp.json()) as StallFixtureFile;
+          if (fixture.puzzleType === 'classic' && fixture.givenDigits != null) {
+            loadClassicDirect(fixture.givenDigits);
+            draftBorderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(true));
+            draftBorderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
+          } else {
+            loadSpecDirect(fixture.spec);
+            draftBorderX = fixture.spec.borderX.map((col) => [...col]);
+            draftBorderY = fixture.spec.borderY.map((row) => [...row]);
+          }
+          currentFixtureName = meta.name;
+          currentFixtureUnsolvedCells = meta.unsolvedCells;
+          currentFixtureTotalCandidates = meta.totalCandidates;
+          const { board } = solveCurrentSpec();
+          const playing = confirmPuzzle(board, fixture.stalledCandidates);
+          el<HTMLElement>('fixture-panel').hidden = true;
+          renderPlayingMode(playing);
+          appendCallouts(buildPlayingCallouts(PuzzleState.isKiller(playing), true));
+        } catch (err) {
+          console.error('[fixture-panel] Failed to load fixture:', err);
+        }
+      })();
+    });
+
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  container.appendChild(table);
+}
+
+// ---------------------------------------------------------------------------
+
+document.addEventListener('DOMContentLoaded', async () => {
+
+  // Apply a pending SW update before anything renders. Every share-to-app action is
+  // already a full page navigation (the SW redirects the share POST to the app root),
+  // so this guarantees share-only users receive updates too — without it, applying
+  // updates required clicking "New Puzzle" at least once. Safe here: the share inbox
+  // and any saved session are still untouched at this point.
+  const registration = await swRegistration;
+  if (registration?.waiting) {
+    navigator.serviceWorker.addEventListener(
+      'controllerchange',
+      () => location.reload(),
+      { once: true },
+    );
+    registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+    return;
+  }
+
+  // ── Persist session across accidental refreshes ───────────────────────────────
+  // Save whenever the page is about to unload (refresh, close, navigate away).
+  // visibilitychange to 'hidden' is the reliable signal on iOS/Android PWAs where
+  // beforeunload may not fire.
+  window.addEventListener('beforeunload', () => {
+    if (currentState !== null && currentState.goldenSolution !== null) {
+      saveSession(currentState, cellColours);
+    }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && currentState !== null && currentState.goldenSolution !== null) {
+      saveSession(currentState, cellColours);
+    }
+  });
+  // ─────────────────────────────────────────────────────────────────────────────
 
   // Startup: load OpenCV (with download progress bar) and digit recogniser in parallel
   el<HTMLElement>('version-banner').textContent =
@@ -1339,6 +2040,10 @@ document.addEventListener('DOMContentLoaded', () => {
     .then(() => {
       clearTimeout(loadTimeout);
       (window as unknown as Record<string, unknown>)['__pipelineReady'] = true;
+      if (pendingShareFile) {
+        void handleProcess(pendingShareFile);
+        pendingShareFile = null;
+      }
     })
     .catch(e => {
       clearTimeout(loadTimeout);
@@ -1347,9 +2052,20 @@ document.addEventListener('DOMContentLoaded', () => {
       setStatus(`Image pipeline failed: ${String(e)} — open DevTools (F12) for details`, true);
     });
 
+  // ── Restore session from previous visit ──────────────────────────────────────
+  const savedSession = loadSession();
+  if (savedSession !== null) {
+    setState(savedSession.state);
+    for (const [k, v] of savedSession.cellColours) cellColours.set(k, v);
+    renderPlayingMode(savedSession.state);
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
+
   // Tutorial — show help modal on first visit, then walk through button callouts.
   initTutorial();
-  appendCallouts(buildUploadCallouts());
+  appendCallouts(savedSession !== null
+    ? buildPlayingCallouts(PuzzleState.isKiller(savedSession.state))
+    : buildUploadCallouts());
 
   el<HTMLDivElement>('logo-k').addEventListener('click', () => {
     const calloutEl = el<HTMLElement>('callout');
@@ -1366,7 +2082,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const inPlaying = currentState !== null;
     const inReview  = !inPlaying && !el<HTMLElement>('review-panel').hidden;
     if (inPlaying) {
-      appendCallouts(buildPlayingCallouts(currentState!.puzzleType !== 'classic'));
+      appendCallouts(buildPlayingCallouts(PuzzleState.isKiller(currentState!)));
     } else if (inReview) {
       appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
     } else {
@@ -1374,17 +2090,152 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  el<HTMLButtonElement>('process-btn').addEventListener('click', () => { void handleProcess(); });
+  // ── Image input: choose button, file-input fallback, paste, drag-and-drop ───
+
+  el<HTMLButtonElement>('choose-btn').addEventListener('click', () => {
+    if ('showOpenFilePicker' in window) {
+      void (async () => {
+        try {
+          const [handle] = await (window as unknown as {
+            showOpenFilePicker(o?: {
+              multiple?: boolean;
+              startIn?: string | FileSystemFileHandle;
+              types?: { description?: string; accept: Record<string, string[]> }[];
+            }): Promise<FileSystemFileHandle[]>;
+          }).showOpenFilePicker({
+            multiple: false,
+            startIn: lastFileHandle ?? 'pictures',
+            types: [{ description: 'Images', accept: { 'image/*': ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'] } }],
+          });
+          if (!handle) return;
+          lastFileHandle = handle;
+          void saveLastHandle(handle);
+          el<HTMLButtonElement>('use-last-btn').hidden = true; // hide while processing
+          void handleProcess(await handle.getFile());
+        } catch (e) {
+          if (e instanceof Error && e.name !== 'AbortError') setStatus(`Could not open file: ${e.message}`, true);
+        }
+      })();
+    } else {
+      el<HTMLInputElement>('file-input').click();
+    }
+  });
+
+  // Legacy fallback: when FSA is not available the hidden file input is used.
+  el<HTMLInputElement>('file-input').addEventListener('change', () => { void handleProcess(); });
+
+  el<HTMLButtonElement>('use-last-btn').addEventListener('click', () => {
+    if (!lastFileHandle) return;
+    void (async () => {
+      try {
+        const perm = await (lastFileHandle as FileSystemHandleWithPermission).requestPermission({ mode: 'read' });
+        if (perm !== 'granted') { el<HTMLButtonElement>('use-last-btn').hidden = true; return; }
+        void handleProcess(await lastFileHandle.getFile());
+      } catch {
+        el<HTMLButtonElement>('use-last-btn').hidden = true;
+      }
+    })();
+  });
+
+  // Paste: accept an image from the clipboard when the upload panel is visible.
+  document.addEventListener('paste', (e) => {
+    if (el<HTMLElement>('upload-panel').hidden) return;
+    const pasted = imageFileFromClipboard(e);
+    if (!pasted) return;
+    e.preventDefault();
+    void handleProcess(pasted);
+  });
+
+  // Drag-and-drop onto the upload panel.
+  const uploadPanel = el<HTMLElement>('upload-panel');
+  uploadPanel.addEventListener('dragover', (e) => {
+    if (uploadPanel.hidden) return;
+    e.preventDefault();
+    uploadPanel.classList.add('drag-over');
+  });
+  uploadPanel.addEventListener('dragleave', () => { uploadPanel.classList.remove('drag-over'); });
+  uploadPanel.addEventListener('drop', (e) => {
+    uploadPanel.classList.remove('drag-over');
+    if (uploadPanel.hidden) return;
+    e.preventDefault();
+    const dropped = imageFileFromDrop(e);
+    if (dropped) void handleProcess(dropped);
+  });
+
+  void initUseLastBtn();
+
+  // PWA install prompt
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e as BeforeInstallPromptEvent;
+    showInstallBanner();
+  });
+  window.addEventListener('appinstalled', () => {
+    hideInstallBanner();
+    deferredInstallPrompt = null;
+  });
+  el<HTMLButtonElement>('install-btn').addEventListener('click', () => {
+    if (!deferredInstallPrompt) return;
+    void deferredInstallPrompt.prompt();
+    hideInstallBanner();
+    deferredInstallPrompt = null;
+  });
+  el<HTMLButtonElement>('install-dismiss-btn').addEventListener('click', () => {
+    localStorage.setItem(INSTALL_DISMISSED_KEY, '1');
+    hideInstallBanner();
+  });
+  el<HTMLButtonElement>('bigapple-banner-dismiss-btn').addEventListener('click', () => {
+    el<HTMLElement>('bigapple-banner').hidden = true;
+  });
+
+  // Web Share Target: consume any image stashed in IDB by the service worker.
+  void checkShareInbox();
+
+  // File Handling API: process an image file opened via OS "Open with".
+  if ('launchQueue' in window) {
+    (window as unknown as WindowWithLaunchQueue).launchQueue.setConsumer(async (params) => {
+      const file = await fileFromLaunchParams(params.files);
+      if (file) handleOrQueueFile(file);
+    });
+  }
+
   el<HTMLButtonElement>('confirm-btn').addEventListener('click', () => { void handleConfirm(); });
 
   el<HTMLButtonElement>('undo-btn').addEventListener('click', () => { void handleUndo(); });
   el<HTMLButtonElement>('reveal-btn').addEventListener('click', () => { void handleReveal(); });
 
   el<HTMLSelectElement>('puzzle-type-select').addEventListener('change', (e) => {
-    if (currentState === null) return;
-    const type = (e.target as HTMLSelectElement).value as 'killer' | 'classic';
-    const updated = { ...currentState, puzzleType: type };
-    import('./session/store.js').then(m => m.setState(updated));
+    const state = currentState;
+    if (state === null) return;
+    const type = (e.target as HTMLSelectElement).value as 'killer' | 'classic' | 'bigapple';
+    userOverrodePuzzleType = true;
+    el<HTMLElement>('bigapple-banner').hidden = true;
+    const candidates = getStateCandidates();
+    const found = activeCandidate(candidates, type);
+    let updated: PuzzleState;
+    if (found !== undefined) {
+      updated = found;
+      setStateCandidates([found, ...candidates.filter(c => c !== found)]);
+    } else if (type === 'killer') {
+      const synthetic = classicSyntheticSpec();
+      updated = PuzzleState.createKiller(
+        specToData(synthetic), specToCageStates(synthetic),
+        state.alwaysApplyRules, state.originalImageUrl, null,
+      );
+      setState(updated);
+    } else if (type === 'bigapple') {
+      const givenDigits = PuzzleState.isKiller(state)
+        ? Array.from({ length: 9 }, () => new Array<number>(9).fill(0))
+        : state.givenDigits;
+      updated = PuzzleState.createBigApple(givenDigits, state.alwaysApplyRules, state.originalImageUrl);
+      setState(updated);
+    } else {
+      const givenDigits = PuzzleState.isKiller(state)
+        ? Array.from({ length: 9 }, () => new Array<number>(9).fill(0))
+        : state.givenDigits;
+      updated = PuzzleState.createClassic(givenDigits, state.alwaysApplyRules, state.originalImageUrl);
+      setState(updated);
+    }
     currentState = updated;
     renderState(updated);
   });
@@ -1394,13 +2245,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function commitTotalEdit(): void {
     if (totalEditCell === null || currentState === null) return;
+    const state = currentState;
+    if (!PuzzleState.isKiller(state)) return;
     const { row, col } = totalEditCell;
     const v = Number(cageTotalInput.value);
     const newTotal = Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
-    const newTotals = currentState.specData.cageTotals.map((r, ri) =>
+    const newTotals = state.specData.cageTotals.map((r, ri) =>
       ri === row ? r.map((val, ci) => (ci === col ? newTotal : val)) : [...r],
     );
-    currentState = { ...currentState, specData: { ...currentState.specData, cageTotals: newTotals } };
+    const updated = { ...state, specData: { ...state.specData, cageTotals: newTotals } };
+    currentState = updated;
     logAction('total_edited', `r${row}c${col}=${newTotal}`);
     draftEdited = true;
     totalEditCell = null;
@@ -1412,13 +2266,15 @@ document.addEventListener('DOMContentLoaded', () => {
   cageTotalInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); commitTotalEdit(); }
     if (e.key === 'Escape') {
-      if (totalEditCell !== null && currentState !== null) {
+      const state = currentState;
+      if (totalEditCell !== null && state !== null && PuzzleState.isKiller(state)) {
         const { row, col } = totalEditCell;
         const prev = totalEditPrev;
-        const newTotals = currentState.specData.cageTotals.map((r, ri) =>
+        const newTotals = state.specData.cageTotals.map((r, ri) =>
           ri === row ? r.map((val, ci) => (ci === col ? prev : val)) : [...r],
         );
-        currentState = { ...currentState, specData: { ...currentState.specData, cageTotals: newTotals } };
+        const updated = { ...state, specData: { ...state.specData, cageTotals: newTotals } };
+        currentState = updated;
       }
       totalEditCell = null;
       cageTotalInput.style.display = 'none';
@@ -1429,45 +2285,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
   el<HTMLButtonElement>('new-puzzle-btn').addEventListener('click', () => {
     logAction('new_puzzle');
-    clearActionLog();
-    currentState = null; currentCandidates = null; selectedCell = null;
-    showCandidates = false; candidateEditMode = false;
-    virtualCageMode = false; virtualCageSelection = new Set();
-    hintHighlightCells = new Set(); activeHintItem = null;
-    inspectCageMode = false;
-    el<HTMLButtonElement>('inspect-cage-btn').classList.remove('active');
-    el<HTMLElement>('inspector-col').hidden = true;
-    el<HTMLElement>('side-panel').classList.remove('inspector-open');
-    el<HTMLElement>('side-panel').classList.remove('virtual-cage-open');
-    totalEditCell = null;
-    reviewErrorCells = new Set();
-    draftEdited = false;
-    pendingCellThumbs = new Map();
-    pendingMergedThumbs = new Map();
-    el<HTMLElement>('upload-panel').hidden = false;
-    el<HTMLElement>('review-panel').hidden = true;
-    el<HTMLElement>('solution-panel').hidden = true;
-    el<HTMLElement>('playing-actions').hidden = true;
-    el<HTMLElement>('action-group').hidden = true;
-    el<HTMLButtonElement>('new-puzzle-btn').hidden = true;
-    el<HTMLButtonElement>('hints-btn').disabled = true;
-    el<HTMLButtonElement>('inspect-cage-btn').hidden = true;
-    el<HTMLButtonElement>('virtual-cage-btn').hidden = true;
-    el<HTMLButtonElement>('reveal-btn').hidden = true;
-    el<HTMLInputElement>('file-input').value = '';
-    setStatus('');
+    resetToUploadPanel();
   });
 
   el<HTMLButtonElement>('edit-ocr-btn').addEventListener('click', () => {
-    if (lastOcrState === null) return;
-    revertToOcr(lastOcrState);
+    const candidates = lastOcrCandidates;
+    if (candidates.length === 0) return;
+    const ocrState = candidates[0]!;
+    revertToOcr(candidates);
     // Re-initialise draft borders from the saved OCR spec.
-    const ocrSpec = dataToSpec(lastOcrState.specData);
-    draftBorderX = ocrSpec.borderX.map(col => [...col]);
-    draftBorderY = ocrSpec.borderY.map(row => [...row]);
+    if (PuzzleState.isKiller(ocrState)) {
+      const ocrSpec = dataToSpec(ocrState.specData);
+      draftBorderX = ocrSpec.borderX.map(col => [...col]);
+      draftBorderY = ocrSpec.borderY.map(row => [...row]);
+    }
     draftEdited = false;
-    applyUploadResult(lastOcrState, lastWarpedUrl, null);
+    applyUploadResult(ocrState, lastWarpedUrl, null);
     appendCallouts([{ id: 'confirm-btn', text: 'Correct any OCR errors, then confirm to re-solve.' }]);
+  });
+
+  el<HTMLButtonElement>('hard-puzzles-btn').addEventListener('click', () => {
+    const uploadPanel = el<HTMLElement>('upload-panel');
+    const fixturePanel = el<HTMLElement>('fixture-panel');
+    // showingFixtures is true when the fixture panel is currently visible.
+    // Toggling: if currently showing fixtures → return to upload; else → show fixtures.
+    const showingFixtures = !fixturePanel.hidden;
+    uploadPanel.hidden = !showingFixtures;  // hide upload when entering fixture view
+    fixturePanel.hidden = showingFixtures;  // hide fixture when returning to upload
+    if (!showingFixtures) void loadFixtureList();
   });
 
   el<HTMLButtonElement>('help-btn').addEventListener('click', () => {
@@ -1478,29 +2323,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ── Feedback modal ───────────────────────────────────────────────────────────
-  el<HTMLButtonElement>('feedback-btn').addEventListener('click', () => {
-    // Default to bug report
-    el<HTMLInputElement>('feedback-type-bug').checked = true;
-    el<HTMLElement>('feedback-bug-fields').style.display = '';
-    el<HTMLElement>('feedback-description-label').textContent = 'What happened?';
-    el<HTMLTextAreaElement>('feedback-description').value = '';
-    el<HTMLTextAreaElement>('feedback-expected').value = '';
-    el<HTMLInputElement>('bug-cat-wrong').checked = true;
-    el<HTMLElement>('feedback-status').textContent = '';
-
-    const entries = getActionLog();
-    el<HTMLElement>('feedback-trace-count').textContent = String(entries.length);
-    el<HTMLElement>('feedback-trace').textContent = formatActionLog();
-
-    if (pendingBug !== null) {
-      el<HTMLInputElement>('feedback-type-bug').click();
-      el<HTMLTextAreaElement>('feedback-description').value = pendingBug.info;
-      exceptionForSubmission = pendingBug.info;
-      pendingBug = null;
-    }
-
-    (el<HTMLDialogElement>('feedback-modal') as HTMLDialogElement).showModal();
-  });
+  el<HTMLButtonElement>('feedback-btn').addEventListener('click', openFeedbackModal);
+  onTelemetryFailure(openFeedbackModal);
 
   el<HTMLInputElement>('feedback-type-bug').addEventListener('change', () => {
     el<HTMLElement>('feedback-bug-fields').style.display = '';
@@ -1509,6 +2333,10 @@ document.addEventListener('DOMContentLoaded', () => {
   el<HTMLInputElement>('feedback-type-enhancement').addEventListener('change', () => {
     el<HTMLElement>('feedback-bug-fields').style.display = 'none';
     el<HTMLElement>('feedback-description-label').textContent = 'What would you like to see?';
+  });
+  el<HTMLInputElement>('feedback-type-new-rule').addEventListener('change', () => {
+    el<HTMLElement>('feedback-bug-fields').style.display = 'none';
+    el<HTMLElement>('feedback-description-label').textContent = 'Describe the rule you think would unlock this puzzle';
   });
 
   el<HTMLButtonElement>('feedback-cancel-btn').addEventListener('click', () => {
@@ -1520,6 +2348,36 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   // ─────────────────────────────────────────────────────────────────────────────
 
+  // ── Share modal (QR code + native share + copy link) ─────────────────────────
+  el<HTMLButtonElement>('share-btn').addEventListener('click', () => {
+    const url = window.location.href;
+    el<HTMLElement>('share-url-display').textContent = url;
+    el<HTMLButtonElement>('share-native-btn').hidden = !navigator.share;
+    el<HTMLButtonElement>('share-copy-btn').textContent = 'Copy link';
+    void qrToCanvas(el<HTMLCanvasElement>('share-qr-canvas'), url, { width: 240, margin: 2 });
+    (el<HTMLDialogElement>('share-modal') as HTMLDialogElement).showModal();
+  });
+
+  el<HTMLButtonElement>('share-native-btn').addEventListener('click', () => {
+    void navigator.share({ title: document.title, url: window.location.href });
+  });
+
+  el<HTMLButtonElement>('share-copy-btn').addEventListener('click', () => {
+    void navigator.clipboard.writeText(window.location.href).then(() => {
+      el<HTMLButtonElement>('share-copy-btn').textContent = 'Copied!';
+      setTimeout(() => { el<HTMLButtonElement>('share-copy-btn').textContent = 'Copy link'; }, 2000);
+    });
+  });
+
+  el<HTMLButtonElement>('share-close-btn').addEventListener('click', () => {
+    el<HTMLDialogElement>('share-modal').close();
+  });
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  el<HTMLInputElement>('consent-toggle').addEventListener('change', (e) => {
+    if ((e.target as HTMLInputElement).checked) grantConsent();
+    else revokeConsent();
+  });
   el<HTMLButtonElement>('config-btn').addEventListener('click', () => { openConfigModal(); });
   el<HTMLButtonElement>('config-cancel-btn').addEventListener('click', () => { el<HTMLDialogElement>('config-modal').close(); });
   el<HTMLButtonElement>('config-save-btn').addEventListener('click', () => {
@@ -1529,7 +2387,9 @@ document.addEventListener('DOMContentLoaded', () => {
     showEssential = el<HTMLInputElement>('essential-toggle').checked;
     const delay = Number(el<HTMLInputElement>('config-delay-input').value);
     const showCandDefault = el<HTMLInputElement>('candidates-default-toggle').checked;
-    saveSettingsData(alwaysApply, delay, showCandDefault);
+    const devSurfaceTelemetryFailures = el<HTMLInputElement>('telemetry-failures-toggle').checked;
+    const updated = saveSettingsData(alwaysApply, delay, showCandDefault, devSurfaceTelemetryFailures);
+    if (updated !== null) currentState = updated;
     el<HTMLDialogElement>('config-modal').close();
     if (currentState !== null) refreshDisplay();
   });
@@ -1544,10 +2404,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
   el<HTMLButtonElement>('close-help-btn').addEventListener('click', () => { el<HTMLDialogElement>('help-candidates-modal').close(); });
 
+  // Colouring tool
+  el<HTMLButtonElement>('colour-btn').addEventListener('click', () => {
+    const btn = el<HTMLButtonElement>('colour-btn');
+    if (colourMode === 'off') {
+      colourMode = 'blue-next';
+      btn.classList.add('active');
+      btn.dataset['tooltip'] = 'Colouring active (press to stop and clear)';
+    } else {
+      colourMode = 'off';
+      cellColours.clear();
+      btn.classList.remove('active');
+      btn.dataset['tooltip'] = 'Colour cells';
+    }
+    redrawGrid();
+  });
+
   // Virtual cage
   el<HTMLButtonElement>('virtual-cage-btn').addEventListener('click', () => {
     virtualCageMode = !virtualCageMode;
-    virtualCageSelection = new Set();
+    virtualCageSelection = new Set(); virtualCageNegCells = new Set();
     const vcBtn = el<HTMLButtonElement>('virtual-cage-btn');
     vcBtn.classList.toggle('active', virtualCageMode);
     vcBtn.dataset['tooltip'] = virtualCageMode ? 'Cancel virtual cage' : 'Virtual cage';
@@ -1562,7 +2438,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   el<HTMLButtonElement>('vc-add-btn').addEventListener('click', () => { void submitVirtualCage(); });
   el<HTMLButtonElement>('vc-cancel-btn').addEventListener('click', () => {
-    virtualCageMode = false; virtualCageSelection = new Set();
+    virtualCageMode = false; virtualCageSelection = new Set(); virtualCageNegCells = new Set();
     el<HTMLElement>('vc-form').hidden = true;
     el<HTMLElement>('side-panel').classList.remove('virtual-cage-open');
     const vcBtn2 = el<HTMLButtonElement>('virtual-cage-btn');
@@ -1579,42 +2455,53 @@ document.addEventListener('DOMContentLoaded', () => {
     inspBtn.dataset['tooltip'] = inspectCageMode ? 'Done inspecting' : 'Inspect cage';
     if (!inspectCageMode) {
       el<HTMLElement>('inspector-col').hidden = true;
+      el<HTMLElement>('playing-actions').hidden = false;
       el<HTMLElement>('side-panel').classList.remove('inspector-open');
     }
   });
 
-  // Hints dropdown
+  // Hints list modal
+  const hintsListModal = el<HTMLDialogElement>('hints-list-modal');
+  hintsListModal.addEventListener('click', e => {
+    if (e.target === hintsListModal) hintsListModal.close();
+  });
+  el<HTMLButtonElement>('hints-list-close-btn').addEventListener('click', () => {
+    hintsListModal.close();
+  });
+
   el<HTMLButtonElement>('hints-btn').addEventListener('click', () => {
-    const dropdown = el<HTMLElement>('hints-dropdown');
-    if (!dropdown.hidden) { dropdown.hidden = true; return; }
-    clearChildren(dropdown);
+    const content = el<HTMLElement>('hints-list-content');
+    clearChildren(content);
     try {
       const { hints } = getHints();
       if (hints.length === 0) {
-        const p = document.createElement('p'); p.className = 'hints-empty'; p.textContent = 'No hint found — this position may require a technique not yet supported. Try Reveal for the selected cell.'; dropdown.appendChild(p);
+        const p = document.createElement('p'); p.className = 'hints-empty'; p.textContent = 'No hint found — this position may require a technique not yet supported. Try Reveal for the selected cell.';
+        content.appendChild(p);
       } else {
+        const rulesMap = new Map(getSettingsData().hintableRules.map(r => [r.name, r]));
         for (const hint of hints) {
+          const row = document.createElement('div'); row.className = 'hint-list-row';
           const btn = document.createElement('button'); btn.className = 'hint-item'; btn.textContent = hint.displayName;
-          btn.addEventListener('click', () => { dropdown.hidden = true; showHintModal(hint); });
-          dropdown.appendChild(btn);
+          btn.addEventListener('click', () => { hintsListModal.close(); showHintModal(hint); });
+          row.appendChild(btn);
+          const ruleInfo = rulesMap.get(hint.ruleName);
+          if (ruleInfo) {
+            const infoBtn = document.createElement('button'); infoBtn.className = 'btn-rule-info'; infoBtn.textContent = 'ⓘ'; infoBtn.title = 'About this rule';
+            infoBtn.addEventListener('click', () => { openRuleInfoModal(ruleInfo.displayName, ruleInfo.description); });
+            row.appendChild(infoBtn);
+          }
+          content.appendChild(row);
         }
       }
     } catch (e) {
       if (e instanceof AssertionViolation) {
-        dropdown.hidden = true;
         showAssertionModal(e);
         return;
       }
-      const p = document.createElement('p'); p.className = 'hints-empty'; p.textContent = String(e); dropdown.appendChild(p);
+      const p = document.createElement('p'); p.className = 'hints-empty'; p.textContent = String(e);
+      content.appendChild(p);
     }
-    dropdown.hidden = false;
-  });
-
-  document.addEventListener('click', (e) => {
-    const dropdown = el<HTMLElement>('hints-dropdown');
-    if (!dropdown.hidden && !(e.target as HTMLElement).closest('.hints-anchor')) {
-      dropdown.hidden = true;
-    }
+    hintsListModal.showModal();
   });
 
   // Hint modal
@@ -1626,15 +2513,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     logAction('hint_applied', hint.displayName);
     if (hint.rewindToTurnIdx !== null) {
-      try { currentState = rewind(hint.rewindToTurnIdx); refreshDisplay(); updateUndoButton(currentState); } catch (e) { setStatus(String(e), true); }
+      try { currentState = rewind(hint.rewindToTurnIdx); refreshDisplay(); updateUndoButton(currentState); } catch (e) { logAction('hint_apply_failed', String(e)); setStatus(String(e), true); }
     } else if (hint.placement !== null) {
       selectedCell = { row: hint.placement[0] + 1, col: hint.placement[1] + 1 };
       void handleCellEntry(hint.placement[2]);
     } else if (hint.virtualCageSuggestion !== null) {
       const { cells, total } = hint.virtualCageSuggestion;
-      try { currentState = addVirtualCage([...cells], total); void fetchCandidates(); } catch (e) { setStatus(String(e), true); }
+      try { currentState = addVirtualCage([...cells], total); void fetchCandidates(); } catch (e) { logAction('hint_apply_failed', String(e)); setStatus(String(e), true); }
     } else {
-      try { currentState = applyHint(hint.eliminations); refreshDisplay(); } catch (e) { setStatus(String(e), true); }
+      try { currentState = applyHint(hint.eliminations); refreshDisplay(); updateUndoButton(currentState); } catch (e) { logAction('hint_apply_failed', String(e)); setStatus(String(e), true); }
     }
   });
 
@@ -1665,9 +2552,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Keyboard
   document.addEventListener('keydown', (e) => {
-    if (currentState === null || currentState.userGrid === null) {
+    if (currentState === null || currentState.goldenSolution === null) {
       // Pre-confirm: classic inline editing
-      if (currentState?.puzzleType === 'classic' && selectedCell !== null) {
+      if (currentState !== null && !PuzzleState.isKiller(currentState) && selectedCell !== null) {
         if (e.key >= '1' && e.key <= '9') { void handleGivenDigitEdit(selectedCell.row, selectedCell.col, Number(e.key)); return; }
         if (e.key === 'Backspace' || e.key === 'Delete') { void handleGivenDigitEdit(selectedCell.row, selectedCell.col, 0); return; }
       }
@@ -1712,7 +2599,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (c0 < 0 || c0 > 8 || r0 < 0 || r0 > 8) return;
 
     // ── Review-mode interaction (before confirm) ─────────────────────────────────────────────────────────────────────────────────────
-    if (currentState.userGrid === null && currentState.puzzleType !== 'classic') {
+    if (currentState.goldenSolution === null && PuzzleState.isKiller(currentState)) {
+      const state = currentState;
       // Review mode: borders always togglable; interior click handled by Chunk 2 (total overlay).
       const BORDER_ZONE = 7; // px
       for (let r = 1; r < 9; r++) {
@@ -1734,7 +2622,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // after mousedown on a non-focusable canvas, which would fire blur on the
       // input and immediately hide the overlay.
       e.preventDefault();
-      const existing = currentState.specData.cageTotals[r0]![c0]!;
+      const existing = state.specData.cageTotals[r0]![c0]!;
       totalEditCell = { row: r0, col: c0 };
       totalEditPrev = existing;
       const inp = el<HTMLInputElement>('cage-total-edit');
@@ -1753,28 +2641,51 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // ─────────────────────────────────────────────────────────────────────────────────────
 
+    if (colourMode !== 'off' && !candidateEditMode) {
+      const key = `${r0},${c0}`;
+      const existing = cellColours.get(key);
+      const colour = existing !== undefined
+        ? (existing === 'blue' ? 'green' : 'blue')  // toggle existing colour
+        : (colourMode === 'blue-next' ? 'blue' : 'green');
+      cellColours.set(key, colour);
+      colourMode = colour === 'blue' ? 'green-next' : 'blue-next';
+      // Fall through so the cell is also selected and keypad remains usable
+    }
+
     if (virtualCageMode) {
       const key = `${r0},${c0}`;
-      if (virtualCageSelection.has(key)) virtualCageSelection.delete(key); else virtualCageSelection.add(key);
-      const vcStatus = el<HTMLElement>('vc-selection-status');
-      const allSolved = virtualCageSelection.size >= 2 && currentState.userGrid !== null &&
-        [...virtualCageSelection].every(k => {
+      // Three-state toggle: unselected → positive → negative → unselected
+      if (!virtualCageSelection.has(key)) {
+        virtualCageSelection.add(key);
+      } else if (!virtualCageNegCells.has(key)) {
+        virtualCageNegCells.add(key);
+      } else {
+        virtualCageSelection.delete(key);
+        virtualCageNegCells.delete(key);
+      }
+      updateVcStatus();
+      // Auto-fill total from golden solution when neg cells are present
+      if (virtualCageNegCells.size > 0 && currentState.goldenSolution !== null) {
+        const gs = currentState.goldenSolution;
+        let total = 0;
+        for (const k of virtualCageSelection) {
           const [kr, kc] = k.split(',').map(Number);
-          return (currentState!.userGrid![kr!]?.[kc!] ?? 0) !== 0;
-        });
-      vcStatus.textContent = virtualCageSelection.size < 2
-        ? 'Click cells on the grid'
-        : allSolved ? 'All cells already solved — select unsolved cells'
-        : `${virtualCageSelection.size} cells selected`;
-      el<HTMLButtonElement>('vc-add-btn').disabled = allSolved || virtualCageSelection.size < 2;
+          const d = gs[kr!]?.[kc!] ?? 0;
+          total += virtualCageNegCells.has(k) ? -d : d;
+        }
+        if (total >= 0) {
+          el<HTMLInputElement>('vc-total-input').value = String(total);
+        }
+      }
       redrawGrid();
       return;
     }
 
-    if (inspectCageMode && currentState.userGrid !== null) {
-      const cageIdx = currentState.specData.regions[r0]?.[c0];
+    if (inspectCageMode && currentState.goldenSolution !== null && PuzzleState.isKiller(currentState)) {
+      const state = currentState;
+      const cageIdx = state.specData.regions[r0]?.[c0];
       if (cageIdx !== undefined) {
-        const cage = currentState.cageStates[cageIdx - 1];
+        const cage = state.cageStates[cageIdx - 1];
         if (cage) {
           selectedCell = { row: r0 + 1, col: c0 + 1 };
           renderCageInspector(cage.label);
@@ -1793,7 +2704,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Digit buttons — pre-confirm Classic edits given digits; edit-candidates mode toggles a
   // candidate; otherwise places a digit in the playing grid.
   function handleDigitButton(d: number): void {
-    if (currentState?.userGrid === null && currentState?.puzzleType === 'classic' && selectedCell !== null) {
+    if (currentState !== null && currentState.goldenSolution === null && !PuzzleState.isKiller(currentState) && selectedCell !== null) {
       void handleGivenDigitEdit(selectedCell.row, selectedCell.col, d);
     } else if (candidateEditMode && selectedCell !== null) {
       void handleCandidateCycle(selectedCell.row, selectedCell.col, d);
@@ -1815,10 +2726,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // 'trivial'     — all 81 cells are single-cell cages; all auto-placed after confirm.
     // 'twoCellCage' — top-left two cells share a cage (sum 8); still over-constrained.
     // 'boxCage'     — 9 box cages (3×3 each, sum 45); no cell auto-placed → digit entry works.
-    // 'classic'     — Classic sudoku with one blank cell; always goes to review screen.
+    // 'classic'         — Classic sudoku with one blank cell; always goes to review screen.
+    // 'bigAppleMisread' — Big Apple grid with one OCR-misread given; detection misses it
+    //                      until the user corrects that cell during review.
     (window as unknown as Record<string, unknown>)['__testLoad'] = (specName?: string) => {
-      if (specName === 'classic') {
-        const { state, warpedImageUrl, warning } = loadClassicDirect(makeClassicGivenDigits());
+      if (specName === 'classic' || specName === 'classicPartial' || specName === 'bigAppleMisread') {
+        const givenDigits =
+          specName === 'classicPartial' ? makeClassicPartialGivenDigits() :
+          specName === 'bigAppleMisread' ? makeBigAppleMisreadGivenDigits() :
+          makeClassicGivenDigits();
+        const { state, warpedImageUrl, warning } = loadClassicDirect(givenDigits);
         // Classic borders: all walls present; values don't affect Classic rendering/confirm.
         draftBorderX = Array.from({ length: 9 }, () => Array.from({ length: 8 }, () => true));
         draftBorderY = Array.from({ length: 8 }, () => Array.from({ length: 9 }, () => true));
@@ -1837,11 +2754,26 @@ document.addEventListener('DOMContentLoaded', () => {
       applyUploadResult(state, warpedImageUrl, warning);
     };
 
+    // Exposes window.__testSetPendingThumbs() so Playwright tests can inject
+    // fake OCR thumbnails into pendingCellThumbs before calling __testLoad.
+    // This lets tests verify that the confirm flow triggers training-data upload.
+    // Key format: "row,col"; value: one Uint8Array per digit in the cage total.
+    (window as unknown as Record<string, unknown>)['__testSetPendingThumbs'] = (
+      entries: Record<string, number[][]>,
+    ) => {
+      pendingCellThumbs = new Map(
+        Object.entries(entries).map(([key, arrays]) => [
+          key,
+          arrays.map(a => new Uint8Array(a)),
+        ]),
+      );
+    };
+
     // Exposes window.__testShowConsentModal() so Playwright tests can exercise
     // the consent modal without needing a real OCR result.
     (window as unknown as Record<string, unknown>)['__testShowConsentModal'] = () => {
       const mockData: TrainingExport = {
-        version: 1,
+        reportType: 'training-export',
         exportedAt: new Date().toISOString(),
         appVersion: __BUILD_TIME__,
         puzzleType: 'killer',
@@ -1852,5 +2784,21 @@ document.addEventListener('DOMContentLoaded', () => {
       };
       showTrainingConsentModal(() => uploadTrainingData(mockData));
     };
+
+    // Exposes window.__activeFixture() so Playwright tests (and the browser
+    // console) can inspect the active stall-fixture context — used by the
+    // Task 3 feedback handler test to verify the fixture reference is captured.
+    (window as unknown as Record<string, unknown>)['__activeFixture'] = activeFixtureContext;
+
+    // Exposes window.__loadSerializedState() so a developer triaging a
+    // reported bug can paste the "Puzzle spec" JSON from a GitHub issue
+    // into the browser console to reproduce the exact reported state —
+    // full turn history, removed candidates, virtual cages, golden solution.
+    (window as unknown as Record<string, unknown>)['__loadSerializedState'] = (data: unknown) => {
+      const state = PuzzleState.deserialize(data);
+      renderPlayingMode(state);
+      void fetchCandidates();
+    };
+
   }
 });

@@ -1,7 +1,8 @@
 /**
- * NakedHiddenTriple — R9: naked or hidden triple elimination.
+ * HiddenTriple — hidden triple elimination.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.incomplete.naked_hidden_triple`.
+ * Mirrors the hidden-triple branch of Python's
+ * `killer_sudoku.solver.engine.rules.incomplete.naked_hidden_triple`.
  */
 
 import type { HintResult } from '../hint.js';
@@ -10,12 +11,20 @@ import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '.
 import { combinations } from './_helpers.js';
 import { cellLabel, unitLabel } from './_labels.js';
 
-export class NakedHiddenTriple {
-  readonly name = 'NakedHiddenTriple';
-  readonly description =
-    'When three digits are confined to the same three cells in a unit, ' +
-    'those cells can only contain those three digits.';
-  readonly priority = 8;
+export class HiddenTriple {
+  readonly name = 'HiddenTriple';
+  readonly killerOnly = false;
+  readonly displayName = 'Hidden Triple';
+  readonly description = `
+Hidden Triple — pigeonhole elimination at N=3 in a unit.
+
+If three digits d1, d2, d3 each appear in 2 or 3 cells within a unit, and all such cells form a set of exactly three cells C1, C2, C3, then those three cells must collectively hold d1, d2, d3. Any other candidate in C1, C2, or C3 is impossible.
+
+Guards:
+  cellsWith.size === 3   the three digits must be confined to exactly 3 cells
+  ctx.unit !== null   rule requires a unit context
+`.trim();
+  readonly priority = 9;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([
     UnitKind.ROW, UnitKind.COL, UnitKind.BOX,
@@ -27,23 +36,6 @@ export class NakedHiddenTriple {
     const cells = ctx.unit.cells as Cell[];
     const elims: Elimination[] = [];
 
-    // --- Naked triple: three cells whose union of candidates has exactly 3 digits ---
-    for (const triple of combinations(cells, 3)) {
-      const union = new Set<number>();
-      for (const [r, c] of triple) for (const d of board.cands(r, c)) union.add(d);
-      if (union.size !== 3) continue;
-      const tripleSet = new Set(triple.map(([r, c]) => `${r},${c}`));
-      for (const [r, c] of cells) {
-        if (tripleSet.has(`${r},${c}`)) continue;
-        for (const d of union) {
-          if (board.cands(r, c).has(d))
-            elims.push({ cell: [r, c] as Cell, digit: d });
-        }
-      }
-    }
-    if (elims.length) return { ...emptyResult(), eliminations: elims };
-
-    // --- Hidden triple: three digits each appearing in 2-3 cells, covering exactly 3 cells ---
     const uid = ctx.unit.unitId;
     const candidateDigits = Array.from({ length: 9 }, (_, i) => i + 1)
       .filter(d => board.count(uid, d) > 1 && board.count(uid, d) <= 3);
@@ -76,27 +68,6 @@ export class NakedHiddenTriple {
     const cells = ctx.unit.cells as Cell[];
     const uid = ctx.unit.unitId;
 
-    // Naked triple: three cells whose candidate union has exactly 3 digits
-    for (const triple of combinations(cells, 3)) {
-      const union = new Set<number>();
-      for (const [r, c] of triple) for (const d of board.cands(r, c)) union.add(d);
-      if (union.size !== 3) continue;
-      const tripleSet = new Set(triple.map(([r, c]) => `${r},${c}`));
-      const elims = cells.flatMap(([r, c]) =>
-        tripleSet.has(`${r},${c}`) ? [] :
-        [...union].filter(d => board.cands(r, c).has(d)).map(d => ({ cell: [r, c] as Cell, digit: d })),
-      );
-      if (!elims.length) continue;
-      const digits = [...union].sort((a, b) => a - b);
-      return [{
-        ruleName: this.name, displayName: 'Naked Triple',
-        explanation: `Naked Triple {${digits.join(',')}} in ${triple.map(([r, c]) => cellLabel([r, c] as Cell)).join(', ')} within ${unitLabel(ctx.unit)}. These digits can be removed from all other cells in the unit.`,
-        highlightCells: [...triple as Cell[], ...elims.map(e => e.cell)],
-        eliminations: elims, placement: null, virtualCageSuggestion: null,
-      }];
-    }
-
-    // Hidden triple: three digits confined to exactly 3 cells
     const candidateDigits = Array.from({ length: 9 }, (_, i) => i + 1)
       .filter(d => board.count(uid, d) > 1 && board.count(uid, d) <= 3);
     for (const dTriple of combinations(candidateDigits, 3)) {
@@ -116,7 +87,9 @@ export class NakedHiddenTriple {
         ruleName: this.name, displayName: 'Hidden Triple',
         explanation: `Hidden Triple: {${digits.join(',')}} are confined to ${tripleCells.map(c => cellLabel(c)).join(', ')} within ${unitLabel(ctx.unit)}. Remove all other candidates from these cells.`,
         highlightCells: [...tripleCells, ...elims.map(e => e.cell)],
+        secondaryHighlightCells: cells.filter(([pr, pc]) => !tripleCells.some(([qr, qc]) => qr === pr && qc === pc)),
         eliminations: elims, placement: null, virtualCageSuggestion: null,
+        patternDigits: digits,
       }];
     }
     return [];

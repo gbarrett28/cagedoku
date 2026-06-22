@@ -1,8 +1,6 @@
 #!/bin/bash
 # Run all silver gate checks. Creates .silver-gate-ok if everything passes.
 # Run this before merging to master; the pre-commit hook will consume the token.
-#
-# Usage: bash scripts/run-silver-gate.sh
 
 set -e
 
@@ -28,6 +26,10 @@ npx tsc -p tsconfig.node.json --noEmit || fail "tsc -p tsconfig.node.json --noEm
 echo ""
 echo "--- npm test --reporter=verbose ---"
 npm test -- --reporter=verbose || fail "npm test"
+
+echo ""
+echo "--- npm run build (required for playwright production tests) ---"
+npm run build || fail "npm run build"
 
 echo ""
 echo "--- playwright test (production build) ---"

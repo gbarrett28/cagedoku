@@ -7,8 +7,8 @@
  */
 
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
-import type { CageState, CellPosition, PuzzleSpecData, VirtualCage } from './types.js';
-import type { Cell } from '../engine/types.js';
+import type { CageState, CellPosition, PuzzleSpecData } from './types.js';
+export { virtualCageKey, virtualCageKeyFromCage } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Label generation — Excel-column-style (A, B, ..., Z, AA, AB, ...)
@@ -31,15 +31,6 @@ export function cageLabel(i: number): string {
 // ---------------------------------------------------------------------------
 // Virtual cage key — stable identity for a user-defined cage
 // ---------------------------------------------------------------------------
-
-/**
- * Builds a stable string key for a virtual cage.
- * Format: "r,c:r,c:...:total" with cells sorted by row then col.
- */
-export function virtualCageKey(cells: readonly Cell[], total: number): string {
-  const sorted = [...cells].sort(([r1, c1], [r2, c2]) => r1 - r2 || c1 - c2);
-  return [...sorted.map(([r, c]) => `${r},${c}`), String(total)].join(':');
-}
 
 // ---------------------------------------------------------------------------
 // PuzzleSpec ↔ PuzzleSpecData
@@ -131,12 +122,19 @@ export function cageStatesToSpec(cages: readonly CageState[], base: PuzzleSpecDa
   return dataToSpec({ regions, cageTotals });
 }
 
-// ---------------------------------------------------------------------------
-// Virtual cage key helper (for VirtualCage objects)
-// ---------------------------------------------------------------------------
-
-export function virtualCageKeyFromCage(cage: VirtualCage): string {
-  return virtualCageKey(cage.cells, cage.total);
+/**
+ * Synthetic killer-style spec for classic puzzles: 9 row-cages, each summing to 45,
+ * with all internal vertical borders present (so the solver treats each row as one cage).
+ * Transient only — never stored on PuzzleState. Used by solveCurrentSpec/confirmPuzzle/
+ * checkSolutionAssertions to drive the cage-equation solver for classic puzzles.
+ */
+export function classicSyntheticSpec(): PuzzleSpec {
+  const borderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(true));
+  const borderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
+  const cageTotals = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+  for (let r = 0; r < 9; r++) cageTotals[r]![0] = 45;
+  const regions = Array.from({ length: 9 }, (_, r) => new Array<number>(9).fill(r + 1));
+  return { regions, cageTotals, borderX, borderY };
 }
 
 // ---------------------------------------------------------------------------

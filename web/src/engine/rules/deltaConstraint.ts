@@ -9,14 +9,26 @@
  */
 
 import type { HintResult } from '../hint.js';
-import type { RuleContext } from '../rule.js';
+import { KillerOnlyRule } from '../rule.js';
+import type { KillerRuleContext, RuleContext } from '../rule.js';
 import { Cell, Elimination, emptyResult, RuleResult, Trigger, UnitKind } from '../types.js';
 import { cellLabel } from './_labels.js';
 
-export class DeltaConstraint {
+export class DeltaConstraint extends KillerOnlyRule {
   readonly name = 'DeltaConstraint';
-  readonly description =
-    'When two cells differ by a known constant (derived from overlapping row/column sums), restricts both cells\' candidates to valid pairs.';
+  readonly displayName = 'Delta Constraint';
+  readonly description = `
+Delta Constraint — candidate restriction from p − q = δ.
+
+Setup: cells p and q satisfy p − q = δ for a constant δ derived from overlapping row/column/cage-sum equations by the linear system.
+
+Proof: if p = x then q must equal x − δ. Any candidate x for p where (x − δ) is not a current candidate of q, or where x − δ ∉ [1,9], is infeasible for p. Symmetrically, any candidate y for q where (y + δ) is not a current candidate of p, or y + δ ∉ [1,9], is infeasible for q.
+
+Guards:
+  ctx.unit !== null   rule requires a unit context for cell iteration
+  ctx.board.linearSystem.pairsForCell   only system-reported pairs are processed
+  d >= 1 && d <= 9   computed partner value must be in digit range
+`.trim();
   readonly priority = 5;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_DECREASED]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX, UnitKind.CAGE]);
@@ -38,7 +50,7 @@ export class DeltaConstraint {
     return elims;
   }
 
-  apply(ctx: RuleContext): RuleResult {
+  applyKiller(ctx: KillerRuleContext): RuleResult {
     if (!ctx.unit) return emptyResult();
     const elims: Elimination[] = [];
     const seen = new Set<string>();
@@ -54,7 +66,7 @@ export class DeltaConstraint {
     return { ...emptyResult(), eliminations: elims };
   }
 
-  asHints(ctx: RuleContext, eliminations: Elimination[]): HintResult[] {
+  asHintsKiller(ctx: KillerRuleContext, eliminations: readonly Elimination[]): HintResult[] {
     if (!eliminations.length || !ctx.unit) return [];
     const hints: HintResult[] = [];
     const seen = new Set<string>();

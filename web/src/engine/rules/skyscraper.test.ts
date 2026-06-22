@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Skyscraper } from './skyscraper.js';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { SolverEngine } from '../solverEngine.js';
 import { makeTrivialSpec } from '../fixtures.js';
 import { Trigger } from '../types.js';
@@ -17,8 +17,8 @@ import { Trigger } from '../types.js';
  *
  * Rows 3–8 have no 7 at all.
  */
-function makeSkyscraperBoard(): BoardState {
-  const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+function makeSkyscraperBoard(): KillerBoardState {
+  const board = new KillerBoardState(makeTrivialSpec(), { includeVirtualCages: false });
   const engine = new SolverEngine(board, [], {});
 
   // Row 0: keep 7 only in cols 0 and 1
@@ -34,7 +34,7 @@ function makeSkyscraperBoard(): BoardState {
   return board;
 }
 
-const GLOBAL_CTX = (board: BoardState) =>
+const GLOBAL_CTX = (board: KillerBoardState) =>
   ({ board, unit: null, cell: null, hint: Trigger.GLOBAL, hintDigit: null } as const);
 
 describe('Skyscraper', () => {
@@ -74,11 +74,53 @@ describe('Skyscraper', () => {
     expect(hints[0]!.placement).toBeNull();
   });
 
+  it('asHints: chainCells tags all 4 pattern cells with digit 7, highlightCells has only elimination targets', () => {
+    // Board: r1=0 roof=(0,1) base=(0,0); r2=1 roof=(1,2) base=(1,0); shared col=0
+    // BFS chain: roof1=(0,1) → base1=(0,0) → base2=(1,0) → roof2=(1,2)
+    // Blue: roof1=(0,1), base2=(1,0). Green: base1=(0,0), roof2=(1,2).
+    //
+    // Note: in this compact board the base cells share box 0 with the roofs so
+    // they see both roofs and ARE also elimination targets — they appear in both
+    // chainCells and highlightCells (yellow overrides on render). Only the
+    // explicit-skip roof cells are guaranteed to be absent from highlightCells.
+    const board = makeSkyscraperBoard();
+    const ctx = GLOBAL_CTX(board);
+    const elims = rule.apply(ctx).eliminations;
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBeGreaterThan(0);
+    const hint = hints[0]!;
+
+    expect(hint.chainCells?.length).toBe(4);
+    const ccFor = (r: number, c: number) => hint.chainCells!.find(cc => cc.cell[0] === r && cc.cell[1] === c);
+    expect(ccFor(0, 1)).toEqual({ cell: [0, 1], digits: [7], colour: 'blue' });  // roof1
+    expect(ccFor(1, 0)).toEqual({ cell: [1, 0], digits: [7], colour: 'blue' });  // base2
+    expect(ccFor(0, 0)).toEqual({ cell: [0, 0], digits: [7], colour: 'green' }); // base1
+    expect(ccFor(1, 2)).toEqual({ cell: [1, 2], digits: [7], colour: 'green' }); // roof2
+
+    // Roof cells are explicitly skipped by the rule — they must NOT be in highlightCells
+    expect(hint.highlightCells.some(([r, c]) => r === 0 && c === 1)).toBe(false); // roof1
+    expect(hint.highlightCells.some(([r, c]) => r === 1 && c === 2)).toBe(false); // roof2
+    expect(hint.highlightCells.length).toBeGreaterThan(0);
+  });
+
   it('returns empty on a fresh unconstrained board', () => {
-    const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+    const board = new KillerBoardState(makeTrivialSpec(), { includeVirtualCages: false });
     const ctx = GLOBAL_CTX(board);
     // Every row has 9 cells with every digit — no row has d in exactly 2 cells
     expect(rule.apply(ctx).eliminations).toHaveLength(0);
     expect(rule.asHints(ctx, [])).toHaveLength(0);
+  });
+
+  it('near-miss: two rows with d in 2 cells each but no shared column → no Skyscraper', () => {
+    // Row 0: d in cols 1 and 3; Row 1: d in cols 5 and 7.
+    // No column is shared between the two rows → the "else continue" guard fires for every pair.
+    const board = new KillerBoardState(makeTrivialSpec(), { includeVirtualCages: false });
+    const engine = new SolverEngine(board, [], {});
+    for (const c of [0, 2, 4, 5, 6, 7, 8]) engine.applyEliminations([{ cell: [0, c], digit: 2 }]);
+    for (const c of [0, 1, 2, 3, 4, 6, 8]) engine.applyEliminations([{ cell: [1, c], digit: 2 }]);
+    for (let r = 2; r < 9; r++)
+      for (let c = 0; c < 9; c++) engine.applyEliminations([{ cell: [r, c], digit: 2 }]);
+    const ctx = GLOBAL_CTX(board);
+    expect(rule.apply(ctx).eliminations.filter(e => e.digit === 2)).toHaveLength(0);
   });
 });

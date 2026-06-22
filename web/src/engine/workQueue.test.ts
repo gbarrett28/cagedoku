@@ -18,8 +18,10 @@ import type { Elimination, Cell } from './types.js';
 function fakeRule(name = 'fake'): SolverRule {
   return {
     name,
+    displayName: name,
     description: '',
     priority: 0,
+    killerOnly: false,
     triggers: new Set([Trigger.COUNT_DECREASED]),
     unitKinds: new Set([UnitKind.ROW]),
     apply(_ctx: RuleContext) { return { eliminations: [], solutionEliminations: [], placements: [], virtualCageAdditions: [] }; },

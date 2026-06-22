@@ -309,6 +309,7 @@ def fit_model(
     svm_c: float = SVM_C,
     svm_gamma: float | str = SVM_GAMMA,
     sample_weights: NDArray[np.float64] | None = None,
+    n_jobs: int = -1,
 ) -> dict[str, Any]:
     """Train a digit classifier on HOG feature vectors.
 
@@ -325,7 +326,7 @@ def fit_model(
         from sklearn.svm import LinearSVC  # type: ignore[import-untyped]
         sklearn.set_config(enable_metadata_routing=True)
         base = LinearSVC(C=svm_c, max_iter=10000).set_fit_request(sample_weight=True)
-        clf = OneVsOneClassifier(base, n_jobs=-1)
+        clf = OneVsOneClassifier(base, n_jobs=n_jobs)
         clf.fit(X, y, sample_weight=sample_weights)
         # Negate: LinearSVC uses score>0→classes_[1] (higher class), but the
         # TypeScript ovoVote loop uses score>0→class at lower index (i).
@@ -453,6 +454,8 @@ def main() -> None:
     )
     parser.add_argument("--svm-c",     type=float, default=SVM_C,
                         help=f"SVM regularisation C (default: {SVM_C})")
+    parser.add_argument("--n-jobs",    type=int,   default=-1, metavar="N",
+                        help="Parallel jobs for OVO LinearSVC (default: -1 = all cores; use 1 for large datasets to avoid memory issues)")
     parser.add_argument("--svm-gamma", type=str,   default=str(SVM_GAMMA),
                         help=f"SVM gamma — float or 'scale'/'auto'; rbf only (default: {SVM_GAMMA})")
     parser.add_argument(
@@ -465,19 +468,25 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    import time as _time
+    t_start = _time.time()
+
+    def _elapsed() -> str:
+        return f"[+{_time.time() - t_start:.0f}s]"
+
     all_samples: list[tuple[int, NDArray[np.uint8]]] = []
 
     for path in args.training_json:
         samples = load_training_file(path)
-        print(f"Loaded {len(samples)} samples from {path.name}")
+        print(f"{_elapsed()} Loaded {len(samples)} samples from {path.name}")
         all_samples.extend(samples)
 
     n_browser = len(all_samples)  # count before adding synthetic
 
     if not args.no_synthetic:
-        print("Generating synthetic font samples…")
+        print(f"{_elapsed()} Generating synthetic font samples…")
         synth = generate_synthetic_samples()
-        print(f"Generated {len(synth)} synthetic samples")
+        print(f"{_elapsed()} Generated {len(synth)} synthetic samples")
         all_samples.extend(synth)
 
     if not all_samples:
@@ -487,7 +496,7 @@ def main() -> None:
 
     n_synth = len(all_samples) - n_browser
     dist = dict(sorted(Counter(d for d, _ in all_samples).items()))
-    print(f"Digit distribution: {dist}")
+    print(f"{_elapsed()} Digit distribution: {dist}")
 
     # When --synth-dither is set, use different dither counts for browser vs
     # synthetic samples so browser samples dominate by count (not by extreme
@@ -507,7 +516,8 @@ def main() -> None:
                 aug_labels.append(digit)
         n_browser_aug = n_browser * (args.dither + 1)
         n_synth_aug   = n_synth   * (synth_dither + 1)
-        print(f"Dither: browser {args.dither} variants ({n_browser_aug} aug), synth {synth_dither} variants ({n_synth_aug} aug)")
+        print(f"{_elapsed()} Dither: browser {args.dither} variants ({n_browser_aug} aug), synth {synth_dither} variants ({n_synth_aug} aug)")
+        print(f"{_elapsed()} Extracting HOG features for {len(aug_imgs)} images…")
         X = extract_hog(aug_imgs)
         y = np.array(aug_labels, dtype=np.int64)
         weights: NDArray[np.float64] | None = None
@@ -517,10 +527,11 @@ def main() -> None:
         if n_browser > 0 and n_synth > 0:
             bw = args.browser_weight if args.browser_weight > 0 else float(n_synth) / n_browser
             sample_weights = [bw] * n_browser + [1.0] * n_synth
-            print(f"Browser sample weight: {bw:.1f}× ({n_browser} browser, {n_synth} synthetic)")
+            print(f"{_elapsed()} Browser sample weight: {bw:.1f}× ({n_browser} browser, {n_synth} synthetic)")
+        print(f"{_elapsed()} Augmenting and extracting HOG features…")
         X, y, weights = build_dataset(all_samples, args.dither, sample_weights)
 
-    print(f"Dataset: {X.shape[0]} samples × {X.shape[1]} HOG features")
+    print(f"{_elapsed()} Dataset: {X.shape[0]} samples × {X.shape[1]} HOG features")
 
     svm_gamma: float | str = args.svm_gamma
     try:
@@ -528,16 +539,19 @@ def main() -> None:
     except ValueError:
         pass  # keep as 'scale' or 'auto'
 
-    print(f"Training {args.classifier} classifier…")
+    print(f"{_elapsed()} Training {args.classifier} classifier (n_jobs={args.n_jobs})…")
     model = fit_model(
         X, y,
         classifier=args.classifier,
         svm_c=args.svm_c,
         svm_gamma=svm_gamma,
         sample_weights=weights,
+        n_jobs=args.n_jobs,
     )
 
+    print(f"{_elapsed()} Saving model…")
     save_model(model, Path(args.out), confidence_threshold=args.confidence_threshold)
+    print(f"{_elapsed()} Done.")
 
 
 if __name__ == "__main__":

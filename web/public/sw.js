@@ -13,7 +13,7 @@
  * commit hash.
  */
 
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v7';
 const CACHE_NAME = `coach-killer-sudoku-${CACHE_VERSION}`;
 
 /**
@@ -35,6 +35,11 @@ const PRECACHE_ASSETS = [
   './opencv.js',
   './num_recogniser.bin',
   './num_recogniser.json',
+  './manifest.webmanifest',
+  './icon-192.png',
+  './icon-512.png',
+  './icon-maskable-512.png',
+  './apple-touch-icon.png',
 ];
 
 // ---------------------------------------------------------------------------
@@ -52,8 +57,8 @@ self.addEventListener('install', (event) => {
           ),
         ),
       );
-      // Skip the waiting phase — the new SW takes control immediately.
-      await self.skipWaiting();
+      // New SW parks in 'waiting' — skipWaiting() is called later via
+      // a SKIP_WAITING message sent by the page on "New Puzzle" click.
     }),
   );
 });
@@ -80,13 +85,64 @@ self.addEventListener('activate', (event) => {
 });
 
 // ---------------------------------------------------------------------------
+// Message — apply a deferred update when the page says it is safe to do so.
+// The page posts { type: 'SKIP_WAITING' } from the new-puzzle-btn handler,
+// after all puzzle state has been cleared.
+// ---------------------------------------------------------------------------
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
+// ---------------------------------------------------------------------------
+// Share inbox — persists a shared image for the page to consume on load
+// ---------------------------------------------------------------------------
+
+/** Stores a share item in the coach-share-inbox IDB database. */
+function stashShareItem(item) {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('coach-share-inbox', 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore('pending'); };
+    req.onsuccess = () => {
+      const db = req.result;
+      const tx = db.transaction('pending', 'readwrite');
+      const putReq = tx.objectStore('pending').put(item, 'item');
+      putReq.onsuccess = () => { resolve(); };
+      putReq.onerror = () => { reject(putReq.error); };
+    };
+    req.onerror = () => { reject(req.error); };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Fetch — cache-first for known assets; network-first for everything else
 // ---------------------------------------------------------------------------
 
 self.addEventListener('fetch', (event) => {
+  // Web Share Target: POST /share-target — stash the image in IDB then redirect.
+  // Must be checked before the GET-only guard below.
+  if (event.request.method === 'POST') {
+    const url = new URL(event.request.url);
+    if (url.pathname.endsWith('/share-target')) {
+      event.respondWith(
+        event.request.formData().then(async (formData) => {
+          const imageFile = formData.get('image');
+          if (imageFile instanceof File) {
+            const buffer = await imageFile.arrayBuffer();
+            await stashShareItem({ buffer, name: imageFile.name, type: imageFile.type });
+          }
+          // Redirect to the app root. Use self.location to derive the correct
+          // base URL so this works at any deployment path (e.g. /cagedoku/).
+          const appRoot = new URL('./', self.location.href).href;
+          return Response.redirect(appRoot, 303);
+        }).catch(() => Response.redirect('/', 303)),
+      );
+    }
+    return;
+  }
+
   // Only handle GET requests over http(s). Ignore chrome-extension://, data:,
   // blob: etc. — those come from browser extensions and must not be intercepted.
-  if (event.request.method !== 'GET') return;
   if (!event.request.url.startsWith('http')) return;
 
   // Vite dev server uses internal routes (/@vite/client, /src/*, /node_modules/*)

@@ -1,5 +1,8 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { defineConfig } from 'vite';
 import type { Plugin } from 'vite';
+import type { StallFixtureFile } from './src/engine/rules/stallFixtureFile.js';
 
 // In dev mode, serve a "poison pill" sw.js at the HTTP level (before the old SW
 // can intercept the request). The pill installs immediately via skipWaiting(),
@@ -34,8 +37,124 @@ const devSwPoisonPill: Plugin = {
   },
 };
 
+// Serve stall fixture metadata and full fixture JSON.
+// In dev mode: connect middleware at /stall-fixtures/{index.json,<name>.stall.json}
+// In production build: generateBundle emits the same files into dist/stall-fixtures/.
+// URL scheme is identical in both modes so main.ts fetch calls are unconditional.
+const stallFixturesPlugin: Plugin = {
+  name: 'stall-fixtures',
+  // No apply: 'serve' — configureServer fires only in serve mode anyway;
+  // generateBundle fires only in build mode. Both hooks are needed.
+  configureServer(server) {
+    const fixturesDir = path.resolve(import.meta.dirname, 'stall-fixtures');
+
+    server.middlewares.use('/stall-fixtures', (req, res) => {
+      const url = req.url ?? '/';
+      const segment = url.replace(/^\//, '').split('?')[0] ?? '';
+
+      if (segment === 'index.json') {
+        // Metadata list — omit spec and stalledCandidates
+        try {
+          const files = fs
+            .readdirSync(fixturesDir)
+            .filter((f) => f.endsWith('.stall.json'));
+
+          const metadata = files
+            .map((f) => {
+              const fixture = JSON.parse(
+                fs.readFileSync(path.join(fixturesDir, f), 'utf-8'),
+              ) as StallFixtureFile;
+              const { spec: _spec, stalledCandidates: _sc, givenDigits: _gd, ...meta } = fixture;
+              return meta;
+            })
+            .sort(
+              (a, b) =>
+                a.unsolvedCells - b.unsolvedCells ||
+                a.totalCandidates - b.totalCandidates,
+            );
+
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(metadata));
+        } catch {
+          res.statusCode = 500;
+          res.end('{"error":"Failed to read stall fixtures"}');
+        }
+        return;
+      }
+
+      // Individual fixture — must end with .stall.json, no path traversal
+      if (
+        !segment.endsWith('.stall.json') ||
+        segment.includes('/') ||
+        segment.includes('..')
+      ) {
+        res.statusCode = 404;
+        res.end('{"error":"Not found"}');
+        return;
+      }
+
+      const fixturePath = path.join(fixturesDir, segment);
+      if (!fs.existsSync(fixturePath)) {
+        res.statusCode = 404;
+        res.end('{"error":"Fixture not found"}');
+        return;
+      }
+
+      try {
+        res.setHeader('Content-Type', 'application/json');
+        res.end(fs.readFileSync(fixturePath, 'utf-8'));
+      } catch {
+        res.statusCode = 500;
+        res.end('{"error":"Failed to read fixture"}');
+      }
+    });
+  },
+
+  generateBundle() {
+    // Emit each fixture file and a sorted index into dist/stall-fixtures/.
+    const fixturesDir = path.resolve(import.meta.dirname, 'stall-fixtures');
+    const files = fs
+      .readdirSync(fixturesDir)
+      .filter((f) => f.endsWith('.stall.json'));
+
+    const metadata: Array<Omit<StallFixtureFile, 'spec' | 'stalledCandidates' | 'givenDigits'>> = [];
+
+    for (const filename of files) {
+      const content = fs.readFileSync(path.join(fixturesDir, filename), 'utf-8');
+      const fixture = JSON.parse(content) as StallFixtureFile;
+      this.emitFile({ type: 'asset', fileName: `stall-fixtures/${filename}`, source: content });
+      const { spec: _spec, stalledCandidates: _sc, givenDigits: _gd, ...meta } = fixture;
+      metadata.push(meta);
+    }
+
+    metadata.sort(
+      (a, b) => a.unsolvedCells - b.unsolvedCells || a.totalCandidates - b.totalCandidates,
+    );
+
+    this.emitFile({
+      type: 'asset',
+      fileName: 'stall-fixtures/index.json',
+      source: JSON.stringify(metadata),
+    });
+  },
+};
+
+// In dev mode, redirect POST /share-target to GET / so the flow can be tested
+// without a real service worker. The SW handles this intercept in production.
+const devShareTargetPlugin: Plugin = {
+  name: 'dev-share-target',
+  apply: 'serve',
+  configureServer(server) {
+    server.middlewares.use('/share-target', (req, res, next) => {
+      if (req.method !== 'POST') { next(); return; }
+      res.writeHead(303, { Location: '/' });
+      res.end();
+    });
+  },
+};
+
 export default defineConfig({
-  plugins: [devSwPoisonPill],
+  plugins: [devSwPoisonPill, devShareTargetPlugin, stallFixturesPlugin],
   define: {
     // Injected at dev-server start / build time; displayed in the version banner
     // so it's always clear which code revision is running in the browser.

@@ -66,7 +66,7 @@ test('page loads from cache when offline', async ({ page, context }) => {
 // ---------------------------------------------------------------------------
 
 test('image pipeline loads from SW cache when offline', async ({ page, context }) => {
-  test.skip(!PIPELINE, 'Needs PLAYWRIGHT_PIPELINE_TESTS=1 — OpenCV WASM blocks headless Chromium for 6+ min without the minimal build');
+  test.skip(!PIPELINE, 'Needs PLAYWRIGHT_PIPELINE_TESTS=1 — cold WASM compile in headless (~30 s); see app.spec.ts header');
   test.setTimeout(720_000); // two pipeline inits (online + offline reload)
 
   // Online visit: let the SW cache opencv.js, model files, and JS bundle.
@@ -110,7 +110,6 @@ test('upload puzzle image and process it while offline', async ({ page, context 
 
   // Upload and process — all computation is local (WebAssembly + JS).
   await page.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
-  await page.locator('#process-btn').click();
 
   await expect(page.locator('#review-panel')).toBeVisible({ timeout: 40_000 });
   await expect(page.locator('#upload-panel')).toBeHidden();

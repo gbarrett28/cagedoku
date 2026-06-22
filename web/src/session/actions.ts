@@ -7,46 +7,52 @@
  * main.ts can call them as drop-in replacements.
  */
 
-import { solve, BoardState, SolveResult } from '../engine/index.js';
+import { solve, solveBigApple, detectBigApple, BoardState, KillerBoardState, intersectAll, SolveResult } from '../engine/index.js';
 import { mrvBacktrack } from '../engine/backtracker.js';
-import { solSums } from '../solver/equation.js';
+import { solSums, solDiffs } from '../solver/equation.js';
+import type { DiffSolution } from '../solver/equation.js';
 import { defaultRules } from '../engine/rules/index.js';
+
 import { cageSumRange, cellKey, keyToCell } from '../engine/types.js';
 import type { Cell } from '../engine/types.js';
 import { parsePuzzleImage, ImageDecodeError, GridNotFoundError } from '../image/inpImage.js';
-import { UserFacingError } from './errors.js';
-import { AssertionViolation, validateSudokuSolution } from './assertions.js';
+import { AssertionViolation, validateSudokuSolution, isCageSumCorrect } from './assertions.js';
 import { formatActionLog } from './actionLog.js';
 
 import type { ParseResult } from '../image/inpImage.js';
 import { defaultImagePipelineConfig } from '../image/config.js';
-import { validateCageLayout } from '../image/validation.js';
+import { validateCageLayout, hasMultipleCageTotals } from '../image/validation.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import {
   buildEngine,
-  applyAutoPlacements,
-  applyNextAutoPlacement,
+  applyRuleSteps,
   recordTurn,
   rebuildUserGrid,
   userRemoved,
   userVirtualCages,
-  findLastConsistentTurnIdx,
+  checkPuzzleInvariant,
+  findWrongVirtualCageTurnIdx,
+  PuzzleStateOps,
 } from './engine.js';
 import { loadSettings, saveSettings } from './settings.js';
 import {
   specToCageStates,
   cageStatesToSpec,
   specToData,
+  classicSyntheticSpec,
   virtualCageKey,
+  virtualCageKeyFromCage,
   solutionKey,
 } from './specUtils.js';
-import { getState, setState, getCV, getRec, getSplitRec } from './store.js';
+import { getState, setState, getStateCandidates, setStateCandidates, getCV, getRec, getSplitRec } from './store.js';
+import { PuzzleState } from './types.js';
 import type {
   CandidatesResponse,
   HintItem,
   HintsResponse,
-  PuzzleState,
+  KillerPuzzleState,
   RuleInfo,
+  SessionResult,
   SettingsResponse,
   SolveResponse,
   Turn,
@@ -54,6 +60,7 @@ import type {
   VirtualCage,
   VirtualCageSuggestion,
 } from './types.js';
+import type { RuleStep } from './ruleMutation.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -61,12 +68,6 @@ import type {
 
 /** 1–9 each appear 9 times → the only valid sum for a full 9×9 sudoku grid. */
 const GRID_TOTAL_SUM = 405;
-
-/** Intersection of all sets, returned as a sorted array. */
-function intersectAll(sets: ReadonlySet<number>[]): number[] {
-  if (sets.length === 0) return [];
-  return [...sets[0]!].filter(d => sets.every(s => s.has(d))).sort((a, b) => a - b);
-}
 
 /** Lexicographic comparator for sorted digit arrays. */
 function lexCompare(a: readonly number[], b: readonly number[]): number {
@@ -99,14 +100,30 @@ function toggleSolution(
 }
 
 function requireState(): PuzzleState {
-  const s = getState();
-  if (s === null) throw new Error('No active session');
-  return s;
+  const [state] = getStateCandidates();
+  if (state === undefined) throw new Error('No active session');
+  return state;
+}
+
+/**
+ * Replaces `prev` with `updated` within the candidate list, preserving any
+ * other OCR-review candidates (e.g. the Classic candidate alongside the
+ * active Killer candidate). Falls back to a singleton list if `prev` is not
+ * found (e.g. post-confirm, where the list already holds one element).
+ */
+function replaceCandidate(prev: PuzzleState, updated: PuzzleState): void {
+  const candidates = getStateCandidates();
+  const idx = candidates.indexOf(prev);
+  if (idx === -1) {
+    setState(updated);
+    return;
+  }
+  setStateCandidates(candidates.map((c, i) => (i === idx ? updated : c)));
 }
 
 function requireConfirmed(): PuzzleState {
   const s = requireState();
-  if (s.userGrid === null) throw new Error('Session not yet confirmed');
+  if (s.goldenSolution === null) throw new Error('Session not yet confirmed');
   return s;
 }
 
@@ -120,6 +137,7 @@ export interface UploadResult {
   warning: string | null;
   cellThumbs: ReadonlyMap<string, Uint8Array[]>;
   mergedThumbs: ReadonlyMap<string, Uint8Array>;
+  detectedBigApple: boolean;
 }
 
 /**
@@ -130,54 +148,21 @@ export interface UploadResult {
  */
 export function loadSpecDirect(spec: PuzzleSpec): UploadResult {
   const settings = loadSettings();
-  const state: PuzzleState = {
-    specData: specToData(spec),
-    cageStates: specToCageStates(spec),
-    userGrid: null,
-    virtualCages: [],
-    turns: [],
-    alwaysApplyRules: [...settings.alwaysApplyRules],
-    goldenSolution: null,
-    puzzleType: 'killer',
-    givenDigits: null,
-    originalImageUrl: null,
-    warpedImageUrl: null,
-  };
+  const state = PuzzleState.createKiller(specToData(spec), specToCageStates(spec), [...settings.alwaysApplyRules], null, null);
   setState(state);
-  return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map(), mergedThumbs: new Map() };
+  return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map(), mergedThumbs: new Map(), detectedBigApple: false };
 }
 
 /**
  * Build a PuzzleState for a Classic puzzle, bypassing the image pipeline.
  *
  * Used in dev/test mode via the `__testLoad('classic')` hook. The caller
- * must pass a 9×9 given-digits grid (0 = blank cell). A trivial spec (all
- * borders present, no cage totals) is used for the layout; cage display is
- * suppressed because `puzzleType` is `'classic'`.
+ * must pass a 9×9 given-digits grid (0 = blank cell). The resulting state has
+ * no cage data at all, so cage display is naturally suppressed.
  */
 export function loadClassicDirect(givenDigits: readonly (readonly number[])[]): UploadResult {
-  // Build the spec directly without validateCageLayout. Use 9 row-cages (one per row,
-  // total=45) so cage-based rules operate on correct row units for Classic puzzles.
-  const borderX = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(true));
-  const borderY = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
-  const cageTotals = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-  for (let r = 0; r < 9; r++) cageTotals[r]![0] = 45;
-  const regions = Array.from({ length: 9 }, (_, r) => new Array<number>(9).fill(r + 1));
-  const spec: PuzzleSpec = { regions, cageTotals, borderX, borderY };
   const settings = loadSettings();
-  const state: PuzzleState = {
-    specData: specToData(spec),
-    cageStates: specToCageStates(spec),
-    userGrid: null,
-    virtualCages: [],
-    turns: [],
-    alwaysApplyRules: [...settings.alwaysApplyRules],
-    goldenSolution: null,
-    puzzleType: 'classic',
-    givenDigits: givenDigits.map(row => [...row]),
-    originalImageUrl: null,
-    warpedImageUrl: null,
-  };
+  const state = PuzzleState.createClassic(givenDigits.map(row => [...row]), [...settings.alwaysApplyRules], null);
   setState(state);
   return {
     state,
@@ -185,6 +170,7 @@ export function loadClassicDirect(givenDigits: readonly (readonly number[])[]): 
     warning: 'Review the detected digits and press Confirm & Solve',
     cellThumbs: new Map(),
     mergedThumbs: new Map(),
+    detectedBigApple: false,
   };
 }
 
@@ -216,8 +202,8 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
   }
 
   const originalImageUrl = await fileToDisplayUrl(file);
-  const { state, warpedImageUrl, warning } = await buildStateFromParseResult(result, originalImageUrl);
-  return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, mergedThumbs: result.mergedThumbs };
+  const { state, warpedImageUrl, warning, detectedBigApple } = await buildStateFromParseResult(result, originalImageUrl);
+  return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, mergedThumbs: result.mergedThumbs, detectedBigApple };
 }
 
 /**
@@ -274,10 +260,100 @@ async function fileToDisplayUrl(file: File): Promise<string | null> {
   }
 }
 
+/**
+ * Runs the full solver on spec and validates the result.
+ *
+ * Returns null if the solution is valid (all 81 cells filled, no duplicate
+ * digits in any row, column, or box). Returns a human-readable description of
+ * the first problem found if the solution is invalid — e.g. unsolved cells
+ * (wrong cage totals preventing the solver from placing a digit) or duplicate
+ * digits (cage rules double-placing a digit due to an OCR error).
+ *
+ * Used to detect corrupted cage totals at OCR-time.
+ */
+export function solveAndValidateSpec(spec: PuzzleSpec): string | null {
+  const { board } = solve(spec);
+  const grid = extractSolutionGrid(board);
+  const err = validateSudokuSolution(grid);
+  if (err) return err;
+  if (!isCageSumCorrect(grid, spec.regions, spec.cageTotals)) {
+    return 'Solved grid does not match the declared cage totals';
+  }
+  return null;
+}
+
+/** Extracts a tentative 9×9 solution grid from a board. Cells with more than
+ *  one candidate are recorded as 0 (unsolved). */
+function extractSolutionGrid(board: BoardState): number[][] {
+  return Array.from({ length: 9 }, (_, r) =>
+    Array.from({ length: 9 }, (__, c) => {
+      const cands = board.cands(r, c);
+      return cands.size === 1 ? [...cands][0]! : 0;
+    }),
+  );
+}
+
+/**
+ * Extracts a tentative 9×9 solution grid from a board and validates it.
+ *
+ * Cells with more than one candidate are recorded as 0 (unsolved).
+ * Returns null if valid, or a human-readable error string if the solution
+ * has unsolved cells or duplicate digits in any unit.
+ *
+ * Used as the confirm-time guard to block corrupted puzzles before they reach
+ * the playing screen.
+ */
+export function extractAndValidateSolution(board: BoardState): string | null {
+  return validateSudokuSolution(extractSolutionGrid(board));
+}
+
+/**
+ * Builds the OCR-review candidate list for a parsed puzzle image, per spec
+ * section 1: a Killer-detected scan offers both a Killer candidate (primary,
+ * the first element) and a Classic candidate built from the same
+ * readClassicDigits pass; a Classic-detected scan offers only the Classic
+ * candidate, since no cage signal was sought.
+ */
+/**
+ * Builds the OCR-review candidate list for a parsed puzzle image, per spec
+ * section 1: a Killer-detected scan offers both a Killer candidate (primary,
+ * the first element) and a Classic candidate built from the same
+ * readClassicDigits pass; a Classic-detected scan offers a Classic candidate,
+ * plus — when the solvability heuristic concludes Big Apple — a Big Apple
+ * candidate prepended as the primary element.
+ *
+ * Detection only runs for Classic-detected scans: a Killer scan's Classic
+ * candidate comes from a less-reliable digit pass (see solveCurrentSpec's
+ * comment on false-positive digit detection near cage-total text), and a
+ * real Big Apple photo never has cage borders.
+ */
+export function buildCandidatesFromParseResult(
+  result: ParseResult,
+  spec: PuzzleSpec,
+  alwaysApplyRules: readonly string[],
+  originalImageUrl: string | null,
+  warpedImageUrl: string | null,
+): { candidates: readonly PuzzleState[]; detectedBigApple: boolean } {
+  const classicCandidate = PuzzleState.createClassic(result.givenDigits, alwaysApplyRules, originalImageUrl);
+
+  if (result.puzzleType === 'killer') {
+    const killerCandidate = PuzzleState.createKiller(
+      specToData(spec), specToCageStates(spec), alwaysApplyRules, originalImageUrl, warpedImageUrl,
+    );
+    return { candidates: [killerCandidate, classicCandidate], detectedBigApple: false };
+  }
+
+  const detectedBigApple = result.givenDigits !== null && detectBigApple(result.givenDigits);
+  if (!detectedBigApple) return { candidates: [classicCandidate], detectedBigApple: false };
+
+  const bigAppleCandidate = PuzzleState.createBigApple(result.givenDigits, alwaysApplyRules, originalImageUrl);
+  return { candidates: [bigAppleCandidate, classicCandidate], detectedBigApple: true };
+}
+
 async function buildStateFromParseResult(
   result: ParseResult,
   originalImageUrl: string | null,
-): Promise<{ state: PuzzleState; warpedImageUrl: string | null; warning: string | null }> {
+): Promise<{ state: PuzzleState; warpedImageUrl: string | null; warning: string | null; detectedBigApple: boolean }> {
   let warpedImageUrl: string | null = null;
   if (result.warpedImageData !== null) {
     const offscreen = new OffscreenCanvas(result.warpedImageData.width, result.warpedImageData.height);
@@ -300,22 +376,24 @@ async function buildStateFromParseResult(
     spec = { regions: blankRegions, cageTotals: blankTotals, borderX: blankBorderX, borderY: blankBorderY };
   }
 
-  const state: PuzzleState = {
-    specData: specToData(spec),
-    cageStates: specToCageStates(spec),
-    userGrid: null,
-    virtualCages: [],
-    turns: [],
-    alwaysApplyRules: [...settings.alwaysApplyRules],
-    goldenSolution: null,
-    puzzleType: result.puzzleType,
-    givenDigits: result.givenDigits,
-    originalImageUrl,
-    warpedImageUrl,
-  };
+  // Structural check (O(81), no solver) before the expensive solver validation.
+  // hasMultipleCageTotals detects two cage-head cells in the same region — a
+  // specific OCR error where a digit was read from an adjacent cage. When it fires,
+  // the solver is skipped and a more specific message is shown.
+  if (result.spec !== null) {
+    const structuralError = hasMultipleCageTotals(spec);
+    const validityError = structuralError ?? solveAndValidateSpec(spec);
+    if (validityError !== null) {
+      const msg =
+        `Puzzle appears to have invalid cage totals — an OCR digit may be wrong ` +
+        `(${validityError}). Check the totals carefully before confirming.`;
+      warning = warning ? msg + ' ' + warning : msg;
+    }
+  }
 
-  setState(state);
-  return { state, warpedImageUrl, warning };
+  const { candidates, detectedBigApple } = buildCandidatesFromParseResult(result, spec, [...settings.alwaysApplyRules], originalImageUrl, warpedImageUrl);
+  setStateCandidates(candidates);
+  return { state: candidates[0]!, warpedImageUrl, warning, detectedBigApple };
 }
 
 // ---------------------------------------------------------------------------
@@ -327,12 +405,13 @@ async function buildStateFromParseResult(
  */
 export function patchCage(label: string, total: number): PuzzleState {
   const state = requireState();
+  if (!PuzzleState.isKiller(state)) throw new Error('patchCage requires a killer puzzle state');
   const upper = label.toUpperCase();
   const newCages = state.cageStates.map(c =>
     c.label === upper ? { ...c, total } : c,
   );
-  const updated: PuzzleState = { ...state, cageStates: newCages };
-  setState(updated);
+  const updated = { ...state, cageStates: newCages };
+  replaceCandidate(state, updated);
   return updated;
 }
 
@@ -355,9 +434,10 @@ export function applyDraftLayout(
   borderX: readonly (readonly boolean[])[],    // [col][rowGap]
   borderY: readonly (readonly boolean[])[],    // [colGap][row]
   cellTotals: readonly (readonly number[])[],  // [row][col] — any cell may be non-zero
-): { state: PuzzleState; errorCells: Set<string>; warnings: string[] } {
+): { state: KillerPuzzleState; errorCells: Set<string>; warnings: string[] } {
   const state = requireState();
-  if (state.userGrid !== null) throw new Error('Cannot edit layout after confirming');
+  if (!PuzzleState.isKiller(state)) throw new Error('applyDraftLayout requires a killer puzzle state');
+  if (state.goldenSolution !== null) throw new Error('Cannot edit layout after confirming');
 
   // Union-find: keys are "row,col" (cellKey format)
   const rmap = new Map<string, string>();
@@ -435,12 +515,12 @@ export function applyDraftLayout(
     ? [`Cage totals sum to ${totalSum} (expected ${GRID_TOTAL_SUM}) — please correct before confirming`]
     : [];
 
-  const updated: PuzzleState = {
+  const updated = {
     ...state,
     specData: specToData(spec),
     cageStates: specToCageStates(spec),
   };
-  setState(updated);
+  replaceCandidate(state, updated);
   return { state: updated, errorCells: new Set(), warnings };
 }
 
@@ -458,9 +538,16 @@ export function applyDraftLayout(
  */
 export function solveCurrentSpec(): SolveResult {
   const state = requireState();
-  if (state.userGrid !== null) throw new Error('Already confirmed');
-  const spec = cageStatesToSpec(state.cageStates, state.specData);
-  const givenDigits = state.givenDigits ?? undefined;
+  if (state.goldenSolution !== null) throw new Error('Already confirmed');
+  if (PuzzleState.isBigApple(state)) return solveBigApple(state.givenDigits ?? undefined);
+  const spec = PuzzleState.isKiller(state)
+    ? cageStatesToSpec(state.cageStates, state.specData)
+    : classicSyntheticSpec();
+  // givenDigits are only meaningful for classic puzzles (pre-filled cells).
+  // For killer puzzles, readClassicDigits can produce false-positive detections
+  // (e.g. a cage total digit near the cell centre). Passing them to solve()
+  // would incorrectly force those cells, potentially producing invalid solutions.
+  const givenDigits = PuzzleState.isKiller(state) ? undefined : (state.givenDigits ?? undefined);
   return solve(spec, givenDigits);
 }
 
@@ -472,9 +559,9 @@ export function solveCurrentSpec(): SolveResult {
  * spec. Passing the board avoids a second solver run when the caller has
  * already solved (e.g. the auto-confirm path in handleProcess).
  */
-export function confirmPuzzle(board: BoardState): PuzzleState {
+export function confirmPuzzle(board: BoardState, fixtureStalledCandidates?: number[][][]): PuzzleState {
   const state = requireState();
-  if (state.userGrid !== null) throw new Error('Session already confirmed');
+  if (state.goldenSolution !== null) throw new Error('Session already confirmed');
 
   // Extract golden solution — 0 for cells the solver could not determine
   const goldenSolution: number[][] = Array.from({ length: 9 }, (_, r) =>
@@ -506,23 +593,33 @@ export function confirmPuzzle(board: BoardState): PuzzleState {
   }
 
   // Preserve alwaysApplyRules from state (set from user settings in uploadPuzzle/loadSpecDirect).
-  let updated: PuzzleState = {
-    ...state,
-    goldenSolution,
-    userGrid,
-    turns: givenTurns,
-  };
-  updated = applyAutoPlacements(updated);
+  const confirmedKiller = { ...state, goldenSolution, userGrid, turns: givenTurns, fixtureStalledCandidates: fixtureStalledCandidates ?? null };
+  const confirmedClassic = { ...state, goldenSolution, userGrid, turns: givenTurns };
+  let updated: PuzzleState = PuzzleState.isKiller(state) ? confirmedKiller : confirmedClassic;
+  updated = applyRuleSteps(updated).state;
   setState(updated);
   return updated;
 }
 
 /**
- * Revert session state to a pre-confirm OCR snapshot.
- * Used by the Edit OCR button to let the user correct OCR digits after auto-confirm.
+ * Returns the OCR-review candidate matching the puzzle-type dropdown's
+ * current selection, or undefined if no candidate of that type was built
+ * (e.g. a Classic-detected scan never offers a Killer candidate).
  */
-export function revertToOcr(ocrState: PuzzleState): void {
-  setState(ocrState);
+export function activeCandidate(
+  candidates: readonly PuzzleState[],
+  selectedType: 'killer' | 'classic' | 'bigapple',
+): PuzzleState | undefined {
+  return candidates.find(c => PuzzleState.kind(c) === selectedType);
+}
+
+/**
+ * Revert session state to a pre-confirm OCR snapshot, restoring the full
+ * candidate list. Used by the Edit OCR button to let the user correct OCR
+ * digits after auto-confirm.
+ */
+export function revertToOcr(candidates: readonly PuzzleState[]): void {
+  setStateCandidates(candidates);
 }
 
 /** Checks post-confirmation assertions about the golden solution.
@@ -538,7 +635,7 @@ export function checkSolutionAssertions(state: PuzzleState): AssertionViolation 
     return new AssertionViolation({
       name: 'UnsolvedByRules',
       description: 'The rule-based solver could not fill every cell. This puzzle may require techniques the rule set does not yet cover.',
-      puzzleSpecJson: JSON.stringify(state.specData),
+      puzzleSpecJson: JSON.stringify(PuzzleState.isKiller(state) ? state.specData : null),
       solutionJson: JSON.stringify(sol),
       actionLog: formatActionLog(),
     });
@@ -550,7 +647,7 @@ export function checkSolutionAssertions(state: PuzzleState): AssertionViolation 
     return new AssertionViolation({
       name: 'InvalidSolution',
       description: `The solver produced an invalid solution: ${reason}`,
-      puzzleSpecJson: JSON.stringify(state.specData),
+      puzzleSpecJson: JSON.stringify(PuzzleState.isKiller(state) ? state.specData : null),
       solutionJson: JSON.stringify(sol),
       actionLog: formatActionLog(),
     });
@@ -564,13 +661,10 @@ export function checkSolutionAssertions(state: PuzzleState): AssertionViolation 
 // ---------------------------------------------------------------------------
 
 /**
- * Builds the full CandidatesResponse for the current state.
- * Replaces GET /candidates.
+ * Builds CandidatesResponse from an already-constructed KillerBoardState.
+ * Shared by computeCandidates (full solve) and computeAnimationCandidates (skip solve).
  */
-export function computeCandidates(): CandidatesResponse {
-  const state = requireConfirmed();
-  const { board } = buildEngine(state); // engine.solve() called inside buildEngine
-
+export function candidatesFromBoard(board: BoardState, state: PuzzleState): CandidatesResponse {
   // Per-cell user-removed lookup
   const removedByCell = new Map<string, Set<number>>();
   for (const [r, c, d] of userRemoved(state)) {
@@ -583,17 +677,15 @@ export function computeCandidates(): CandidatesResponse {
   // Build per-cell info
   const cells = Array.from({ length: 9 }, (_, r) =>
     Array.from({ length: 9 }, (__, c) => {
-      const cageIdx = board.regions[r]![c]!;
-      const remaining = board.cageSolns[cageIdx]!;
       const removedHere = removedByCell.get(`${r},${c}`) ?? new Set<number>();
-      // Classic mode: cage solutions are always empty (dummy spec) — use board
-      // candidates directly so row/col/box eliminations are reflected.
-      const cagePossible: Set<number> = remaining.length > 0
-        ? new Set(remaining.flat())
-        : new Set<number>();
-      const solverCands = state.puzzleType === 'classic'
-        ? new Set(board.cands(r, c))
-        : new Set([...board.cands(r, c)].filter(d => cagePossible.has(d)));
+      const solverCands = board instanceof KillerBoardState
+        ? (() => {
+            const cageIdx = board.regions[r]![c]!;
+            const remaining = board.cageSolns[cageIdx]!;
+            const cagePossible = new Set(remaining.flat());
+            return new Set([...board.cands(r, c)].filter(d => cagePossible.has(d)));
+          })()
+        : new Set(board.cands(r, c));
       // Union in user-removed so they show for strikethrough even after SolutionMapFilter prunes
       for (const d of removedHere) solverCands.add(d);
       return {
@@ -604,44 +696,78 @@ export function computeCandidates(): CandidatesResponse {
   );
 
   // Real cage info — allSolutions/autoImpossible/userEliminated match VirtualCageInfo shape.
-  const nRealCages = Math.max(...board.regions.flat()) + 1;
-  const cages = Array.from({ length: nRealCages }, (_, idx) => {
-    const unit = board.units[27 + idx]!;
-    // board.cageSolns[idx] has user-eliminated and engine-impossible both removed by buildEngine.
-    const solns = board.cageSolns[idx]!;
-    const cageState = state.cageStates[idx]!;
-    let total = 0;
-    for (const [r, c] of unit.cells) {
-      const v = board.spec.cageTotals[r]![c]!;
-      if (v) { total = v; break; }
-    }
-    const all = allCageSolutions(unit.cells.length, total);
-    // solns elements are already order-normalised by the engine; s.join(',') is sufficient.
-    const possibleKeys = new Set(solns.map(s => s.join(',')));
-    // userEliminatedSolns are stored sorted by toggleSolution; join is sufficient.
-    const userEliminatedKeys = new Set(cageState.userEliminatedSolns.map(s => s.join(',')));
-    return {
-      cageIdx: idx,
-      label: cageState.label,
-      cells: unit.cells.map(([r, c]) => [r, c] as [number, number]),
-      total,
-      solutions: solns.map(s => [...s].sort((a, b) => a - b)),
-      allSolutions: all,
-      autoImpossible: all.filter(s => !possibleKeys.has(s.join(',')) && !userEliminatedKeys.has(s.join(','))),
-      userEliminated: all.filter(s => userEliminatedKeys.has(s.join(','))),
-      mustContain: solns.length > 0 ? intersectAll(solns.map(s => new Set(s))) : [],
-    };
-  });
+  // A plain BoardState carries no cage data; cages/nRealCages are empty/zero for it.
+  const cageStates = PuzzleState.isKiller(state) ? state.cageStates : [];
+  const nRealCages = board instanceof KillerBoardState ? Math.max(...board.regions.flat()) + 1 : 0;
+  const cages = board instanceof KillerBoardState
+    ? Array.from({ length: nRealCages }, (_, idx) => {
+        const unit = board.units[27 + idx]!;
+        // board.cageSolns[idx] has user-eliminated and engine-impossible both removed by buildEngine.
+        const solns = board.cageSolns[idx]!;
+        const cageState = cageStates[idx]!;
+        let total = 0;
+        for (const [r, c] of unit.cells) {
+          const v = board.spec.cageTotals[r]![c]!;
+          if (v) { total = v; break; }
+        }
+        const all = allCageSolutions(unit.cells.length, total);
+        // solns elements are already order-normalised by the engine; s.join(',') is sufficient.
+        const possibleKeys = new Set(solns.map(s => s.join(',')));
+        // userEliminatedSolns are stored sorted by toggleSolution; join is sufficient.
+        const userEliminatedKeys = new Set(cageState.userEliminatedSolns.map(s => s.join(',')));
+        return {
+          cageIdx: idx,
+          label: cageState.label,
+          cells: unit.cells.map(([r, c]) => [r, c] as [number, number]),
+          total,
+          solutions: solns.map(s => [...s].sort((a, b) => a - b)),
+          allSolutions: all,
+          autoImpossible: all.filter(s => !possibleKeys.has(s.join(',')) && !userEliminatedKeys.has(s.join(','))),
+          userEliminated: all.filter(s => userEliminatedKeys.has(s.join(','))),
+          mustContain: solns.length > 0 ? intersectAll(solns.map(s => new Set(s))) : [],
+        };
+      })
+    : [];
 
   // Virtual cage info — same SolutionCategorization shape as CageInfo.
-  const virtualCages = state.virtualCages.map((vc, i) => {
-    const vcSolns = board.cageSolns[nRealCages + i] ?? [];
+  const diffSolnKey = (s: DiffSolution) => `${[...s.pos].join(',')}|${[...s.neg].join(',')}`;
+  const virtualCageStates = PuzzleState.isKiller(state) ? state.virtualCages : [];
+  const virtualCages = virtualCageStates.map((vc, i) => {
+    const isDiff = vc.negativeCells !== undefined && vc.negativeCells.length > 0;
+    const key = virtualCageKeyFromCage(vc);
+    if (isDiff) {
+      const negCells = vc.negativeCells!;
+      const negKeys = new Set(negCells.map(([r, c]) => `${r},${c}`));
+      const posCount = vc.cells.length - negKeys.size;
+      const negCount = negKeys.size;
+      const allDiff = solDiffs(posCount, negCount, vc.total);
+      const elimKeys = new Set((vc.eliminatedDiffSolns ?? []).map(diffSolnKey));
+      const remaining = allDiff.filter(s => !elimKeys.has(diffSolnKey(s)));
+      return {
+        key,
+        cells: vc.cells.map(([r, c]) => [r, c] as [number, number]),
+        total: vc.total,
+        solutions: [],
+        allSolutions: [],
+        autoImpossible: [],
+        userEliminated: [],
+        mustContain: [],
+        negativeCells: negCells.map(([r, c]) => [r, c] as [number, number]),
+        allDiffSolutions: allDiff,
+        diffSolutions: remaining,
+        eliminatedDiffSolns: (vc.eliminatedDiffSolns ?? []).slice(),
+      };
+    }
+    // Virtual cages are killer-only (gated behind isKiller in main.ts's UI), so this
+    // branch never observes a non-empty array for a plain BoardState — but the type
+    // system needs the same instanceof narrow to read board.cageSolns at all.
+    const vcSolns = board instanceof KillerBoardState ? (board.cageSolns[nRealCages + i] ?? []) : [];
     const all = allCageSolutions(vc.cells.length, vc.total);
     const possibleKeys = new Set(vcSolns.map(solutionKey));
     // eliminatedSolns are stored sorted by toggleSolution; join is sufficient.
     const userEliminatedKeys = new Set(vc.eliminatedSolns.map(s => s.join(',')));
     return {
-      key: virtualCageKey(vc.cells, vc.total),
+      key,
       cells: vc.cells.map(([r, c]) => [r, c] as [number, number]),
       total: vc.total,
       solutions: vcSolns.map(s => [...s].sort((a, b) => a - b)),
@@ -653,6 +779,35 @@ export function computeCandidates(): CandidatesResponse {
   });
 
   return { cells, cages, virtualCages };
+}
+
+/**
+ * Builds the full CandidatesResponse for the current state.
+ * Replaces GET /candidates.
+ */
+export function computeCandidates(): CandidatesResponse {
+  const state = requireConfirmed();
+  const { board } = buildEngine(state); // engine.solve() called inside buildEngine
+  return candidatesFromBoard(board, state);
+}
+
+/**
+ * Returns the fully-solved board for the current state, for callers that need
+ * the BoardState itself rather than a CandidatesResponse (e.g. candidateDisplay).
+ */
+export function computeBoard(state: PuzzleState): BoardState {
+  return buildEngine(state).board;
+}
+
+/**
+ * Builds a partial CandidatesResponse for the rule-by-rule animation loop,
+ * without running the full solver. Candidates reflect only what has been
+ * eliminated so far (user placements + userRemovedCandidates), giving a
+ * progressive per-rule display rather than instantly collapsing everything.
+ */
+export function computeAnimationCandidates(state: PuzzleState): CandidatesResponse {
+  const { board } = buildEngine(state, { skipSolve: true });
+  return candidatesFromBoard(board, state);
 }
 
 // ---------------------------------------------------------------------------
@@ -667,43 +822,28 @@ export function enterCell(row1b: number, col1b: number, digit: number): PuzzleSt
   const state = requireConfirmed();
   const r = row1b - 1;
   const c = col1b - 1;
-  const action: UserAction = digit !== 0
-    ? { type: 'placeDigit', row: r, col: c, digit, source: 'user' }
-    : { type: 'removeDigit', row: r, col: c };
-  let updated = recordTurn(state, action);
-  updated = applyAutoPlacements(updated);
-  setState(updated);
-  return updated;
+  const result = digit !== 0
+    ? PuzzleStateOps.placeDigit(state, r, c, digit)
+    : PuzzleStateOps.removeDigit(state, r, c);
+  setState(result.state);
+  return result.state;
 }
 
 /**
- * Records the user's digit placement without applying auto-placements.
- * Used by the animated path in the UI (autoPlacementDelay > 0) so the
- * animation loop can step through auto-placements one-by-one.
+ * Records the user's digit placement and returns the fully-folded committed
+ * state alongside ruleSteps/baseState so the UI can drive an animation
+ * showing the transition from baseState to state.
  */
-export function enterCellStep(row1b: number, col1b: number, digit: number): PuzzleState {
+export function enterCellStep(row1b: number, col1b: number, digit: number): { state: PuzzleState; ruleSteps: readonly RuleStep[]; baseState: PuzzleState } {
   const state = requireConfirmed();
   const r = row1b - 1;
   const c = col1b - 1;
   const action: UserAction = digit !== 0
     ? { type: 'placeDigit', row: r, col: c, digit, source: 'user' }
     : { type: 'removeDigit', row: r, col: c };
-  const updated = recordTurn(state, action);
-  setState(updated);
-  return updated;
-}
-
-/**
- * Applies exactly one pending auto-placement and persists it to the store.
- * Returns the updated state, or null if there are no more auto-placements.
- */
-export function stepAutoPlacement(): PuzzleState | null {
-  const state = getState();
-  if (state === null) return null;
-  const next = applyNextAutoPlacement(state);
-  if (next === null) return null;
-  setState(next);
-  return next;
+  const result = recordTurn(state, action);
+  setState(result.state);
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -716,15 +856,9 @@ export function stepAutoPlacement(): PuzzleState | null {
  */
 export function undo(): PuzzleState {
   const state = requireConfirmed();
-  if (state.turns.length === 0) throw new UserFacingError('Nothing to undo');
-  const last = state.turns[state.turns.length - 1]!.action;
-  if (last.type === 'placeDigit' && last.source === 'given') throw new UserFacingError('Cannot undo given digits');
-
-  const trimmed: PuzzleState = { ...state, turns: state.turns.slice(0, -1) };
-  let updated = rebuildUserGrid(trimmed);
-  updated = applyAutoPlacements(updated);
-  setState(updated);
-  return updated;
+  const result = PuzzleStateOps.undo(state);
+  setState(result.state);
+  return result.state;
 }
 
 /**
@@ -733,8 +867,7 @@ export function undo(): PuzzleState {
 export function rewind(turnIdx: number): PuzzleState {
   const state = requireConfirmed();
   const trimmed: PuzzleState = { ...state, turns: state.turns.slice(0, turnIdx) };
-  let updated = rebuildUserGrid(trimmed);
-  updated = applyAutoPlacements(updated);
+  const updated = applyRuleSteps(rebuildUserGrid(trimmed)).state;
   setState(updated);
   return updated;
 }
@@ -752,28 +885,26 @@ export function cycleCandidate(row1b: number, col1b: number, digit: number): Puz
   const r = row1b - 1;
   const c = col1b - 1;
 
-  let action: UserAction;
+  let result: SessionResult;
   if (digit === 0) {
-    action = { type: 'resetCellCandidates', row: r, col: c };
+    result = PuzzleStateOps.resetCellCandidates(state, r, c);
   } else {
     const cellRemoved = new Set(
       userRemoved(state).filter(([rr, cc]) => rr === r && cc === c).map(([,, d]) => d),
     );
     const { board } = buildEngine(state);
     if (cellRemoved.has(digit)) {
-      action = { type: 'restoreCandidate', row: r, col: c, digit };
+      result = PuzzleStateOps.restoreCandidate(state, r, c, digit);
     } else if (board.cands(r, c).has(digit)) {
-      action = { type: 'eliminateCandidate', row: r, col: c, digit };
+      result = PuzzleStateOps.eliminateCandidate(state, r, c, digit);
     } else {
       // auto-impossible and not user-removed — no-op
       return state;
     }
   }
 
-  let updated = recordTurn(state, action);
-  updated = applyAutoPlacements(updated);
-  setState(updated);
-  return updated;
+  setState(result.state);
+  return result.state;
 }
 
 // ---------------------------------------------------------------------------
@@ -786,6 +917,7 @@ export function cycleCandidate(row1b: number, col1b: number, digit: number): Puz
  */
 export function solvePuzzle(): SolveResponse {
   const state = requireState();
+  if (!PuzzleState.isKiller(state)) throw new Error('solvePuzzle requires a killer puzzle state');
   const spec = cageStatesToSpec(state.cageStates, state.specData);
   try {
     const { board } = solve(spec);
@@ -811,13 +943,15 @@ export function solvePuzzle(): SolveResponse {
  */
 export function eliminateCageSolution(label: string, solution: number[]): PuzzleState {
   const state = requireConfirmed();
+  if (!PuzzleState.isKiller(state)) throw new Error('eliminateCageSolution requires a killer puzzle state');
   const upper = label.toUpperCase();
   const newCages = state.cageStates.map(c =>
     c.label !== upper ? c : { ...c, userEliminatedSolns: toggleSolution(c.userEliminatedSolns, solution) },
   );
-  const updated: PuzzleState = { ...state, cageStates: newCages };
+  const withCages = { ...state, cageStates: newCages };
+  const updated = applyRuleSteps(withCages).state;
   setState(updated);
-  return applyAutoPlacements(updated);
+  return updated;
 }
 
 /**
@@ -828,12 +962,35 @@ export function eliminateCageSolution(label: string, solution: number[]): Puzzle
  */
 export function eliminateVirtualCageSolution(vcKey: string, solution: number[]): PuzzleState {
   const state = requireConfirmed();
+  if (!PuzzleState.isKiller(state)) throw new Error('eliminateVirtualCageSolution requires a killer puzzle state');
   const newVCs = state.virtualCages.map(vc =>
-    virtualCageKey(vc.cells, vc.total) !== vcKey ? vc : { ...vc, eliminatedSolns: toggleSolution(vc.eliminatedSolns, solution) },
+    virtualCageKeyFromCage(vc) !== vcKey ? vc : { ...vc, eliminatedSolns: toggleSolution(vc.eliminatedSolns, solution) },
   );
-  const updated: PuzzleState = { ...state, virtualCages: newVCs };
+  const withVCs = { ...state, virtualCages: newVCs };
+  const updated = applyRuleSteps(withVCs).state;
   setState(updated);
-  return applyAutoPlacements(updated);
+  return updated;
+}
+
+/** Toggle a DiffSolution as user-eliminated for a diff virtual cage identified by key. */
+export function eliminateVirtualCageDiffSolution(vcKey: string, solution: DiffSolution): PuzzleState {
+  const state = requireConfirmed();
+  if (!PuzzleState.isKiller(state)) throw new Error('eliminateVirtualCageDiffSolution requires a killer puzzle state');
+  const diffKey = (s: DiffSolution) => `${[...s.pos].join(',')}|${[...s.neg].join(',')}`;
+  const newVCs = state.virtualCages.map(vc => {
+    if (virtualCageKeyFromCage(vc) !== vcKey) return vc;
+    const current = vc.eliminatedDiffSolns ?? [];
+    const k = diffKey(solution);
+    const isElim = current.some(s => diffKey(s) === k);
+    const newElims = isElim
+      ? current.filter(s => diffKey(s) !== k)
+      : [...current, solution];
+    return { ...vc, eliminatedDiffSolns: newElims };
+  });
+  const withVCs = { ...state, virtualCages: newVCs };
+  const updated = applyRuleSteps(withVCs).state;
+  setState(updated);
+  return updated;
 }
 
 // ---------------------------------------------------------------------------
@@ -843,9 +1000,16 @@ export function eliminateVirtualCageSolution(vcKey: string, solution: number[]):
 /**
  * Validates and adds a user-defined virtual cage. Replaces POST /virtual-cages.
  * Cells are 0-based [row, col] pairs.
+ * Pass negativeCells (a subset of cells) to create a difference cage:
+ *   sum(cells \ negativeCells) − sum(negativeCells) = total  (total must be ≥ 0).
  */
-export function addVirtualCage(cells: [number, number][], total: number): PuzzleState {
+export function addVirtualCage(
+  cells: [number, number][],
+  total: number,
+  negativeCells?: [number, number][],
+): PuzzleState {
   const state = requireConfirmed();
+  const isDiff = negativeCells !== undefined && negativeCells.length > 0;
 
   if (cells.length < 2) throw new Error('Virtual cage requires at least 2 cells');
   const unique = new Set(cells.map(([r, c]) => `${r},${c}`));
@@ -853,23 +1017,56 @@ export function addVirtualCage(cells: [number, number][], total: number): Puzzle
   for (const [r, c] of cells) {
     if (r < 0 || r > 8 || c < 0 || c > 8) throw new Error(`Cell (${r},${c}) out of range`);
   }
-  const n = cells.length;
-  const [minTotal, maxTotal] = cageSumRange(n);
-  if (total < minTotal || total > maxTotal) {
-    throw new Error(`Total ${total} impossible for ${n} distinct digits (${minTotal}–${maxTotal})`);
+
+  if (isDiff) {
+    // Diff cage validation
+    if (total < 0) throw new Error('Total must be non-negative for a difference cage');
+    const negKeys = new Set(negativeCells!.map(([r, c]) => `${r},${c}`));
+    for (const k of negKeys) {
+      if (!unique.has(k)) throw new Error(`Negative cell ${k} is not in the selected cells`);
+    }
+    if (negKeys.size === cells.length) {
+      throw new Error('At least one positive cell is required');
+    }
+    const posCount = cells.length - negKeys.size;
+    const negCount = negKeys.size;
+    const solutions = solDiffs(posCount, negCount, total);
+    if (solutions.length === 0) {
+      throw new Error(`Total ${total} has no valid solutions for ${posCount} positive and ${negCount} negative cells`);
+    }
+  } else {
+    const n = cells.length;
+    const [minTotal, maxTotal] = cageSumRange(n);
+    if (total < minTotal || total > maxTotal) {
+      throw new Error(`Total ${total} impossible for ${n} distinct digits (${minTotal}–${maxTotal})`);
+    }
   }
 
   const typedCells = cells.map(([r, c]) => [r, c] as Cell);
-  const key = virtualCageKey(typedCells as unknown as readonly Cell[], total);
-  const existing = new Set(userVirtualCages(state).map(vc => virtualCageKey(vc.cells, vc.total)));
+  const typedNeg = negativeCells?.map(([r, c]) => [r, c] as Cell);
+  const key = virtualCageKey(typedCells as unknown as readonly Cell[], total, typedNeg as unknown as readonly Cell[] | undefined);
+  const existing = new Set(userVirtualCages(state).map(vc => virtualCageKeyFromCage(vc)));
   if (existing.has(key)) throw new Error(`Virtual cage already exists: ${key}`);
 
-  const cage: VirtualCage = { cells: typedCells as Cell[], total, eliminatedSolns: [] };
-  const action: UserAction = { type: 'addVirtualCage', cage };
-  let updated = recordTurn(state, action);
-  updated = applyAutoPlacements(updated);
-  setState(updated);
-  return updated;
+  const cage: VirtualCage = {
+    cells: typedCells as Cell[],
+    total,
+    eliminatedSolns: [],
+    ...(isDiff && { negativeCells: typedNeg as Cell[], eliminatedDiffSolns: [] }),
+  };
+  if (!PuzzleState.isKiller(state)) throw new Error('addVirtualCage requires a killer puzzle state');
+  const result = PuzzleStateOps.addVirtualCage(state, cage);
+  setState(result.state);
+  return result.state;
+}
+
+
+export function removeVirtualCage(key: string): PuzzleState {
+  const state = requireConfirmed();
+  if (!PuzzleState.isKiller(state)) throw new Error('removeVirtualCage requires a killer puzzle state');
+  const result = PuzzleStateOps.removeVirtualCage(state, key);
+  setState(result.state);
+  return result.state;
 }
 
 // ---------------------------------------------------------------------------
@@ -898,95 +1095,28 @@ function makeRewindHint(idx: number): HintItem {
   };
 }
 
-/**
- * Scan turn history for the first turn that explicitly eliminated `digit` from
- * cell `(r,c)` — either via eliminateCandidate or via applyHint.
- * Returns the turn index, or null if not found (e.g. was eliminated by a rule).
- */
-function findFirstElimTurnIdx(
-  state: PuzzleState,
-  r: number,
-  c: number,
-  digit: number,
-): number | null {
-  for (let i = 0; i < state.turns.length; i++) {
-    const a = state.turns[i]!.action;
-    if (a.type === 'eliminateCandidate' && a.row === r && a.col === c && a.digit === digit) return i;
-    if (a.type === 'applyHint') {
-      for (const [er, ec, ed] of a.eliminations) {
-        if (er === r && ec === c && ed === digit) return i;
-      }
-    }
-  }
-  return null;
-}
-
-/**
- * Checks the user's recorded eliminations (cycleCandidate, applyHint) against
- * goldenSolution.  Returns the first cell where the correct solution digit was
- * explicitly removed by the user, or null if all golden candidates are intact.
- *
- * State-based (no board build required) so it is safe to call before buildEngine.
- */
-function findMissingGoldenCandidate(
-  state: PuzzleState,
-): { r: number; c: number; gold: number } | null {
-  const gs = state.goldenSolution;
-  if (gs === null) return null;
-
-  // Check explicit eliminateCandidate actions via userRemoved()
-  for (const [r, c, d] of userRemoved(state)) {
-    const gold = gs[r]?.[c];
-    if (gold !== undefined && gold !== 0 && d === gold && state.userGrid![r]![c] === 0) {
-      return { r, c, gold };
-    }
-  }
-  return null;
-}
-
 export function getHints(): HintsResponse {
   let state = requireConfirmed();
-  if (state.userGrid === null) return { hints: [] };
+  if (state.goldenSolution === null) return { hints: [] };
 
   // ── Inconsistency detection ─────────────────────────────────────────────────
-  // Three paths can put the board in a state inconsistent with goldenSolution:
-  //   1. A wrong digit was placed (detectable via userGrid vs goldenSolution).
-  //      findLastConsistentTurnIdx also finds the responsible turn when it was
-  //      a user placeDigit action; wrong auto-placed digits fall back to turn 0.
-  //   2. The correct solution digit was explicitly eliminated from a cell's
-  //      candidates (cycleCandidate / applyHint) — detectable from turn history.
-  //   3. Wrong digits in userGrid that have no corresponding turn (legacy states
-  //      from pre-soundness-assertion auto-placement cascades) — detected as any
-  //      non-zero wrong cell in userGrid.
-  const gs = state.goldenSolution;
-  let inconsistent = false;
-  let rewindTurnIdx: number | null = null;
-  let missingCell: { r: number; c: number; gold: number } | null = null;
-
-  if (gs !== null) {
-    // Check 1 & 3: wrong digit anywhere in userGrid
-    for (let r = 0; r < 9 && !inconsistent; r++) {
-      for (let c = 0; c < 9 && !inconsistent; c++) {
-        const placed = state.userGrid[r]![c]!;
-        const gold = gs[r]![c]!;
-        if (placed !== 0 && gold !== 0 && placed !== gold) {
-          inconsistent = true;
-          rewindTurnIdx = findLastConsistentTurnIdx(state); // null if no turn
-        }
-      }
-    }
-
-    // Check 2: correct golden candidate explicitly eliminated by user
-    if (!inconsistent) {
-      missingCell = findMissingGoldenCandidate(state);
-      if (missingCell !== null) {
-        inconsistent = true;
-        rewindTurnIdx = findFirstElimTurnIdx(state, missingCell.r, missingCell.c, missingCell.gold);
-      }
-    }
-  }
+  // checkPuzzleInvariant compares state against goldenSolution and returns the
+  // first detected violation (wrong virtual cage total, wrong placed digit, or
+  // an explicitly-eliminated correct candidate), or null if consistent.
+  const violation = checkPuzzleInvariant(state);
+  const inconsistent = violation !== null;
+  const rewindTurnIdx = violation?.rewindTurnIdx ?? null;
+  const missingCell = violation?.missingCell ?? null;
 
   if (inconsistent) {
+    // Check 0 (killer-only): a user-added virtual cage's total contradicts
+    // goldenSolution. userGrid itself is consistent, so the alt-solution
+    // search below (which assumes a wrong placed/eliminated digit) doesn't
+    // apply — rewind immediately.
+    if (missingCell === null && PuzzleState.isKiller(state) && findWrongVirtualCageTurnIdx(state) !== null) {
+      return { hints: [makeRewindHint(rewindTurnIdx ?? 0)] };
+    }
+
     if (missingCell !== null) {
       // Golden candidate was explicitly eliminated. In a multi-solution puzzle the
       // cell may still have a remaining candidate that is correct for an alternative
@@ -1084,6 +1214,17 @@ export function getHints(): HintsResponse {
       placement: h.placement ? [h.placement[0], h.placement[1], h.placement[2]] : null,
       rewindToTurnIdx: null,
       virtualCageSuggestion: vcSug,
+      ...(h.chainCells ? {
+        chainCells: h.chainCells.map(cc => ({
+          cell: [cc.cell[0], cc.cell[1]] as [number, number],
+          digits: [...cc.digits],
+          ...(cc.colour ? { colour: cc.colour } : {}),
+        })),
+      } : {}),
+      ...(h.patternDigits ? { patternDigits: [...h.patternDigits] } : {}),
+      ...(h.secondaryHighlightCells ? {
+        secondaryHighlightCells: [...h.secondaryHighlightCells].map(([r, c]) => [r, c] as [number, number]),
+      } : {}),
     };
   });
 
@@ -1112,12 +1253,9 @@ export function getHints(): HintsResponse {
  */
 export function applyHint(eliminations: readonly { cell: [number, number]; digit: number }[]): PuzzleState {
   const state = requireConfirmed();
-  const triples: [number, number, number][] = eliminations.map(e => [e.cell[0], e.cell[1], e.digit]);
-  const action: UserAction = { type: 'applyHint', eliminations: triples };
-  let updated = recordTurn(state, action);
-  updated = applyAutoPlacements(updated);
-  setState(updated);
-  return updated;
+  const result = PuzzleStateOps.applyHint(state, eliminations);
+  setState(result.state);
+  return result.state;
 }
 
 // ---------------------------------------------------------------------------
@@ -1130,7 +1268,7 @@ export function applyHint(eliminations: readonly { cell: [number, number]; digit
  */
 export function refresh(): PuzzleState {
   const state = requireConfirmed();
-  const updated = applyAutoPlacements(state);
+  const updated = applyRuleSteps(state).state;
   setState(updated);
   return updated;
 }
@@ -1150,16 +1288,21 @@ export function getAutoPlacementDelay(): number {
 
 export function getSettingsData(): SettingsResponse {
   const settings = loadSettings();
-  const hintableRules: RuleInfo[] = defaultRules().map(r => ({
-    name: r.name,
-    displayName: r.name.replace(/([A-Z])/g, ' $1').trim(),
-    description: r.description,
-  }));
+  const state = getState();
+  const isKillerPuzzle = state !== null && PuzzleState.isKiller(state);
+  const hintableRules: RuleInfo[] = defaultRules()
+    .filter(r => isKillerPuzzle || !r.killerOnly)
+    .map(r => ({
+      name: r.name,
+      displayName: r.displayName,
+      description: r.description,
+    }));
   return {
     alwaysApplyRules: settings.alwaysApplyRules,
     autoPlacementDelay: settings.autoPlacementDelay,
     showEssential: true, // localStorage-persisted by main.ts
     showCandidatesByDefault: settings.showCandidatesByDefault,
+    devSurfaceTelemetryFailures: settings.devSurfaceTelemetryFailures,
     hintableRules,
   };
 }
@@ -1172,11 +1315,12 @@ export function saveSettingsData(
   alwaysApplyRules: string[],
   autoPlacementDelay: number,
   showCandidatesByDefault: boolean,
+  devSurfaceTelemetryFailures: boolean = loadSettings().devSurfaceTelemetryFailures,
 ): PuzzleState | null {
-  saveSettings({ alwaysApplyRules, autoPlacementDelay, showCandidatesByDefault });
+  saveSettings({ alwaysApplyRules, autoPlacementDelay, showCandidatesByDefault, devSurfaceTelemetryFailures });
   const s = getState();
   if (s === null) return null;
   const updated: PuzzleState = { ...s, alwaysApplyRules };
   setState(updated);
-  return s.userGrid !== null ? refresh() : updated;
+  return s.goldenSolution !== null ? refresh() : updated;
 }

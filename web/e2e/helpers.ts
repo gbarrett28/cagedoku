@@ -3,8 +3,8 @@ import { type Page } from '@playwright/test';
 /**
  * Stub opencv.js with an empty script so it "loads" without starting WASM
  * compilation. Without this, DOMContentLoaded triggers loadCV() which kicks
- * off a 10 MB download + WASM init that blocks browserContext.close() for 10+
- * seconds. Structural tests do not exercise the image pipeline at all.
+ * off a cold WASM compile (~30 s in headless) that blocks browserContext.close().
+ * Structural tests do not exercise the image pipeline at all.
  */
 export async function stubOpenCV(page: Page): Promise<void> {
   await page.route('**/opencv.js', route => route.fulfill({

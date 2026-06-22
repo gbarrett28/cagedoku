@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">56.6% </span>
+                <span class="strong">73.33% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>30/53</span>
+                <span class='fraction'>44/60</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">37.5% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/0</span>
+                <span class='fraction'>3/8</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">75% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/4</span>
+                <span class='fraction'>3/4</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">56.6% </span>
+                <span class="strong">73.33% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>30/53</span>
+                <span class='fraction'>44/60</span>
             </div>
         
             
@@ -116,7 +116,14 @@
 <a name='L51'></a><a href='#L51'>51</a>
 <a name='L52'></a><a href='#L52'>52</a>
 <a name='L53'></a><a href='#L53'>53</a>
-<a name='L54'></a><a href='#L54'>54</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -141,25 +148,32 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -193,28 +207,35 @@ export const DEFAULT_ALWAYS_APPLY_RULES: readonly string[] = [
 ];
 &nbsp;
 /** Returns the current settings, falling back to defaults if none are stored. */
-export <span class="fstat-no" title="function not covered" >function loadSettings(): CoachSettings {</span>
-<span class="cstat-no" title="statement not covered" >  try {</span>
-<span class="cstat-no" title="statement not covered" >    const raw = localStorage.getItem(SETTINGS_KEY);</span>
-<span class="cstat-no" title="statement not covered" >    if (raw === null) return defaultSettings();</span>
+export function loadSettings(): CoachSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw === null) return defaultSettings(<span class="branch-0 cbranch-no" title="branch not covered" >);</span>
 <span class="cstat-no" title="statement not covered" >    const parsed: unknown = JSON.parse(raw);</span>
-<span class="cstat-no" title="statement not covered" >    if (!isCoachSettings(parsed)) return defaultSettings();</span>
-<span class="cstat-no" title="statement not covered" >    return parsed;</span>
-<span class="cstat-no" title="statement not covered" >  } catch {</span>
+<span class="cstat-no" title="statement not covered" >    if (!hasValidRules(parsed)) return defaultSettings();</span>
+<span class="cstat-no" title="statement not covered" >    const obj = parsed as Record&lt;string, unknown&gt;;</span>
+<span class="cstat-no" title="statement not covered" >    return {</span>
+<span class="cstat-no" title="statement not covered" >      alwaysApplyRules: [...(obj['alwaysApplyRules'] as string[])],</span>
+      autoPlacementDelay: typeof obj['autoPlacementDelay'] === 'number' ? obj['autoPlacementDelay'<span class="branch-0 cbranch-no" title="branch not covered" >] : 0,</span>
+      showCandidatesByDefault: typeof obj['showCandidatesByDefault'] === <span class="branch-0 cbranch-no" title="branch not covered" >'boolean' ? obj['showCandidatesByDefault'<span class="branch-0 cbranch-no" title="branch not covered" >] : t</span>rue,</span>
+    };
+<span class="branch-0 cbranch-no" title="branch not covered" >  } catch (e) {</span>
+<span class="cstat-no" title="statement not covered" >    console.warn('[loadSettings] corrupted settings, resetting to defaults', e);</span>
 <span class="cstat-no" title="statement not covered" >    return defaultSettings();</span>
 <span class="cstat-no" title="statement not covered" >  }</span>
-<span class="cstat-no" title="statement not covered" >}</span>
+}
 &nbsp;
 /** Persists settings to localStorage. */
-export <span class="fstat-no" title="function not covered" >function saveSettings(settings: CoachSettings): void {</span>
-<span class="cstat-no" title="statement not covered" >  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));</span>
-<span class="cstat-no" title="statement not covered" >}</span>
+export function saveSettings(settings: CoachSettings): void {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
 &nbsp;
-<span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >function defaultSettings(): CoachSettings {</span></span>
-<span class="cstat-no" title="statement not covered" >  return { alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES] };</span>
-<span class="cstat-no" title="statement not covered" >}</span>
+function defaultSettings(): CoachSettings {
+  return { alwaysApplyRules: [...DEFAULT_ALWAYS_APPLY_RULES], autoPlacementDelay: 0, showCandidatesByDefault: true };
+}
 &nbsp;
-<span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >function isCoachSettings(v: unknown): v is CoachSettings {</span></span>
+/** Validates the minimum shape required to extract settings (alwaysApplyRules is mandatory). */
+<span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >function hasValidRules(v: unknown): boolean {</span></span>
 <span class="cstat-no" title="statement not covered" >  if (typeof v !== 'object' || v === null) return false;</span>
 <span class="cstat-no" title="statement not covered" >  const obj = v as Record&lt;string, unknown&gt;;</span>
 <span class="cstat-no" title="statement not covered" >  return (</span>
@@ -229,7 +250,7 @@ export <span class="fstat-no" title="function not covered" >function saveSetting
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-05-01T07:18:18.830Z
+                at 2026-05-24T21:44:48.695Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

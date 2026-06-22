@@ -11,8 +11,22 @@ import { combinations, dedupElims } from './_helpers.js';
 
 export class Jellyfish {
   readonly name = 'Jellyfish';
-  readonly description = 'Generalisation of X-Wing across four rows and four columns.';
-  readonly priority = 15;
+  readonly killerOnly = false;
+  readonly displayName = 'Jellyfish';
+  readonly description = `
+Jellyfish — generalisation of X-Wing to four base rows and four cover columns.
+
+Setup: select 4 rows R1–R4. In each row, d appears in 2–4 columns. The union of those columns spans exactly 4 columns Ca–Cd.
+
+Proof: identical to Swordfish reasoning with N=4. Each cover column receives at most one d-placement from the four base rows. Any non-base cell in the four cover columns sees a placed d and cannot hold d.
+
+Column variant is identical with rows and columns transposed.
+
+Guards:
+  cols.size >= 2 && cols.size <= 4   row qualifies only when d spans 2–4 columns
+  coverCols.size === 4   the union of columns must be exactly 4
+`.trim();
+  readonly priority = 18;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.GLOBAL]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set();
 

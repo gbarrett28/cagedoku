@@ -1,53 +1,55 @@
 import { describe, it, expect } from 'vitest';
 import { TwoStringKite } from './twoStringKite.js';
-import { BoardState } from '../boardState.js';
+import { KillerBoardState } from '../boardState.js';
 import { SolverEngine } from '../solverEngine.js';
 import { makeTrivialSpec } from '../fixtures.js';
 import { Trigger } from '../types.js';
+import type { Cell } from '../types.js';
 
 /**
- * 2-String Kite test board for digit 5.
+ * 2-String Kite test board for digit 5 — correct shared-box pattern.
  *
- * Row 0: 5 only in (0,0) and (0,5)  → corner=(0,0), row-end=(0,5)
- * Col 0: 5 only in (0,0) and (6,0)  → corner=(0,0), col-end=(6,0)
- * row-end (0,5) and col-end (6,0) do NOT see each other (different row, col, box).
+ * Row 7: 5 only at (7,3) [rowEnd] and (7,8) [rowKnot, box 8 = rows 6-8, cols 6-8]
+ * Col 6: 5 only at (1,6) [colEnd] and (8,6) [colKnot, box 8]
  *
- * Target (6,5): sees row-end (0,5) via col 5 AND col-end (6,0) via row 6 → elim 5.
+ * rowKnot (7,8) and colKnot (8,6) share box 8, different cells ✓
+ * rowEnd  (7,3) and colEnd  (1,6) don't see each other        ✓
  *
- * Row 6 and col 5 intentionally have 3+ cells with 5 so no reciprocal strong link
- * forms — prevents the symmetric second kite that would back-eliminate the corner.
+ * Proof: if 5 at (7,8) → box weak link → (8,6)≠5 → col strong link → 5=(1,6).
+ *        if 5 not at (7,8) → row strong link → 5=(7,3).
+ * Either way, T seeing both (7,3) and (1,6) can't have 5.
+ *
+ * Target (1,3): sees (7,3) via col 3 AND (1,6) via row 1 → eliminate 5 ✓
+ * Decoy  (4,3): sees (7,3) via col 3 but NOT (1,6)        → not eliminated ✓
+ *
+ * Row 1 keeps 5 at {(1,2),(1,3),(1,6)} (3 cells → no row strong link in row 1).
+ * Col 3 keeps 5 at {(1,3),(4,3),(7,3)} (3 cells → no col strong link in col 3).
  */
-function makeKiteBoard(): BoardState {
-  const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+function makeKiteBoard(): KillerBoardState {
+  const board = new KillerBoardState(makeTrivialSpec(), { includeVirtualCages: false });
   const engine = new SolverEngine(board, [], {});
-  const elim = (r: number, c: number) => engine.applyEliminations([{ cell: [r, c], digit: 5 }]);
+  const elim = (r: number, c: number) =>
+    engine.applyEliminations([{ cell: [r, c] as Cell, digit: 5 }]);
 
-  // Row 0: keep 5 only in cols 0 and 5
-  for (const c of [1,2,3,4,6,7,8]) elim(0, c);
-  // Col 0: keep 5 only in rows 0 and 6
-  for (const r of [1,2,3,4,5,7,8]) elim(r, 0);
-  // Row 6: keep 5 in cols 0, 5, 8 (3 cells → no strong link for r=6)
-  // Col 5: keep 5 in rows 0, 3, 6 (3 cells → no strong link for cornerC=5)
-  // Target (6,5) is in both row 6 and col 5 — sees row-end and col-end.
-  // All remaining non-anchor cells: eliminate 5.
-  for (let r = 1; r < 9; r++) {
-    for (const c of [1,2,3,4,5,6,7,8]) {
-      if (r === 6 && (c === 5 || c === 8)) continue; // row-6 extras
-      if (r === 3 && c === 5) continue;              // col-5 extra
-      elim(r, c);
-    }
-  }
+  // Row 7: keep 5 only at cols 3 and 8
+  for (const c of [0, 1, 2, 4, 5, 6, 7]) elim(7, c);
+  // Col 6: keep 5 only at rows 1 and 8
+  for (const r of [0, 2, 3, 4, 5, 6, 7]) elim(r, 6);
+  // Row 1: keep 5 at cols 2, 3, 6 (3 cells → no row strong link)
+  for (const c of [0, 1, 4, 5, 7, 8]) elim(1, c);
+  // Col 3: keep 5 at rows 1, 4, 7 (3 cells → no col strong link)
+  for (const r of [0, 2, 3, 5, 6, 8]) elim(r, 3);
 
   return board;
 }
 
-const GLOBAL_CTX = (board: BoardState) =>
+const GLOBAL_CTX = (board: KillerBoardState) =>
   ({ board, unit: null, cell: null, hint: Trigger.GLOBAL, hintDigit: null } as const);
 
 describe('TwoStringKite', () => {
   const rule = new TwoStringKite();
 
-  it('eliminates digit from cell seeing both row-end and col-end', () => {
+  it('eliminates digit from cell seeing both endpoints', () => {
     const board = makeKiteBoard();
     const ctx = GLOBAL_CTX(board);
     const result = rule.apply(ctx);
@@ -55,17 +57,28 @@ describe('TwoStringKite', () => {
     expect(result.eliminations.length).toBeGreaterThan(0);
     expect(result.eliminations.every(e => e.digit === 5)).toBe(true);
     const targets = result.eliminations.map(e => `${e.cell[0]},${e.cell[1]}`);
-    expect(targets).toContain('6,5'); // target sees (0,5) via col 5 and (6,0) via row 6
+    // (1,3) sees rowEnd (7,3) via col 3 AND colEnd (1,6) via row 1
+    expect(targets).toContain('1,3');
   });
 
-  it('does not eliminate from the three pattern cells', () => {
+  it('does not eliminate from the four pattern cells', () => {
     const board = makeKiteBoard();
     const ctx = GLOBAL_CTX(board);
     const result = rule.apply(ctx);
     const targets = result.eliminations.map(e => `${e.cell[0]},${e.cell[1]}`);
-    expect(targets).not.toContain('0,0'); // corner
-    expect(targets).not.toContain('0,5'); // row-end
-    expect(targets).not.toContain('6,0'); // col-end
+    expect(targets).not.toContain('7,3'); // rowEnd
+    expect(targets).not.toContain('7,8'); // rowKnot
+    expect(targets).not.toContain('1,6'); // colEnd
+    expect(targets).not.toContain('8,6'); // colKnot
+  });
+
+  it('does not eliminate decoy that sees only one endpoint', () => {
+    const board = makeKiteBoard();
+    const ctx = GLOBAL_CTX(board);
+    const result = rule.apply(ctx);
+    const targets = result.eliminations.map(e => `${e.cell[0]},${e.cell[1]}`);
+    // (4,3) sees rowEnd (7,3) via col 3 but does NOT see colEnd (1,6)
+    expect(targets).not.toContain('4,3');
   });
 
   it('asHints returns a hint with correct shape', () => {
@@ -79,15 +92,37 @@ describe('TwoStringKite', () => {
     expect(hints[0]!.explanation).toMatch(/[Kk]ite/);
     expect(hints[0]!.eliminations.length).toBeGreaterThan(0);
     expect(hints[0]!.placement).toBeNull();
-    // highlightCells must include corner, row-end, col-end, and the target
-    const highlighted = hints[0]!.highlightCells.map(([r, c]) => `${r},${c}`);
-    expect(highlighted).toContain('0,0'); // corner
-    expect(highlighted).toContain('0,5'); // row-end
-    expect(highlighted).toContain('6,0'); // col-end
+  });
+
+  it('asHints: endpoints and knots in chainCells (with digit 5), knots also in highlightCells (orange)', () => {
+    // Endpoints: rowEnd (7,3)=blue, colEnd (1,6)=green. Knots: (7,8) and (8,6) → orange, no wash.
+    // All four cells are only relevant for digit 5.
+    const board = makeKiteBoard();
+    const ctx = GLOBAL_CTX(board);
+    const elims = rule.apply(ctx).eliminations;
+    const hints = rule.asHints(ctx, elims);
+    expect(hints.length).toBeGreaterThan(0);
+    const hint = hints[0]!;
+
+    expect(hint.chainCells?.length).toBe(4);
+    const ccFor = (r: number, c: number) => hint.chainCells!.find(cc => cc.cell[0] === r && cc.cell[1] === c);
+    expect(ccFor(7, 3)).toEqual({ cell: [7, 3], digits: [5], colour: 'blue' });   // rowEnd
+    expect(ccFor(1, 6)).toEqual({ cell: [1, 6], digits: [5], colour: 'green' });  // colEnd
+    expect(ccFor(7, 8)).toEqual({ cell: [7, 8], digits: [5] });                   // rowKnot, no wash
+    expect(ccFor(8, 6)).toEqual({ cell: [8, 6], digits: [5] });                   // colKnot, no wash
+
+    // Endpoint cells must NOT be in highlightCells; knot cells and target MUST be
+    for (const [r, c] of [[7, 3], [1, 6]] as [number, number][]) {
+      expect(hint.highlightCells.some(([hr, hc]) => hr === r && hc === c)).toBe(false);
+    }
+    for (const [r, c] of [[7, 8], [8, 6]] as [number, number][]) {
+      expect(hint.highlightCells.some(([hr, hc]) => hr === r && hc === c)).toBe(true);
+    }
+    expect(hint.highlightCells.some(([r, c]) => r === 1 && c === 3)).toBe(true);
   });
 
   it('returns empty on a fresh unconstrained board', () => {
-    const board = new BoardState(makeTrivialSpec(), { includeVirtualCages: false });
+    const board = new KillerBoardState(makeTrivialSpec(), { includeVirtualCages: false });
     const ctx = GLOBAL_CTX(board);
     expect(rule.apply(ctx).eliminations).toHaveLength(0);
     expect(rule.asHints(ctx, [])).toHaveLength(0);

@@ -1,16 +1,31 @@
 /**
  * W-Wing — two bivalue cells {p,q} connected through a strong link on p.
  *
- * A strong link on p exists in unit U when p has exactly 2 candidate cells
- * X and Y in U. If bivalue cell A={p,q} sees X and bivalue cell B={p,q} sees Y
- * (or A sees Y and B sees X), and A does not see B, then q can be eliminated
- * from any cell that sees both A and B.
+ * Strong link on p: unit U has exactly two cells X and Y that can hold p.
+ * Wing A = {p,q} sees X (or Y). Wing B = {p,q} sees the other end. A ≠ B.
+ * Digit q is eliminated from any cell T that sees both A and B.
  *
- * Logic: p must land in X or Y. If p lands in X, A≠p so A=q; if p lands in Y,
- * B≠p so B=q. In either case q lives in A or B, so no cell seeing both can hold q.
+ * Proof (two cases, exhaustive because the strong link is binary):
+ *   Case p at X: A sees X → A ≠ p → A = q.  T sees A → T ≠ q.
+ *   Case p at Y: B sees Y → B ≠ p → B = q.  T sees B → T ≠ q.
  *
- * Uses COUNT_HIT_TWO trigger — fires only when a new strong link is created
- * (a digit's count in a ROW/COL/BOX drops to 2), more targeted than GLOBAL.
+ * Guards verified against proof:
+ *   linkCells.length === 2                       strong link exists (exactly two p-cells)
+ *   wing.size === 2 ∧ wing.has(p)               wings are bivalue on {p,q} (forcing is tight)
+ *   A ≠ X ∧ A ≠ Y ∧ B ≠ X ∧ B ≠ Y            wings must not coincide with link endpoints:
+ *       sees(cell, cell) = true (same row), so a link endpoint would pass the
+ *       complementary-connection guard via self-sees. The proof then fails because
+ *       "A sees X → A ≠ p" is vacuous when A IS X — if p is at X then A = p, not q.
+ *   (aSeesX ∧ bSeesY) ∨ (aSeesY ∧ bSeesX)      complementary connection — soundness guard:
+ *       each wing is tied to a different end; if both see the same end the far-end
+ *       case leaves both wings uncommitted and the proof fails
+ *   sees(T, A) ∧ sees(T, B)                     T blocked by whichever wing holds q
+ *
+ * Anti-redundancy guard: `sees(A, B)` → skip. If A and B see each other they form
+ * a naked pair on {p,q}; the same eliminations are already covered by that rule.
+ *
+ * Uses COUNT_HIT_TWO trigger — fires only when a digit's count in a unit drops to 2,
+ * creating a new strong link, rather than scanning the whole board on every change.
  */
 
 import type { HintResult } from '../hint.js';
@@ -21,11 +36,13 @@ import { cellLabel, unitLabel } from './_labels.js';
 
 export class WWing {
   readonly name = 'WWing';
+  readonly killerOnly = false;
+  readonly displayName = 'W-Wing';
   readonly description =
     'When two cells with the same two candidates are each connected to one end ' +
     'of a strong link on one of those candidates, the other candidate can be ' +
     'eliminated from any cell that sees both bivalue cells.';
-  readonly priority = 20;
+  readonly priority = 23;
   readonly triggers: ReadonlySet<Trigger> = new Set([Trigger.COUNT_HIT_TWO]);
   readonly unitKinds: ReadonlySet<UnitKind> = new Set([UnitKind.ROW, UnitKind.COL, UnitKind.BOX]);
 
@@ -55,6 +72,13 @@ export class WWing {
         if (qa !== qb) continue;
         if (ar === br && ac === bc) continue;
         if (sees(ar, ac, br, bc)) continue; // wings must not see each other
+        // Wings must not coincide with either link endpoint — sees(cell, cell) = true
+        // would make the complementary-connection guard pass via self-sees, but the
+        // proof requires "A sees X → A ≠ p", which is vacuous when A IS X.
+        if (ar === xr && ac === xc) continue;
+        if (ar === yr && ac === yc) continue;
+        if (br === xr && bc === xc) continue;
+        if (br === yr && bc === yc) continue;
         const q = qa;
 
         const aSeesX = sees(ar, ac, xr, xc);
@@ -98,6 +122,10 @@ export class WWing {
     for (const [[ar, ac], qa] of bivalue) {
       for (const [[br, bc], qb] of bivalue) {
         if (qa !== qb || (ar === br && ac === bc) || sees(ar, ac, br, bc)) continue;
+        if (ar === xr && ac === xc) continue;
+        if (ar === yr && ac === yc) continue;
+        if (br === xr && bc === xc) continue;
+        if (br === yr && bc === yc) continue;
         const q = qa;
         const aSeesX = sees(ar, ac, xr, xc); const aSeesY = sees(ar, ac, yr, yc);
         const bSeesX = sees(br, bc, xr, xc); const bSeesY = sees(br, bc, yr, yc);
@@ -118,11 +146,21 @@ export class WWing {
 
         const A = [ar, ac] as Cell; const B = [br, bc] as Cell;
         const X = [xr, xc] as Cell; const Y = [yr, yc] as Cell;
+        const pq = [p, q].sort((a, b) => a - b);
+        // Chain A→X→Y→B: A=blue, X=green, Y=blue, B=green.
+        // A/B are bivalue {p,q} — both digits matter. X/Y are strong-link
+        // endpoints — only p (the link digit) matters there.
         hints.push({
           ruleName: this.name, displayName: 'W-Wing',
           explanation: `W-Wing: ${cellLabel(A)} and ${cellLabel(B)} both {${p},${q}} are connected via strong link on ${p} in ${unitLabel(ctx.unit)} (${cellLabel(X)}–${cellLabel(Y)}). Digit ${q} eliminated from cells seeing both.`,
-          highlightCells: [A, B, X, Y, ...elims.map(e => e.cell)],
+          highlightCells: elims.map(e => e.cell),
           eliminations: elims, placement: null, virtualCageSuggestion: null,
+          chainCells: [
+            { cell: A, digits: pq, colour: 'blue' },
+            { cell: Y, digits: [p], colour: 'blue' },
+            { cell: X, digits: [p], colour: 'green' },
+            { cell: B, digits: pq, colour: 'green' },
+          ],
         });
       }
     }
