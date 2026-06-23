@@ -13,6 +13,7 @@
  */
 
 import type { OpenCVModule, OpenCVMat, OpenCVMatVector } from './opencv.js';
+import { extractHoleFeatures } from './holeFeatures.js';
 type Cv = OpenCVModule;
 
 // ---------------------------------------------------------------------------
@@ -271,11 +272,20 @@ function hogExtract(imgs: Uint8Array[], params: HOGParams): Float64Array {
 /** Classify digit images using HOG + OVO classifier. */
 function classify(rec: NumRecogniser, imgs: Uint8Array[]): Recognition[] {
   const n = imgs.length;
-  const x = hogExtract(imgs, rec.hog);
+  const hog = hogExtract(imgs, rec.hog);
+  const hole = extractHoleFeatures(imgs, rec.hog.winSize);
+  const nHog = hog.length / n;
+  const nHole = hole.length / n;
+  const x = new Float64Array(n * (nHog + nHole));
+  for (let i = 0; i < n; i++) {
+    x.set(hog.subarray(i * nHog, (i + 1) * nHog), i * (nHog + nHole));
+    x.set(hole.subarray(i * nHole, (i + 1) * nHole), i * (nHog + nHole) + nHog);
+  }
   const { classifier, confidenceThreshold } = rec;
   if (classifier.kind === 'linear') return linearPredict(classifier, x, n, confidenceThreshold);
   return rbfPredictWithConfidence(classifier, x, n, confidenceThreshold);
 }
+
 
 /** Classify digit image patches and return labels with confidence flags. */
 export function recognise(rec: NumRecogniser, imgs: Uint8Array[]): Recognition[] {

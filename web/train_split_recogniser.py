@@ -164,7 +164,7 @@ def main():
           + (f" + {len(real)} real" if real else ""))
 
     print("Extracting HOG features…")
-    X = extract_hog(all_imgs)
+    X = extract_hog(np.stack(all_imgs))
     y = np.array(all_labels, dtype=np.int32)
     w = np.array(all_weights, dtype=np.float64)
     print(f"  X: {X.shape}")

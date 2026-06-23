@@ -49,13 +49,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import time
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+from numba import get_num_threads, njit, prange, set_num_threads
 from numpy.typing import NDArray
-from scipy.ndimage import binary_dilation, binary_erosion, shift
 from sklearn.svm import SVC
 
 # ---------------------------------------------------------------------------
@@ -81,6 +83,10 @@ HOG_FEAT         = 1764
 # Hole-count topology feature — see docs/superpowers/specs/2026-06-23-hole-count-feature-design.md
 MIN_HOLE_AREA   = 6   # discard enclosed regions smaller than this (anti-aliasing/dither noise)
 N_HOLE_FEATURES = 5
+
+# Caps memory used by dither_batch's precomputed per-variant randomness arrays
+# (the noise mask alone is n_variants*64*64 bytes per source image in this batch).
+DITHER_BATCH_SIZE = 4096
 
 
 # ---------------------------------------------------------------------------
@@ -207,275 +213,471 @@ def generate_synthetic_samples(
 # HOG feature extraction
 # ---------------------------------------------------------------------------
 
-def _extract_hog_chunk(imgs: list[NDArray[np.uint8]]) -> NDArray[np.float64]:
-    """Per-image HOG extraction core, run on one chunk of images.
+@njit(parallel=True, fastmath=True, cache=True)
+def _extract_hog_numba(stacked: NDArray[np.uint8], result: NDArray[np.float64]) -> None:
+    """Fused per-pixel HOG kernel: gradients, bin assignment, cell histograms,
+    and block normalisation in one compiled pass per image, with no large
+    (n, 64, 64) intermediate arrays.
 
-    Module-level (not a closure) so joblib's loky backend can pickle and
-    dispatch it to worker processes. extract_hog splits the full image list
-    into chunks and calls this once per chunk in parallel — each image's HOG
-    is independent, so this is embarrassingly parallel.
+    Replaces an earlier pure-numpy vectorisation that computed Gx/Gy/mag/bins
+    as full-size arrays — profiling showed that version was memory-bandwidth
+    bound (threading vs. process-based parallelism gave near-identical
+    throughput, ruling out the GIL as the bottleneck), so the fix is moving
+    bytes, not Python call overhead. This kernel reads each image once and
+    writes only the final (1764,) feature row, parallelised across images via
+    prange using all CPU cores by default.
     """
-    n = len(imgs)
-    n_cells = HOG_WIN_SIZE // HOG_CELL_SIZE                             # 8
-    cpb = HOG_BLOCK_SIZE // HOG_CELL_SIZE                               # cells per block side = 2
-    n_blocks = (HOG_WIN_SIZE - HOG_BLOCK_SIZE) // HOG_BLOCK_STRIDE + 1 # 7
-    bin_width = 180.0 / HOG_NBINS                                       # 20.0°
-    eps = 1e-6
-    result = np.zeros((n, HOG_FEAT), dtype=np.float64)
+    n = stacked.shape[0]
+    n_cells = HOG_WIN_SIZE // HOG_CELL_SIZE
+    cpb = HOG_BLOCK_SIZE // HOG_CELL_SIZE
+    n_blocks = (HOG_WIN_SIZE - HOG_BLOCK_SIZE) // HOG_BLOCK_STRIDE + 1
+    bin_width_rad = np.pi / HOG_NBINS
+    block_feat = cpb * cpb * HOG_NBINS
+    eps2 = 1e-12  # (1e-6)^2 — matches the original L2-normalisation epsilon
 
-    for idx, img in enumerate(imgs):
-        f = img.astype(np.float32)
+    for i in prange(n):
+        cell_hist = np.zeros((n_cells, n_cells, HOG_NBINS))
+        for y in range(HOG_WIN_SIZE):
+            # Centered difference, clamped at the border — matches the
+            # original Gx[:,:,0]=f[1]-f[0] / Gx[:,:,-1]=f[-1]-f[-2] slicing.
+            y0 = y - 1 if y > 0 else 0
+            y1 = y + 1 if y < HOG_WIN_SIZE - 1 else HOG_WIN_SIZE - 1
+            cy = y // HOG_CELL_SIZE
+            for x in range(HOG_WIN_SIZE):
+                x0 = x - 1 if x > 0 else 0
+                x1 = x + 1 if x < HOG_WIN_SIZE - 1 else HOG_WIN_SIZE - 1
+                gx = float(stacked[i, y, x1]) - float(stacked[i, y, x0])
+                gy = float(stacked[i, y1, x]) - float(stacked[i, y0, x])
+                mag = math.sqrt(gx * gx + gy * gy)
+                # atan2(|gy|, gx) is always in [0, pi]; dividing by pi/HOG_NBINS
+                # and wrapping mod HOG_NBINS reproduces the original
+                # degrees-mod-180 bin assignment exactly (see extract_hog).
+                angle = math.atan2(abs(gy), gx)
+                b = int(angle / bin_width_rad) % HOG_NBINS
+                cx = x // HOG_CELL_SIZE
+                cell_hist[cy, cx, b] += mag
 
-        # Centered differences with clamped borders.
-        Gx = np.empty_like(f)
-        Gy = np.empty_like(f)
-        Gx[:, 1:-1] = f[:, 2:] - f[:, :-2]
-        Gx[:, 0]    = f[:, 1]  - f[:, 0]
-        Gx[:, -1]   = f[:, -1] - f[:, -2]
-        Gy[1:-1, :] = f[2:, :] - f[:-2, :]
-        Gy[0, :]    = f[1, :]  - f[0, :]
-        Gy[-1, :]   = f[-1, :] - f[-2, :]
-
-        mag = np.sqrt(Gx ** 2 + Gy ** 2)
-        # Unsigned angle in [0, 180): atan2(|Gy|, Gx) → degrees → mod 180.
-        ang = np.degrees(np.arctan2(np.abs(Gy), Gx)) % 180.0
-        bins = (ang / bin_width).astype(np.int32) % HOG_NBINS
-
-        # Cell histograms — vectorised over cells.
-        cell_hists = np.zeros((n_cells, n_cells, HOG_NBINS), dtype=np.float32)
-        for cy in range(n_cells):
-            for cx in range(n_cells):
-                y0, x0 = cy * HOG_CELL_SIZE, cx * HOG_CELL_SIZE
-                np.add.at(
-                    cell_hists[cy, cx],
-                    bins[y0:y0 + HOG_CELL_SIZE, x0:x0 + HOG_CELL_SIZE].ravel(),
-                    mag [y0:y0 + HOG_CELL_SIZE, x0:x0 + HOG_CELL_SIZE].ravel(),
-                )
-
-        # Block descriptors with L2 normalisation.
-        feat_idx = 0
         for by in range(n_blocks):
             for bx in range(n_blocks):
-                block = cell_hists[by:by + cpb, bx:bx + cpb].ravel().astype(np.float64)
-                norm = np.sqrt(np.dot(block, block) + eps * eps)
-                result[idx, feat_idx:feat_idx + len(block)] = block / norm
-                feat_idx += len(block)
+                base = (by * n_blocks + bx) * block_feat
+                s = 0.0
+                idx = 0
+                for dy in range(cpb):
+                    for dx in range(cpb):
+                        for bn in range(HOG_NBINS):
+                            v = cell_hist[by + dy, bx + dx, bn]
+                            result[i, base + idx] = v
+                            s += v * v
+                            idx += 1
+                norm = math.sqrt(s + eps2)
+                for k in range(block_feat):
+                    result[i, base + k] /= norm
 
-    return result
 
-
-def extract_hog(imgs: list[NDArray[np.uint8]], n_jobs: int = -1) -> NDArray[np.float64]:
+def extract_hog(
+    imgs: NDArray[np.uint8], n_jobs: int = -1, out: NDArray[np.float64] | None = None
+) -> NDArray[np.float64]:
     """Extract HOG feature vectors matching the TypeScript hogExtract implementation.
 
     Uses: centered differences (clamped at borders), unsigned gradients via
-    atan2(|Gy|, Gx) mod 180, nearest-bin voting, L2 block normalisation.
-    Both this function and hogExtract in numberRecognition.ts perform identical
-    floating-point operations, guaranteeing training/inference feature parity.
+    atan2(|Gy|, Gx) mod 180, nearest-bin voting, L2 block normalisation. Both
+    this function and hogExtract in numberRecognition.ts perform equivalent
+    floating-point operations (within float tolerance), guaranteeing
+    training/inference feature parity.
 
-    Splits imgs into n_jobs chunks and extracts each chunk in parallel via
-    joblib — each image's HOG is independent (embarrassingly parallel), and
-    unlike the OVO SVM fit, per-chunk memory is tiny so no dynamic capping is
-    needed; n_jobs=-1 (default) uses all CPU cores. joblib's default Parallel
-    call (no return_as=) preserves input order in its results, so chunks
-    concatenate back into the same row order as the input image list.
+    imgs is a pre-stacked (n, 64, 64) uint8 array (dither_batch already
+    produces one) and is dispatched directly to _extract_hog_numba, a
+    JIT-compiled kernel parallelised across images via prange — replacing an
+    earlier joblib/numpy-vectorised version that hit a memory-bandwidth
+    ceiling at full dataset scale (see _extract_hog_numba's docstring).
+    n_jobs=-1 (default) uses all CPU cores; otherwise caps the thread count
+    for this call only, restored afterward.
+
+    out, if given, must be a (n, HOG_FEAT) array (or column-slice view of a
+    larger array) to write results into directly, instead of allocating a
+    fresh array — lets callers fuse HOG and hole features into one
+    preallocated buffer and avoid np.hstack's transient ~2x peak memory.
     """
-    import time as _time
-    import os as _os
-
-    from joblib import Parallel, delayed  # type: ignore[import-untyped]
-
-    t0 = _time.time()
+    t0 = time.time()
     n = len(imgs)
     if n == 0:
-        return np.zeros((0, HOG_FEAT), dtype=np.float64)
+        return out if out is not None else np.zeros((0, HOG_FEAT), dtype=np.float64)
 
-    workers = (_os.cpu_count() or 1) if n_jobs == -1 else n_jobs
-    workers = max(1, min(workers, n))
-    chunk_size = -(-n // workers)  # ceil division
-    chunks = [imgs[i:i + chunk_size] for i in range(0, n, chunk_size)]
+    prior_threads = get_num_threads()
+    if n_jobs != -1:
+        set_num_threads(max(1, n_jobs))
+    try:
+        result = out if out is not None else np.empty((n, HOG_FEAT), dtype=np.float64)
+        print(f"  Extracting HOG for {n} images (numba, threads={get_num_threads()})…", flush=True)
+        _extract_hog_numba(imgs, result)
+    finally:
+        if n_jobs != -1:
+            set_num_threads(prior_threads)
+    print(f"  [+{time.time() - t0:.0f}s] HOG extraction done", flush=True)
+    return result
 
-    print(f"  Extracting HOG for {n} images across {len(chunks)} chunks (n_jobs={workers})…", flush=True)
-    chunk_results = Parallel(n_jobs=workers)(delayed(_extract_hog_chunk)(chunk) for chunk in chunks)
-    print(f"  [+{_time.time() - t0:.0f}s] HOG extraction done", flush=True)
-    return np.vstack(chunk_results)
 
+@njit(parallel=True, cache=True)
+def _extract_hole_numba(stacked: NDArray[np.uint8], min_hole_area: int, result: NDArray[np.float64]) -> None:
+    """Fused per-image hole-count kernel: outside flood-fill, hole labelling,
+    and top-2 area tracking in one compiled pass per image.
 
-def _extract_hole_chunk(imgs: list[NDArray[np.uint8]]) -> NDArray[np.float64]:
-    """Per-image hole-count feature extraction core, run on one chunk of images.
-
-    Module-level (not a closure) so joblib's loky backend can pickle and
-    dispatch it to worker processes, mirroring _extract_hog_chunk. Each
-    image's hole-count is independent, so this is embarrassingly parallel.
-    Mirrors extractHoleFeatures in web/src/image/holeFeatures.ts exactly:
-    BFS outside flood-fill, then connected-component hole labelling, 4-
-    connectivity throughout.
+    Mirrors extractHoleFeatures in web/src/image/holeFeatures.ts (BFS outside
+    flood-fill, then connected-component hole labelling, 4-connectivity
+    throughout). The original pure-Python version used collections.deque,
+    which numba cannot compile; here the BFS queue is an explicit
+    preallocated (h*w,) int32 array with head/tail indices instead. Holes are
+    embarrassingly parallel across images (each image's flood-fill is
+    sequential by nature and not worth parallelising further), so only the
+    outer image loop is parallelised, via prange — this is what actually
+    fixes the bottleneck: the original threading-backend dispatch already
+    parallelised at the image level but the per-image BFS was pure Python
+    and GIL-bound, so threads never ran concurrently. Compiling to native
+    code removes the GIL constraint entirely.
     """
-    from collections import deque
+    n, h, w = stacked.shape
+    max_q = h * w
 
-    n = len(imgs)
-    result = np.zeros((n, N_HOLE_FEATURES), dtype=np.float64)
+    for i in prange(n):
+        img = stacked[i]
+        visited = np.zeros((h, w), dtype=np.bool_)
+        ink_count = 0
+        for yy in range(h):
+            for xx in range(w):
+                if img[yy, xx] != 0:
+                    ink_count += 1
 
-    for idx, img in enumerate(imgs):
-        h, w = img.shape
-        visited = np.zeros((h, w), dtype=bool)
-        ink_count = int(np.count_nonzero(img))
-        queue: deque[tuple[int, int]] = deque()
+        qy = np.empty(max_q, dtype=np.int32)
+        qx = np.empty(max_q, dtype=np.int32)
+        head = 0
+        tail = 0
 
         # Step 1: flood-fill "outside" from every border background pixel.
         for x in range(w):
             for y in (0, h - 1):
                 if img[y, x] == 0 and not visited[y, x]:
                     visited[y, x] = True
-                    queue.append((y, x))
+                    qy[tail] = y
+                    qx[tail] = x
+                    tail += 1
         for y in range(h):
             for x in (0, w - 1):
                 if img[y, x] == 0 and not visited[y, x]:
                     visited[y, x] = True
-                    queue.append((y, x))
-        while queue:
-            y, x = queue.popleft()
-            for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
-                if 0 <= ny < h and 0 <= nx < w and img[ny, nx] == 0 and not visited[ny, nx]:
-                    visited[ny, nx] = True
-                    queue.append((ny, nx))
+                    qy[tail] = y
+                    qx[tail] = x
+                    tail += 1
 
-        # Step 2: label remaining unvisited background pixels as hole regions.
-        hole_areas: list[int] = []
+        while head < tail:
+            y = qy[head]
+            x = qx[head]
+            head += 1
+            if y > 0 and img[y - 1, x] == 0 and not visited[y - 1, x]:
+                visited[y - 1, x] = True
+                qy[tail] = y - 1
+                qx[tail] = x
+                tail += 1
+            if y < h - 1 and img[y + 1, x] == 0 and not visited[y + 1, x]:
+                visited[y + 1, x] = True
+                qy[tail] = y + 1
+                qx[tail] = x
+                tail += 1
+            if x > 0 and img[y, x - 1] == 0 and not visited[y, x - 1]:
+                visited[y, x - 1] = True
+                qy[tail] = y
+                qx[tail] = x - 1
+                tail += 1
+            if x < w - 1 and img[y, x + 1] == 0 and not visited[y, x + 1]:
+                visited[y, x + 1] = True
+                qy[tail] = y
+                qx[tail] = x + 1
+                tail += 1
+
+        # Step 2: label remaining unvisited background pixels as hole regions,
+        # tracking only the two largest surviving areas (no need to keep a
+        # full sorted list, matching the TS/numpy version's final 2-area output).
+        n_holes = 0
+        largest1 = 0
+        largest2 = 0
         for sy in range(h):
             for sx in range(w):
                 if visited[sy, sx] or img[sy, sx] != 0:
                     continue
                 area = 0
+                head = 0
+                tail = 0
                 visited[sy, sx] = True
-                queue.append((sy, sx))
-                while queue:
-                    y, x = queue.popleft()
+                qy[tail] = sy
+                qx[tail] = sx
+                tail += 1
+                while head < tail:
+                    y = qy[head]
+                    x = qx[head]
+                    head += 1
                     area += 1
-                    for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
-                        if 0 <= ny < h and 0 <= nx < w and img[ny, nx] == 0 and not visited[ny, nx]:
-                            visited[ny, nx] = True
-                            queue.append((ny, nx))
-                if area >= MIN_HOLE_AREA:
-                    hole_areas.append(area)
+                    if y > 0 and img[y - 1, x] == 0 and not visited[y - 1, x]:
+                        visited[y - 1, x] = True
+                        qy[tail] = y - 1
+                        qx[tail] = x
+                        tail += 1
+                    if y < h - 1 and img[y + 1, x] == 0 and not visited[y + 1, x]:
+                        visited[y + 1, x] = True
+                        qy[tail] = y + 1
+                        qx[tail] = x
+                        tail += 1
+                    if x > 0 and img[y, x - 1] == 0 and not visited[y, x - 1]:
+                        visited[y, x - 1] = True
+                        qy[tail] = y
+                        qx[tail] = x - 1
+                        tail += 1
+                    if x < w - 1 and img[y, x + 1] == 0 and not visited[y, x + 1]:
+                        visited[y, x + 1] = True
+                        qy[tail] = y
+                        qx[tail] = x + 1
+                        tail += 1
+                if area >= min_hole_area:
+                    n_holes += 1
+                    if area > largest1:
+                        largest2 = largest1
+                        largest1 = area
+                    elif area > largest2:
+                        largest2 = area
 
-        hole_areas.sort(reverse=True)
-        bucket = min(len(hole_areas), 2)
-        result[idx, bucket] = 1.0
-        denom = max(ink_count, 1)
-        result[idx, 3] = (hole_areas[0] if len(hole_areas) > 0 else 0) / denom
-        result[idx, 4] = (hole_areas[1] if len(hole_areas) > 1 else 0) / denom
-
-    return result
+        bucket = n_holes if n_holes < 2 else 2
+        result[i, bucket] = 1.0
+        denom = ink_count if ink_count > 0 else 1
+        result[i, 3] = largest1 / denom
+        result[i, 4] = largest2 / denom
 
 
-def extract_hole_features(imgs: list[NDArray[np.uint8]], n_jobs: int = -1) -> NDArray[np.float64]:
+def extract_hole_features(
+    imgs: NDArray[np.uint8], n_jobs: int = -1, out: NDArray[np.float64] | None = None
+) -> NDArray[np.float64]:
     """Extract hole-count topology features matching the TypeScript
     extractHoleFeatures implementation (web/src/image/holeFeatures.ts).
 
-    Fully separate joblib dispatch from extract_hog — same chunking pattern
-    (_extract_hole_chunk mirrors _extract_hog_chunk) but its own worker pool,
-    so the existing, working HOG path is not touched.
+    imgs is a pre-stacked (n, 64, 64) uint8 array (dither_batch already
+    produces one) and is dispatched directly to _extract_hole_numba, a
+    JIT-compiled kernel parallelised across images via prange — replacing an
+    earlier threading-backend dispatch over a pure-Python BFS, which never
+    achieved real parallelism because that BFS was GIL-bound (see
+    _extract_hole_numba's docstring). n_jobs=-1 (default) uses all CPU cores;
+    otherwise caps the thread count for this call only, restored afterward.
+
+    out, if given, must be a (n, N_HOLE_FEATURES) array (or column-slice view
+    of a larger array) to write results into directly. It must already be
+    zero-filled: the kernel only sets the one-hot bucket column it selects
+    (result[i, 0:3]) and leaves the other two as an implicit zero, plus
+    columns 3/4 are left at zero when there are no holes at all.
     """
-    import time as _time
-    import os as _os
-
-    from joblib import Parallel, delayed  # type: ignore[import-untyped]
-
-    t0 = _time.time()
+    t0 = time.time()
     n = len(imgs)
     if n == 0:
-        return np.zeros((0, N_HOLE_FEATURES), dtype=np.float64)
+        return out if out is not None else np.zeros((0, N_HOLE_FEATURES), dtype=np.float64)
 
-    workers = (_os.cpu_count() or 1) if n_jobs == -1 else n_jobs
-    workers = max(1, min(workers, n))
-    chunk_size = -(-n // workers)  # ceil division
-    chunks = [imgs[i:i + chunk_size] for i in range(0, n, chunk_size)]
-
-    print(f"  Extracting hole features for {n} images across {len(chunks)} chunks (n_jobs={workers})…", flush=True)
-    chunk_results = Parallel(n_jobs=workers)(delayed(_extract_hole_chunk)(chunk) for chunk in chunks)
-    print(f"  [+{_time.time() - t0:.0f}s] Hole feature extraction done", flush=True)
-    return np.vstack(chunk_results)
+    prior_threads = get_num_threads()
+    if n_jobs != -1:
+        set_num_threads(max(1, n_jobs))
+    try:
+        result = out if out is not None else np.zeros((n, N_HOLE_FEATURES), dtype=np.float64)
+        print(f"  Extracting hole features for {n} images (numba, threads={get_num_threads()})…", flush=True)
+        _extract_hole_numba(imgs, MIN_HOLE_AREA, result)
+    finally:
+        if n_jobs != -1:
+            set_num_threads(prior_threads)
+    print(f"  [+{time.time() - t0:.0f}s] Hole feature extraction done", flush=True)
+    return result
 
 
 # ---------------------------------------------------------------------------
 # Augmentation
 # ---------------------------------------------------------------------------
 
-def dither(
-    img: NDArray[np.uint8],
+@njit(parallel=True, cache=True)
+def _dither_numba(
+    stacked: NDArray[np.uint8],
+    dx: NDArray[np.int32],
+    dy: NDArray[np.int32],
+    op: NDArray[np.int8],
+    noise: NDArray[np.bool_],
+    out: NDArray[np.uint8],
+) -> None:
+    """Fused per-image dithering kernel: translate, erode/dilate/none, and
+    pixel-noise in one compiled pass per image. out[:, 0] is the unmodified
+    original; out[:, 1:] are the n_variants augmented copies.
+
+    Replaces an earlier scipy.ndimage-based dither(), which was confirmed by
+    direct benchmark to be GIL-bound (threading backend gave ~0.93x
+    "speedup" over sequential — no real parallelism at all). This kernel is
+    parallelised across images via prange instead (per-image work is
+    embarrassingly parallel; the transform within one image is small and
+    inherently sequential).
+
+    Translation is done via exact integer array indexing rather than
+    scipy.ndimage.shift's default cubic-spline interpolation. The old
+    shift()-based code introduced machine-epsilon floating-point noise even
+    at an exact-integer shift, which crossed pixel-rounding boundaries after
+    the *255+astype(uint8) step and silently flipped ~5% of pixels by 1 on
+    every dithered variant — never part of the function's documented intent
+    ("Translation: ±2 px" implies exact pixel shift, not sub-pixel
+    reconstruction). Confirmed by direct measurement (shift(img, (0,0)) is
+    not bit-identical to img) before writing this kernel.
+
+    Erosion/dilation reproduce scipy.ndimage's default 4-connected,
+    border_value=0 semantics (verified empirically): erosion ANDs a pixel
+    with all 4 neighbours, treating out-of-bounds as background; dilation
+    ORs them, with out-of-bounds contributing nothing.
+
+    All randomness (dx, dy, op selection, per-pixel noise mask) is drawn with
+    ordinary numpy Generator calls OUTSIDE this kernel and passed in as plain
+    arrays — numba's parallel=True/prange does not guarantee reproducible RNG
+    state across threads, so drawing randomness inside the kernel would break
+    determinism. This kernel performs zero RNG, only deterministic transforms.
+    """
+    n, h, w = stacked.shape
+    n_variants = dx.shape[1]
+    for i in prange(n):
+        base = np.empty((h, w), dtype=np.uint8)
+        for y in range(h):
+            for x in range(w):
+                base[y, x] = 1 if stacked[i, y, x] > 0 else 0
+                out[i, 0, y, x] = base[y, x] * 255
+        for v in range(n_variants):
+            ddx = dx[i, v]
+            ddy = dy[i, v]
+            shifted = np.zeros((h, w), dtype=np.uint8)
+            for y in range(h):
+                sy = y - ddy
+                if sy < 0 or sy >= h:
+                    continue
+                for x in range(w):
+                    sx = x - ddx
+                    if sx < 0 or sx >= w:
+                        continue
+                    shifted[y, x] = base[sy, sx]
+            o = op[i, v]
+            for y in range(h):
+                for x in range(w):
+                    if o == 0:
+                        val = shifted[y, x]
+                    elif o == 1:  # erode: AND with all 4 neighbours, OOB=0
+                        val = shifted[y, x]
+                        if val:
+                            if y == 0 or shifted[y - 1, x] == 0:
+                                val = 0
+                            elif y == h - 1 or shifted[y + 1, x] == 0:
+                                val = 0
+                            elif x == 0 or shifted[y, x - 1] == 0:
+                                val = 0
+                            elif x == w - 1 or shifted[y, x + 1] == 0:
+                                val = 0
+                    else:  # dilate: OR with all 4 neighbours, OOB contributes nothing
+                        val = shifted[y, x]
+                        if not val:
+                            if y > 0 and shifted[y - 1, x]:
+                                val = 1
+                            elif y < h - 1 and shifted[y + 1, x]:
+                                val = 1
+                            elif x > 0 and shifted[y, x - 1]:
+                                val = 1
+                            elif x < w - 1 and shifted[y, x + 1]:
+                                val = 1
+                    if noise[i, v, y, x]:
+                        val = 1 - val
+                    out[i, v + 1, y, x] = val * 255
+
+
+def dither_batch(
+    samples: list[tuple[int, NDArray[np.uint8], float]],
     n_variants: int,
     rng: np.random.Generator,
-) -> list[NDArray[np.float64]]:
-    """Return n_variants augmented copies of a binary 64×64 digit image.
+) -> tuple[NDArray[np.uint8], list[int], list[float]]:
+    """Dither (digit, img, weight) samples into a stacked
+    (n*(n_variants+1), 64, 64) uint8 array via _dither_numba.
 
-    Each variant applies a random combination of:
-    - Translation: ±2 px in x and y
-    - Morphological step: erosion, dilation, or none (thin / thicken stroke)
-    - Pixel noise: ~1% random flips
-
-    The original image is included as variant 0.
+    Processes DITHER_BATCH_SIZE images at a time to bound the memory used by
+    the precomputed per-variant randomness arrays (the noise mask alone is
+    n_variants*64*64 bytes per source image). All randomness is drawn
+    sequentially from rng before each batch's kernel call, so the output is
+    deterministic for a given rng draw order regardless of batch size.
     """
-    base = (img > 0).astype(float)
-    variants: list[NDArray[np.float64]] = [base]
+    n_samples = len(samples)
+    out_imgs = np.empty(
+        (n_samples * (n_variants + 1), THUMBNAIL_SIZE, THUMBNAIL_SIZE), dtype=np.uint8
+    )
+    out_labels: list[int] = []
+    out_weights: list[float] = []
+    write_pos = 0
+    for start in range(0, n_samples, DITHER_BATCH_SIZE):
+        batch = samples[start:start + DITHER_BATCH_SIZE]
+        bn = len(batch)
+        stacked = np.stack([img for _, img, _ in batch])
+        dx = rng.integers(-2, 3, size=(bn, n_variants)).astype(np.int32)
+        dy = rng.integers(-2, 3, size=(bn, n_variants)).astype(np.int32)
+        op = rng.integers(0, 3, size=(bn, n_variants)).astype(np.int8)
+        noise = rng.random((bn, n_variants, THUMBNAIL_SIZE, THUMBNAIL_SIZE)) < 0.01
+        batch_out = np.empty(
+            (bn, n_variants + 1, THUMBNAIL_SIZE, THUMBNAIL_SIZE), dtype=np.uint8
+        )
+        _dither_numba(stacked, dx, dy, op, noise, batch_out)
+        n_out = bn * (n_variants + 1)
+        out_imgs[write_pos:write_pos + n_out] = batch_out.reshape(
+            -1, THUMBNAIL_SIZE, THUMBNAIL_SIZE
+        )
+        write_pos += n_out
+        for digit, _, w in batch:
+            out_labels.extend([digit] * (n_variants + 1))
+            out_weights.extend([w] * (n_variants + 1))
+    return out_imgs, out_labels, out_weights
 
-    for _ in range(n_variants):
-        dx = int(rng.integers(-2, 3))
-        dy = int(rng.integers(-2, 3))
-        v = shift(base, (dy, dx), mode="constant", cval=0.0)
 
-        op = int(rng.integers(3))  # 0=none 1=erode 2=dilate
-        if op == 1:
-            v = binary_erosion(v > 0.5).astype(float)
-        elif op == 2:
-            v = binary_dilation(v > 0.5).astype(float)
 
-        noise_mask = rng.random(v.shape) < 0.01
-        v = np.where(noise_mask, 1.0 - v, v)
-        variants.append(v)
-
-    return variants
 
 
 # ---------------------------------------------------------------------------
 # Dataset construction
 # ---------------------------------------------------------------------------
 
+
+
+
 def build_dataset(
     samples: list[tuple[int, NDArray[np.uint8]]],
     n_dither: int,
     sample_weights: list[float] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.int64], NDArray[np.float64]]:
-    """Augment samples with dithering and extract HOG features.
+    """Augment samples with dithering and extract HOG + hole features.
 
     Each (digit, img) pair produces n_dither+1 variants (original + n_dither
-    augmented copies).  All variants are fed through extract_hog.
+    augmented copies), generated by dither_batch's numba-JIT kernel — see its
+    docstring for why this replaced an earlier joblib-threading dispatch
+    (confirmed GIL-bound, no real parallelism).
+
+    X is one preallocated (n_aug, HOG_FEAT + N_HOLE_FEATURES) buffer that
+    extract_hog/extract_hole_features write into directly via column-slice
+    views, rather than concatenating two freshly-allocated arrays with
+    np.hstack — at full dataset scale the transient second copy hstack needs
+    while both source arrays are still alive roughly doubles peak memory,
+    which is what actually OOM'd on the full guardian/observer bulk dataset.
 
     sample_weights assigns a per-source weight (before augmentation); all
     augmented variants from a source share the same weight.  None means 1.0
     for all samples.  Returns (X, y, weights).
     """
-    import time as _time
-    t0 = _time.time()
-    rng = np.random.default_rng(0)
-    aug_imgs: list[NDArray[np.uint8]] = []
-    aug_labels: list[int] = []
-    aug_weights: list[float] = []
-
+    t0 = time.time()
     n_samples = len(samples)
-    report_every = max(1, n_samples // 20)
-    for i, (digit, img) in enumerate(samples):
-        w = sample_weights[i] if sample_weights is not None else 1.0
-        for v in dither(img, n_dither, rng):
-            aug_imgs.append((v * 255).clip(0, 255).astype(np.uint8))
-            aug_labels.append(digit)
-            aug_weights.append(w)
-        if (i + 1) % report_every == 0 or i + 1 == n_samples:
-            print(f"  [+{_time.time() - t0:.0f}s] Dithered {i + 1}/{n_samples} samples "
-                  f"({len(aug_imgs)} augmented images)", flush=True)
+    weights_in = sample_weights if sample_weights is not None else [1.0] * n_samples
+    triples = [(digit, img, w) for (digit, img), w in zip(samples, weights_in)]
 
-    X_hog = extract_hog(aug_imgs)
-    X_hole = extract_hole_features(aug_imgs)
-    X = np.hstack([X_hog, X_hole])
+    print(f"  Dithering {n_samples} samples ({n_dither} variants each, numba)…", flush=True)
+    rng = np.random.default_rng(0)
+    aug_imgs, aug_labels, aug_weights = dither_batch(triples, n_dither, rng)
+    print(f"  [+{time.time() - t0:.0f}s] Dithering done", flush=True)
+
+    n_aug = len(aug_labels)
+    X = np.zeros((n_aug, HOG_FEAT + N_HOLE_FEATURES), dtype=np.float64)
+    extract_hog(aug_imgs, out=X[:, :HOG_FEAT])
+    extract_hole_features(aug_imgs, out=X[:, HOG_FEAT:])
     return X, np.array(aug_labels, dtype=np.int64), np.array(aug_weights, dtype=np.float64)
 
 
@@ -607,13 +809,27 @@ def fit_model(
 
         if pending:
             t0 = _time.time()
-            tasks = []
-            for idx, i, j in pending:
+
+            def _make_task(idx: int, i: int, j: int) -> Any:
                 mask = (y == classes[i]) | (y == classes[j])
                 wp = sample_weights[mask] if sample_weights is not None else None
-                tasks.append(delayed(_fit_ovo_pair)(idx, i, j, X[mask], y[mask], wp, svm_c))
+                return delayed(_fit_ovo_pair)(idx, i, j, X[mask], y[mask], wp, svm_c)
 
-            results = Parallel(n_jobs=safe_n_jobs, return_as="generator_unordered")(tasks)
+            # A generator, not a list: each pair's X[mask]/y[mask] slice is
+            # materialised lazily as joblib's pre_dispatch pulls it, so at
+            # most safe_n_jobs slices exist at once. The previous eager
+            # `tasks = []; tasks.append(...)` built every pending pair's
+            # slice up front regardless of n_jobs — fine for small worst-pair
+            # sizes, but at full dataset scale this held all ~45 pairs' worth
+            # of slices simultaneously and OOM'd even with n_jobs=1, the
+            # exact failure _dynamic_n_jobs's per-job budget was meant to
+            # prevent (it only bounds concurrent *workers*, not how many
+            # slices the parent process builds ahead of dispatch).
+            tasks = (_make_task(idx, i, j) for idx, i, j in pending)
+
+            results = Parallel(
+                n_jobs=safe_n_jobs, pre_dispatch="n_jobs", return_as="generator_unordered"
+            )(tasks)
             for n_done, (idx, i, j, coef, intercept) in enumerate(results, start=1):
                 coefs[idx], intercepts[idx] = coef, intercept
                 np.savez(ckpts[idx], coef=coef, intercept=intercept)
@@ -839,23 +1055,19 @@ def main() -> None:
             raise SystemExit("--synth-dither with non-empty bulk training_json is not supported "
                               "(asymmetric-dither path predates the bulk/browser split)")
         rng = np.random.default_rng(0)
-        aug_imgs: list[NDArray[np.uint8]] = []
-        aug_labels: list[int] = []
-        for digit, img in all_samples[:n_browser]:
-            for v in dither(img, args.dither, rng):
-                aug_imgs.append((v * 255).clip(0, 255).astype(np.uint8))
-                aug_labels.append(digit)
-        for digit, img in all_samples[n_browser:]:
-            for v in dither(img, synth_dither, rng):
-                aug_imgs.append((v * 255).clip(0, 255).astype(np.uint8))
-                aug_labels.append(digit)
+        browser_triples = [(digit, img, 1.0) for digit, img in all_samples[:n_browser]]
+        synth_triples = [(digit, img, 1.0) for digit, img in all_samples[n_browser:]]
+        browser_imgs, browser_labels, _ = dither_batch(browser_triples, args.dither, rng)
+        synth_imgs, synth_labels, _ = dither_batch(synth_triples, synth_dither, rng)
+        aug_imgs = np.concatenate([browser_imgs, synth_imgs])
+        aug_labels = browser_labels + synth_labels
         n_browser_aug = n_browser * (args.dither + 1)
         n_synth_aug   = n_synth   * (synth_dither + 1)
         print(f"{_elapsed()} Dither: browser {args.dither} variants ({n_browser_aug} aug), synth {synth_dither} variants ({n_synth_aug} aug)", flush=True)
-        print(f"{_elapsed()} Extracting HOG features for {len(aug_imgs)} images…", flush=True)
-        X_hog = extract_hog(aug_imgs)
-        X_hole = extract_hole_features(aug_imgs)
-        X = np.hstack([X_hog, X_hole])
+        print(f"{_elapsed()} Extracting HOG features for {len(aug_labels)} images…", flush=True)
+        X = np.zeros((len(aug_labels), HOG_FEAT + N_HOLE_FEATURES), dtype=np.float64)
+        extract_hog(aug_imgs, out=X[:, :HOG_FEAT])
+        extract_hole_features(aug_imgs, out=X[:, HOG_FEAT:])
         y = np.array(aug_labels, dtype=np.int64)
         weights: NDArray[np.float64] | None = None
     else:
