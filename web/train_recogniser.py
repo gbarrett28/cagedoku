@@ -78,6 +78,10 @@ HOG_NBINS        = 9
 # ((64-16)/8+1)^2 * (16/8)^2 * 9 = 7^2 * 4 * 9
 HOG_FEAT         = 1764
 
+# Hole-count topology feature — see docs/superpowers/specs/2026-06-23-hole-count-feature-design.md
+MIN_HOLE_AREA   = 6   # discard enclosed regions smaller than this (anti-aliasing/dither noise)
+N_HOLE_FEATURES = 5
+
 
 # ---------------------------------------------------------------------------
 # I/O — loading
@@ -296,6 +300,103 @@ def extract_hog(imgs: list[NDArray[np.uint8]], n_jobs: int = -1) -> NDArray[np.f
     return np.vstack(chunk_results)
 
 
+def _extract_hole_chunk(imgs: list[NDArray[np.uint8]]) -> NDArray[np.float64]:
+    """Per-image hole-count feature extraction core, run on one chunk of images.
+
+    Module-level (not a closure) so joblib's loky backend can pickle and
+    dispatch it to worker processes, mirroring _extract_hog_chunk. Each
+    image's hole-count is independent, so this is embarrassingly parallel.
+    Mirrors extractHoleFeatures in web/src/image/holeFeatures.ts exactly:
+    BFS outside flood-fill, then connected-component hole labelling, 4-
+    connectivity throughout.
+    """
+    from collections import deque
+
+    n = len(imgs)
+    result = np.zeros((n, N_HOLE_FEATURES), dtype=np.float64)
+
+    for idx, img in enumerate(imgs):
+        h, w = img.shape
+        visited = np.zeros((h, w), dtype=bool)
+        ink_count = int(np.count_nonzero(img))
+        queue: deque[tuple[int, int]] = deque()
+
+        # Step 1: flood-fill "outside" from every border background pixel.
+        for x in range(w):
+            for y in (0, h - 1):
+                if img[y, x] == 0 and not visited[y, x]:
+                    visited[y, x] = True
+                    queue.append((y, x))
+        for y in range(h):
+            for x in (0, w - 1):
+                if img[y, x] == 0 and not visited[y, x]:
+                    visited[y, x] = True
+                    queue.append((y, x))
+        while queue:
+            y, x = queue.popleft()
+            for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+                if 0 <= ny < h and 0 <= nx < w and img[ny, nx] == 0 and not visited[ny, nx]:
+                    visited[ny, nx] = True
+                    queue.append((ny, nx))
+
+        # Step 2: label remaining unvisited background pixels as hole regions.
+        hole_areas: list[int] = []
+        for sy in range(h):
+            for sx in range(w):
+                if visited[sy, sx] or img[sy, sx] != 0:
+                    continue
+                area = 0
+                visited[sy, sx] = True
+                queue.append((sy, sx))
+                while queue:
+                    y, x = queue.popleft()
+                    area += 1
+                    for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+                        if 0 <= ny < h and 0 <= nx < w and img[ny, nx] == 0 and not visited[ny, nx]:
+                            visited[ny, nx] = True
+                            queue.append((ny, nx))
+                if area >= MIN_HOLE_AREA:
+                    hole_areas.append(area)
+
+        hole_areas.sort(reverse=True)
+        bucket = min(len(hole_areas), 2)
+        result[idx, bucket] = 1.0
+        denom = max(ink_count, 1)
+        result[idx, 3] = (hole_areas[0] if len(hole_areas) > 0 else 0) / denom
+        result[idx, 4] = (hole_areas[1] if len(hole_areas) > 1 else 0) / denom
+
+    return result
+
+
+def extract_hole_features(imgs: list[NDArray[np.uint8]], n_jobs: int = -1) -> NDArray[np.float64]:
+    """Extract hole-count topology features matching the TypeScript
+    extractHoleFeatures implementation (web/src/image/holeFeatures.ts).
+
+    Fully separate joblib dispatch from extract_hog — same chunking pattern
+    (_extract_hole_chunk mirrors _extract_hog_chunk) but its own worker pool,
+    so the existing, working HOG path is not touched.
+    """
+    import time as _time
+    import os as _os
+
+    from joblib import Parallel, delayed  # type: ignore[import-untyped]
+
+    t0 = _time.time()
+    n = len(imgs)
+    if n == 0:
+        return np.zeros((0, N_HOLE_FEATURES), dtype=np.float64)
+
+    workers = (_os.cpu_count() or 1) if n_jobs == -1 else n_jobs
+    workers = max(1, min(workers, n))
+    chunk_size = -(-n // workers)  # ceil division
+    chunks = [imgs[i:i + chunk_size] for i in range(0, n, chunk_size)]
+
+    print(f"  Extracting hole features for {n} images across {len(chunks)} chunks (n_jobs={workers})…", flush=True)
+    chunk_results = Parallel(n_jobs=workers)(delayed(_extract_hole_chunk)(chunk) for chunk in chunks)
+    print(f"  [+{_time.time() - t0:.0f}s] Hole feature extraction done", flush=True)
+    return np.vstack(chunk_results)
+
+
 # ---------------------------------------------------------------------------
 # Augmentation
 # ---------------------------------------------------------------------------
@@ -372,7 +473,9 @@ def build_dataset(
             print(f"  [+{_time.time() - t0:.0f}s] Dithered {i + 1}/{n_samples} samples "
                   f"({len(aug_imgs)} augmented images)", flush=True)
 
-    X = extract_hog(aug_imgs)
+    X_hog = extract_hog(aug_imgs)
+    X_hole = extract_hole_features(aug_imgs)
+    X = np.hstack([X_hog, X_hole])
     return X, np.array(aug_labels, dtype=np.int64), np.array(aug_weights, dtype=np.float64)
 
 
@@ -750,7 +853,9 @@ def main() -> None:
         n_synth_aug   = n_synth   * (synth_dither + 1)
         print(f"{_elapsed()} Dither: browser {args.dither} variants ({n_browser_aug} aug), synth {synth_dither} variants ({n_synth_aug} aug)", flush=True)
         print(f"{_elapsed()} Extracting HOG features for {len(aug_imgs)} images…", flush=True)
-        X = extract_hog(aug_imgs)
+        X_hog = extract_hog(aug_imgs)
+        X_hole = extract_hole_features(aug_imgs)
+        X = np.hstack([X_hog, X_hole])
         y = np.array(aug_labels, dtype=np.int64)
         weights: NDArray[np.float64] | None = None
     else:
