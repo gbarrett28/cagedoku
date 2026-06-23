@@ -15,4 +15,8 @@
  * - if unactionable, delete the fixture entry from `index.ts` entirely and
  *   remove its name from this list.
  */
-export const NEEDS_TRIAGE_FIXTURES: readonly string[] = [];
+export const NEEDS_TRIAGE_FIXTURES: readonly string[] = [  "NakedSingle-trigger-miss-2026-06-22T11-39-45-090Z",
+  "CageCandidateFilter-trigger-miss-2026-06-22T11-39-42-997Z",
+  "SolutionMapFilter-trigger-miss-2026-06-22T11-39-42-999Z",
+  "SolutionMapFilter-trigger-miss-2026-06-22T11-39-46-126Z",
+];
