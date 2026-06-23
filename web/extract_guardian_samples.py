@@ -82,23 +82,6 @@ def load_pic(jpg_path: Path) -> _PicData:
 # Pure helpers -- testable without cv2 or real images
 # ---------------------------------------------------------------------------
 
-def square_pad_src(ax: float, ay: float, bw: float, bh: float) -> NDArray[np.float32]:
-    """4-corner source region for a square-padded perspective warp.
-
-    Centres the bounding rect in a square whose side = max(bw, bh).
-    Returns [[TL],[TR],[BR],[BL]] in (x, y) image coordinates.
-    Matches the TypeScript squarePadSrc helper exactly.
-    """
-    side = max(bw, bh)
-    cx, cy = ax + bw / 2, ay + bh / 2
-    return np.array([
-        [cx - side / 2, cy - side / 2],
-        [cx + side / 2, cy - side / 2],
-        [cx + side / 2, cy + side / 2],
-        [cx - side / 2, cy + side / 2],
-    ], dtype=np.float32)
-
-
 def is_num_contour(w: int, h: int, subres: int = SUBRES) -> bool:
     """True if bounding-rect dimensions match a cage-total digit glyph."""
     return (subres // 16 <= w <= subres // 2) and (subres // 8 <= h <= subres // 2)
@@ -108,15 +91,23 @@ def is_num_contour(w: int, h: int, subres: int = SUBRES) -> bool:
 # Thumbnail extraction
 # ---------------------------------------------------------------------------
 
-DST64 = np.float32([[0, 0], [THUMB - 1, 0], [THUMB - 1, THUMB - 1], [0, THUMB - 1]])
-
-
-def warp_thumb(
+def letterbox_warp(
     ax: float, ay: float, bw: float, bh: float, warped: NDArray[np.uint8],
 ) -> NDArray[np.uint8]:
-    """Extract a square-padded 64x64 thumbnail from the warped binary image."""
-    src = square_pad_src(ax, ay, bw, bh)
-    M = cv2.getPerspectiveTransform(src, DST64)
+    """Extract a letterboxed (no square-stretch) 64x64 thumbnail from the
+    warped binary image. Matches the TypeScript letterboxWarp helper exactly.
+    """
+    scale = min((THUMB - 1) / bw, (THUMB - 1) / bh)
+    dest_w, dest_h = bw * scale, bh * scale
+    off_x, off_y = ((THUMB - 1) - dest_w) / 2, ((THUMB - 1) - dest_h) / 2
+    src = np.array([
+        [ax, ay], [ax + bw, ay], [ax + bw, ay + bh], [ax, ay + bh],
+    ], dtype=np.float32)
+    dst = np.array([
+        [off_x, off_y], [off_x + dest_w, off_y],
+        [off_x + dest_w, off_y + dest_h], [off_x, off_y + dest_h],
+    ], dtype=np.float32)
+    M = cv2.getPerspectiveTransform(src, dst)
     thumb = cv2.warpPerspective(warped, M, (THUMB, THUMB), flags=cv2.INTER_LINEAR)
     return ((thumb > 127).astype(np.uint8) * 255)
 
@@ -271,7 +262,7 @@ def extract_puzzle_samples(
                 oy = int(round(abs_y * scale))
                 ow = max(1, int(round(w * scale)))
                 oh = max(1, int(round(h * scale)))
-                samples.append((int(total_str[0]), warp_thumb(ox, oy, ow, oh, warped)))
+                samples.append((int(total_str[0]), letterbox_warp(ox, oy, ow, oh, warped)))
 
             else:
                 # Column-projection minimum split for 2-digit totals, searched
@@ -293,7 +284,7 @@ def extract_puzzle_samples(
                     oy = int(round(abs_y * scale))
                     ow = max(1, int(round(w * scale)))
                     oh = max(1, int(round(h * scale)))
-                    samples.append((int(total_str[i]), warp_thumb(ox, oy, ow, oh, warped)))
+                    samples.append((int(total_str[i]), letterbox_warp(ox, oy, ow, oh, warped)))
 
     return samples
 
