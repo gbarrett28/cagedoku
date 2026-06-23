@@ -33,6 +33,9 @@ no_gutter.py
 sessions/
 killer_sudoku/static/main.js
 
+# train_recogniser.py per-pair SVM fit checkpoints (resumable retrain)
+.svm_checkpoints/
+
 # Test fixture images — download locally, do not commit
 tests/fixtures/sudoku/*.jpg
 tests/fixtures/sudoku/*.jpeg

@@ -126,3 +126,11 @@ describe('digit recogniser — TypeScript HOG inference on training data', () =>
     expect(allPass).toBe(true);
   });
 });
+
+// Note: guardian_train_sq.json / observer_train_sq.json are deliberately not
+// tested here. /guardian/ and /observer/ are entirely gitignored (the source
+// .jpg files cannot be committed), so any test depending on them only ever
+// runs on a machine that has manually run extract_guardian_samples.py — it
+// can never be a real CI/bronze-gate check. Those datasets are bulk training
+// input only; browser_train.json (committed, hand-verified) is the ground
+// truth this suite holds to 100%.

@@ -31,7 +31,7 @@ truth.
 | Source | Content |
 |---|---|
 | `guardian/*.jpg`, `observer/*.jpg` | Original puzzle photographs |
-| `guardian/*.jpk`, `observer/*.jpk` | Cached `PicInfo` objects: `grid` (4×2 float32 source corners), `cage_totals[col][row]` (9×9 int64, column-major) |
+| `guardian/*.jpk`, `observer/*.jpk` | Cached `PicInfo` objects: `grid` (4×2 float32 source corners), `cage_totals[row][col]` (9×9 int64, row-major) — verified by overlaying ROI boxes on the warped image; an earlier version of this doc and `extract_guardian_samples.py` both assumed column-major, which silently mislabeled most cells |
 
 `PicInfo` is deserialized via a two-line stub so the deleted Python module is not needed:
 ```python
@@ -53,7 +53,7 @@ sys.modules['killer_sudoku.image.inp_image'].PicInfo = PicInfo
    - `subres/8 ≤ height ≤ subres/2` (16–64 px)
    - `y < subres/2` within its cell (cage totals are in the upper half)
 5. **Assign to cell** — `col = x // subres`, `row = y // subres`; group contours per cell
-6. **Match to cage total** — `cage_totals[col][row]`; skip cells where total is 0
+6. **Match to cage total** — `cage_totals[row][col]`; skip cells where total is 0
 7. **Pair contours to digits** — sort contours in cell left-to-right; if
    `len(contours) == len(str(total))`, pair by index; otherwise skip (ambiguous split)
 8. **Square-pad and warp** — for each contour `(ax, ay, bw, bh)`:

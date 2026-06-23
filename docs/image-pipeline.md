@@ -305,9 +305,12 @@ formats without format-specific training.
 Cage totals are printed in the top-left of the cage's top-left cell.  This stage
 classifies each contour candidate (located in Stage 3) using HOG features + LinearSVC.
 
-Each digit thumbnail is a 64×64 binary uint8 image produced by `splitNum`.  Wide
-bounding boxes (two adjacent digits merged in the contour tree) are split at the peak
-of the column profile before classification.
+Each digit thumbnail is a 64×64 binary uint8 image produced by `splitNum` using
+square-padded extraction — the digit is centred in a square canvas before warping,
+preserving natural aspect ratio for HOG features (see Classic digit reading below).
+Wide bounding boxes (two adjacent digits merged in the contour tree) are split at the
+column-profile minimum; each half is square-padded individually.  The pre-split merged
+thumbnail (fed to the split-recogniser to decide 1-vs-2 digits) remains tight-crop.
 
 HOG features are extracted via `cv.HOGDescriptor` (OpenCV.js) with a 64 px window,
 8 px cells, 16 px blocks, and 9 orientation bins — producing a 1764-dimensional vector.

@@ -516,11 +516,12 @@ export function splitNum(
   // and for returning as the merged thumbnail for training export.
   const fullSrc = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
   const mergedThumb = getWarpFromRect(cv, fullSrc, warpedBlk);
+  const sqThumb = getWarpFromRect(cv, squarePadSrc(x, y, w, h), warpedBlk);
 
-  if (splitRec === undefined) return [[mergedThumb], mergedThumb, x, y];
+  if (splitRec === undefined) return [[sqThumb], mergedThumb, x, y];
 
   const [result] = recognise(splitRec, [mergedThumb]);
-  if (result!.label !== 2) return [[mergedThumb], mergedThumb, x, y];
+  if (result!.label !== 2) return [[sqThumb], mergedThumb, x, y];
 
   // Two digits confirmed.  Find the split column using confidence-based
   // validation: try every 4 px across the bounding rect, classify both halves
@@ -535,10 +536,8 @@ export function splitNum(
   if (rec !== undefined && candidates.length > 0) {
     const allThumbs: Uint8Array[] = [];
     for (const sp of candidates) {
-      const lSrc = [[x, y], [x + sp, y], [x + sp, y + h], [x, y + h]];
-      const rSrc = [[x + sp, y], [x + w, y], [x + w, y + h], [x + sp, y + h]];
-      allThumbs.push(getWarpFromRect(cv, lSrc, warpedBlk));
-      allThumbs.push(getWarpFromRect(cv, rSrc, warpedBlk));
+      allThumbs.push(getWarpFromRect(cv, squarePadSrc(x,      y, sp,     h), warpedBlk));
+      allThumbs.push(getWarpFromRect(cv, squarePadSrc(x + sp, y, w - sp, h), warpedBlk));
     }
     const recs = recognise(rec, allThumbs);
 
@@ -556,10 +555,11 @@ export function splitNum(
     }
 
     if (bestScore > 0 && bestSplit > 0) {
-      const lSrc = [[x, y], [x + bestSplit, y], [x + bestSplit, y + h], [x, y + h]];
-      const rSrc = [[x + bestSplit, y], [x + w, y], [x + w, y + h], [x + bestSplit, y + h]];
       return [
-        [getWarpFromRect(cv, lSrc, warpedBlk), getWarpFromRect(cv, rSrc, warpedBlk)],
+        [
+          getWarpFromRect(cv, squarePadSrc(x,             y, bestSplit,     h), warpedBlk),
+          getWarpFromRect(cv, squarePadSrc(x + bestSplit, y, w - bestSplit, h), warpedBlk),
+        ],
         mergedThumb, x, y,
       ];
     }
@@ -576,10 +576,11 @@ export function splitNum(
       if (data[(y + dy) * width + (x + dx)]! > 0) ink++;
     if (ink < minInk) { minInk = ink; splitCol = dx; }
   }
-  const lSrc = [[x, y], [x + splitCol, y], [x + splitCol, y + h], [x, y + h]];
-  const rSrc = [[x + splitCol, y], [x + w, y], [x + w, y + h], [x + splitCol, y + h]];
   return [
-    [getWarpFromRect(cv, lSrc, warpedBlk), getWarpFromRect(cv, rSrc, warpedBlk)],
+    [
+      getWarpFromRect(cv, squarePadSrc(x,            y, splitCol,     h), warpedBlk),
+      getWarpFromRect(cv, squarePadSrc(x + splitCol, y, w - splitCol, h), warpedBlk),
+    ],
     mergedThumb, x, y,
   ];
 }

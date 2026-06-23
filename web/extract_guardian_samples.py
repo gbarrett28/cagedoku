@@ -121,6 +121,36 @@ def warp_thumb(
     return ((thumb > 127).astype(np.uint8) * 255)
 
 
+def digit_content_extent(col_ink: NDArray[np.floating], roi_w: int, margin: int) -> int:
+    """Find where real digit ink ends and trailing decoration begins.
+
+    Some newspapers print a cage-total "flag" -- a thin underline/pointer
+    extending from the total to the cell's right edge -- which can touch the
+    digit glyphs themselves. A plain ink-column minimum search (used to split
+    2-digit totals, or bound a 1-digit total's crop) finds its minimum in the
+    empty space *after* this trailing decoration rather than between/around
+    the actual digits, since the decoration is themselves low-ink but long.
+    Detects the first sustained low-ink run (>= 20% of roi_w, well past any
+    brief dip between touching digits) scanning left-to-right, and returns
+    where it begins -- callers should stop looking for digit content there.
+    """
+    if roi_w <= 2 * margin:
+        return roi_w - margin
+    background = float(np.percentile(col_ink, 20))
+    peak = float(col_ink.max())
+    threshold = background + 0.15 * (peak - background)
+    min_run = max(8, int(roi_w * 0.2))
+    run = 0
+    for x in range(margin, roi_w - margin):
+        if col_ink[x] <= threshold:
+            run += 1
+            if run >= min_run:
+                return x - run + 1
+        else:
+            run = 0
+    return roi_w - margin
+
+
 def split_bounding_rect(
     ax: int, ay: int, bw: int, bh: int, warped: NDArray[np.uint8],
 ) -> tuple[tuple[int, int, int, int], tuple[int, int, int, int]] | None:
@@ -154,19 +184,29 @@ def extract_puzzle_samples(
         _log.warning("Cannot read %s -- skipping", jpg_path.name)
         return []
 
-    # Warp to the native pipeline resolution (inferred from stored grid corners).
-    # Guardian/observer .jpg files are stored at ~1/4 scale; the Python pipeline
-    # resized them to ~1720px before computing the perspective corners.
+    # Upscale to the resolution grid corners were detected against. Mirrors
+    # web/src/image/inpImage.ts's prepareGrayMat exactly: repeatedly pyrUp
+    # (doubling, aspect-preserving) until both dimensions reach `resolution`.
+    # A plain resize to a square canvas (the previous approach here) silently
+    # assumed every source .jpg was a small square thumbnail needing a fixed
+    # ~4x upscale -- true for most, but wrong for the minority stored at or
+    # near full resolution already (non-square, little/no upscale needed),
+    # which produced misaligned/blank-row warps for ~6% of observer/ puzzles.
     grid = np.array(pic.grid, dtype=np.float32)
-    pipe_res  = int(grid.max()) + 10    # e.g. 1727 for max corner 1717
-    pipe_cell = pipe_res // 9           # e.g. 191
-
-    img_hr = cv2.resize(img, (pipe_res, pipe_res), interpolation=cv2.INTER_LINEAR)
+    img_hr = img
+    while img_hr.shape[0] < resolution or img_hr.shape[1] < resolution:
+        img_hr = cv2.pyrUp(img_hr)
     blk_hr = cv2.adaptiveThreshold(
         img_hr, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 51, 7,
     )
 
-    # Pipeline-resolution warp for cage-ROI extraction.
+    # Pipeline-resolution warp for cage-ROI extraction. The destination square
+    # size only needs to comfortably contain the grid (grid.max() is the
+    # grid's own extent in img_hr's coordinate space) -- it is independent of
+    # img_hr's own resolution, since warpPerspective maps the `grid` quad to
+    # whatever destination size is requested.
+    pipe_res  = int(grid.max()) + 10
+    pipe_cell = pipe_res // 9
     dst_hr = np.float32([
         [0, 0], [pipe_res - 1, 0],
         [pipe_res - 1, pipe_res - 1], [0, pipe_res - 1],
@@ -190,7 +230,11 @@ def extract_puzzle_samples(
 
     for col in range(9):
         for row in range(9):
-            total = int(cage_totals[col, row])
+            # cage_totals is row-major [row][col], not column-major as earlier
+            # docs claimed -- verified by overlaying ROI boxes on the warped
+            # image: cage_totals[col, row] picked up the wrong cell's total
+            # for most cells, corrupting guardian/observer training labels.
+            total = int(cage_totals[row, col])
             if total == 0:
                 continue
             total_str = str(total)
@@ -209,12 +253,20 @@ def extract_puzzle_samples(
                            jpg_path.name, col, row, total)
                 continue
 
+            margin = max(2, roi_w // 8)
+            col_ink = roi.sum(axis=0).astype(np.float64)
+            content_end = digit_content_extent(col_ink, roi_w, margin)
+
             if ndigits == 1:
-                # Tight bounding box of all ink in the ROI.
-                abs_x = cx + int(xs.min())
-                abs_y = cy + int(ys.min())
-                w = int(xs.max() - xs.min()) + 1
-                h = int(ys.max() - ys.min()) + 1
+                # Tight bounding box of ink before any trailing decoration.
+                content = roi[:, :content_end]
+                cys, cxs = np.where(content > 0)
+                if len(cys) < 10:
+                    continue
+                abs_x = cx + int(cxs.min())
+                abs_y = cy + int(cys.min())
+                w = int(cxs.max() - cxs.min()) + 1
+                h = int(cys.max() - cys.min()) + 1
                 ox = int(round(abs_x * scale))
                 oy = int(round(abs_y * scale))
                 ow = max(1, int(round(w * scale)))
@@ -222,13 +274,13 @@ def extract_puzzle_samples(
                 samples.append((int(total_str[0]), warp_thumb(ox, oy, ow, oh, warped)))
 
             else:
-                # Column-projection minimum split for 2-digit totals.
-                col_ink = roi.sum(axis=0)
-                margin = max(2, roi_w // 8)
-                mid = col_ink[margin: roi_w - margin]
+                # Column-projection minimum split for 2-digit totals, searched
+                # only within the real digit content (excludes any trailing
+                # decoration the ink-minimum would otherwise lock onto).
+                mid = col_ink[margin: content_end]
                 split_x = margin + int(mid.argmin()) if len(mid) > 0 else roi_w // 2
 
-                for i, (x0, x1) in enumerate([(0, split_x), (split_x, roi_w)]):
+                for i, (x0, x1) in enumerate([(0, split_x), (split_x, content_end)]):
                     half = roi[:, x0: x1]
                     hys, hxs = np.where(half > 0)
                     if len(hys) < 4:
