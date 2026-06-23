@@ -475,18 +475,20 @@ export function getWarpFromRect(
   gry: OpenCVMat,
   resH: number = 64,
   resW: number = 64,
+  dst?: number[][],
 ): Uint8Array {
+  const dstQuad = dst ?? [
+    [0, 0],
+    [resH - 1, 0],
+    [resH - 1, resW - 1],
+    [0, resW - 1],
+  ];
   const src = cv.matFromArray(4, 1, cv.CV_32FC2, rect.flat());
-  const dst = cv.matFromArray(4, 1, cv.CV_32FC2, [
-    0, 0,
-    resH - 1, 0,
-    resH - 1, resW - 1,
-    0, resW - 1,
-  ]);
-  const m = cv.getPerspectiveTransform(src, dst);
+  const dstMat = cv.matFromArray(4, 1, cv.CV_32FC2, dstQuad.flat());
+  const m = cv.getPerspectiveTransform(src, dstMat);
   const out = new cv.Mat();
   cv.warpPerspective(gry, out, m, new cv.Size(resW, resH), cv.INTER_LINEAR);
-  src.delete(); dst.delete(); m.delete();
+  src.delete(); dstMat.delete(); m.delete();
 
   const data = new Uint8Array(out.data);
   out.delete();
