@@ -80,7 +80,7 @@ HOG_NBINS        = 9
 # ((64-16)/8+1)^2 * (16/8)^2 * 9 = 7^2 * 4 * 9
 HOG_FEAT         = 1764
 
-# Hole-count topology feature — see docs/superpowers/specs/2026-06-23-hole-count-feature-design.md
+# Hole-count topology feature — see docs/image-pipeline.md, Stage 5
 MIN_HOLE_AREA   = 6   # discard enclosed regions smaller than this (anti-aliasing/dither noise)
 N_HOLE_FEATURES = 5
 

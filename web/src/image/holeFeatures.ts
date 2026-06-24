@@ -4,9 +4,8 @@
  *
  * Distinguishes shapes like "3" (0 holes) from "8" (2 holes) — a signal HOG's
  * local gradient histograms cannot encode, since hole structure is global
- * topology, not local edge orientation. See
- * docs/superpowers/specs/2026-06-23-hole-count-feature-design.md for the
- * full design rationale.
+ * topology, not local edge orientation. See docs/image-pipeline.md, Stage 5,
+ * for the full design rationale.
  */
 
 const MIN_HOLE_AREA = 6;

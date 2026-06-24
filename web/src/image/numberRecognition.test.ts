@@ -95,10 +95,9 @@ function unexpectedFailures(subset: TrainingSample[]): string[] {
 // capture time -- there is no raw image to re-crop, so no future crop fix
 // can retroactively repair these. Identified by content hash (sha256 of the
 // raw pixel array), not array index -- index is not stable across dedup or
-// regeneration of this fixture, hash identity is. See
-// docs/superpowers/specs/2026-06-24-contour-based-extraction-design.md for
-// how this set was captured (report-browser-train-failures.ts, before/after
-// the dedup + retrain in that same sprint).
+// regeneration of this fixture, hash identity is. See docs/image-pipeline.md's
+// Training Pipeline section for how this set was captured
+// (report-browser-train-failures.ts, before/after the dedup + retrain).
 //
 // Currently empty: the contour-based bulk-extraction fix (Sprint 3) improved
 // the trained model enough that even the previously-hard duplicate-"7" cases
