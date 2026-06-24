@@ -462,21 +462,33 @@ export function contourHier(
  * Filter contour hierarchy to digit-sized contours only.
  *
  * Recursively searches for contours whose bounding rect passes
- * contourIsNumber. Non-matching contours are discarded but their children
- * are still searched.
+ * contourIsNumber AND are nested at depth >= 2. Non-matching contours are
+ * discarded but their children are still searched.
  *
  * @param chier - Contour hierarchy.
  * @param subres - Pixels per cell side.
  * @param minFillRatio - Minimum area / (width * height) to count as a digit;
  *   see `contourIsNumber`.
+ * @param depth - Current depth in the hierarchy (0 at the top-level call).
+ *   Depth 0 is the single outer-grid contour, depth 1 is the 81 per-cell
+ *   border frames (plus, on images with fragmented border ink, stray
+ *   non-cell line fragments -- e.g. a cage's L-shaped corner notch that
+ *   happens to pass the size/fill-ratio checks). A genuine cage-total digit
+ *   is only ever found nested inside a cell's frame, i.e. depth >= 2.
  */
-export function getNumContours(chier: ContourInfo[], subres: number, minFillRatio: number): ContourInfo[] {
+export function getNumContours(chier: ContourInfo[], subres: number, minFillRatio: number, depth: number = 0): ContourInfo[] {
   const ret: ContourInfo[] = [];
   for (const [c, br, area, ds] of chier) {
-    if (contourIsNumber(br, subres, area, minFillRatio)) {
+    // depth 0 is the single outer-grid contour; depth 1 is the 81 per-cell
+    // border frames (plus, on images with fragmented border ink, stray
+    // non-cell line fragments -- e.g. a cage's L-shaped corner notch). A
+    // cage-total digit is only ever found nested *inside* a cell's frame
+    // (depth >= 2): requiring that rejects border-line fragments
+    // structurally, without depending on any per-image border geometry.
+    if (depth >= 2 && contourIsNumber(br, subres, area, minFillRatio)) {
       ret.push([c, br, area, ds]);
     } else {
-      ret.push(...getNumContours(ds, subres, minFillRatio));
+      ret.push(...getNumContours(ds, subres, minFillRatio, depth + 1));
     }
   }
   return ret;

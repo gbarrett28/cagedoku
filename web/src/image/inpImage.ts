@@ -24,7 +24,7 @@ import type { ImagePipelineConfig } from './config.js';
 import { locateGrid } from './gridLocation.js';
 import {
   collectCageTotalContours, scanClassicDigits, calibrateCageTotalThreshold,
-  contourFillRatios, detectRotation, detectPuzzleType, hasTopLeftMargin,
+  contourFillRatios, detectRotation, detectPuzzleType,
 } from './cellScan.js';
 import type { GrayImage } from './borderClustering.js';
 import {
@@ -435,7 +435,6 @@ export function buildCageTotals(
       const col = ((brx + (brw >> 1)) / subres) | 0;
       const row = ((bry + (brh >> 1)) / subres) | 0;
       if (col < 0 || col >= 9 || row < 0 || row >= 9) continue;
-      if (!hasTopLeftMargin(brx, bry, row, col, subres)) continue;
 
       let numThumbArr: Uint8Array[];
       let mergedThumb: Uint8Array;

@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
   computeQuadSums, detectPuzzleType, detectRotation, isCageTotalContour,
   cageConfFromContours, thresholdMargin, pickBestThreshold, calibrateCageTotalThreshold,
-  contourFillRatios, hasTopLeftMargin,
+  contourFillRatios,
 } from './cellScan.js';
 import type { ContourMetrics, ThresholdCandidateResult } from './cellScan.js';
 import type { GrayImage } from './borderClustering.js';
@@ -99,38 +99,6 @@ describe('isCageTotalContour', () => {
   it('rejects a contour outside the size range regardless of fill ratio', () => {
     // width=5 is below minW (subres >> 4 = 8), even with a solid fill
     expect(isCageTotalContour(5, 20, 100, SUBRES_FULL, 0.3)).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// hasTopLeftMargin
-// ---------------------------------------------------------------------------
-
-describe('hasTopLeftMargin', () => {
-  it('rejects a contour flush against its cell\'s left edge (observer/killer_sudoku_397.jpg r1c5 false "11")', () => {
-    // Real diagnostic values: br=[640,135,8,18], assigned to row=1,col=5 at
-    // subres=128 -> cellLeft=640. x===cellLeft exactly: this is the L-shaped
-    // cage border's corner notch, not a digit -- a printed digit has margin
-    // from the cell's own top-left corner.
-    expect(hasTopLeftMargin(640, 135, 1, 5, 128)).toBe(false);
-  });
-
-  it('rejects a contour flush against its cell\'s top edge', () => {
-    expect(hasTopLeftMargin(700, 128, 1, 5, 128)).toBe(false);
-  });
-
-  it('accepts a contour with real margin from both the left and top edges', () => {
-    expect(hasTopLeftMargin(650, 140, 1, 5, 128)).toBe(true); // 10px left margin, 12px top margin
-  });
-
-  it('accepts a contour close to its cell\'s right edge (2-digit total\'s second digit)', () => {
-    // Deliberately not checked -- see contourIsNumber's x-parity comment on
-    // why second digits of "1X" totals near the right edge must be accepted.
-    expect(hasTopLeftMargin(760, 140, 1, 5, 128)).toBe(true);
-  });
-
-  it('accepts a contour close to its cell\'s bottom edge', () => {
-    expect(hasTopLeftMargin(650, 250, 1, 5, 128)).toBe(true);
   });
 });
 
