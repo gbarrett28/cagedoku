@@ -1330,6 +1330,3 @@ implemented as part of it:
   image). Building a hybrid candidate from OCR requires a digit-correction UI
   for the Killer review screen first — deferred.
 
-The unified digit recogniser continues independently on
-`feature/unified-digit-recogniser`, orthogonal to the puzzle-state redesign.
-

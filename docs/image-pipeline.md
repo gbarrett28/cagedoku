@@ -303,25 +303,51 @@ formats without format-specific training.
 ## Stage 5: Full Digit Recognition
 
 Cage totals are printed in the top-left of the cage's top-left cell.  This stage
-classifies each contour candidate (located in Stage 3) using HOG features + LinearSVC.
+classifies each contour candidate (located in Stage 3) using HOG + hole-count features
+and a LinearSVC.
 
-Each digit thumbnail is a 64×64 binary uint8 image produced by `splitNum`.  Wide
-bounding boxes (two adjacent digits merged in the contour tree) are split at the peak
-of the column profile before classification.
+`buildCageTotals` (`inpImage.ts`) runs `cv.findContours` once over the whole warped
+board (`RETR_TREE`), walks the resulting hierarchy (`contourHier`), and keeps contours
+matching `contourIsNumber` — a digit-sized bounding rect (`isDigitSizedContour`: width
+in `[subres>>4, subres>>1)`, height in `[subres>>3, subres>>1)`) at a vertical position
+consistent with a cage total rather than a centred solution digit (a parity check on
+`y`, since solution digits and cage totals occupy alternating vertical "rows" within
+`contourIsNumber`'s scan). `isDigitSizedContour` is factored out as its own function
+specifically so the offline training-data extractor (see Training Pipeline T1 below)
+can reuse the exact same size bounds without inheriting the parity check, which only
+makes sense at whole-board scale.
+
+Each digit thumbnail is a 64×64 binary uint8 image produced by `letterboxWarp` —
+the digit's natural aspect ratio is preserved and it is centred with black letterbox
+bars on the narrower axis, rather than stretched to fill the square (the previous
+`squarePadSrc` approach centred the rect in a square *before* warping, which is
+equivalent for single digits but interacted badly with multi-digit splits; see Classic
+digit reading below for the shared rationale). `splitNum` decides whether a raw
+contour represents one or two digits via a secondary split-recogniser classifier (ink
+projection minimum as a non-ML fallback when no split-recogniser is loaded); each
+resulting half is independently `letterboxWarp`-ed. The pre-split merged thumbnail
+(fed to the split-recogniser) remains tight-crop, unwarped.
 
 HOG features are extracted via `cv.HOGDescriptor` (OpenCV.js) with a 64 px window,
 8 px cells, 16 px blocks, and 9 orientation bins — producing a 1764-dimensional vector.
-An OvO LinearSVC (45 binary classifiers) produces a vote count per class; the winner
-is the predicted digit.  Confidence is the winner's vote fraction; reads below 0.7 are
-flagged as uncertain.
+A 5-dimensional hole-count feature (`extractHoleFeatures`/`extract_hole_features`,
+mirrored exactly between TypeScript and Python) is concatenated: a BFS flood-fill from
+every border background pixel marks "outside"; unvisited background pixels are
+enclosed "holes", labelled and sized (regions under 6px discarded as anti-aliasing
+noise), encoded as `[onehot(0 holes), onehot(1), onehot(2+), frac(largest), frac(2nd
+largest)]`. This gives the classifier a global-topology signal HOG's local gradient
+histograms cannot encode — e.g. distinguishing "3" (0 holes) from "8" (2 holes), a
+confirmed confusion pair before this feature was added. The combined 1769-dimensional
+vector feeds an OvO LinearSVC (45 binary classifiers); the winner's vote fraction is
+the read's confidence, flagged uncertain below 0.7.
 
 ```mermaid
 flowchart TD
-    A[contour candidates from Stage 3\nbinary blk + M] --> B[warpPerspective each rect\nto 64x64 thumbnail]
-    B --> C{bounding rect\nw >= h?}
-    C -- yes two digits --> D[splitNum:\nfind column-profile peak\n-> two sub-rects]
-    C -- no one digit --> E[single rect]
-    D --> F[hogExtract:\ncv.HOGDescriptor 64px/8c/16b/9bins\n-> 1764-dim vector]
+    A[contour candidates from Stage 3\nbinary blk + M] --> B[splitNum:\nsplit-recogniser decides 1 vs 2 digits\nink-projection-minimum fallback]
+    B --> C[letterboxWarp each rect\nto 64x64 thumbnail, aspect preserved]
+    C --> D[hogExtract:\ncv.HOGDescriptor 64px/8c/16b/9bins\n-> 1764-dim vector]
+    C --> E[extractHoleFeatures:\nBFS flood-fill from border\n-> 5-dim vector]
+    D --> F[concatenate -> 1769-dim]
     E --> F
     F --> G[LinearSVC OvO 45 classifiers\n-> vote count per digit]
     G --> H[Recognition: label + confident flag\nper candidate]
@@ -334,14 +360,18 @@ flowchart TD
 
 | Parameter | Value | Derivation |
 |-----------|-------|------------|
-| Thumbnail size | 64 × 64 px | HOG window size; matches `splitNum` output |
+| Thumbnail size | 64 × 64 px | HOG window size; matches `letterboxWarp` output |
 | HOG cell size | 8 × 8 px | 8 cells/dim; captures local edge orientation |
 | HOG block size | 16 × 16 px | 2×2 cells; block normalisation neighbourhood |
 | HOG bins | 9 | Unsigned gradient; ~40° per bin |
-| Feature length | 1764 | `((64−16)/8+1)² × (16/8)² × 9` |
+| HOG feature length | 1764 | `((64−16)/8+1)² × (16/8)² × 9` |
+| Hole-count feature length | 5 | onehot(0/1/2+ holes) + 2 size fractions |
+| Combined feature length | 1769 | HOG ⊕ hole-count, concatenated |
+| Minimum hole area | 6 px | Below this, treated as anti-aliasing noise, not a real hole |
 | OVO pairs | 45 | `10 × 9 / 2` for digits 0–9 |
 | Confidence threshold | 0.7 | Vote fraction above which a read is `confident` |
-| Split peak height | 4 px | Minimum column-profile peak to split a two-digit rect |
+| Digit width bounds | `subres>>4 .. subres>>1` | `isDigitSizedContour`/`is_num_contour` |
+| Digit height bounds | `subres>>3 .. subres>>1` | `isDigitSizedContour`/`is_num_contour` |
 
 ### Classic digit reading (`readClassicDigits`)
 
@@ -349,39 +379,37 @@ For classic puzzles (and as a fallback for type-switching on killer puzzles),
 `readClassicDigits` extracts the pre-filled given digits from each cell where
 `classicConf[r][c] > 0`.
 
-**Thumbnail extraction — square-padded crop:**
+**Thumbnail extraction — letterboxed crop:**
 
 The contour bounding rect for a classic digit is not square (a "1" has an
 aspect ratio of roughly 1:4).  Warping a non-square rect directly to 64×64
 distorts gradient orientations — a thin "1" stretched 4× horizontally produces
 HOG features that can fall inside the "9" decision boundary.
 
-Instead, the bounding rect is padded to a square before warping:
+Instead, `letterboxWarp` maps the bounding rect into a 64×64 canvas at the
+largest scale that fits both dimensions, centring the result and leaving
+black letterbox bars on the narrower axis — preserving natural aspect ratio
+without the stretch a plain square-pad-then-resize would introduce when the
+two square-pad call sites (single-digit and post-split halves) disagreed on
+canvas size:
 
 ```typescript
-// squarePadSrc(ax, ay, bw, bh) — centres rect in a square of side max(bw, bh)
-const side = Math.max(br.width, br.height);
-const cx   = ax + br.width  / 2;
-const cy   = ay + br.height / 2;
-const src  = [
-  [cx - side/2, cy - side/2], [cx + side/2, cy - side/2],
-  [cx + side/2, cy + side/2], [cx - side/2, cy + side/2],
-];
+// letterboxWarp(ax, ay, bw, bh) — scale-to-fit into a 64x64 canvas, centred
+const scale = Math.min((64 - 1) / bw, (64 - 1) / bh);
+const destW = bw * scale, destH = bh * scale;
+const offX = ((64 - 1) - destW) / 2, offY = ((64 - 1) - destH) / 2;
+// dest quad: [[offX,offY],[offX+destW,offY],[offX+destW,offY+destH],[offX,offY+destH]]
 ```
-
-The resulting 64×64 thumbnail has the digit centred in a square canvas with
-whitespace on the narrower sides, preserving natural aspect ratio for HOG
-feature extraction.
 
 **Return value:** `{ digits: number[][]; thumbs: Map<string, Uint8Array[]> }`
 
 `thumbs` is keyed `"r,c"` (0-indexed) and maps each cell to a single-element
 thumbnail array, making it directly compatible with `extractTrainingData` so
-confirmed classic puzzles upload square-padded training samples automatically.
+confirmed classic puzzles upload letterboxed training samples automatically.
 
-**Training pipeline note:** `generate_synthetic_samples` in `train_recogniser.py`
-uses the same square-pad → resize approach so training and inference thumbnails
-are produced by the same formula.
+**Training pipeline note:** `letterbox_warp` in both `train_recogniser.py` and
+`extract_guardian_samples.py` mirrors this exact formula, so training and
+inference thumbnails are produced identically.
 
 ---
 
@@ -459,10 +487,17 @@ remain; T3 (Observer border detector) has been retired — see [Migration Plan](
 
 ### T1: Collect Numerals
 
-The web app collects training data in-browser.  After the user reviews and corrects
-the OCR output, the app exports a JSON file (`browser_train.json`) containing labelled
-64×64 binary thumbnails for each digit extracted from that session.  Multiple export
-files are merged into `web/browser_train.json` over time.
+Two independent sources feed training data:
+
+**Browser-exported ground truth.** The web app collects training data in-browser.
+After the user reviews and corrects the OCR output, the app exports a JSON file
+containing labelled 64×64 binary thumbnails for each digit extracted from that
+session. Multiple export files are merged into `web/browser_train.json` over time.
+Because nothing previously deduplicated these merges, the file accumulated many exact
+byte-identical repeats of the same crop (up to 65% of its 8362 samples, in one
+clean-up pass); `web/dedupe_browser_train.py` drops exact duplicates (keeping first
+occurrence) before training, since duplicates would otherwise be multiply-counted
+under `--browser-weight`.
 
 ```mermaid
 flowchart LR
@@ -470,27 +505,80 @@ flowchart LR
     B --> C[user reviews +\ncorrects labels]
     C --> D[Export Training button\n-> browser_train.json]
     D --> E[merge into\nweb/browser_train.json]
+    E --> F[dedupe_browser_train.py\ndrop exact pixel duplicates]
 ```
 
-### T2: Train Number Recogniser
-
-Loads browser-exported labelled thumbnails, optionally merges synthetic font samples,
-augments with dithering, extracts HOG features, and fits a LinearSVC OvO classifier.
-
-```bash
-python web/train_recogniser.py --no-synthetic --svm-c 100000 web/browser_train.json
-```
+**Bulk newspaper-archive extraction.** `extract_guardian_samples.py` re-derives
+labelled thumbnails from archived guardian/observer puzzle photos (`guardian/`,
+`observer/` — gitignored, irreplaceable raw `.jpg`s plus cached grid/cage-total JSON
+from `migrate_pic_cache.py`). Per cell with a non-zero cage total, it crops the
+cell's top-left quadrant, upscales/binarizes to match the live pipeline's warp
+exactly, then finds digit-sized ink blobs via a **Node bridge**
+(`web/scripts/find-digit-blobs-server.ts`) that calls the literal production
+`isDigitSizedContour` + real `cv.findContours` logic — not a second cv2
+reimplementation, which previously drifted from production (a bespoke
+ink-column-projection heuristic mistook a cage-border line bleeding into the crop
+margin for digit content). `select_digit_blobs` then resolves the common ambiguity
+where more blobs are found than the cage total has digits: a thick cage-border or
+underline decoration band can itself fragment into a piece small enough to pass the
+size filter, but it is always shorter and lower in the crop than the real digit(s)
+(which sit at the top, since that's exactly why the crop is scoped to the cell's
+top-left quadrant) — so the topmost N blobs are kept. A genuinely touching 2-digit
+pair (one merged blob where two are expected) falls back to an ink-projection-minimum
+split of that blob's own bounding rect, gated by the same size filter.
 
 ```mermaid
 flowchart LR
-    A[browser_train.json] --> B[load labelled\n64x64 thumbnails]
+    A[guardian/observer .jpg + cached grid/cage_totals] --> B[warp + binarize\n(matches live pipeline)]
+    B --> C[per-cell top-left quadrant crop]
+    C --> D[find_digit_blobs:\nNode bridge -> real cv.findContours\n+ isDigitSizedContour]
+    D --> E{blob count\n== ndigits?}
+    E -- yes --> F[direct left-to-right assignment]
+    E -- more --> G[select_digit_blobs:\nkeep topmost N]
+    E -- one, ndigits=2 --> H[split_bounding_rect:\nink-projection minimum]
+    F --> I[letterbox_warp -> 64x64]
+    G --> I
+    H --> I
+    I --> J[guardian_train_sq.json /\nobserver_train_sq.json]
+```
+
+This bulk data also serves as a **held-out comparison set**: because it is
+solver-gated (cached `cage_totals` only trusted when the independent rule-based
+killer solver could actually solve the grid using them — `TRAINING_STATUSES =
+{SOLVED, CHEAT}` in `killer_sudoku/training/status.py`) and no training recipe on
+`master` has ever seen it, comparing a candidate model's accuracy on
+`guardian_train_sq.json`/`observer_train_sq.json` against `origin/master`'s deployed
+model is a genuine, non-circular accuracy check, not just a training-data source.
+
+### T2: Train Number Recogniser
+
+Loads browser-exported ground truth (always included in full, never capped) plus
+optionally-capped bulk guardian/observer data and/or synthetic font samples, augments
+with dithering, extracts HOG + hole-count features, and fits a LinearSVC OvO
+classifier.
+
+```bash
+python web/train_recogniser.py --browser-weight 1000 --svm-c 100 --max-per-class 1500 --no-synthetic --dither 18 guardian/guardian_train_sq.json observer/observer_train_sq.json
+```
+
+`--browser-weight` up-weights the hand-verified `browser_train.json` samples relative
+to bulk/synthetic ones; `--max-per-class` caps each bulk digit class (otherwise
+heavily skewed — digit '1' naturally appears far more often than '5') before
+dithering, bounding worst-case OVO pair fit time/memory regardless of input skew.
+
+```mermaid
+flowchart LR
+    A[bulk guardian/observer\n+ browser_train.json] --> B[load labelled\n64x64 thumbnails]
     B --> C{synthetic fonts?}
     C -- yes --> D[generate_synthetic_samples\nPillow + system fonts]
     C -- no --> E[dither augmentation\ntranslation / morph / noise]
     D --> E
     E --> F[extract_hog\ncv2.HOGDescriptor\n1764-dim vectors]
-    F --> G[LinearSVC OvO fit\n--svm-c]
-    G --> H[num_recogniser.bin + .json\nweb/public/]
+    E --> G[extract_hole_features\n5-dim vectors]
+    F --> H[concatenate -> 1769-dim]
+    G --> H
+    H --> I[LinearSVC OvO fit\n--svm-c]
+    I --> J[num_recogniser.bin + .json\nweb/public/]
 ```
 
 ### T3: Observer Border Detector (RETIRED)

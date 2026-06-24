@@ -13,6 +13,7 @@
  */
 
 import type { OpenCVModule, OpenCVMat, OpenCVMatVector } from './opencv.js';
+import { extractHoleFeatures } from './holeFeatures.js';
 type Cv = OpenCVModule;
 
 // ---------------------------------------------------------------------------
@@ -271,11 +272,20 @@ function hogExtract(imgs: Uint8Array[], params: HOGParams): Float64Array {
 /** Classify digit images using HOG + OVO classifier. */
 function classify(rec: NumRecogniser, imgs: Uint8Array[]): Recognition[] {
   const n = imgs.length;
-  const x = hogExtract(imgs, rec.hog);
+  const hog = hogExtract(imgs, rec.hog);
+  const hole = extractHoleFeatures(imgs, rec.hog.winSize);
+  const nHog = hog.length / n;
+  const nHole = hole.length / n;
+  const x = new Float64Array(n * (nHog + nHole));
+  for (let i = 0; i < n; i++) {
+    x.set(hog.subarray(i * nHog, (i + 1) * nHog), i * (nHog + nHole));
+    x.set(hole.subarray(i * nHole, (i + 1) * nHole), i * (nHog + nHole) + nHog);
+  }
   const { classifier, confidenceThreshold } = rec;
   if (classifier.kind === 'linear') return linearPredict(classifier, x, n, confidenceThreshold);
   return rbfPredictWithConfidence(classifier, x, n, confidenceThreshold);
 }
+
 
 /** Classify digit image patches and return labels with confidence flags. */
 export function recognise(rec: NumRecogniser, imgs: Uint8Array[]): Recognition[] {
@@ -371,15 +381,27 @@ export function loadNumRecogniser(
  * @param br - [x, y, w, h] bounding rect.
  * @param subres - Pixels per cell side.
  */
+/**
+ * Width/height-only digit-glyph size gate (no vertical-position parity
+ * check). Shared by contourIsNumber (board-wide live recognition, which also
+ * needs the parity check to exclude centred solution digits) and the offline
+ * training-data bridge (find-digit-blobs-server.ts), whose caller has
+ * already scoped the search to a cage-total's own quadrant — there is no
+ * solution-digit ambiguity left to resolve there.
+ *
+ * @param w - Contour bounding-rect width.
+ * @param h - Contour bounding-rect height.
+ * @param subres - Pixels per cell side.
+ */
+export function isDigitSizedContour(w: number, h: number, subres: number): boolean {
+  return w >= (subres >> 4) && w < (subres >> 1) && h >= (subres >> 3) && h < (subres >> 1);
+}
+
 export function contourIsNumber(br: BRect, subres: number): boolean {
   const [, y, w, h] = br;
   const yy = (2 * (y + (h >> 1))) / subres | 0;
   // x-parity omitted: yy + height checks exclude solution digits; x-parity falsely rejects second digits of "1X" totals near right-side cage borders.
-  return (
-    yy % 2 === 0 &&
-    w >= (subres >> 4) && w < (subres >> 1) &&
-    h >= (subres >> 3) && h < (subres >> 1)
-  );
+  return yy % 2 === 0 && isDigitSizedContour(w, h, subres);
 }
 
 /**
@@ -465,22 +487,37 @@ export function getWarpFromRect(
   gry: OpenCVMat,
   resH: number = 64,
   resW: number = 64,
+  dst?: number[][],
 ): Uint8Array {
+  const dstQuad = dst ?? [
+    [0, 0],
+    [resH - 1, 0],
+    [resH - 1, resW - 1],
+    [0, resW - 1],
+  ];
   const src = cv.matFromArray(4, 1, cv.CV_32FC2, rect.flat());
-  const dst = cv.matFromArray(4, 1, cv.CV_32FC2, [
-    0, 0,
-    resH - 1, 0,
-    resH - 1, resW - 1,
-    0, resW - 1,
-  ]);
-  const m = cv.getPerspectiveTransform(src, dst);
+  const dstMat = cv.matFromArray(4, 1, cv.CV_32FC2, dstQuad.flat());
+  const m = cv.getPerspectiveTransform(src, dstMat);
   const out = new cv.Mat();
   cv.warpPerspective(gry, out, m, new cv.Size(resW, resH), cv.INTER_LINEAR);
-  src.delete(); dst.delete(); m.delete();
+  src.delete(); dstMat.delete(); m.delete();
 
   const data = new Uint8Array(out.data);
   out.delete();
   return data;
+}
+
+
+function letterboxWarp(
+  cv: Cv, ax: number, ay: number, bw: number, bh: number,
+  gry: OpenCVMat, resH: number = 64, resW: number = 64,
+): Uint8Array {
+  const scale = Math.min((resW - 1) / bw, (resH - 1) / bh);
+  const destW = bw * scale, destH = bh * scale;
+  const offX = ((resW - 1) - destW) / 2, offY = ((resH - 1) - destH) / 2;
+  const src = [[ax, ay], [ax + bw, ay], [ax + bw, ay + bh], [ax, ay + bh]];
+  const dst = [[offX, offY], [offX + destW, offY], [offX + destW, offY + destH], [offX, offY + destH]];
+  return getWarpFromRect(cv, src, gry, resH, resW, dst);
 }
 
 /**
@@ -516,18 +553,13 @@ export function splitNum(
   // and for returning as the merged thumbnail for training export.
   const fullSrc = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
   const mergedThumb = getWarpFromRect(cv, fullSrc, warpedBlk);
+  const sqThumb = letterboxWarp(cv, x, y, w, h, warpedBlk);
 
-  if (splitRec === undefined) return [[mergedThumb], mergedThumb, x, y];
+  if (splitRec === undefined) return [[sqThumb], mergedThumb, x, y];
 
   const [result] = recognise(splitRec, [mergedThumb]);
-  if (result!.label !== 2) return [[mergedThumb], mergedThumb, x, y];
+  if (result!.label !== 2) return [[sqThumb], mergedThumb, x, y];
 
-  // Two digits confirmed.  Find the split column using confidence-based
-  // validation: try every 4 px across the bounding rect, classify both halves
-  // with the digit recogniser in one batch, and keep the split where both
-  // sides are classified confidently.  This avoids the ink-minimum picking the
-  // void inside "0" (whose interior is 0 in the BINARY_INV mat) instead of
-  // the inter-digit gap.
   const margin = Math.max(2, w >> 3);
   const candidates: number[] = [];
   for (let dx = margin; dx < w - margin; dx += 4) candidates.push(dx);
@@ -535,18 +567,14 @@ export function splitNum(
   if (rec !== undefined && candidates.length > 0) {
     const allThumbs: Uint8Array[] = [];
     for (const sp of candidates) {
-      const lSrc = [[x, y], [x + sp, y], [x + sp, y + h], [x, y + h]];
-      const rSrc = [[x + sp, y], [x + w, y], [x + w, y + h], [x + sp, y + h]];
-      allThumbs.push(getWarpFromRect(cv, lSrc, warpedBlk));
-      allThumbs.push(getWarpFromRect(cv, rSrc, warpedBlk));
+      allThumbs.push(letterboxWarp(cv, x,      y, sp,     h, warpedBlk));
+      allThumbs.push(letterboxWarp(cv, x + sp, y, w - sp, h, warpedBlk));
     }
     const recs = recognise(rec, allThumbs);
 
     let bestSplit = -1;
     let bestScore = -1;
     for (let i = 0; i < candidates.length; i++) {
-      // Score: 2 = both confident, 1 = one confident, 0 = neither.
-      // Tie-break towards the centre of the bounding rect.
       const score = (recs[i * 2]!.confident ? 1 : 0) + (recs[i * 2 + 1]!.confident ? 1 : 0);
       const distFromCentre = Math.abs(candidates[i]! - (w >> 1));
       if (score > bestScore || (score === bestScore && distFromCentre < Math.abs(bestSplit - (w >> 1)))) {
@@ -556,10 +584,11 @@ export function splitNum(
     }
 
     if (bestScore > 0 && bestSplit > 0) {
-      const lSrc = [[x, y], [x + bestSplit, y], [x + bestSplit, y + h], [x, y + h]];
-      const rSrc = [[x + bestSplit, y], [x + w, y], [x + w, y + h], [x + bestSplit, y + h]];
       return [
-        [getWarpFromRect(cv, lSrc, warpedBlk), getWarpFromRect(cv, rSrc, warpedBlk)],
+        [
+          letterboxWarp(cv, x,             y, bestSplit,     h, warpedBlk),
+          letterboxWarp(cv, x + bestSplit, y, w - bestSplit, h, warpedBlk),
+        ],
         mergedThumb, x, y,
       ];
     }
@@ -576,10 +605,11 @@ export function splitNum(
       if (data[(y + dy) * width + (x + dx)]! > 0) ink++;
     if (ink < minInk) { minInk = ink; splitCol = dx; }
   }
-  const lSrc = [[x, y], [x + splitCol, y], [x + splitCol, y + h], [x, y + h]];
-  const rSrc = [[x + splitCol, y], [x + w, y], [x + w, y + h], [x + splitCol, y + h]];
   return [
-    [getWarpFromRect(cv, lSrc, warpedBlk), getWarpFromRect(cv, rSrc, warpedBlk)],
+    [
+      letterboxWarp(cv, x,            y, splitCol,     h, warpedBlk),
+      letterboxWarp(cv, x + splitCol, y, w - splitCol, h, warpedBlk),
+    ],
     mergedThumb, x, y,
   ];
 }
@@ -600,17 +630,7 @@ export function splitNum(
  * the digit's natural aspect ratio when warped to a square thumbnail.
  * Returns [[TL],[TR],[BR],[BL]] in image (x, y) coordinates.
  */
-export function squarePadSrc(ax: number, ay: number, bw: number, bh: number): number[][] {
-  const side = Math.max(bw, bh);
-  const cx   = ax + bw / 2;
-  const cy   = ay + bh / 2;
-  return [
-    [cx - side / 2, cy - side / 2],
-    [cx + side / 2, cy - side / 2],
-    [cx + side / 2, cy + side / 2],
-    [cx - side / 2, cy + side / 2],
-  ];
-}
+
 
 export function readClassicDigits(
   cv: Cv,
@@ -620,7 +640,6 @@ export function readClassicDigits(
   classicConf: number[][],
 ): { digits: number[][]; thumbs: Map<string, Uint8Array[]> } {
   const half = subres >> 1;
-  // Match scanClassicDigits: use the same margin/patchSize so tall digits aren't clipped.
   const margin = (subres / 6) | 0;
   const patchSize = subres - 2 * margin;
   const digits: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
@@ -645,7 +664,6 @@ export function readClassicDigits(
         continue;
       }
 
-      // Find the largest contour.
       let bestIdx = 0;
       let bestArea = 0;
       for (let i = 0; i < cnts.size(); i++) {
@@ -660,8 +678,7 @@ export function readClassicDigits(
 
       const ax = x0 + br.x;
       const ay = y0 + br.y;
-      const src = squarePadSrc(ax, ay, br.width, br.height);
-      const thumb = getWarpFromRect(cv, src, warpedBlk, half, half);
+      const thumb = letterboxWarp(cv, ax, ay, br.width, br.height, warpedBlk, half, half);
       const [rec0] = recognise(rec, [thumb]);
       const d = rec0!.label;
       if (d > 0) {

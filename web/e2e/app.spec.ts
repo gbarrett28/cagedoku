@@ -71,6 +71,18 @@ const PUZZLE_IMAGE = path.resolve(
   '../../guardian/killer_sudoku_0.jpg',
 );
 
+// PUZZLE_IMAGE has clean OCR and a fully-solvable grid, so handleProcess()
+// (src/main.ts) may take the auto-confirm path straight to playing mode,
+// skipping the review screen and #confirm-btn entirely. Click it only when
+// the review screen was actually shown — mirrors the auto-confirm-aware
+// pattern already used by the row-major and new-puzzle tests below.
+async function confirmIfNeeded(page: Page): Promise<void> {
+  const confirmBtn = page.locator('#confirm-btn');
+  if (await confirmBtn.isVisible()) {
+    await confirmBtn.click();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers — see e2e/helpers.ts
 // ---------------------------------------------------------------------------
@@ -189,7 +201,7 @@ pipelineTest('confirm puzzle → playing actions panel appears', async ({ pipeli
   await pipelinePage.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
   await expect(pipelinePage.locator('#review-panel')).toBeVisible({ timeout: 40_000 });
 
-  await pipelinePage.locator('#confirm-btn').click();
+  await confirmIfNeeded(pipelinePage);
 
   await expect(pipelinePage.locator('#playing-actions')).toBeVisible({ timeout: 15_000 });
   await expect(pipelinePage.locator('#undo-btn')).toBeVisible();
@@ -206,7 +218,7 @@ pipelineTest('click cell then press digit → digit appears in canvas, undo enab
 
   await pipelinePage.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
   await expect(pipelinePage.locator('#review-panel')).toBeVisible({ timeout: 40_000 });
-  await pipelinePage.locator('#confirm-btn').click();
+  await confirmIfNeeded(pipelinePage);
   await expect(pipelinePage.locator('#playing-actions')).toBeVisible({ timeout: 15_000 });
 
   const canvas = pipelinePage.locator('#grid-canvas');
@@ -230,7 +242,7 @@ pipelineTest('undo after placing digit re-disables undo button', async ({ pipeli
 
   await pipelinePage.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
   await expect(pipelinePage.locator('#review-panel')).toBeVisible({ timeout: 40_000 });
-  await pipelinePage.locator('#confirm-btn').click();
+  await confirmIfNeeded(pipelinePage);
   await expect(pipelinePage.locator('#playing-actions')).toBeVisible({ timeout: 15_000 });
 
   const canvas = pipelinePage.locator('#grid-canvas');
@@ -254,7 +266,7 @@ pipelineTest('show candidates button toggles candidate display', async ({ pipeli
 
   await pipelinePage.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
   await expect(pipelinePage.locator('#review-panel')).toBeVisible({ timeout: 40_000 });
-  await pipelinePage.locator('#confirm-btn').click();
+  await confirmIfNeeded(pipelinePage);
   await expect(pipelinePage.locator('#playing-actions')).toBeVisible({ timeout: 15_000 });
 
   // Candidates are shown by default; the mode-toggle pill switches between Normal and Candidates.

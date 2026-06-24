@@ -32,12 +32,15 @@ echo "--- npm run build (required for playwright production tests) ---"
 npm run build || fail "npm run build"
 
 echo ""
-echo "--- playwright test (production build) ---"
-npx playwright test || fail "npx playwright test"
+echo "--- playwright test (production build, incl. pipeline tests) ---"
+# app.spec.ts/offline.spec.ts gate their real-opencv.js pipeline tests behind
+# PLAYWRIGHT_PIPELINE_TESTS=1 (cold WASM compile is slow in headless Chromium,
+# ~20-40s) -- without this, the silver gate silently skips them every run.
+PLAYWRIGHT_PIPELINE_TESTS=1 npx playwright test || fail "npx playwright test"
 
 echo ""
 echo "--- playwright test --config playwright.dev.config.ts ---"
-npx playwright test --config playwright.dev.config.ts || fail "npx playwright test (dev)"
+PLAYWRIGHT_PIPELINE_TESTS=1 npx playwright test --config playwright.dev.config.ts || fail "npx playwright test (dev)"
 
 echo ""
 echo "=== Silver gate: code checks passed ==="
