@@ -9,12 +9,18 @@
  * Run: npx playwright test --config playwright.dev.config.ts
  */
 
+import { existsSync } from 'node:fs';
 import { defineConfig } from '@playwright/test';
 
 // Pre-installed browser path in the Claude Code cloud environment.
 // Revision 1194 matches @playwright/test@1.56.x.
 // Remove once the environment is updated to provide revision 1217+ (see issue #134).
-process.env['PLAYWRIGHT_BROWSERS_PATH'] ??= '/opt/pw-browsers';
+// Only set when that path actually exists -- local (non-cloud) machines have no
+// such directory and must fall back to Playwright's own default browser cache,
+// populated by `npx playwright install`.
+if (existsSync('/opt/pw-browsers')) {
+  process.env['PLAYWRIGHT_BROWSERS_PATH'] ??= '/opt/pw-browsers';
+}
 
 export default defineConfig({
   testDir: './e2e',
