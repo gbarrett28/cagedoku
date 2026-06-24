@@ -56,7 +56,7 @@ frame for that check to mean anything. The bridge needs the width/height bounds 
 needs them to be the literal production bounds (not a second copy) — hence extracting them
 into their own function.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `web/src/image/contourIsNumber.test.ts`:
 
@@ -102,14 +102,14 @@ describe('contourIsNumber (pinning the existing behaviour through the refactor)'
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run (from `web/`): `npx vitest run src/image/contourIsNumber.test.ts`
 Expected: FAIL — `isDigitSizedContour` is not exported yet (`contourIsNumber` itself would
 already pass once written, since it's pinning current behaviour, but the import line fails
 to resolve `isDigitSizedContour` first, failing the whole file).
 
-- [ ] **Step 3: Refactor `contourIsNumber` to extract `isDigitSizedContour`**
+- [x] **Step 3: Refactor `contourIsNumber` to extract `isDigitSizedContour`**
 
 Use serena's `find_symbol` on `contourIsNumber` in `web/src/image/numberRecognition.ts` to
 confirm the current body, then `replace_symbol_body` it (and insert the new function
@@ -148,17 +148,17 @@ export function contourIsNumber(br: BRect, subres: number): boolean {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run src/image/contourIsNumber.test.ts`
 Expected: PASS (7 tests).
 
-- [ ] **Step 5: Run the full TS test suite and type-check to confirm no regression**
+- [x] **Step 5: Run the full TS test suite and type-check to confirm no regression**
 
 Run: `npx tsc --noEmit && npx vitest run`
 Expected: all pass (this refactor only adds a function and delegates to it; no call sites change behaviour).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/src/image/numberRecognition.ts web/src/image/contourIsNumber.test.ts
@@ -198,7 +198,7 @@ entirely (it is also how production code in this repo's actual browser bundle ne
 this problem — the browser loads it via a `<script>` tag, an entirely different mechanism
 with no ESM/CJS ambiguity).
 
-- [ ] **Step 1: Write the script**
+- [x] **Step 1: Write the script**
 
 ```ts
 #!/usr/bin/env vite-node
@@ -292,7 +292,7 @@ main().catch((err: unknown) => {
 });
 ```
 
-- [ ] **Step 2: Smoke-test it manually (de-risking check — confirms the script as a whole,
+- [x] **Step 2: Smoke-test it manually (de-risking check — confirms the script as a whole,
   not just the loader snippet already verified)**
 
 Run (from `web/`):
@@ -313,7 +313,7 @@ bound), while the 10×20 digit-sized blob is correctly found. (Height must be �
 draft of this smoke test used h=14 and the blob was, correctly, rejected; verified by
 actually running it, not assumed.)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add web/scripts/find-digit-blobs-server.ts
@@ -343,7 +343,7 @@ EOF
 - Consumes: nothing from earlier tasks except the bridge script's protocol (Task 2) and the
   already-existing `Path` import in `extract_guardian_samples.py`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/test_extract_guardian_samples.py` (add `import base64`, `import numpy as np`,
 and `import extract_guardian_samples` — the module itself, for monkeypatching — alongside
@@ -406,12 +406,12 @@ def test_find_digit_blobs_real_bridge_two_separate_digits():
     assert blobs == [(5, 3, 10, 20), (30, 3, 10, 20)]
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run (from repo root): `pytest tests/test_extract_guardian_samples.py -v -k find_digit_blobs`
 Expected: FAIL — `find_digit_blobs`/`_request_blobs` not defined yet (`ImportError`).
 
-- [ ] **Step 3: Implement the client**
+- [x] **Step 3: Implement the client**
 
 Add to `web/extract_guardian_samples.py`, after the existing imports (add `import base64`,
 `import json` is already imported, add `import subprocess`, `import atexit`) and before
@@ -475,19 +475,19 @@ def find_digit_blobs(roi: NDArray[np.uint8], subres: int) -> list[tuple[int, int
     return [tuple(b) for b in response["blobs"]]
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_extract_guardian_samples.py -v -k find_digit_blobs`
 Expected: PASS (3 tests). The two real-bridge tests will each take a few seconds (Node/WASM
 startup) the first time the bridge spawns within the test session; pytest does not share
 the bridge process across separate `pytest` invocations, only within one.
 
-- [ ] **Step 5: Run the full Python test suite**
+- [x] **Step 5: Run the full Python test suite**
 
 Run: `pytest tests/test_extract_guardian_samples.py -v`
 Expected: all 9 tests pass (6 pre-existing + 3 new).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/extract_guardian_samples.py tests/test_extract_guardian_samples.py
@@ -533,7 +533,7 @@ just at it.
   (unchanged), existing `letterbox_warp` (unchanged).
 - No new exports — this task only changes `extract_puzzle_samples`'s internals.
 
-- [ ] **Step 1: Write/extend the failing regression tests**
+- [x] **Step 1: Write/extend the failing regression tests**
 
 The two existing regression tests in `tests/test_extract_guardian_samples.py`
 (`test_is_num_contour_rejects_degenerate_split_sliver`,
@@ -546,7 +546,7 @@ Task 5's end-to-end accuracy verification (which would catch a wiring mistake as
 accuracy regression). This task is a refactor of `extract_puzzle_samples`'s control flow,
 not new testable behaviour in isolation.
 
-- [ ] **Step 2: Rewrite `extract_puzzle_samples`'s digit-assignment logic**
+- [x] **Step 2: Rewrite `extract_puzzle_samples`'s digit-assignment logic**
 
 Use serena's `find_symbol` on `extract_puzzle_samples` in `web/extract_guardian_samples.py`
 to locate the current body, then replace the section from `margin = max(2, roi_w // 8)`
@@ -599,21 +599,21 @@ This replaces both the old `ndigits == 1` and `ndigits == 2` branches with one u
 path, and removes their `margin`/`col_ink`/`content_end` computation entirely (no longer
 needed — see Step 3).
 
-- [ ] **Step 3: Delete `digit_content_extent`**
+- [x] **Step 3: Delete `digit_content_extent`**
 
 Use serena's `find_symbol` to confirm `digit_content_extent`'s full extent in
 `web/extract_guardian_samples.py`, then use `safe_delete_symbol` after confirming via
 `find_referencing_symbols` that Step 2's rewrite was its only caller (it should show zero
 remaining references once Step 2 is applied).
 
-- [ ] **Step 4: Run the Python test suite**
+- [x] **Step 4: Run the Python test suite**
 
 Run: `pytest tests/ -v`
 Expected: all tests pass (no test directly exercised `digit_content_extent` or the deleted
 branches' internals — they were tested indirectly through `extract_puzzle_samples`, which
 has no direct unit test; this is exercised end-to-end in Task 5).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/extract_guardian_samples.py
@@ -638,7 +638,7 @@ EOF
 **Files:** none modified (data regeneration + retrain only); reads
 `web/src/image/_diag_bulk_accuracy.test.ts` (already exists, untracked, from Sprint 2).
 
-- [ ] **Step 1: Regenerate guardian/observer bulk data**
+- [x] **Step 1: Regenerate guardian/observer bulk data**
 
 Run (from repo root): `python web/extract_guardian_samples.py`
 Expected: completes without error; logs sample counts for both directories. (The previous
@@ -646,7 +646,7 @@ Expected: completes without error; logs sample counts for both directories. (The
 `observer/observer_train_sq.json.bak`, are untouched by this — leave them in place until
 this sprint is verified good, in case a rollback is needed.)
 
-- [ ] **Step 2: Retrain with the established recipe**
+- [x] **Step 2: Retrain with the established recipe**
 
 Run (from repo root):
 
@@ -657,7 +657,7 @@ python web/train_recogniser.py --browser-weight 1000 --svm-c 100 --max-per-class
 Expected: completes (several minutes), writes `web/public/num_recogniser.bin` and
 `web/public/num_recogniser.json`.
 
-- [ ] **Step 3: Verify guardian/observer accuracy via the existing diagnostic**
+- [x] **Step 3: Verify guardian/observer accuracy via the existing diagnostic**
 
 Run (from `web/`): `npx vitest run src/image/_diag_bulk_accuracy.test.ts --reporter=verbose`
 Expected: guardian accuracy ≥ 99.76% (22493/22548) and observer accuracy ≥ 95.13%
@@ -666,7 +666,7 @@ If either is lower: STOP. Re-invoke `superpowers:systematic-debugging` before pr
 do not retrain with different parameters and hope; find out why the new extraction path
 produced worse data than the `is_num_contour`-gated heuristic did.
 
-- [ ] **Step 4: Note the bronze-gate caveat — do not attempt to commit yet**
+- [x] **Step 4: Note the bronze-gate caveat — do not attempt to commit yet**
 
 Run: `bash scripts/run-bronze-gate.sh` from repo root.
 

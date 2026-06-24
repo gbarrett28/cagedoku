@@ -42,7 +42,7 @@ file then asserts against a frozen `Set` of those hashes instead of a hardcoded 
   misclassified sample, human-readable `hash  index=N expected=X got=Y` detail to stderr.
   Consumed by Tasks 2 and 5 (run once before dedup, once after).
 
-- [ ] **Step 1: Write the script**
+- [x] **Step 1: Write the script**
 
 ```ts
 #!/usr/bin/env vite-node
@@ -100,7 +100,7 @@ function main(): void {
 main();
 ```
 
-- [ ] **Step 2: Smoke-test it runs**
+- [x] **Step 2: Smoke-test it runs**
 
 Run (from `web/`): `npx vite-node scripts/report-browser-train-failures.ts`
 Expected: prints failure detail lines to stderr and a sorted hash list to stdout, ending
@@ -108,7 +108,7 @@ with a `N/8362 failures` summary line. (This script is operational tooling, not 
 tested — consistent with this repo's other one-off `scripts/*.ts` files such as
 `debug-fixture.ts`, none of which have test files.)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add web/scripts/report-browser-train-failures.ts
@@ -128,7 +128,7 @@ EOF
 
 **Files:** none modified — this records a snapshot for Task 5's comparison.
 
-- [ ] **Step 1: Run the reporter against the current (pre-dedup) fixture**
+- [x] **Step 1: Run the reporter against the current (pre-dedup) fixture**
 
 Run (from `web/`):
 
@@ -152,7 +152,7 @@ digit 7 misread as 1). Keep this file — Task 5 compares against it.
 - Produces: `dedupe_samples(samples: list[dict]) -> tuple[list[dict], int]` — pure function,
   returns `(deduped_samples, num_duplicates_removed)`. Also a `main()` CLI entry point.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_dedupe_browser_train.py`:
 
@@ -194,12 +194,12 @@ def test_dedupe_samples_handles_empty_list():
     assert n_removed == 0
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run (from repo root): `pytest tests/test_dedupe_browser_train.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'dedupe_browser_train'`.
 
-- [ ] **Step 3: Write the dedup script**
+- [x] **Step 3: Write the dedup script**
 
 Create `web/dedupe_browser_train.py`:
 
@@ -254,19 +254,19 @@ if __name__ == '__main__':
     main()
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_dedupe_browser_train.py -v`
 Expected: PASS (3 tests).
 
-- [ ] **Step 5: Run the dedup script on the real fixture**
+- [x] **Step 5: Run the dedup script on the real fixture**
 
 Run (from repo root): `python web/dedupe_browser_train.py`
 Expected: prints `web/browser_train.json: 8362 -> N samples (8362-N duplicates removed)`
 and rewrites the file. Record the printed `N` — it is the new total sample count needed
 for Task 6.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/dedupe_browser_train.py tests/test_dedupe_browser_train.py web/browser_train.json
@@ -286,7 +286,7 @@ EOF
 
 **Files:** none modified (retrain only).
 
-- [ ] **Step 1: Retrain with the established recipe**
+- [x] **Step 1: Retrain with the established recipe**
 
 Run (from repo root):
 
@@ -297,7 +297,7 @@ python web/train_recogniser.py --browser-weight 1000 --svm-c 100 --max-per-class
 `--browser-file` defaults to `web/browser_train.json` — now the deduped version from Task 3.
 Expected: completes, writes `web/public/num_recogniser.bin`/`.json`.
 
-- [ ] **Step 2: Verify guardian/observer accuracy didn't regress**
+- [x] **Step 2: Verify guardian/observer accuracy didn't regress**
 
 Run (from `web/`): `npx vitest run src/image/_diag_bulk_accuracy.test.ts --reporter=verbose`
 Expected: guardian ≥ 99.76%, observer ≥ 95.13% (Sprint 3's verified levels). If lower: STOP,
@@ -311,7 +311,7 @@ would be unexpected and needs root-causing before continuing.
 
 **Files:** none modified — verification only.
 
-- [ ] **Step 1: Run the reporter against the deduped fixture**
+- [x] **Step 1: Run the reporter against the deduped fixture**
 
 Run (from `web/`):
 
@@ -319,7 +319,7 @@ Run (from `web/`):
 npx vite-node scripts/report-browser-train-failures.ts > /tmp/post_dedup_failure_hashes.txt
 ```
 
-- [ ] **Step 2: Verify the subset gate**
+- [x] **Step 2: Verify the subset gate**
 
 Run:
 
@@ -353,7 +353,7 @@ boundary may resolve some of them.
   `unexpectedFailures(subset: TrainingSample[]): string[]` — replaces
   `KNOWN_PERMANENT_FAILURES`/`KNOWN_FAILURES_BY_DIGIT`.
 
-- [ ] **Step 1: Replace the known-failures block and both test bodies**
+- [x] **Step 1: Replace the known-failures block and both test bodies**
 
 Use serena's `find_symbol`/`get_symbols_overview` on
 `web/src/image/numberRecognition.test.ts` to confirm current line ranges, then replace from
@@ -519,14 +519,14 @@ Populate `KNOWN_FAILURE_SAMPLE_HASHES` from `/tmp/post_dedup_failure_hashes.txt`
 one hash per line) cross-referenced with that same run's stderr detail
 (`hash  index=N expected=X got=Y`) for the trailing comment on each entry.
 
-- [ ] **Step 2: Run the test**
+- [x] **Step 2: Run the test**
 
 Run (from `web/`): `npx vitest run src/image/numberRecognition.test.ts --reporter=verbose`
 Expected: all 3 tests pass — `unexpected` is empty in both tests (every failure's hash is
 in `KNOWN_FAILURE_SAMPLE_HASHES`, by construction from Task 5's captured set) and `correct
 >= total - KNOWN_FAILURE_SAMPLE_HASHES.size`.
 
-- [ ] **Step 3: Type-check**
+- [x] **Step 3: Type-check**
 
 Run (from `web/`): `npx tsc --noEmit`
 Expected: no errors.
@@ -537,14 +537,14 @@ Expected: no errors.
 
 **Files:** none modified.
 
-- [ ] **Step 1: Run the full bronze gate**
+- [x] **Step 1: Run the full bronze gate**
 
 Run (from repo root): `bash scripts/run-bronze-gate.sh`
 Expected: PASS — `tsc --noEmit`, `tsc -p tsconfig.node.json --noEmit`, and `npm test` all
 green. This is the first clean bronze gate since the floor regression was discovered;
 Sprint 3's commits and this sprint's work land together now.
 
-- [ ] **Step 2: Stage and commit everything from both sprints not yet committed**
+- [x] **Step 2: Stage and commit everything from both sprints not yet committed**
 
 ```bash
 git status --short
@@ -571,7 +571,7 @@ EOF
 )"
 ```
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 ```bash
 git log --oneline -8
@@ -582,7 +582,7 @@ Expected: a clean working tree (aside from any deliberately-kept `.bak` files fr
 2/3 investigations, which are untracked and can stay until the user confirms they're no
 longer needed for rollback).
 
-- [ ] **Step 4: Push**
+- [x] **Step 4: Push**
 
 ```bash
 git push
