@@ -35,23 +35,56 @@ Replace the ROI-heuristic digit-boundary logic in `extract_puzzle_samples` with 
 connected-component contour detection, mirroring production's approach, eliminating the
 boundary-bleed failure mode at the root instead of catching its symptom.
 
-### New function: `find_digit_blobs`
+### `find_digit_blobs` — via a Node CLI bridge, not a Python/cv2 mirror
 
-```python
-def find_digit_blobs(roi: NDArray[np.uint8], subres: int) -> list[tuple[int, int, int, int]]:
-    """Find digit-sized ink blobs in a cell ROI via connected-component contours.
+Rather than re-implementing contour detection a third time in Python/cv2 (the same class
+of cross-language drift that caused the original bug), `find_digit_blobs` calls the
+*literal* production TypeScript primitives through a small Node bridge process. This is
+possible because `web/public/opencv.js` is a standard dual-environment Emscripten build
+(`ENVIRONMENT_IS_NODE` and `ENVIRONMENT_IS_WEB` both present, WASM binary embedded inline)
+— it runs under plain Node, not just in a browser.
 
-    Mirrors web/src/image/numberRecognition.ts's contourIsNumber size filter, but
-    uses RETR_EXTERNAL (not RETR_TREE) since the caller has already scoped `roi`
-    to the cage-total's top-left quadrant -- the recursive hole-walk production
-    needs to disambiguate cage-totals from centred solution digits across the
-    whole board has no equivalent ambiguity here.
-    """
-```
+**Architecture:**
 
-Implementation: `cv2.findContours(roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)`,
-bounding-rect each contour, keep those passing `is_num_contour(w, h, subres)`, return
-sorted left-to-right by x.
+- `web/scripts/find-digit-blobs-server.ts` — a small persistent Node process, run via
+  `vite-node` (already available transitively through vitest, no new dependency). On
+  startup it loads `web/public/opencv.js` once, awaits its ready signal, then reads
+  newline-delimited JSON requests from stdin and writes newline-delimited JSON responses
+  to stdout, one line per request:
+  - Request: `{"id": <int>, "w": <int>, "h": <int>, "subres": <int>, "pixels": "<base64>"}`
+    — `pixels` is the raw row-major uint8 ROI buffer (length `w*h`).
+  - Response: `{"id": <int>, "blobs": [[x,y,w,h], ...]}` — found via the real
+    `cv.findContours(mat, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)` +
+    `cv.boundingRect`, filtered through `contourIsNumber` **imported directly** from
+    `web/src/image/numberRecognition.ts` (not copied, not reimplemented), sorted
+    left-to-right by x.
+  - `RETR_EXTERNAL` (not `RETR_TREE`): the caller has already scoped `roi` to the
+    cage-total's top-left quadrant, so production's recursive hole-walk — needed there to
+    disambiguate cage-totals from centred solution digits across the whole board — has no
+    equivalent ambiguity to resolve here.
+- Python's `find_digit_blobs(roi, subres)` becomes a thin client: starts the bridge
+  process lazily on first call (`subprocess.Popen` with piped stdin/stdout), keeps it
+  alive for the whole extraction run (one `extract_directory`/`main()` call), writes one
+  request line, reads one response line, decodes the blob list, and terminates the
+  process at the end. The function's signature and contract are unchanged from a pure-Python
+  implementation, so the rest of Part 1's design (the case 3/4/5 assignment logic below)
+  does not change at all — only `find_digit_blobs`'s internals move from a cv2
+  reimplementation to a Node RPC call.
+- Scope boundary: only the contour-finding primitive crosses the bridge. `letterbox_warp`
+  (pure perspective-transform math, already verified correct via the prior "mirror
+  letterbox crop fix" commit) and the merged-blob ink-projection fallback split stay in
+  Python — they're not the part that's been buggy, and round-tripping them through Node
+  would add latency and complexity for no correctness benefit.
+
+**De-risking step (do this first, before wiring up the full bridge):** write a minimal
+standalone smoke test that loads `opencv.js` under plain Node and runs `cv.findContours`
+on a synthetic buffer, confirming it produces sane output. This repo has never loaded
+opencv.js outside a browser before (existing `probe-cv*.mjs` scripts drive a real browser
+via Playwright to debug WASM-loading flakiness — they don't establish that Node-native
+loading works). If this smoke test doesn't work cleanly within a short time-box, fall back
+to Part 1's original plan (a direct Python/cv2 reimplementation of `find_digit_blobs`,
+accepting the cross-language-drift risk but covered by the regression tests already
+planned below) rather than letting infrastructure risk block the sprint.
 
 ### Changes to `extract_puzzle_samples`
 
@@ -82,9 +115,18 @@ Per cell with `total > 0`:
 
 ### Testing (TDD, written before the implementation change)
 
-- Unit tests for `find_digit_blobs` on synthetic binary images: single digit-sized blob
-  found; trailing thin decoration line correctly excluded; border-bleed-shaped blob
-  correctly excluded; two separate digit blobs both found and ordered left-to-right.
+- Standalone Node smoke test (the de-risking step above) — not a permanent test, just a
+  go/no-go check, deleted once the bridge is confirmed working.
+- Bridge protocol tests, sending synthetic ROI buffers through the real
+  request/response protocol and asserting on the actual Node-side output: single
+  digit-sized blob found; trailing thin decoration line correctly excluded;
+  border-bleed-shaped blob correctly excluded; two separate digit blobs both found and
+  ordered left-to-right. These exercise the literal production `contourIsNumber` —
+  proving production's real logic handles the exact failure cases found tonight, with no
+  Python-side reimplementation to keep in sync or drift from.
+- Python-side tests for the client function (`find_digit_blobs`) mock the subprocess
+  boundary (request in, decoded blob list out) rather than re-asserting contour behaviour
+  already covered by the bridge protocol tests above.
 - Keep the existing `is_num_contour` tests (still used by the merged-blob fallback path).
 - Existing regression tests `test_is_num_contour_rejects_degenerate_split_sliver` /
   `_rejects_merged_two_digit_glyph` continue to document the original failure case, now

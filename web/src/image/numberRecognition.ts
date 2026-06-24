@@ -381,15 +381,27 @@ export function loadNumRecogniser(
  * @param br - [x, y, w, h] bounding rect.
  * @param subres - Pixels per cell side.
  */
+/**
+ * Width/height-only digit-glyph size gate (no vertical-position parity
+ * check). Shared by contourIsNumber (board-wide live recognition, which also
+ * needs the parity check to exclude centred solution digits) and the offline
+ * training-data bridge (find-digit-blobs-server.ts), whose caller has
+ * already scoped the search to a cage-total's own quadrant — there is no
+ * solution-digit ambiguity left to resolve there.
+ *
+ * @param w - Contour bounding-rect width.
+ * @param h - Contour bounding-rect height.
+ * @param subres - Pixels per cell side.
+ */
+export function isDigitSizedContour(w: number, h: number, subres: number): boolean {
+  return w >= (subres >> 4) && w < (subres >> 1) && h >= (subres >> 3) && h < (subres >> 1);
+}
+
 export function contourIsNumber(br: BRect, subres: number): boolean {
   const [, y, w, h] = br;
   const yy = (2 * (y + (h >> 1))) / subres | 0;
   // x-parity omitted: yy + height checks exclude solution digits; x-parity falsely rejects second digits of "1X" totals near right-side cage borders.
-  return (
-    yy % 2 === 0 &&
-    w >= (subres >> 4) && w < (subres >> 1) &&
-    h >= (subres >> 3) && h < (subres >> 1)
-  );
+  return yy % 2 === 0 && isDigitSizedContour(w, h, subres);
 }
 
 /**

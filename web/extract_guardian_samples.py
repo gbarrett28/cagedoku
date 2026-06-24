@@ -16,8 +16,11 @@ contours, square-pads each digit to 64x64, and writes
 
 from __future__ import annotations
 import argparse
+import atexit
+import base64
 import json
 import logging
+import subprocess
 import sys
 import types
 from datetime import UTC, datetime
@@ -79,12 +82,99 @@ def load_pic(jpg_path: Path) -> _PicData:
 
 
 # ---------------------------------------------------------------------------
+# Node contour-detection bridge -- calls production's literal
+# isDigitSizedContour + real cv.findContours logic instead of reimplementing
+# contour detection a second time in cv2, closing off the cross-language
+# drift that caused the original boundary-bleed bug.
+# ---------------------------------------------------------------------------
+
+_bridge_proc: 'subprocess.Popen[str] | None' = None
+
+
+def _get_bridge() -> 'subprocess.Popen[str]':
+    """Lazily start the persistent Node contour-detection bridge, reused for
+    the whole extraction run rather than spawned per-cell (opencv.js WASM
+    init takes real time -- amortising it across thousands of calls matters).
+    """
+    global _bridge_proc
+    if _bridge_proc is None:
+        web_dir = Path(__file__).parent
+        _bridge_proc = subprocess.Popen(
+            'npx vite-node scripts/find-digit-blobs-server.ts',
+            shell=True, cwd=web_dir,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, bufsize=1,
+        )
+        atexit.register(_shutdown_bridge)
+    return _bridge_proc
+
+
+def _shutdown_bridge() -> None:
+    global _bridge_proc
+    if _bridge_proc is not None:
+        proc, _bridge_proc = _bridge_proc, None
+        if proc.stdin is not None:
+            proc.stdin.close()
+        proc.wait(timeout=5)
+
+
+def _request_blobs(payload: dict) -> dict:
+    """Send one request to the bridge and return its decoded JSON response."""
+    proc = _get_bridge()
+    assert proc.stdin is not None and proc.stdout is not None
+    proc.stdin.write(json.dumps(payload) + "\n")
+    proc.stdin.flush()
+    line = proc.stdout.readline()
+    if not line:
+        stderr = proc.stderr.read() if proc.stderr else ""
+        raise RuntimeError(f"find-digit-blobs-server.ts produced no output (exited?): {stderr}")
+    return json.loads(line)
+
+
+def find_digit_blobs(roi: NDArray[np.uint8], subres: int) -> list[tuple[int, int, int, int]]:
+    """Find digit-sized ink blobs in a cell ROI via the Node contour-detection
+    bridge (the literal production isDigitSizedContour + cv.findContours
+    logic), sorted left-to-right by x.
+    """
+    h, w = roi.shape
+    payload = {
+        "w": w, "h": h, "subres": subres,
+        "pixels": base64.b64encode(roi.tobytes()).decode('ascii'),
+    }
+    response = _request_blobs(payload)
+    return [tuple(b) for b in response["blobs"]]
+
+
+# ---------------------------------------------------------------------------
 # Pure helpers -- testable without cv2 or real images
 # ---------------------------------------------------------------------------
 
 def is_num_contour(w: int, h: int, subres: int = SUBRES) -> bool:
     """True if bounding-rect dimensions match a cage-total digit glyph."""
     return (subres // 16 <= w <= subres // 2) and (subres // 8 <= h <= subres // 2)
+
+
+def select_digit_blobs(
+    blobs: list[tuple[int, int, int, int]], ndigits: int,
+) -> list[tuple[int, int, int, int]] | None:
+    """Pick exactly `ndigits` blobs from `blobs`, left-to-right by x.
+
+    Cage-total digits are always drawn at the top of their ROI (that is
+    exactly why the ROI is cropped to the cell's top-left quadrant); any
+    extra contour beyond the real digit(s) is, in every observed case, a
+    fragment of cage-border/underline decoration sitting lower in the ROI --
+    a thick decoration band can itself fragment into pieces where it has a
+    gap, and one piece can be small enough to slip through the digit-size
+    filter. When there are more blobs than expected, keep the `ndigits`
+    blobs with the smallest y (topmost) and discard the rest. Returns None
+    if there are fewer blobs than `ndigits` (caller decides the fallback).
+    """
+    if len(blobs) < ndigits:
+        return None
+    if len(blobs) == ndigits:
+        return blobs
+    topmost = sorted(blobs, key=lambda b: b[1])[:ndigits]
+    return sorted(topmost, key=lambda b: b[0])
 
 
 # ---------------------------------------------------------------------------
@@ -110,36 +200,6 @@ def letterbox_warp(
     M = cv2.getPerspectiveTransform(src, dst)
     thumb = cv2.warpPerspective(warped, M, (THUMB, THUMB), flags=cv2.INTER_LINEAR)
     return ((thumb > 127).astype(np.uint8) * 255)
-
-
-def digit_content_extent(col_ink: NDArray[np.floating], roi_w: int, margin: int) -> int:
-    """Find where real digit ink ends and trailing decoration begins.
-
-    Some newspapers print a cage-total "flag" -- a thin underline/pointer
-    extending from the total to the cell's right edge -- which can touch the
-    digit glyphs themselves. A plain ink-column minimum search (used to split
-    2-digit totals, or bound a 1-digit total's crop) finds its minimum in the
-    empty space *after* this trailing decoration rather than between/around
-    the actual digits, since the decoration is themselves low-ink but long.
-    Detects the first sustained low-ink run (>= 20% of roi_w, well past any
-    brief dip between touching digits) scanning left-to-right, and returns
-    where it begins -- callers should stop looking for digit content there.
-    """
-    if roi_w <= 2 * margin:
-        return roi_w - margin
-    background = float(np.percentile(col_ink, 20))
-    peak = float(col_ink.max())
-    threshold = background + 0.15 * (peak - background)
-    min_run = max(8, int(roi_w * 0.2))
-    run = 0
-    for x in range(margin, roi_w - margin):
-        if col_ink[x] <= threshold:
-            run += 1
-            if run >= min_run:
-                return x - run + 1
-        else:
-            run = 0
-    return roi_w - margin
 
 
 def split_bounding_rect(
@@ -244,47 +304,48 @@ def extract_puzzle_samples(
                            jpg_path.name, col, row, total)
                 continue
 
-            margin = max(2, roi_w // 8)
-            col_ink = roi.sum(axis=0).astype(np.float64)
-            content_end = digit_content_extent(col_ink, roi_w, margin)
+            blobs = find_digit_blobs(roi, pipe_cell)
+            selected = select_digit_blobs(blobs, ndigits)
 
-            if ndigits == 1:
-                # Tight bounding box of ink before any trailing decoration.
-                content = roi[:, :content_end]
-                cys, cxs = np.where(content > 0)
-                if len(cys) < 10:
+            if selected is not None:
+                digit_blobs = selected
+            elif ndigits == 2 and len(blobs) == 1:
+                # Genuine touching-digit fallback: split the single merged
+                # blob's own bounding rect, not a synthetic full-ROI window.
+                bx, by, bw, bh = blobs[0]
+                split = split_bounding_rect(cx + bx, cy + by, bw, bh, warped_hr)
+                if split is None:
                     continue
-                abs_x = cx + int(cxs.min())
-                abs_y = cy + int(cys.min())
-                w = int(cxs.max() - cxs.min()) + 1
-                h = int(cys.max() - cys.min()) + 1
+                (sax, say, saw, sah), (sbx, sby, sbw, sbh) = split
+                halves = [
+                    (sax - cx, say - cy, saw, sah),
+                    (sbx - cx, sby - cy, sbw, sbh),
+                ]
+                digit_blobs = [
+                    (hx, hy, hw, hh) for (hx, hy, hw, hh) in halves
+                    if is_num_contour(hw, hh, subres=pipe_cell)
+                ]
+                if len(digit_blobs) != 2:
+                    _log.debug(
+                        "%s col=%d row=%d total=%d: merged-blob split rejected -- skipping",
+                        jpg_path.name, col, row, total,
+                    )
+                    continue
+            else:
+                _log.debug(
+                    "%s col=%d row=%d total=%d: found %d digit blob(s), expected %d -- skipping",
+                    jpg_path.name, col, row, total, len(blobs), ndigits,
+                )
+                continue
+
+            for i, (bx, by, bw, bh) in enumerate(digit_blobs):
+                abs_x = cx + bx
+                abs_y = cy + by
                 ox = int(round(abs_x * scale))
                 oy = int(round(abs_y * scale))
-                ow = max(1, int(round(w * scale)))
-                oh = max(1, int(round(h * scale)))
-                samples.append((int(total_str[0]), letterbox_warp(ox, oy, ow, oh, warped)))
-
-            else:
-                # Column-projection minimum split for 2-digit totals, searched
-                # only within the real digit content (excludes any trailing
-                # decoration the ink-minimum would otherwise lock onto).
-                mid = col_ink[margin: content_end]
-                split_x = margin + int(mid.argmin()) if len(mid) > 0 else roi_w // 2
-
-                for i, (x0, x1) in enumerate([(0, split_x), (split_x, content_end)]):
-                    half = roi[:, x0: x1]
-                    hys, hxs = np.where(half > 0)
-                    if len(hys) < 4:
-                        continue
-                    abs_x = cx + x0 + int(hxs.min())
-                    abs_y = cy + int(hys.min())
-                    w = int(hxs.max() - hxs.min()) + 1
-                    h = int(hys.max() - hys.min()) + 1
-                    ox = int(round(abs_x * scale))
-                    oy = int(round(abs_y * scale))
-                    ow = max(1, int(round(w * scale)))
-                    oh = max(1, int(round(h * scale)))
-                    samples.append((int(total_str[i]), letterbox_warp(ox, oy, ow, oh, warped)))
+                ow = max(1, int(round(bw * scale)))
+                oh = max(1, int(round(bh * scale)))
+                samples.append((int(total_str[i]), letterbox_warp(ox, oy, ow, oh, warped)))
 
     return samples
 
