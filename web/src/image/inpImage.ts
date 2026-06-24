@@ -24,7 +24,7 @@ import type { ImagePipelineConfig } from './config.js';
 import { locateGrid } from './gridLocation.js';
 import {
   collectCageTotalContours, scanClassicDigits, calibrateCageTotalThreshold,
-  contourFillRatios, detectRotation, detectPuzzleType,
+  contourFillRatios, detectRotation, detectPuzzleType, hasTopLeftMargin,
 } from './cellScan.js';
 import type { GrayImage } from './borderClustering.js';
 import {
@@ -262,7 +262,9 @@ export async function parsePuzzleImage(
   let mergedThumbs = new Map<string, Uint8Array>();
   try {
     const brdrs = buildBrdrs(initialBorderX, initialBorderY);
-    ({ cageTotals, cellThumbs, mergedThumbs } = buildCageTotals(cv, warpedBlkMat, rec, subres, brdrs, splitRec));
+    ({ cageTotals, cellThumbs, mergedThumbs } = buildCageTotals(
+      cv, warpedBlkMat, rec, subres, brdrs, config.cellScan.cageTotalMinFillRatio, splitRec,
+    ));
   } catch (e) {
     console.warn('[parsePuzzleImage] buildCageTotals failed, proceeding with initial border estimate', e);
   }
@@ -303,7 +305,9 @@ export async function parsePuzzleImage(
     // Retry cage total extraction with best borders.
     try {
       const brdrs2 = buildBrdrs(bestBorderX, bestBorderY);
-      ({ cageTotals, cellThumbs, mergedThumbs } = buildCageTotals(cv, warpedBlkMat, rec, subres, brdrs2, splitRec));
+      ({ cageTotals, cellThumbs, mergedThumbs } = buildCageTotals(
+        cv, warpedBlkMat, rec, subres, brdrs2, config.cellScan.cageTotalMinFillRatio, splitRec,
+      ));
 
       const totalSum = cageTotals.reduce((s, row) => s + row.reduce((a, b) => a + b, 0), 0);
       if (totalSum < 360 || totalSum > 450) {
@@ -315,7 +319,9 @@ export async function parsePuzzleImage(
           (subres >> 2) | 1, config.numberRecognition.contourFallbackAdaptiveC,
         );
         try {
-          ({ cageTotals, cellThumbs, mergedThumbs } = buildCageTotals(cv, adaptiveBlk, rec, subres, brdrs2, splitRec));
+          ({ cageTotals, cellThumbs, mergedThumbs } = buildCageTotals(
+            cv, adaptiveBlk, rec, subres, brdrs2, config.cellScan.cageTotalMinFillRatio, splitRec,
+          ));
         } finally {
           adaptiveBlk.delete();
         }
@@ -407,6 +413,7 @@ export function buildCageTotals(
   rec: NumRecogniser,
   subres: number,
   brdrs: Brdrs,
+  minFillRatio: number,
   splitRec?: NumRecogniser,
 ): CageTotalsResult {
   const numPixels: Array<Array<Uint8Array[] | null>> = Array.from(
@@ -420,10 +427,16 @@ export function buildCageTotals(
 
   if (contours.size() > 0 && hierMat.rows > 0) {
     const chiers = contourHier(cv, contours, hierMat, new Set<number>(), 0);
-    const rawNums = getNumContours(chiers, subres);
+    const rawNums = getNumContours(chiers, subres, minFillRatio);
     rawNums.sort((a, b) => a[1][0] - b[1][0]);
 
-    for (const [, br,] of rawNums) {
+    for (const [, br] of rawNums) {
+      const [brx, bry, brw, brh] = br;
+      const col = ((brx + (brw >> 1)) / subres) | 0;
+      const row = ((bry + (brh >> 1)) / subres) | 0;
+      if (col < 0 || col >= 9 || row < 0 || row >= 9) continue;
+      if (!hasTopLeftMargin(brx, bry, row, col, subres)) continue;
+
       let numThumbArr: Uint8Array[];
       let mergedThumb: Uint8Array;
       try {
@@ -432,11 +445,6 @@ export function buildCageTotals(
         console.warn('splitNum failed for contour', br, err);
         continue;
       }
-
-      const [brx, bry, brw, brh] = br;
-      const col = ((brx + (brw >> 1)) / subres) | 0;
-      const row = ((bry + (brh >> 1)) / subres) | 0;
-      if (col < 0 || col >= 9 || row < 0 || row >= 9) continue;
 
       if (numPixels[row]![col] === null) numPixels[row]![col] = [];
       numPixels[row]![col]!.push(...numThumbArr);

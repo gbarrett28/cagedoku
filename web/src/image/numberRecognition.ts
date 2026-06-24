@@ -14,6 +14,7 @@
 
 import type { OpenCVModule, OpenCVMat, OpenCVMatVector } from './opencv.js';
 import { extractHoleFeatures } from './holeFeatures.js';
+import { isCageTotalContour } from './cellScan.js';
 type Cv = OpenCVModule;
 
 // ---------------------------------------------------------------------------
@@ -24,7 +25,7 @@ type Cv = OpenCVModule;
 export type BRect = [number, number, number, number];
 
 /** Node in the OpenCV contour hierarchy tree. */
-export type ContourInfo = [contour: number[][], br: BRect, children: ContourInfo[]];
+export type ContourInfo = [contour: number[][], br: BRect, area: number, children: ContourInfo[]];
 
 // ---------------------------------------------------------------------------
 // RBFClassifier: pure-TypeScript OvO RBF SVM
@@ -397,11 +398,18 @@ export function isDigitSizedContour(w: number, h: number, subres: number): boole
   return w >= (subres >> 4) && w < (subres >> 1) && h >= (subres >> 3) && h < (subres >> 1);
 }
 
-export function contourIsNumber(br: BRect, subres: number): boolean {
+/**
+ * @param area - Contour area (from `cv.contourArea`), used to reject
+ *   low-fill-ratio shapes (e.g. a cage's border-line corner notch) that pass
+ *   the bounding-box size check but aren't a digit glyph — see
+ *   `isCageTotalContour`.
+ * @param minFillRatio - Minimum area / (width * height) to count as a digit.
+ */
+export function contourIsNumber(br: BRect, subres: number, area: number, minFillRatio: number): boolean {
   const [, y, w, h] = br;
   const yy = (2 * (y + (h >> 1))) / subres | 0;
   // x-parity omitted: yy + height checks exclude solution digits; x-parity falsely rejects second digits of "1X" totals near right-side cage borders.
-  return yy % 2 === 0 && isDigitSizedContour(w, h, subres);
+  return yy % 2 === 0 && isCageTotalContour(w, h, area, subres, minFillRatio);
 }
 
 /**
@@ -435,13 +443,14 @@ export function contourHier(
       const c = contours.get(i);
       const br = cv.boundingRect(c);
       const brTuple: BRect = [br.x, br.y, br.width, br.height];
+      const area = cv.contourArea(c);
       const children = contourHier(cv, contours, hierarchy, seen, child);
       // Extract contour points as number[][].
       const pts: number[][] = [];
       for (let p = 0; p < c.rows; p++) {
         pts.push([c.data32S[p * 2]!, c.data32S[p * 2 + 1]!]);
       }
-      ret.push([pts, brTuple, children]);
+      ret.push([pts, brTuple, area, children]);
     }
     seen.add(i);
     i = next!;
@@ -458,14 +467,16 @@ export function contourHier(
  *
  * @param chier - Contour hierarchy.
  * @param subres - Pixels per cell side.
+ * @param minFillRatio - Minimum area / (width * height) to count as a digit;
+ *   see `contourIsNumber`.
  */
-export function getNumContours(chier: ContourInfo[], subres: number): ContourInfo[] {
+export function getNumContours(chier: ContourInfo[], subres: number, minFillRatio: number): ContourInfo[] {
   const ret: ContourInfo[] = [];
-  for (const [c, br, ds] of chier) {
-    if (contourIsNumber(br, subres)) {
-      ret.push([c, br, ds]);
+  for (const [c, br, area, ds] of chier) {
+    if (contourIsNumber(br, subres, area, minFillRatio)) {
+      ret.push([c, br, area, ds]);
     } else {
-      ret.push(...getNumContours(ds, subres));
+      ret.push(...getNumContours(ds, subres, minFillRatio));
     }
   }
   return ret;

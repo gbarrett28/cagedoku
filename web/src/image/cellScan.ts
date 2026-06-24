@@ -70,6 +70,30 @@ export function isCageTotalContour(
 }
 
 /**
+ * Decide whether a contour assigned to cell (row, col) has print margin from
+ * that cell's own top-left corner, rather than sitting flush against it.
+ *
+ * `buildCageTotals` searches the whole warped image for digit-shaped
+ * contours in one pass (unlike the per-cell-cropped calibration search
+ * above), so it can find a fragment of a cage-border line — e.g. an
+ * L-shaped corner notch — that happens to pass the size and fill-ratio
+ * checks. A genuine cage-total digit is printed with margin inside its
+ * cell's top-left quadrant; a border-line fragment runs along the boundary
+ * it's part of and so touches it. Only left/top are checked — right/bottom
+ * are deliberately not, since a 2-digit total's second digit can legitimately
+ * sit close to the right edge (see `contourIsNumber`'s x-parity comment).
+ *
+ * @param x - Contour bounding-box x (full-image pixels).
+ * @param y - Contour bounding-box y (full-image pixels).
+ * @param row - Cell row this contour was assigned to.
+ * @param col - Cell column this contour was assigned to.
+ * @param subres - Pixels per cell side.
+ */
+export function hasTopLeftMargin(x: number, y: number, row: number, col: number, subres: number): boolean {
+  return x > col * subres && y > row * subres;
+}
+
+/**
  * Bounding-box and area of a contour that passed `isCageTotalContourSize`,
  * collected by `collectCageTotalContours` (Sprint 2) for later fill-ratio
  * evaluation at any candidate threshold without re-running OpenCV.
