@@ -23,7 +23,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install Python dependencies
-        run: pip install scikit-learn numpy scipy pillow matplotlib boto3
+        run: pip install scikit-learn numpy scipy pillow matplotlib boto3 numba
 
       - name: List pending R2 uploads
         id: list
