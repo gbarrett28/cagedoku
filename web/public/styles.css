@@ -879,11 +879,24 @@ body:has(#playing-actions:not([hidden])) #side-panel {
        #review-actions paints on top and its buttons are clickable.
      - height:auto + container-type:inline-size removes the 100dvh forced height and the
        "size" containment that collapses the canvas to 0px when height is auto.
-       inline-size containment lets cqw units still work for #canvas-wrapper sizing. */
+       inline-size containment lets cqw units still work for #canvas-wrapper sizing.
+     - flex-wrap:wrap + #detected-layout-heading's flex-basis:100% (below) forces the
+       heading onto its own row, so #canvas-wrapper/#side-panel wrap onto a second row
+       with the column's full width to themselves. #canvas-col still contains the
+       heading in this state (only hidden once #action-group appears post-confirm —
+       see line ~165); without the wrap, the heading's auto flex-basis and the
+       fixed-width #side-panel shared a row with #canvas-wrapper and squeezed its
+       flex-grow basis of 0 down to ~0px, collapsing the grid canvas while the
+       heading stayed visible above it (bug 164). */
   body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #canvas-col {
     position: static;
     height: auto;
     container-type: inline-size;
+    flex-wrap: wrap;
+  }
+
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #detected-layout-heading {
+    flex: 1 0 100%;
   }
 }
 

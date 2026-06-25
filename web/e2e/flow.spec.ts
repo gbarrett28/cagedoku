@@ -552,6 +552,34 @@ test('mobile: header buttons visible at 375 px', async ({ page }) => {
 });
 
 // ---------------------------------------------------------------------------
+// Landscape layout — desktop widths
+// ---------------------------------------------------------------------------
+
+test('landscape: classic review — grid canvas visible with warped+original images present (bug 164)', async ({ page }) => {
+  // Reproduce bug 164: at 1440×731 landscape with both the warped-grid and
+  // original-photo columns visible (the real-upload state), #detected-layout-heading
+  // and #canvas-wrapper are flex row-siblings inside #canvas-col under the
+  // landscape playing-mode CSS. The heading's auto flex-basis plus the fixed-width
+  // side-panel left #canvas-wrapper (flex-grow:1, basis:0) almost no room, collapsing
+  // the grid canvas to 0×0 while the heading label remained visible above it.
+  await page.setViewportSize({ width: 1440, height: 731 });
+  await loadClassicPuzzle(page);
+  await page.evaluate(() => {
+    const placeholder = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><rect width="400" height="400" fill="%23ccc"/></svg>';
+    const warpedCol = document.getElementById('warped-col')!;
+    (document.getElementById('warped-img') as HTMLImageElement).src = placeholder;
+    warpedCol.hidden = false;
+    const originalCol = document.getElementById('original-col')!;
+    (document.getElementById('original-img') as HTMLImageElement).src = placeholder;
+    originalCol.hidden = false;
+  });
+  // Grid canvas must be usably large (broken state was 0px).
+  const canvasRect = await page.locator('#grid-canvas').evaluate(el => el.getBoundingClientRect());
+  expect(canvasRect.width).toBeGreaterThanOrEqual(150);
+  expect(canvasRect.height).toBeGreaterThanOrEqual(150);
+});
+
+// ---------------------------------------------------------------------------
 // Training consent modal
 // ---------------------------------------------------------------------------
 
