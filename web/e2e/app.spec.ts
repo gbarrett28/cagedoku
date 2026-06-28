@@ -199,10 +199,11 @@ pipelineTest('upload outcome hook reports bucket "clean" for a known-clean puzzl
   pipelineTest.setTimeout(90_000);
 
   // Inject the __reportOutcome callback so it stores its argument for inspection.
+  // Initialise to null (not undefined) so waitForFunction's !== null guard works correctly.
   await pipelinePage.evaluate(() => {
-    (window as unknown as Record<string, unknown>)['__reportOutcome'] = (o: unknown) => {
-      (window as unknown as Record<string, unknown>)['__lastUploadOutcome'] = o;
-    };
+    const win = window as unknown as Record<string, unknown>;
+    win['__lastUploadOutcome'] = null;
+    win['__reportOutcome'] = (o: unknown) => { win['__lastUploadOutcome'] = o; };
   });
 
   await pipelinePage.locator('#file-input').setInputFiles(PUZZLE_IMAGE);

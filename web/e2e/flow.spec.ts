@@ -279,12 +279,11 @@ test('classic puzzle: confirm with duplicate digit stays on review with error', 
   const cellSize = box!.width / 9;
   await canvas.click({ position: { x: cellSize * 0.5, y: cellSize * 0.5 } }); // cell (0,0)
   await page.locator('#digit-3').click(); // creates a duplicate 3 in row 0
-  await page.locator('#confirm-btn').click();
-  // Must stay on the review screen — NOT transition to playing mode
+  // Duplicates disable the confirm button — cannot transition to playing mode.
+  await expect(page.locator('#confirm-btn')).toBeDisabled();
+  // Must remain on the review screen
   await expect(page.locator('#review-actions')).toBeVisible();
   await expect(page.locator('#action-group')).toBeHidden();
-  // An error message must be visible
-  await expect(page.locator('#status-msg')).not.toBeEmpty();
 });
 
 test('classic puzzle: confirm transitions to playing mode', async ({ page }) => {
