@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { solveFromStall, solveFromCandidates, detectBigApple, solveBigApple } from './index.js';
+import { solveFromStall, solveFromCandidates, detectBigApple, solveBigApple, assessClassicSolvability } from './index.js';
 import {
   makeTrivialSpec, makeClassicGivenDigits, makeBigAppleGivenDigits, makeBigAppleMisreadGivenDigits,
   BIG_APPLE_SOLUTION,
@@ -103,5 +103,26 @@ describe('solveBigApple', () => {
     for (let r = 0; r < 9; r++)
       for (let c = 0; c < 9; c++)
         expect(result.board.cands(r, c).size).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// assessClassicSolvability
+// ---------------------------------------------------------------------------
+
+describe('assessClassicSolvability', () => {
+  it('returns backtracked for an empty 9×9 grid', () => {
+    const empty = Array.from({ length: 9 }, () => Array<number>(9).fill(0));
+    const result = assessClassicSolvability(empty);
+    expect(result.bucket).toBe('backtracked');
+  });
+
+  it('returns notSolved for a contradictory grid', () => {
+    const grid = Array.from({ length: 9 }, () => Array<number>(9).fill(0));
+    grid[0]![0] = 1;
+    grid[0]![1] = 1; // duplicate 1 in row 0
+    const result = assessClassicSolvability(grid);
+    expect(result.bucket).toBe('notSolved');
+    expect(result.bucket === 'notSolved' && result.reason).toBeTruthy();
   });
 });

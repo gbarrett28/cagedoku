@@ -81,6 +81,29 @@ export function detectBigApple(givenDigits: number[][]): boolean {
   return !checkStalled(windowBoard);
 }
 
+export type ClassicSolveAssessment =
+  | { bucket: 'clean' }
+  | { bucket: 'backtracked' }
+  | { bucket: 'notSolved'; reason: string };
+
+/**
+ * Assess whether a set of classic given digits has a unique solution.
+ *
+ * Reuses the same propagation pass as detectBigApple. If propagation fully
+ * solves the board → clean. If it stalls, falls back to MRV backtracking:
+ * solution found → backtracked; null returned → notSolved.
+ */
+export function assessClassicSolvability(givenDigits: number[][]): ClassicSolveAssessment {
+  const board = new BoardState();
+  const engine = new SolverEngine(board, defaultRules().filter(r => !r.killerOnly));
+  seedGivenDigits(engine, board, givenDigits);
+  engine.solve();
+  if (!checkStalled(board)) return { bucket: 'clean' };
+  const solution = mrvBacktrack(board);
+  if (solution !== null) return { bucket: 'backtracked' };
+  return { bucket: 'notSolved', reason: 'no solution found' };
+}
+
 function snapshotCandidates(board: BoardState): number[][][] {
   return Array.from({ length: 9 }, (_, r) =>
     Array.from({ length: 9 }, (_, c) => [...board.cands(r, c)].sort((a, b) => a - b))
