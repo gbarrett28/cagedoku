@@ -1,4 +1,4 @@
-"""Puzzle image scraper for Guardian/Observer newspaper series.
+r"""Puzzle image scraper for Guardian/Observer newspaper series.
 
 Downloads puzzle images from a newspaper series index page. The website
 structure may have changed since this scraper was written -- treat existing
@@ -124,9 +124,7 @@ def scrape_puzzles(
         soup = BeautifulSoup(r.text, "html.parser")
         # Guardian DCR design uses data-link-name on article card anchors.
         # The legacy fc-item__link class was removed in the 2024 redesign.
-        for link in soup.find_all("a", attrs={"data-link-name": re.compile(r"^news \|")}):
-            if not isinstance(link, Tag):
-                continue
+        for link in (t for t in soup.find_all("a", attrs={"data-link-name": re.compile(r"^news \|")}) if isinstance(t, Tag)):
             href = link.get("href")
             if not isinstance(href, str):
                 continue
@@ -205,9 +203,7 @@ def scrape_puzzles(
             continue
 
         puzzle_page = BeautifulSoup(puzzle_req.text, "html.parser")
-        for jpg in puzzle_page.find_all("a", href=print_link_pattern):
-            if not isinstance(jpg, Tag):
-                continue
+        for jpg in (t for t in puzzle_page.find_all("a", href=print_link_pattern) if isinstance(t, Tag)):
             raw_url = jpg.get("href")
             if not isinstance(raw_url, str):
                 continue

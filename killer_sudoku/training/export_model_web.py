@@ -6,8 +6,8 @@ Converts ``num_recogniser.npz`` to two files consumed by the TypeScript port:
   - ``num_recogniser.json``: manifest mapping array names to dtype, shape, byte
     offset, and byte length within the blob.
 
-Integer arrays (int64/intp) are downcast to int32 on export — all values in
-the current model (class labels 0–9, n_support < 200, dims = 70) fit easily.
+Integer arrays (int64/intp) are downcast to int32 on export -- all values in
+the current model (class labels 0-9, n_support < 200, dims = 70) fit easily.
 Float arrays are written as float64 or float32 as stored in the .npz.
 
 Usage::
@@ -48,28 +48,27 @@ def export_model(output_dir: Path) -> None:
     arrays: dict[str, dict[str, object]] = {}
     blob = bytearray()
 
-    with resource.open("rb") as fh:
-        with np.load(fh) as data:
-            for key in data.files:
-                arr = np.asarray(data[key])
+    with resource.open("rb") as fh, np.load(fh) as data:
+        for key in data.files:
+            arr = np.asarray(data[key])
 
-                # Downcast integer arrays to int32: all model values fit in 32 bits.
-                if arr.dtype in _INT_DTYPES:
-                    arr = arr.astype(np.int32)
+            # Downcast integer arrays to int32: all model values fit in 32 bits.
+            if arr.dtype in _INT_DTYPES:
+                arr = arr.astype(np.int32)
 
-                # Ensure C-contiguous and explicitly little-endian.
-                arr_le = np.ascontiguousarray(arr).astype(
-                    arr.dtype.newbyteorder("<"), copy=False
-                )
-                raw = arr_le.tobytes()
+            # Ensure C-contiguous and explicitly little-endian.
+            arr_le = np.ascontiguousarray(arr).astype(
+                arr.dtype.newbyteorder("<"), copy=False
+            )
+            raw = arr_le.tobytes()
 
-                arrays[key] = {
-                    "dtype": arr_le.dtype.name,
-                    "shape": list(arr_le.shape),
-                    "offset": len(blob),
-                    "byteLength": len(raw),
-                }
-                blob.extend(raw)
+            arrays[key] = {
+                "dtype": arr_le.dtype.name,
+                "shape": list(arr_le.shape),
+                "offset": len(blob),
+                "byteLength": len(raw),
+            }
+            blob.extend(raw)
 
     bin_path = output_dir / "num_recogniser.bin"
     json_path = output_dir / "num_recogniser.json"

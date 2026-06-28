@@ -90,7 +90,7 @@ def calibrate_isblack_offset(puzzle_dir: Path, n_images: int = 20) -> int:
     if not diffs:
         raise ValueError("No images could be read from puzzle_dir")
 
-    recommended = int(round(float(np.mean(diffs))))
+    recommended = round(float(np.mean(diffs)))
     _log.info(
         "Calibrated isblack_offset=%d from %d images (mean diff=%.1f)",
         recommended,

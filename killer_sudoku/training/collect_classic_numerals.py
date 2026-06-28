@@ -1,4 +1,4 @@
-"""Augment the digit training set with pre-filled digits from a classic sudoku image.
+r"""Augment the digit training set with pre-filled digits from a classic sudoku image.
 
 Extracts digit patches from a classic sudoku (e.g. NYT) using the same
 cell-centred pipeline as read_classic_digits, augments each patch with
@@ -302,7 +302,7 @@ def main() -> None:
     )
 
     numerals_path = Path(args.numerals)
-    with open(numerals_path, "rb") as fh:
+    with numerals_path.open("rb") as fh:
         existing: list[tuple[int, npt.NDArray[np.uint8]]] = pickle.load(fh)
 
     n_cells = len(new_pairs) // (args.n_augments + 1)
@@ -316,7 +316,7 @@ def main() -> None:
         len(existing),
     )
     combined = existing + new_pairs
-    with open(numerals_path, "wb") as fh:
+    with numerals_path.open("wb") as fh:
         pickle.dump(combined, fh)
     _log.info("Saved %d total pairs to %s", len(combined), numerals_path)
 

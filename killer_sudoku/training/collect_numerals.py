@@ -59,7 +59,7 @@ def _extract_cell_contours(
     resolution = config.resolution
     subres = config.subres
 
-    gry, img = get_gry_img(filepath, resolution)
+    gry, _img = get_gry_img(filepath, resolution)
     blk, grid = locate_grid(gry, config.grid_location)
 
     dst_size = np.array(
@@ -280,7 +280,7 @@ def main() -> None:
         numerals = collect_numerals(config, num_recogniser)
         out_path = config.puzzle_dir_required / "numerals.pkl"
 
-    with open(out_path, "wb") as fh:
+    with out_path.open("wb") as fh:
         pickle.dump(numerals, fh)
     _log.info("Saved %d numerals to %s", len(numerals), out_path)
 

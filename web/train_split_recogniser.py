@@ -11,40 +11,50 @@ Usage (from project root):
         --real-samples web/browser_train.json  --real-weight 100
 """
 from __future__ import annotations
-import argparse, json, pickle, sys
+
+import argparse
+import json
+import pickle
+import sys
 from pathlib import Path
+
 import numpy as np
 from numpy.typing import NDArray
 
 sys.path.insert(0, str(Path(__file__).parent))
 from train_recogniser import (
-    HOG_BLOCK_SIZE, HOG_BLOCK_STRIDE, HOG_CELL_SIZE,
-    HOG_NBINS, HOG_WIN_SIZE, THUMBNAIL_SIZE, extract_hog,
+    HOG_BLOCK_SIZE,
+    HOG_BLOCK_STRIDE,
+    HOG_CELL_SIZE,
+    HOG_NBINS,
+    HOG_WIN_SIZE,
+    THUMBNAIL_SIZE,
+    extract_hog,
 )
-
 
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
 
-def load_singles(data_dirs):
+def load_singles(data_dirs: list[Path]) -> list[tuple[int, NDArray[np.uint8]]]:
     """Load (label, 64x64 uint8) pairs from numerals.pkl, digits 1-9 only."""
     samples = []
     for d in data_dirs:
         pkl = d / "numerals.pkl"
         if not pkl.exists():
-            print(f"  Skipping {d}: numerals.pkl not found"); continue
-        with open(pkl, "rb") as f:
-            raw = pickle.load(f)
+            print(f"  Skipping {d}: numerals.pkl not found")
+            continue
+        with pkl.open("rb") as f:
+            raw = pickle.load(f)  # trusted own-generated data
         kept = [(label, img) for label, img in raw if 1 <= label <= 9]
         print(f"  {d}: {len(raw)} total, {len(kept)} kept (digits 1-9)")
         samples.extend(kept)
     return samples
 
 
-def load_real_split_samples(json_paths):
+def load_real_split_samples(json_paths: list[Path]) -> list[tuple[int, NDArray[np.uint8]]]:
     """Load splitSamples from browser-exported training JSON files."""
-    samples = []
+    samples: list[tuple[int, NDArray[np.uint8]]] = []
     for path in json_paths:
         data = json.loads(path.read_text(encoding="utf-8"))
         for s in data.get("splitSamples", []):
@@ -61,18 +71,18 @@ def load_real_split_samples(json_paths):
 # Synthetic pair generation
 # ---------------------------------------------------------------------------
 
-def make_pair(img_a, img_b, split_w, size=THUMBNAIL_SIZE):
+def make_pair(img_a: NDArray[np.uint8], img_b: NDArray[np.uint8], split_w: int, size: int = THUMBNAIL_SIZE) -> NDArray[np.uint8]:
     from PIL import Image
     w2 = size - split_w
-    a = np.array(Image.fromarray(img_a).resize((split_w, size), Image.LANCZOS), dtype=np.uint8)
-    b = np.array(Image.fromarray(img_b).resize((w2,     size), Image.LANCZOS), dtype=np.uint8)
+    a = np.array(Image.fromarray(img_a).resize((split_w, size), Image.Resampling.LANCZOS), dtype=np.uint8)
+    b = np.array(Image.fromarray(img_b).resize((w2,     size), Image.Resampling.LANCZOS), dtype=np.uint8)
     canvas = np.zeros((size, size), dtype=np.uint8)
     canvas[:, :split_w] = a
     canvas[:, split_w:] = b
     return canvas
 
 
-def build_pairs(samples, n_pairs, rng):
+def build_pairs(samples: list[tuple[int, NDArray[np.uint8]]], n_pairs: int, rng: np.random.Generator) -> list[NDArray[np.uint8]]:
     imgs = [img for _, img in samples]
     n = len(imgs)
     out = []
@@ -87,7 +97,7 @@ def build_pairs(samples, n_pairs, rng):
 # Model saving (same bin+json format as num_recogniser)
 # ---------------------------------------------------------------------------
 
-def save_model(coef, intercept, out_dir):
+def save_model(coef: NDArray[np.float64], intercept: NDArray[np.float64], out_dir: Path) -> None:
     named = [
         ("hog_win_size",         np.array(HOG_WIN_SIZE,     dtype=np.int32),  "int32"),
         ("hog_cell_size",        np.array(HOG_CELL_SIZE,    dtype=np.int32),  "int32"),
@@ -117,7 +127,7 @@ def save_model(coef, intercept, out_dir):
 # Main
 # ---------------------------------------------------------------------------
 
-def main():
+def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--data-dirs",    nargs="+", type=Path, default=[Path("guardian"), Path("observer")])
@@ -137,7 +147,8 @@ def main():
     print("Loading single-digit samples…")
     singles = load_singles(args.data_dirs)
     if not singles:
-        print("No data — check --data-dirs."); raise SystemExit(1)
+        print("No data — check --data-dirs.")
+        raise SystemExit(1)
     print(f"  Total: {len(singles)}")
 
     idx = rng.permutation(len(singles))[:args.n_single]
@@ -158,7 +169,7 @@ def main():
         all_imgs    += real_imgs
         all_labels  += real_labels
         all_weights += [args.real_weight] * len(real)
-        print(f"  Added {len(real)} real split samples (weight={args.real_weight}×)")
+        print(f"  Added {len(real)} real split samples (weight={args.real_weight}x)")
 
     print(f"Dataset: {all_labels.count(1)} neg + {all_labels.count(2)} pos"
           + (f" + {len(real)} real" if real else ""))

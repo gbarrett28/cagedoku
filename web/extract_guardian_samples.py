@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Re-extract guardian/observer cage-total digits as square-padded 64x64 thumbnails.
+"""Re-extract guardian/observer cage-total digits as square-padded 64x64 thumbnails.
 
 Usage
 -----
@@ -15,16 +14,19 @@ contours, square-pads each digit to 64x64, and writes
 """
 
 from __future__ import annotations
+
 import argparse
 import atexit
 import base64
 import json
 import logging
+import pickle
 import subprocess
 import sys
 import types
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 
 import cv2
 import numpy as np
@@ -44,39 +46,44 @@ RESOLUTION = 9 * SUBRES  # 1152
 
 class _PicData:
     """Minimal struct matching the PicInfo interface used by the extractor."""
-    __slots__ = ('grid', 'cage_totals', 'border_x', 'border_y', 'brdrs')
+
+    __slots__ = ("border_x", "border_y", "brdrs", "cage_totals", "grid")
+    grid: np.ndarray[Any, np.dtype[np.float32]]
+    cage_totals: np.ndarray[Any, np.dtype[np.int64]]
+    border_x: np.ndarray[Any, Any]
+    border_y: np.ndarray[Any, Any]
+    brdrs: np.ndarray[Any, Any]
 
 
 def _register_stub() -> None:
-    for mod in ('killer_sudoku.image', 'killer_sudoku.image.inp_image'):
+    for mod in ("killer_sudoku.image", "killer_sudoku.image.inp_image"):
         if mod not in sys.modules:
             sys.modules[mod] = types.ModuleType(mod)
 
     class PicInfo:
         pass
 
-    sys.modules['killer_sudoku.image.inp_image'].PicInfo = PicInfo  # type: ignore[attr-defined]
+    sys.modules["killer_sudoku.image.inp_image"].PicInfo = PicInfo  # type: ignore[attr-defined]
 
 
 def load_pic(jpg_path: Path) -> _PicData:
     """Load puzzle cache from .json (preferred) or .jpk fallback."""
-    json_path = jpg_path.with_suffix('.json')
+    json_path = jpg_path.with_suffix(".json")
     if json_path.exists():
-        raw = json.loads(json_path.read_text(encoding='utf-8'))
+        raw = json.loads(json_path.read_text(encoding="utf-8"))
         p = _PicData()
-        p.grid        = np.array(raw['grid'],        dtype=np.float32)
-        p.cage_totals = np.array(raw['cage_totals'], dtype=np.int64)
-        p.border_x    = np.array(raw['border_x'])
-        p.border_y    = np.array(raw['border_y'])
-        p.brdrs       = np.array(raw['brdrs'])
+        p.grid        = np.array(raw["grid"],        dtype=np.float32)
+        p.cage_totals = np.array(raw["cage_totals"], dtype=np.int64)
+        p.border_x    = np.array(raw["border_x"])
+        p.border_y    = np.array(raw["border_y"])
+        p.brdrs       = np.array(raw["brdrs"])
         return p
 
-    jpk_path = jpg_path.with_suffix('.jpk')
+    jpk_path = jpg_path.with_suffix(".jpk")
     if jpk_path.exists():
-        import pickle  # noqa: PLC0415
         _register_stub()
-        with open(jpk_path, 'rb') as fh:
-            return pickle.load(fh)  # trusted own-generated data
+        with jpk_path.open("rb") as fh:
+            return cast(_PicData, pickle.load(fh))  # trusted own-generated data
 
     raise FileNotFoundError(f"No .json or .jpk cache for {jpg_path}")
 
@@ -88,19 +95,20 @@ def load_pic(jpg_path: Path) -> _PicData:
 # drift that caused the original boundary-bleed bug.
 # ---------------------------------------------------------------------------
 
-_bridge_proc: 'subprocess.Popen[str] | None' = None
+_bridge_proc: subprocess.Popen[str] | None = None
 
 
-def _get_bridge() -> 'subprocess.Popen[str]':
-    """Lazily start the persistent Node contour-detection bridge, reused for
-    the whole extraction run rather than spawned per-cell (opencv.js WASM
+def _get_bridge() -> subprocess.Popen[str]:
+    """Lazily start the persistent Node contour-detection bridge.
+
+    Reused for the whole extraction run rather than spawned per-cell (opencv.js WASM
     init takes real time -- amortising it across thousands of calls matters).
     """
     global _bridge_proc
     if _bridge_proc is None:
         web_dir = Path(__file__).parent
         _bridge_proc = subprocess.Popen(
-            'npx vite-node scripts/find-digit-blobs-server.ts',
+            "npx vite-node scripts/find-digit-blobs-server.ts",
             shell=True, cwd=web_dir,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, bufsize=1,
@@ -118,7 +126,7 @@ def _shutdown_bridge() -> None:
         proc.wait(timeout=5)
 
 
-def _request_blobs(payload: dict) -> dict:
+def _request_blobs(payload: dict[str, Any]) -> dict[str, Any]:
     """Send one request to the bridge and return its decoded JSON response."""
     proc = _get_bridge()
     assert proc.stdin is not None and proc.stdout is not None
@@ -128,18 +136,20 @@ def _request_blobs(payload: dict) -> dict:
     if not line:
         stderr = proc.stderr.read() if proc.stderr else ""
         raise RuntimeError(f"find-digit-blobs-server.ts produced no output (exited?): {stderr}")
-    return json.loads(line)
+    result: dict[str, Any] = json.loads(line)
+    return result
 
 
 def find_digit_blobs(roi: NDArray[np.uint8], subres: int) -> list[tuple[int, int, int, int]]:
-    """Find digit-sized ink blobs in a cell ROI via the Node contour-detection
-    bridge (the literal production isDigitSizedContour + cv.findContours
-    logic), sorted left-to-right by x.
+    """Find digit-sized ink blobs in a cell ROI via the Node contour-detection bridge.
+
+    Uses the literal production isDigitSizedContour + cv.findContours logic,
+    sorted left-to-right by x.
     """
     h, w = roi.shape
     payload = {
         "w": w, "h": h, "subres": subres,
-        "pixels": base64.b64encode(roi.tobytes()).decode('ascii'),
+        "pixels": base64.b64encode(roi.tobytes()).decode("ascii"),
     }
     response = _request_blobs(payload)
     return [tuple(b) for b in response["blobs"]]
@@ -184,8 +194,9 @@ def select_digit_blobs(
 def letterbox_warp(
     ax: float, ay: float, bw: float, bh: float, warped: NDArray[np.uint8],
 ) -> NDArray[np.uint8]:
-    """Extract a letterboxed (no square-stretch) 64x64 thumbnail from the
-    warped binary image. Matches the TypeScript letterboxWarp helper exactly.
+    """Extract a letterboxed (no square-stretch) 64x64 thumbnail from the warped binary image.
+
+    Matches the TypeScript letterboxWarp helper exactly.
     """
     scale = min((THUMB - 1) / bw, (THUMB - 1) / bh)
     dest_w, dest_h = bw * scale, bh * scale
@@ -258,19 +269,19 @@ def extract_puzzle_samples(
     # whatever destination size is requested.
     pipe_res  = int(grid.max()) + 10
     pipe_cell = pipe_res // 9
-    dst_hr = np.float32([
+    dst_hr = np.array([
         [0, 0], [pipe_res - 1, 0],
         [pipe_res - 1, pipe_res - 1], [0, pipe_res - 1],
-    ])
+    ], dtype=np.float32)
     M_hr = cv2.getPerspectiveTransform(grid, dst_hr)
     warped_hr = cv2.warpPerspective(blk_hr, M_hr, (pipe_res, pipe_res), flags=cv2.INTER_LINEAR)
     warped_hr = ((warped_hr > 127).astype(np.uint8) * 255)
 
     # Output-resolution warp for square-padded thumbnail extraction.
-    dst_out = np.float32([
+    dst_out = np.array([
         [0, 0], [resolution - 1, 0],
         [resolution - 1, resolution - 1], [0, resolution - 1],
-    ])
+    ], dtype=np.float32)
     M_out = cv2.getPerspectiveTransform(grid, dst_out)
     warped = cv2.warpPerspective(blk_hr, M_out, (resolution, resolution), flags=cv2.INTER_LINEAR)
     warped = ((warped > 127).astype(np.uint8) * 255)
@@ -298,7 +309,7 @@ def extract_puzzle_samples(
             roi_w = pipe_cell if ndigits == 2 else pipe_cell // 2
             roi = warped_hr[cy: cy + roi_h, cx: cx + roi_w]
 
-            ys, xs = np.where(roi > 0)
+            ys, _xs = np.where(roi > 0)
             if len(ys) < 10:       # skip near-empty cells (noise threshold)
                 _log.debug("%s col=%d row=%d total=%d: too little ink -- skipping",
                            jpg_path.name, col, row, total)
@@ -341,10 +352,10 @@ def extract_puzzle_samples(
             for i, (bx, by, bw, bh) in enumerate(digit_blobs):
                 abs_x = cx + bx
                 abs_y = cy + by
-                ox = int(round(abs_x * scale))
-                oy = int(round(abs_y * scale))
-                ow = max(1, int(round(bw * scale)))
-                oh = max(1, int(round(bh * scale)))
+                ox = round(abs_x * scale)
+                oy = round(abs_y * scale)
+                ow = max(1, round(bw * scale))
+                oh = max(1, round(bh * scale))
                 samples.append((int(total_str[i]), letterbox_warp(ox, oy, ow, oh, warped)))
 
     return samples
@@ -365,7 +376,7 @@ def extract_directory(
     skipped = 0
 
     for jpg in jpgs:
-        if not jpg.with_suffix('.json').exists() and not jpg.with_suffix('.jpk').exists():
+        if not jpg.with_suffix(".json").exists() and not jpg.with_suffix(".jpk").exists():
             skipped += 1
             continue
         samples = extract_puzzle_samples(jpg, subres)
@@ -395,7 +406,7 @@ def write_training_json(
             for digit, img in samples
         ],
     }
-    out_path.write_text(json.dumps(data, separators=(',', ':')), encoding='utf-8')
+    out_path.write_text(json.dumps(data, separators=(",", ":")), encoding="utf-8")
     _log.info("Wrote %d samples to %s", len(samples), out_path)
 
 
@@ -410,11 +421,11 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        '--puzzle-dirs', nargs='+', default=['guardian', 'observer'], metavar='DIR',
-        help='Puzzle directories relative to repo root (default: guardian observer)',
+        "--puzzle-dirs", nargs="+", default=["guardian", "observer"], metavar="DIR",
+        help="Puzzle directories relative to repo root (default: guardian observer)",
     )
-    parser.add_argument('--subres', type=int, default=SUBRES,
-                        help=f'Pixels per cell side (default: {SUBRES})')
+    parser.add_argument("--subres", type=int, default=SUBRES,
+                        help=f"Pixels per cell side (default: {SUBRES})")
     args = parser.parse_args()
 
     repo_root = Path(__file__).parent.parent
@@ -431,5 +442,5 @@ def main() -> None:
         write_training_json(samples, out_path)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

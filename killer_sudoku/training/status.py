@@ -41,8 +41,8 @@ class StatusStore:
         self._puzzle_dir = puzzle_dir
         self._data: dict[str, str] = {}
         if path.exists():
-            with open(path, "rb") as fh:
-                raw: Any = pickle.load(fh)
+            with path.open("rb") as fh:
+                raw: Any = pickle.load(fh)  # trusted own-generated data
             # Migration: old pickles stored Path objects as keys.
             first_key = next(iter(raw), None)
             if first_key is not None and isinstance(first_key, Path):
@@ -72,7 +72,7 @@ class StatusStore:
 
     def save(self) -> None:
         """Persist the current status data to disk."""
-        with open(self._path, "wb") as fh:
+        with self._path.open("wb") as fh:
             pickle.dump(self._data, fh)
 
     def items(self) -> ItemsView[str, str]:

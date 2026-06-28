@@ -88,7 +88,7 @@ def main(argv: list[str] | None = None) -> None:
     subres = config.subres
     resolution = config.resolution
 
-    gry, img = get_gry_img(image_path, resolution)
+    gry, _img = get_gry_img(image_path, resolution)
     _blk, grid = locate_grid(gry, config.grid_location)
 
     dst_size = np.array(

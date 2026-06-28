@@ -29,6 +29,16 @@ echo ""
 echo "--- npm test ---"
 npm test || fail "npm test"
 
+cd "$REPO_ROOT"
+
+echo ""
+echo "--- ruff check (Python) ---"
+python -m ruff check . || fail "ruff check"
+
+echo ""
+echo "--- mypy (Python strict) ---"
+python -m mypy . --ignore-missing-imports || fail "mypy"
+
 echo ""
 echo "=== Bronze gate: code checks passed ==="
 echo ""

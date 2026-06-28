@@ -24,8 +24,8 @@ from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
-from sklearn.decomposition import PCA  # type: ignore[import-untyped]
-from sklearn.svm import SVC  # type: ignore[import-untyped]
+from sklearn.decomposition import PCA
+from sklearn.svm import SVC
 
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.number_recognition import (
@@ -79,8 +79,8 @@ def train_number_recogniser(
             "--puzzle-dir <dir>"
         )
 
-    with open(numerals_path, "rb") as fh:
-        val_nums: list[tuple[int, npt.NDArray[np.uint8]]] = pickle.load(fh)
+    with numerals_path.open("rb") as fh:
+        val_nums: list[tuple[int, npt.NDArray[np.uint8]]] = pickle.load(fh)  # trusted own-generated data
 
     # Group digit images by label.
     cls: dict[int, list[npt.NDArray[np.uint8]]] = {}
@@ -103,7 +103,7 @@ def train_number_recogniser(
 
     # Fit PCA on mean images to capture inter-digit structure.
     pca: PCA = PCA()
-    pca.fit([m.flatten() for m in means])
+    pca.fit(np.array([m.flatten() for m in means]))
     cumsum: npt.NDArray[np.float64] = np.cumsum(
         np.asarray(pca.explained_variance_ratio_, dtype=np.float64)
     )
@@ -112,13 +112,13 @@ def train_number_recogniser(
 
     # Project all labelled images into PCA space and train SVM.
     nums_pca: npt.NDArray[np.float64] = pca.transform(
-        [p.flatten() for _, p in val_nums]
+        np.array([p.flatten() for _, p in val_nums])
     )
     vals: list[int] = [n for n, _ in val_nums]
     svm_c = config.number_recognition.svm_c
     svm_gamma = config.number_recognition.svm_gamma
     svc: SVC = SVC(kernel="rbf", C=svm_c, gamma=svm_gamma)
-    svc.fit([v[:dims] for v in nums_pca], vals)
+    svc.fit(np.array([v[:dims] for v in nums_pca]), np.array(vals))
     _log.info(
         "Trained SVC (C=%.1f, gamma=%s) on %d samples", svm_c, svm_gamma, len(vals)
     )

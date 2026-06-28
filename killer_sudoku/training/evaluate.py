@@ -26,7 +26,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-import joblib  # type: ignore[import-untyped]
+import joblib
 import numpy as np
 import numpy.typing as npt
 
@@ -87,7 +87,7 @@ def write_eval_report(
     }
 
     out_path = puzzle_dir / "eval_report.json"
-    with open(out_path, "w", encoding="utf-8") as fh:
+    with out_path.open("w", encoding="utf-8") as fh:
         json.dump(report, fh, indent=2)
     _log.info("Wrote eval report to %s", out_path)
     return out_path
@@ -110,9 +110,9 @@ def compare_reports(baseline_path: Path, current_path: Path) -> bool:
     Returns:
         True if no regressions detected, False if any metric regressed > 1%.
     """
-    with open(baseline_path, encoding="utf-8") as fh:
+    with baseline_path.open(encoding="utf-8") as fh:
         baseline = json.load(fh)
-    with open(current_path, encoding="utf-8") as fh:
+    with current_path.open(encoding="utf-8") as fh:
         current = json.load(fh)
 
     metrics = ["solve_rate", "error_rate"]
@@ -143,7 +143,7 @@ def compare_reports(baseline_path: Path, current_path: Path) -> bool:
     for name, base_status in base_per.items():
         curr_status = curr_per.get(name, "")
         was_good = base_status == "SOLVED"
-        now_bad = curr_status != "SOLVED" and curr_status != ""
+        now_bad = curr_status not in {"SOLVED", ""}
         if was_good and now_bad:
             regressions.append(f"  {name}: {base_status} -> {curr_status}")
 

@@ -1,5 +1,4 @@
-"""
-Deduplicate exact byte-identical samples in browser_train.json.
+"""Deduplicate exact byte-identical samples in browser_train.json.
 
 Usage:
     python web/dedupe_browser_train.py [path/to/browser_train.json]
@@ -16,17 +15,18 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 
-def dedupe_samples(samples: list[dict]) -> tuple[list[dict], int]:
+def dedupe_samples(samples: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
     """Drop exact pixel-duplicate samples, keeping first occurrence.
 
     Returns (deduped_samples, num_duplicates_removed).
     """
     seen: set[str] = set()
-    deduped: list[dict] = []
+    deduped: list[dict[str, Any]] = []
     for sample in samples:
-        digest = hashlib.sha256(bytes(sample['pixels'])).hexdigest()
+        digest = hashlib.sha256(bytes(sample["pixels"])).hexdigest()
         if digest in seen:
             continue
         seen.add(digest)
@@ -35,14 +35,14 @@ def dedupe_samples(samples: list[dict]) -> tuple[list[dict], int]:
 
 
 def main() -> None:
-    path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('web/browser_train.json')
-    data = json.loads(path.read_text(encoding='utf-8'))
-    deduped, n_removed = dedupe_samples(data['samples'])
+    path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("web/browser_train.json")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    deduped, n_removed = dedupe_samples(data["samples"])
     print(f"{path}: {len(data['samples'])} -> {len(deduped)} samples ({n_removed} duplicates removed)")
-    data['samples'] = deduped
-    data['sampleCount'] = len(deduped)
-    path.write_text(json.dumps(data, separators=(',', ':')), encoding='utf-8')
+    data["samples"] = deduped
+    data["sampleCount"] = len(deduped)
+    path.write_text(json.dumps(data, separators=(",", ":")), encoding="utf-8")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "web"))
 from dedupe_browser_train import dedupe_samples
 
 
-def test_dedupe_samples_drops_exact_duplicates_keeping_first():
+def test_dedupe_samples_drops_exact_duplicates_keeping_first() -> None:
     samples = [
         {"digit": 7, "pixels": [1, 2, 3]},
         {"digit": 7, "pixels": [1, 2, 3]},  # exact duplicate
@@ -19,7 +19,7 @@ def test_dedupe_samples_drops_exact_duplicates_keeping_first():
     ]
 
 
-def test_dedupe_samples_keeps_distinct_samples_with_same_digit():
+def test_dedupe_samples_keeps_distinct_samples_with_same_digit() -> None:
     samples = [
         {"digit": 2, "pixels": [1, 1, 1]},
         {"digit": 2, "pixels": [2, 2, 2]},
@@ -29,7 +29,7 @@ def test_dedupe_samples_keeps_distinct_samples_with_same_digit():
     assert deduped == samples
 
 
-def test_dedupe_samples_handles_empty_list():
+def test_dedupe_samples_handles_empty_list() -> None:
     deduped, n_removed = dedupe_samples([])
     assert deduped == []
     assert n_removed == 0

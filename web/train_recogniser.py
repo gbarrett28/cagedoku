@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Train the web digit recogniser using HOG features + LinearSVC.
+"""Train the web digit recogniser using HOG features + LinearSVC.
 
 Generates synthetic digit images from system fonts, optionally merges
 browser-exported labelled samples, augments all sources with dithering,
@@ -48,6 +47,7 @@ samples are correctly classified even when they fall near the boundary.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import math
 import time
@@ -64,8 +64,8 @@ from sklearn.svm import SVC
 # Constants — must match the TypeScript pipeline (web/src/image/numberRecognition.ts)
 # ---------------------------------------------------------------------------
 
-THUMBNAIL_SIZE = 64        # splitNum output: 64×64 binary image per digit
-N_DIGITS = 10              # digits 0–9
+THUMBNAIL_SIZE = 64        # splitNum output: 64x64 binary image per digit
+N_DIGITS = 10              # digits 0-9
 DEFAULT_DITHER = 30        # augmented variants per source sample
 CONFIDENCE_THRESHOLD = 0.7 # OVO vote fraction to mark a read as confident
 SVM_C = 10.0
@@ -94,7 +94,7 @@ DITHER_BATCH_SIZE = 4096
 # ---------------------------------------------------------------------------
 
 def load_training_file(path: Path) -> list[tuple[int, NDArray[np.uint8]]]:
-    """Load (digit, 64×64 uint8) samples from one browser-exported JSON.
+    """Load (digit, 64x64 uint8) samples from one browser-exported JSON.
 
     The JSON is produced by web/src/image/trainingExport.ts and contains
     one sample per extracted digit contour, labelled with the user-verified
@@ -144,9 +144,9 @@ def generate_synthetic_samples(
     win_size: int = THUMBNAIL_SIZE,
     pt_sizes: tuple[int, ...] = (32, 48, 64),
 ) -> list[tuple[int, NDArray[np.uint8]]]:
-    """Render digits 1–9 in all discoverable system TTF fonts via Pillow.
+    """Render digits 1-9 in all discoverable system TTF fonts via Pillow.
 
-    Returns (label, win_size×win_size uint8) pairs in the same format as
+    Returns (label, win_size x win_size uint8) pairs in the same format as
     load_training_file, supplementing browser-exported samples with coverage
     across common newspaper and system typefaces.
     """
@@ -154,8 +154,8 @@ def generate_synthetic_samples(
     t0 = _time.time()
     print(f"  [+{_time.time() - t0:.0f}s] Scanning system fonts (matplotlib font cache "
           f"may take a while on first run)…", flush=True)
-    import matplotlib.font_manager as fm  # type: ignore[import-untyped]
-    from PIL import Image, ImageDraw, ImageFont  # type: ignore[import-untyped]
+    import matplotlib.font_manager as fm
+    from PIL import Image, ImageDraw, ImageFont
 
     font_paths = fm.findSystemFonts(fontext="ttf")
     print(f"  [+{_time.time() - t0:.0f}s] Found {len(font_paths)} fonts", flush=True)
@@ -196,7 +196,7 @@ def generate_synthetic_samples(
                 square[(side - h_c) // 2:(side - h_c) // 2 + h_c,
                        (side - w_c) // 2:(side - w_c) // 2 + w_c] = crop
                 out = np.array(
-                    Image.fromarray(square).resize((win_size, win_size), Image.LANCZOS),
+                    Image.fromarray(square).resize((win_size, win_size), Image.Resampling.LANCZOS),
                     dtype=np.uint8,
                 )
                 if out.max() > 0:
@@ -215,9 +215,9 @@ def generate_synthetic_samples(
 
 @njit(parallel=True, fastmath=True, cache=True)
 def _extract_hog_numba(stacked: NDArray[np.uint8], result: NDArray[np.float64]) -> None:
-    """Fused per-pixel HOG kernel: gradients, bin assignment, cell histograms,
-    and block normalisation in one compiled pass per image, with no large
-    (n, 64, 64) intermediate arrays.
+    """Fused per-pixel HOG kernel: gradients, bin assignment, cell histograms, block normalisation.
+
+    One compiled pass per image with no large (n, 64, 64) intermediate arrays.
 
     Replaces an earlier pure-numpy vectorisation that computed Gx/Gy/mag/bins
     as full-size arrays — profiling showed that version was memory-bandwidth
@@ -319,8 +319,9 @@ def extract_hog(
 
 @njit(parallel=True, cache=True)
 def _extract_hole_numba(stacked: NDArray[np.uint8], min_hole_area: int, result: NDArray[np.float64]) -> None:
-    """Fused per-image hole-count kernel: outside flood-fill, hole labelling,
-    and top-2 area tracking in one compiled pass per image.
+    """Fused per-image hole-count kernel: outside flood-fill, hole labelling, top-2 area tracking.
+
+    One compiled pass per image.
 
     Mirrors extractHoleFeatures in web/src/image/holeFeatures.ts (BFS outside
     flood-fill, then connected-component hole labelling, 4-connectivity
@@ -453,8 +454,7 @@ def _extract_hole_numba(stacked: NDArray[np.uint8], min_hole_area: int, result: 
 def extract_hole_features(
     imgs: NDArray[np.uint8], n_jobs: int = -1, out: NDArray[np.float64] | None = None
 ) -> NDArray[np.float64]:
-    """Extract hole-count topology features matching the TypeScript
-    extractHoleFeatures implementation (web/src/image/holeFeatures.ts).
+    """Extract hole-count topology features matching extractHoleFeatures in holeFeatures.ts.
 
     imgs is a pre-stacked (n, 64, 64) uint8 array (dither_batch already
     produces one) and is dispatched directly to _extract_hole_numba, a
@@ -502,8 +502,9 @@ def _dither_numba(
     noise: NDArray[np.bool_],
     out: NDArray[np.uint8],
 ) -> None:
-    """Fused per-image dithering kernel: translate, erode/dilate/none, and
-    pixel-noise in one compiled pass per image. out[:, 0] is the unmodified
+    """Fused per-image dithering kernel: translate, erode/dilate/none, and pixel-noise.
+
+    One compiled pass per image. out[:, 0] is the unmodified
     original; out[:, 1:] are the n_variants augmented copies.
 
     Replaces an earlier scipy.ndimage-based dither(), which was confirmed by
@@ -562,25 +563,11 @@ def _dither_numba(
                         val = shifted[y, x]
                     elif o == 1:  # erode: AND with all 4 neighbours, OOB=0
                         val = shifted[y, x]
-                        if val:
-                            if y == 0 or shifted[y - 1, x] == 0:
-                                val = 0
-                            elif y == h - 1 or shifted[y + 1, x] == 0:
-                                val = 0
-                            elif x == 0 or shifted[y, x - 1] == 0:
-                                val = 0
-                            elif x == w - 1 or shifted[y, x + 1] == 0:
-                                val = 0
+                        if val and (y == 0 or shifted[y - 1, x] == 0 or y == h - 1 or shifted[y + 1, x] == 0 or x == 0 or shifted[y, x - 1] == 0 or x == w - 1 or shifted[y, x + 1] == 0):
+                            val = 0
                     else:  # dilate: OR with all 4 neighbours, OOB contributes nothing
                         val = shifted[y, x]
-                        if not val:
-                            if y > 0 and shifted[y - 1, x]:
-                                val = 1
-                            elif y < h - 1 and shifted[y + 1, x]:
-                                val = 1
-                            elif x > 0 and shifted[y, x - 1]:
-                                val = 1
-                            elif x < w - 1 and shifted[y, x + 1]:
+                        if not val and ((y > 0 and shifted[y - 1, x]) or (y < h - 1 and shifted[y + 1, x]) or (x > 0 and shifted[y, x - 1]) or (x < w - 1 and shifted[y, x + 1])):
                                 val = 1
                     if noise[i, v, y, x]:
                         val = 1 - val
@@ -592,8 +579,9 @@ def dither_batch(
     n_variants: int,
     rng: np.random.Generator,
 ) -> tuple[NDArray[np.uint8], list[int], list[float]]:
-    """Dither (digit, img, weight) samples into a stacked
-    (n*(n_variants+1), 64, 64) uint8 array via _dither_numba.
+    """Dither (digit, img, weight) samples into a stacked (n*(n_variants+1), 64, 64) uint8 array.
+
+    Dispatches via _dither_numba.
 
     Processes DITHER_BATCH_SIZE images at a time to bound the memory used by
     the precomputed per-variant randomness arrays (the noise mask alone is
@@ -667,7 +655,7 @@ def build_dataset(
     t0 = time.time()
     n_samples = len(samples)
     weights_in = sample_weights if sample_weights is not None else [1.0] * n_samples
-    triples = [(digit, img, w) for (digit, img), w in zip(samples, weights_in)]
+    triples = [(digit, img, w) for (digit, img), w in zip(samples, weights_in, strict=False)]
 
     print(f"  Dithering {n_samples} samples ({n_dither} variants each, numba)…", flush=True)
     rng = np.random.default_rng(0)
@@ -707,7 +695,7 @@ def _fit_ovo_pair(
     TypeScript ovoVote loop expects score>0 -> the lower-indexed class.
     Negating here keeps both conventions consistent without touching ovoVote.
     """
-    from sklearn.svm import LinearSVC  # type: ignore[import-untyped]
+    from sklearn.svm import LinearSVC
     clf = LinearSVC(C=svm_c, max_iter=10000)
     clf.fit(Xp, yp, sample_weight=wp)
     return idx, i, j, -clf.coef_[0], float(-clf.intercept_[0])
@@ -731,7 +719,8 @@ def _dynamic_n_jobs(y: NDArray[np.int64], n_features: int, requested: int) -> in
         return requested
 
     import os as _os
-    import psutil  # type: ignore[import-untyped]
+
+    import psutil
 
     counts = np.sort(np.bincount(y))
     worst_pair_rows = int(counts[-1]) + int(counts[-2]) if len(counts) > 1 else int(counts[-1])
@@ -775,7 +764,7 @@ def fit_model(
         import itertools
         import time as _time
 
-        from joblib import Parallel, delayed  # type: ignore[import-untyped]
+        from joblib import Parallel, delayed
 
         classes = np.unique(y)
         pairs = list(itertools.combinations(range(len(classes)), 2))
@@ -836,13 +825,12 @@ def fit_model(
                 print(f"  [+{_time.time() - t0:.0f}s] [{n_done}/{len(pending)}] "
                       f"pair ({classes[i]},{classes[j]}) done -> {ckpts[idx].name}", flush=True)
 
-        coefs_arr = np.vstack(coefs)
+        coefs_arr = np.vstack([c for c in coefs if c is not None])
         intercepts_arr = np.array(intercepts, dtype=np.float64)
         return {"kind": "linear", "classes": classes, "coefs": coefs_arr, "intercepts": intercepts_arr}
-    else:
-        svc = SVC(kernel="rbf", C=svm_c, gamma=svm_gamma, decision_function_shape="ovo")
-        svc.fit(X, y, sample_weight=sample_weights)
-        return {"kind": "rbf", "clf": svc, "classes": svc.classes_}
+    svc = SVC(kernel="rbf", C=svm_c, gamma=svm_gamma, decision_function_shape="ovo")
+    svc.fit(X, y, sample_weight=sample_weights)
+    return {"kind": "rbf", "clf": svc, "classes": svc.classes_}
 
 
 # ---------------------------------------------------------------------------
@@ -864,7 +852,7 @@ def save_model(
     kind: str = model["kind"]
     classes: NDArray[np.int_] = model["classes"]
 
-    common: list[tuple[str, np.ndarray, str]] = [
+    common: list[tuple[str, np.ndarray[Any, Any], str]] = [
         ("hog_win_size",         np.array(HOG_WIN_SIZE,         dtype=np.int32),   "int32"),
         ("hog_cell_size",        np.array(HOG_CELL_SIZE,        dtype=np.int32),   "int32"),
         ("hog_block_size",       np.array(HOG_BLOCK_SIZE,       dtype=np.int32),   "int32"),
@@ -877,7 +865,7 @@ def save_model(
     if kind == "linear":
         coefs: NDArray[np.float64] = model["coefs"]
         intercepts: NDArray[np.float64] = model["intercepts"]
-        classifier_arrays: list[tuple[str, np.ndarray, str]] = [
+        classifier_arrays: list[tuple[str, np.ndarray[Any, Any], str]] = [
             ("linear_coef",      coefs.astype(np.float64),       "float64"),
             ("linear_intercept", intercepts.astype(np.float64),   "float64"),
         ]
@@ -1065,7 +1053,7 @@ def main() -> None:
         n_synth_aug   = n_synth   * (synth_dither + 1)
         print(f"{_elapsed()} Dither: browser {args.dither} variants ({n_browser_aug} aug), synth {synth_dither} variants ({n_synth_aug} aug)", flush=True)
         print(f"{_elapsed()} Extracting HOG features for {len(aug_labels)} images…", flush=True)
-        X = np.zeros((len(aug_labels), HOG_FEAT + N_HOLE_FEATURES), dtype=np.float64)
+        X: NDArray[np.float64] = np.zeros((len(aug_labels), HOG_FEAT + N_HOLE_FEATURES), dtype=np.float64)
         extract_hog(aug_imgs, out=X[:, :HOG_FEAT])
         extract_hole_features(aug_imgs, out=X[:, HOG_FEAT:])
         y = np.array(aug_labels, dtype=np.int64)
@@ -1080,18 +1068,16 @@ def main() -> None:
         if n_browser > 0 and (n_bulk + n_synth) > 0:
             bw = args.browser_weight if args.browser_weight > 0 else float(n_bulk + n_synth) / n_browser
             sample_weights = [bw] * n_browser + [1.0] * (n_bulk + n_synth)
-            print(f"{_elapsed()} Browser sample weight: {bw:.1f}× ({n_browser} browser, "
+            print(f"{_elapsed()} Browser sample weight: {bw:.1f}x ({n_browser} browser, "
                   f"{n_bulk} bulk, {n_synth} synthetic)", flush=True)
         print(f"{_elapsed()} Augmenting and extracting HOG features…", flush=True)
         X, y, weights = build_dataset(all_samples, args.dither, sample_weights)
 
-    print(f"{_elapsed()} Dataset: {X.shape[0]} samples × {X.shape[1]} HOG features", flush=True)
+    print(f"{_elapsed()} Dataset: {X.shape[0]} samples x {X.shape[1]} HOG features", flush=True)
 
     svm_gamma: float | str = args.svm_gamma
-    try:
+    with contextlib.suppress(ValueError):
         svm_gamma = float(args.svm_gamma)
-    except ValueError:
-        pass  # keep as 'scale' or 'auto'
 
     print(f"{_elapsed()} Training {args.classifier} classifier (n_jobs={args.n_jobs})…", flush=True)
     model = fit_model(
