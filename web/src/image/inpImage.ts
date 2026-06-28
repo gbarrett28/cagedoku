@@ -213,6 +213,25 @@ export async function parsePuzzleImage(
   const warpedImgData = matToImageData(cv, warpedImgMat, dstSize);
   warpedImgMat.delete();
 
+  // --- Extract contour tree once, before type detection ---
+  let earlyContourTree: ContourInfo[] | null = null;
+  let earlySelectedNumbers: BRect[] = [];
+  let earlyOuterGridBR: BRect | null = null;
+  if (includeTree) {
+    const earlyContours = new cv.MatVector();
+    const earlyHierMat = new cv.Mat();
+    cv.findContours(warpedBlkMat, earlyContours, earlyHierMat, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE);
+    if (earlyContours.size() > 0 && earlyHierMat.rows > 0) {
+      const chiers = contourHier(cv, earlyContours, earlyHierMat, new Set<number>(), 0);
+      const rawNums = getNumContours(chiers, subres, config.cellScan.cageTotalMinFillRatio);
+      earlyContourTree = chiers;
+      earlySelectedNumbers = rawNums.map(([, br]) => br);
+      earlyOuterGridBR = chiers[0]?.[1] ?? null;
+    }
+    earlyContours.delete();
+    earlyHierMat.delete();
+  }
+
   // --- Stage 3: Puzzle type detection ---
   const contourMetrics = collectCageTotalContours(cv, warpedGryMat, subres);
   const classicConf = scanClassicDigits(cv, warpedGryMat, subres, config.cellScan.classicMinSizeFraction);
@@ -221,6 +240,7 @@ export async function parsePuzzleImage(
   // --- Classic path ---
   if (puzzleType === 'classic') {
     const { digits: givenDigits, thumbs: classicThumbs } = readClassicDigits(cv, warpedBlkMat, rec, subres, classicConf);
+
     warpedGryMat.delete(); warpedBlkMat.delete();
 
     // Classic borders: rows separated by full walls, columns open.
@@ -237,7 +257,7 @@ export async function parsePuzzleImage(
     } catch (err) {
       specError = String(err);
     }
-    return { spec, specError, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: classicThumbs, mergedThumbs: new Map(), ...(includeTree ? { contourTree: null, selectedNumbers: [], outerGridBR: null } : {}) };
+    return { spec, specError, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: classicThumbs, mergedThumbs: new Map(), ...(includeTree ? { contourTree: earlyContourTree, selectedNumbers: earlySelectedNumbers, outerGridBR: earlyOuterGridBR } : {}) };
   }
 
   // --- Killer path: Stage 4 border clustering (via per-image calibration) ---
@@ -314,7 +334,7 @@ export async function parsePuzzleImage(
     try {
       const brdrs2 = buildBrdrs(bestBorderX, bestBorderY);
       lastCageTotalsResult = buildCageTotals(
-        cv, warpedBlkMat, rec, subres, brdrs2, config.cellScan.cageTotalMinFillRatio, splitRec, includeTree,
+        cv, warpedBlkMat, rec, subres, brdrs2, config.cellScan.cageTotalMinFillRatio, splitRec,
       );
       ({ cageTotals, cellThumbs, mergedThumbs } = lastCageTotalsResult);
 
@@ -329,7 +349,7 @@ export async function parsePuzzleImage(
         );
         try {
           lastCageTotalsResult = buildCageTotals(
-            cv, adaptiveBlk, rec, subres, brdrs2, config.cellScan.cageTotalMinFillRatio, splitRec, includeTree,
+            cv, adaptiveBlk, rec, subres, brdrs2, config.cellScan.cageTotalMinFillRatio, splitRec,
           );
           ({ cageTotals, cellThumbs, mergedThumbs } = lastCageTotalsResult);
         } finally {
@@ -359,9 +379,9 @@ export async function parsePuzzleImage(
       cellThumbs: new Map(),
       mergedThumbs: new Map(),
       ...(includeTree ? {
-        contourTree: lastCageTotalsResult?.contourTree ?? null,
-        selectedNumbers: lastCageTotalsResult?.selectedNumbers ?? [],
-        outerGridBR: lastCageTotalsResult?.outerGridBR ?? null,
+        contourTree: earlyContourTree,
+        selectedNumbers: earlySelectedNumbers,
+        outerGridBR: earlyOuterGridBR,
       } : {}),
     };
   }
@@ -400,9 +420,9 @@ export async function parsePuzzleImage(
   return {
     spec, specError, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs, mergedThumbs,
     ...(includeTree ? {
-      contourTree: lastCageTotalsResult?.contourTree ?? null,
-      selectedNumbers: lastCageTotalsResult?.selectedNumbers ?? [],
-      outerGridBR: lastCageTotalsResult?.outerGridBR ?? null,
+      contourTree: earlyContourTree,
+      selectedNumbers: earlySelectedNumbers,
+      outerGridBR: earlyOuterGridBR,
     } : {}),
   };
 }
