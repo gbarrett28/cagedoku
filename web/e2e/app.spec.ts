@@ -191,6 +191,37 @@ pipelineTest('status message is empty after successful image process', async ({ 
 });
 
 // ---------------------------------------------------------------------------
+// Test: upload outcome hook reports a clean auto-confirm  (slow)
+// ---------------------------------------------------------------------------
+
+pipelineTest('upload outcome hook reports bucket "clean" for a known-clean puzzle', async ({ pipelinePage }) => {
+  pipelineTest.skip(!PIPELINE, 'Needs PLAYWRIGHT_PIPELINE_TESTS=1');
+  pipelineTest.setTimeout(90_000);
+
+  // Inject the __reportOutcome callback so it stores its argument for inspection.
+  await pipelinePage.evaluate(() => {
+    (window as unknown as Record<string, unknown>)['__reportOutcome'] = (o: unknown) => {
+      (window as unknown as Record<string, unknown>)['__lastUploadOutcome'] = o;
+    };
+  });
+
+  await pipelinePage.locator('#file-input').setInputFiles(PUZZLE_IMAGE);
+  await pipelinePage.waitForFunction(
+    () => (window as unknown as Record<string, unknown>)['__lastUploadOutcome'] !== null,
+    { timeout: 40_000 },
+  );
+
+  const outcome = await pipelinePage.evaluate(
+    () => (window as unknown as Record<string, unknown>)['__lastUploadOutcome'],
+  ) as { bucket: string; reason: string; puzzleType: string | null; detectedBigApple: boolean };
+
+  expect(outcome.bucket).toBe('clean');
+  expect(outcome.reason).toBe('auto_confirmed');
+  expect(outcome.puzzleType).toBe('killer');
+  expect(outcome.detectedBigApple).toBe(false);
+});
+
+// ---------------------------------------------------------------------------
 // Test: confirm → playing mode  (slow)
 // ---------------------------------------------------------------------------
 
