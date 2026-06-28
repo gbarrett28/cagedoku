@@ -97,6 +97,7 @@ dummy-variable-rgx = "^_.*$"
 "web/train_split_recogniser.py" = ["PLC0415", "T20", "N806"]
 # Standalone scripts legitimately use print() for progress output
 "web/scripts/compare-recognisers.py" = ["T20"]
+"web/scripts/analyse-contours.py" = ["T20"]
 "web/dedupe_browser_train.py" = ["T20"]
 # CLI training scripts: print() is the output mechanism
 "killer_sudoku/training/*.py" = ["T20"]

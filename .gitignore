@@ -4,6 +4,7 @@
 corpus.db
 corpus.db-shm
 corpus.db-wal
+contour-dumps/
 __pycache__/
 *.pyc
 *.pyo
