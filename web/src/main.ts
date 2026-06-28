@@ -59,8 +59,8 @@ import type {
   SolutionCategorization,
 } from './session/types.js';
 import { buildEngine } from './session/engine.js';
-import type { BoardState } from './engine/index.js';
-import { detectBigApple } from './engine/index.js';
+import type { BoardState, ClassicSolveAssessment } from './engine/index.js';
+import { detectBigApple, assessClassicSolvability } from './engine/index.js';
 import type { Cell } from './engine/types.js';
 import { GridNotFoundError } from './image/inpImage.js';
 import { UserFacingError } from './session/errors.js';
@@ -81,6 +81,14 @@ import type { FileSystemHandleWithPermission } from './imageInput.js';
 import { INSTALL_DISMISSED_KEY, shouldShowInstallBanner } from './installPrompt.js';
 import { saveSession, loadSession, clearPersistedSession } from './session/persistence.js';
 import { toCanvas as qrToCanvas } from 'qrcode';
+import { computeSpecHash } from './solver/specHash.js';
+
+// ---------------------------------------------------------------------------
+
+type ReportOutcomeFn = (o: {
+  bucket: string; reason: string; puzzleType: string | null;
+  detectedBigApple: boolean; specHash: string | null;
+}) => void;
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -1274,6 +1282,7 @@ async function handleProcess(file?: File): Promise<void> {
   setLoading(true);
   try {
     const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs, detectedBigApple } = await uploadPuzzle(f);
+    const specHash = await computeSpecHash(state);
     pendingCellThumbs = new Map(cellThumbs);
     pendingMergedThumbs = new Map(mergedThumbs);
 
@@ -1314,6 +1323,13 @@ async function handleProcess(file?: File): Promise<void> {
           lastOcrCandidates = getStateCandidates();
           lastWarpedUrl = warpedImageUrl;
           logAction('auto_confirmed');
+          (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
+            bucket: usedBacktracking ? 'backtracked' : 'clean',
+            reason: 'auto_confirmed',
+            puzzleType: 'killer',
+            detectedBigApple,
+            specHash,
+          });
           const playing = confirmPuzzle(board);
           renderPlayingMode(playing);
           appendCallouts(buildPlayingCallouts(PuzzleState.isKiller(playing)));
@@ -1341,99 +1357,72 @@ async function handleProcess(file?: File): Promise<void> {
       appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
       if (layoutResult.errorCells.size > 0) {
         logAction('review_shown', 'layout errors');
+        (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
+          bucket: 'notSolved', reason: 'layout errors', puzzleType: PuzzleState.kind(state),
+          detectedBigApple, specHash,
+        });
         reviewErrorCells = layoutResult.errorCells;
         redrawGrid();
         setStatus('Each cage needs exactly one total in its valid range — highlighted in red. If this is a Classic sudoku, change the Type dropdown to Classic.', true);
       } else if (layoutResult.warnings.length > 0) {
         logAction('review_shown', 'sum warning');
+        (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
+          bucket: 'notSolved', reason: 'sum warning', puzzleType: PuzzleState.kind(state),
+          detectedBigApple, specHash,
+        });
         setStatus(layoutResult.warnings.join('; ') + ' — please correct the totals before confirming', true);
       } else {
         logAction('review_shown', 'solver incomplete');
+        (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
+          bucket: 'notSolved', reason: 'solver incomplete', puzzleType: PuzzleState.kind(state),
+          detectedBigApple, specHash,
+        });
         setStatus('Solver could not determine all cells — please check the cage layout and totals', true);
       }
       return;
     }
 
-    // Classic auto-confirm: if OCR is clean and given digits form a complete valid grid,
-    // skip review and go straight to playing mode. When all 81 cells are filled we can give
-    // specific feedback (duplicate highlights or solver-incomplete message) rather than the
-    // generic review prompt — mirroring the Killer path's targeted error reporting.
-    if (warning === null && !PuzzleState.isKiller(state) && state.givenDigits !== null) {
-      const allFilled = state.givenDigits.every(row => row.every(d => d > 0));
-      if (allFilled) {
-        const dupCells = findDuplicateCells(state.givenDigits);
-        if (dupCells.size > 0) {
-          applyUploadResult(state, warpedImageUrl, null, detectedBigApple);
-          appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
-          logAction('review_shown', 'classic duplicates');
-          reviewErrorCells = dupCells;
-          redrawGrid();
-          setStatus('Duplicate digits detected — correct the highlighted cells and press Confirm & Solve', true);
-          return;
-        }
-        // All 81 cells filled, no duplicates — run solver and verify completeness (mirrors Killer path).
-        await new Promise<void>(resolve => setTimeout(resolve, 0));
-        const { board: classicBoard, usedBacktracking: classicUsedBt, stalledCandidates: classicStalled } = solveCurrentSpec();
-        (window as unknown as Record<string, unknown>)['__lastSolverResult'] = {
-          usedBacktracking: classicUsedBt,
-          stalledCandidates: classicStalled ?? null,
-          spec: classicSyntheticSpec(),
-        };
-        let boardComplete = true;
-        for (let r = 0; r < 9 && boardComplete; r++)
-          for (let c = 0; c < 9 && boardComplete; c++)
-            if (classicBoard.cands(r, c).size !== 1) boardComplete = false;
-        if (boardComplete) {
-          lastOcrCandidates = getStateCandidates();
-          lastWarpedUrl = warpedImageUrl;
-          logAction('auto_confirmed', PuzzleState.kind(state));
-          const classicPlaying = confirmPuzzle(classicBoard);
-          renderPlayingMode(classicPlaying);
-          appendCallouts(buildPlayingCallouts(false));
-          const classicViolation = checkSolutionAssertions(classicPlaying);
-          if (classicViolation !== null) showAssertionModal(classicViolation);
-          el<HTMLButtonElement>('edit-ocr-btn').hidden = false;
-          setStatus('');
-          // Mirror the killer auto-confirm: upload stall state if backtracking
-          // was needed, and upload OCR thumbnails. Both paths trigger consent.
-          // Note: a direct E2E test of this path is impractical (requires a real
-          // 81/81-digit OCR result); coverage comes from the manual-confirm path
-          // tests and the underlying upload-function unit tests.
-          if (classicUsedBt && classicStalled && state.originalImageUrl !== null) {
-            const classicStallReport = { puzzleType: PuzzleState.kind(state), stalledCandidates: classicStalled };
-            if (hasConsent()) {
-              submitStallReport(classicStallReport);
-            } else {
-              showTrainingConsentModal(() => submitStallReport(classicStallReport));
-            }
-          }
-          clearAndUploadTrainingData(extractTrainingData(
-            pendingCellThumbs,
-            state.givenDigits,
-            'classic',
-            defaultImagePipelineConfig().numberRecognition.subres,
-          ));
-          return;
-        }
-        applyUploadResult(state, warpedImageUrl, null, detectedBigApple);
-        appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
-        logAction('review_shown', 'classic solver incomplete');
-        setStatus('Solver could not process the detected digits — please review and confirm manually', true);
-        return;
-      }
+    // Classic always shows the review screen so the user can verify digits.
+    // Eagerly assess solvability at upload time so the corpus evaluator and
+    // confirm button reflect real state rather than the generic 'classic' bucket.
+    let confirmDisabled = false;
+    if (!PuzzleState.isKiller(state) && state.givenDigits !== null) {
+      const assessment: ClassicSolveAssessment = assessClassicSolvability(state.givenDigits);
+      const bucket = assessment.bucket;
+      const reason = assessment.bucket === 'notSolved' ? assessment.reason : 'classic review';
+      logAction('review_shown', reason);
+      (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
+        bucket, reason, puzzleType: PuzzleState.kind(state), detectedBigApple, specHash,
+      });
+      confirmDisabled = assessment.bucket === 'notSolved';
+    } else {
+      logAction('review_shown', 'ocr warning');
+      (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
+        bucket: 'notSolved', reason: 'ocr warning', puzzleType: PuzzleState.kind(state),
+        detectedBigApple, specHash,
+      });
     }
-
-    // Reach here when: OCR produced a warning, Classic grid is incomplete/invalid,
-    // or this is a Classic puzzle the user needs to review.
-    logAction('review_shown', !PuzzleState.isKiller(state) ? 'classic' : 'ocr warning');
     applyUploadResult(state, warpedImageUrl, warning ?? 'Review the detected digits and press Confirm & Solve', detectedBigApple);
     appendCallouts([{ id: 'confirm-btn', text: 'When the grid looks correct, confirm to start solving.' }]);
+    el<HTMLButtonElement>('confirm-btn').disabled = confirmDisabled;
+    if (!PuzzleState.isKiller(state) && state.givenDigits !== null) {
+      reviewErrorCells = findDuplicateCells(state.givenDigits);
+      if (reviewErrorCells.size > 0) redrawGrid();
+    }
   } catch (e) {
     if (e instanceof GridNotFoundError) {
       setStatus(e.message, true);
+      (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
+        bucket: 'notSolved', reason: `GridNotFoundError: ${e.message}`,
+        puzzleType: null, detectedBigApple: false, specHash: null,
+      });
     } else {
       setStatus(`Processing failed: ${String(e)}`, true);
       reportBug(e, 'handleProcess');
+      (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
+        bucket: 'notSolved', reason: `error: ${String(e)}`,
+        puzzleType: null, detectedBigApple: false, specHash: null,
+      });
     }
   }
   finally { setLoading(false); }
@@ -1682,11 +1671,12 @@ async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number)
   // Correcting a misread digit during review can flip a puzzle's true type, so
   // re-run it on every edit — unless the user has already made an explicit
   // Type-dropdown choice, which always wins.
+  let detectedBigApple = PuzzleState.isBigApple(currentState);
   if (!userOverrodePuzzleType) {
-    const detected = detectBigApple(givenDigits);
-    el<HTMLElement>('bigapple-banner').hidden = !detected;
-    if (detected !== PuzzleState.isBigApple(currentState)) {
-      const updated = detected
+    detectedBigApple = detectBigApple(givenDigits);
+    el<HTMLElement>('bigapple-banner').hidden = !detectedBigApple;
+    if (detectedBigApple !== PuzzleState.isBigApple(currentState)) {
+      const updated = detectedBigApple
         ? PuzzleState.createBigApple(givenDigits, currentState.alwaysApplyRules, currentState.originalImageUrl)
         : PuzzleState.createClassic(givenDigits, currentState.alwaysApplyRules, currentState.originalImageUrl);
       setState(updated);
@@ -1696,6 +1686,18 @@ async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number)
   }
 
   redrawGrid();
+
+  if (!PuzzleState.isKiller(currentState)) {
+    const assessment: ClassicSolveAssessment = assessClassicSolvability(givenDigits);
+    const hasDups = reviewErrorCells.size > 0;
+    el<HTMLButtonElement>('confirm-btn').disabled = hasDups || assessment.bucket === 'notSolved';
+    const bucket = assessment.bucket;
+    const reason = assessment.bucket === 'notSolved' ? assessment.reason : 'classic review';
+    const specHash = await computeSpecHash(currentState);
+    (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
+      bucket, reason, puzzleType: PuzzleState.kind(currentState), detectedBigApple, specHash,
+    });
+  }
 }
 
 function updateVcStatus(): void {
