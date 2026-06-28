@@ -20,6 +20,7 @@ import { AssertionViolation, validateSudokuSolution, isCageSumCorrect } from './
 import { formatActionLog } from './actionLog.js';
 
 import type { ParseResult } from '../image/inpImage.js';
+import type { ContourInfo, BRect } from '../image/numberRecognition.js';
 import { defaultImagePipelineConfig } from '../image/config.js';
 import { validateCageLayout, hasMultipleCageTotals } from '../image/validation.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
@@ -138,6 +139,11 @@ export interface UploadResult {
   cellThumbs: ReadonlyMap<string, Uint8Array[]>;
   mergedThumbs: ReadonlyMap<string, Uint8Array>;
   detectedBigApple: boolean;
+  /** Populated only when window.__reportContourTree is truthy */
+  contourTree?: ContourInfo[] | null | undefined;
+  selectedNumbers?: BRect[] | undefined;
+  outerGridBR?: BRect | null | undefined;
+  givenDigits?: number[][] | null | undefined;
 }
 
 /**
@@ -203,7 +209,13 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
 
   const originalImageUrl = await fileToDisplayUrl(file);
   const { state, warpedImageUrl, warning, detectedBigApple } = await buildStateFromParseResult(result, originalImageUrl);
-  return { state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, mergedThumbs: result.mergedThumbs, detectedBigApple };
+  return {
+    state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, mergedThumbs: result.mergedThumbs, detectedBigApple,
+    contourTree: result.contourTree,
+    selectedNumbers: result.selectedNumbers,
+    outerGridBR: result.outerGridBR,
+    givenDigits: result.givenDigits,
+  };
 }
 
 /**

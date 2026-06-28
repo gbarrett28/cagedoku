@@ -30,7 +30,7 @@ import type { GrayImage } from './borderClustering.js';
 import {
   recognise, splitNum, contourHier, getNumContours, readClassicDigits,
 } from './numberRecognition.js';
-import type { NumRecogniser } from './numberRecognition.js';
+import type { NumRecogniser, ContourInfo, BRect } from './numberRecognition.js';
 import { validateCageLayout, repairCageTotals } from './validation.js';
 import { buildBrdrs } from '../solver/puzzleSpec.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
@@ -73,6 +73,10 @@ export interface ParseResult {
   cellThumbs: ReadonlyMap<string, Uint8Array[]>;
   /** Pre-split merged thumbnails for split-recogniser training, keyed "row,col". */
   mergedThumbs: ReadonlyMap<string, Uint8Array>;
+  /** Present only when window.__reportContourTree is set */
+  contourTree?: ContourInfo[] | null;
+  selectedNumbers?: BRect[];
+  outerGridBR?: BRect | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,6 +106,8 @@ export async function parsePuzzleImage(
 ): Promise<ParseResult> {
   const resolution = cfgResolution(config);
   const subres = cfgSubres(config);
+  const includeTree = typeof window !== 'undefined'
+    && !!(window as unknown as Record<string, unknown>)['__reportContourTree'];
 
   // Decode the file to ImageData via an OffscreenCanvas.
   const imageData = await decodeImageFile(file);
@@ -231,7 +237,7 @@ export async function parsePuzzleImage(
     } catch (err) {
       specError = String(err);
     }
-    return { spec, specError, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: classicThumbs, mergedThumbs: new Map() };
+    return { spec, specError, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: classicThumbs, mergedThumbs: new Map(), ...(includeTree ? { contourTree: null, selectedNumbers: [], outerGridBR: null } : {}) };
   }
 
   // --- Killer path: Stage 4 border clustering (via per-image calibration) ---
@@ -260,11 +266,13 @@ export async function parsePuzzleImage(
   let cageTotals: number[][] | null = null;
   let cellThumbs = new Map<string, Uint8Array[]>();
   let mergedThumbs = new Map<string, Uint8Array>();
+  let lastCageTotalsResult: CageTotalsResult | null = null;
   try {
     const brdrs = buildBrdrs(initialBorderX, initialBorderY);
-    ({ cageTotals, cellThumbs, mergedThumbs } = buildCageTotals(
+    lastCageTotalsResult = buildCageTotals(
       cv, warpedBlkMat, rec, subres, brdrs, config.cellScan.cageTotalMinFillRatio, splitRec,
-    ));
+    );
+    ({ cageTotals, cellThumbs, mergedThumbs } = lastCageTotalsResult);
   } catch (e) {
     console.warn('[parsePuzzleImage] buildCageTotals failed, proceeding with initial border estimate', e);
   }
@@ -305,9 +313,10 @@ export async function parsePuzzleImage(
     // Retry cage total extraction with best borders.
     try {
       const brdrs2 = buildBrdrs(bestBorderX, bestBorderY);
-      ({ cageTotals, cellThumbs, mergedThumbs } = buildCageTotals(
-        cv, warpedBlkMat, rec, subres, brdrs2, config.cellScan.cageTotalMinFillRatio, splitRec,
-      ));
+      lastCageTotalsResult = buildCageTotals(
+        cv, warpedBlkMat, rec, subres, brdrs2, config.cellScan.cageTotalMinFillRatio, splitRec, includeTree,
+      );
+      ({ cageTotals, cellThumbs, mergedThumbs } = lastCageTotalsResult);
 
       const totalSum = cageTotals.reduce((s, row) => s + row.reduce((a, b) => a + b, 0), 0);
       if (totalSum < 360 || totalSum > 450) {
@@ -319,9 +328,10 @@ export async function parsePuzzleImage(
           (subres >> 2) | 1, config.numberRecognition.contourFallbackAdaptiveC,
         );
         try {
-          ({ cageTotals, cellThumbs, mergedThumbs } = buildCageTotals(
-            cv, adaptiveBlk, rec, subres, brdrs2, config.cellScan.cageTotalMinFillRatio, splitRec,
-          ));
+          lastCageTotalsResult = buildCageTotals(
+            cv, adaptiveBlk, rec, subres, brdrs2, config.cellScan.cageTotalMinFillRatio, splitRec, includeTree,
+          );
+          ({ cageTotals, cellThumbs, mergedThumbs } = lastCageTotalsResult);
         } finally {
           adaptiveBlk.delete();
         }
@@ -348,6 +358,11 @@ export async function parsePuzzleImage(
       warpedImageData: warpedImgData,
       cellThumbs: new Map(),
       mergedThumbs: new Map(),
+      ...(includeTree ? {
+        contourTree: lastCageTotalsResult?.contourTree ?? null,
+        selectedNumbers: lastCageTotalsResult?.selectedNumbers ?? [],
+        outerGridBR: lastCageTotalsResult?.outerGridBR ?? null,
+      } : {}),
     };
   }
 
@@ -382,7 +397,14 @@ export async function parsePuzzleImage(
     }
   }
 
-  return { spec, specError, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs, mergedThumbs };
+  return {
+    spec, specError, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs, mergedThumbs,
+    ...(includeTree ? {
+      contourTree: lastCageTotalsResult?.contourTree ?? null,
+      selectedNumbers: lastCageTotalsResult?.selectedNumbers ?? [],
+      outerGridBR: lastCageTotalsResult?.outerGridBR ?? null,
+    } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -405,6 +427,10 @@ export interface CageTotalsResult {
   cellThumbs: Map<string, Uint8Array[]>;
   /** Pre-split merged thumbnail for each cell, keyed "row,col". Used for split-recogniser training. */
   mergedThumbs: Map<string, Uint8Array>;
+  /** Present only when buildCageTotals is called with includeTree=true */
+  contourTree?: ContourInfo[] | undefined;
+  selectedNumbers?: BRect[] | undefined;
+  outerGridBR?: BRect | undefined;
 }
 
 export function buildCageTotals(
@@ -415,11 +441,16 @@ export function buildCageTotals(
   brdrs: Brdrs,
   minFillRatio: number,
   splitRec?: NumRecogniser,
+  includeTree?: boolean,
 ): CageTotalsResult {
   const numPixels: Array<Array<Uint8Array[] | null>> = Array.from(
     { length: 9 }, () => new Array<Uint8Array[] | null>(9).fill(null),
   );
   const mergedPixels = new Map<string, Uint8Array>();
+
+  let contourTree: ContourInfo[] | undefined;
+  let selectedNumbers: BRect[] | undefined;
+  let outerGridBR: BRect | undefined;
 
   const contours = new cv.MatVector();
   const hierMat = new cv.Mat();
@@ -429,6 +460,12 @@ export function buildCageTotals(
     const chiers = contourHier(cv, contours, hierMat, new Set<number>(), 0);
     const rawNums = getNumContours(chiers, subres, minFillRatio);
     rawNums.sort((a, b) => a[1][0] - b[1][0]);
+
+    if (includeTree) {
+      contourTree = chiers;
+      selectedNumbers = rawNums.map(([, br]) => br);
+      outerGridBR = chiers[0]?.[1];
+    }
 
     for (const [, br] of rawNums) {
       const [brx, bry, brw, brh] = br;
@@ -475,7 +512,10 @@ export function buildCageTotals(
       }
     }
   }
-  return { cageTotals, cellThumbs, mergedThumbs: mergedPixels };
+  return {
+    cageTotals, cellThumbs, mergedThumbs: mergedPixels,
+    ...(includeTree ? { contourTree, selectedNumbers, outerGridBR } : {}),
+  };
 }
 
 /**

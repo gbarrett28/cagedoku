@@ -82,13 +82,38 @@ import { INSTALL_DISMISSED_KEY, shouldShowInstallBanner } from './installPrompt.
 import { saveSession, loadSession, clearPersistedSession } from './session/persistence.js';
 import { toCanvas as qrToCanvas } from 'qrcode';
 import { computeSpecHash } from './solver/specHash.js';
+import type { PuzzleSpec } from './solver/puzzleSpec.js';
+import type { UploadResult } from './session/actions.js';
+import type { ContourInfo, BRect } from './image/numberRecognition.js';
 
 // ---------------------------------------------------------------------------
 
 type ReportOutcomeFn = (o: {
   bucket: string; reason: string; puzzleType: string | null;
   detectedBigApple: boolean; specHash: string | null;
+  /** Present only when window.__reportContourTree is set */
+  contourTree?: ContourInfo[] | null | undefined;
+  selectedNumbers?: BRect[] | undefined;
+  outerGridBR?: BRect | null | undefined;
+  borderX?: boolean[][] | null | undefined;
+  borderY?: boolean[][] | null | undefined;
+  cageTotals?: number[][] | null | undefined;
+  givenDigits?: number[][] | null | undefined;
 }) => void;
+
+function contourPayload(upload: UploadResult | null, spec: PuzzleSpec | null): object {
+  const win = window as unknown as Record<string, unknown>;
+  if (!win['__reportContourTree'] || upload?.contourTree === undefined) return {};
+  return {
+    contourTree: upload.contourTree,
+    selectedNumbers: upload.selectedNumbers ?? [],
+    outerGridBR: upload.outerGridBR ?? null,
+    borderX: spec?.borderX ?? null,
+    borderY: spec?.borderY ?? null,
+    cageTotals: spec?.cageTotals ?? null,
+    givenDigits: upload.givenDigits ?? null,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -1281,7 +1306,8 @@ async function handleProcess(file?: File): Promise<void> {
   setStatus('Processing image…');
   setLoading(true);
   try {
-    const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs, detectedBigApple } = await uploadPuzzle(f);
+    const uploadResult = await uploadPuzzle(f);
+    const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs, detectedBigApple } = uploadResult;
     const specHash = await computeSpecHash(state);
     pendingCellThumbs = new Map(cellThumbs);
     pendingMergedThumbs = new Map(mergedThumbs);
@@ -1329,6 +1355,7 @@ async function handleProcess(file?: File): Promise<void> {
             puzzleType: 'killer',
             detectedBigApple,
             specHash,
+            ...contourPayload(uploadResult, ocrSpec),
           });
           const playing = confirmPuzzle(board);
           renderPlayingMode(playing);
@@ -1359,7 +1386,7 @@ async function handleProcess(file?: File): Promise<void> {
         logAction('review_shown', 'layout errors');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'layout errors', puzzleType: PuzzleState.kind(state),
-          detectedBigApple, specHash,
+          detectedBigApple, specHash, ...contourPayload(uploadResult, ocrSpec),
         });
         reviewErrorCells = layoutResult.errorCells;
         redrawGrid();
@@ -1368,14 +1395,14 @@ async function handleProcess(file?: File): Promise<void> {
         logAction('review_shown', 'sum warning');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'sum warning', puzzleType: PuzzleState.kind(state),
-          detectedBigApple, specHash,
+          detectedBigApple, specHash, ...contourPayload(uploadResult, ocrSpec),
         });
         setStatus(layoutResult.warnings.join('; ') + ' — please correct the totals before confirming', true);
       } else {
         logAction('review_shown', 'solver incomplete');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'solver incomplete', puzzleType: PuzzleState.kind(state),
-          detectedBigApple, specHash,
+          detectedBigApple, specHash, ...contourPayload(uploadResult, ocrSpec),
         });
         setStatus('Solver could not determine all cells — please check the cage layout and totals', true);
       }
@@ -1393,13 +1420,14 @@ async function handleProcess(file?: File): Promise<void> {
       logAction('review_shown', reason);
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket, reason, puzzleType: PuzzleState.kind(state), detectedBigApple, specHash,
+        ...contourPayload(uploadResult, ocrSpec),
       });
       confirmDisabled = assessment.bucket === 'notSolved';
     } else {
       logAction('review_shown', 'ocr warning');
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket: 'notSolved', reason: 'ocr warning', puzzleType: PuzzleState.kind(state),
-        detectedBigApple, specHash,
+        detectedBigApple, specHash, ...contourPayload(uploadResult, ocrSpec),
       });
     }
     applyUploadResult(state, warpedImageUrl, warning ?? 'Review the detected digits and press Confirm & Solve', detectedBigApple);
@@ -1415,6 +1443,7 @@ async function handleProcess(file?: File): Promise<void> {
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket: 'notSolved', reason: `GridNotFoundError: ${e.message}`,
         puzzleType: null, detectedBigApple: false, specHash: null,
+        ...contourPayload(null, null),
       });
     } else {
       setStatus(`Processing failed: ${String(e)}`, true);
@@ -1422,6 +1451,7 @@ async function handleProcess(file?: File): Promise<void> {
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket: 'notSolved', reason: `error: ${String(e)}`,
         puzzleType: null, detectedBigApple: false, specHash: null,
+        ...contourPayload(null, null),
       });
     }
   }
@@ -1696,6 +1726,7 @@ async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number)
     const specHash = await computeSpecHash(currentState);
     (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
       bucket, reason, puzzleType: PuzzleState.kind(currentState), detectedBigApple, specHash,
+      ...contourPayload(null, null),
     });
   }
 }
