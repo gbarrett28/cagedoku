@@ -73,6 +73,7 @@ interface ContourDump {
   corpus: string;            // 'guardian' | 'observer'
   ground_truth: string;      // 'killer' | 'classic'
   bucket: string;            // 'clean' | 'backtracked'
+  detected_type: string;     // 'killer' | 'classic' | 'bigapple' — pipeline's own detection
   subres: number;            // pixels per cell side (typically 128)
 
   // Raw contour tree — polygon points, bounding rect, area, children.
@@ -136,6 +137,7 @@ Traverse each tree depth-first. For every node compute:
 | `puzzle_hash` | from dump metadata |
 | `corpus` | `guardian` / `observer` |
 | `ground_truth` | `killer` / `classic` |
+| `detected_type` | pipeline's detected type: `killer` / `classic` / `bigapple` |
 | `depth` | recursion depth from root (root = 0) |
 | `depth_below` | max depth of subtree (leaf = 0) |
 | `num_peers` | sibling count (0 for root) |
