@@ -5,7 +5,7 @@ export default defineConfig({
     __BUILD_TIME__: JSON.stringify('test'),
   },
   test: {
-    include: ['src/**/*.test.ts', 'stall-fixtures/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'stall-fixtures/**/*.test.ts', 'scripts/**/*.test.ts'],
     exclude: ['e2e/**'],
   },
 });

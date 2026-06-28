@@ -1,6 +1,9 @@
 /guardian/
 /observer/
 /classic_guardian/
+corpus.db
+corpus.db-shm
+corpus.db-wal
 __pycache__/
 *.pyc
 *.pyo
