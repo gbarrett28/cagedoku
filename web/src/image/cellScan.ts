@@ -294,6 +294,7 @@ export function collectCageTotalContours(
         if (isCageTotalContourSize(br.width, br.height, subres)) {
           cellContours.push({ width: br.width, height: br.height, area: cv.contourArea(contour) });
         }
+        contour.delete();
       }
       contoursTL.delete();
       result[row]![col] = cellContours;
@@ -346,7 +347,9 @@ export function scanClassicDigits(
       hierC.delete();
 
       for (let i = 0; i < contoursC.size(); i++) {
-        const br = cv.boundingRect(contoursC.get(i));
+        const cC = contoursC.get(i);
+        const br = cv.boundingRect(cC);
+        cC.delete();
         if (br.width >= classicMin || br.height >= classicMin) {
           classicConf[row]![col] = 1.0;
           break;
