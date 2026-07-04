@@ -91,6 +91,8 @@ import type { ContourInfo, BRect } from './image/numberRecognition.js';
 type ReportOutcomeFn = (o: {
   bucket: string; reason: string; puzzleType: string | null;
   detectedBigApple: boolean; specHash: string | null;
+  fallbackUsed: boolean; specError: string | null;
+  parseElapsedMs: number; solveElapsedMs: number;
   /** Present only when window.__reportContourTree is set */
   contourTree?: ContourInfo[] | null | undefined;
   selectedNumbers?: BRect[] | undefined;
@@ -100,6 +102,13 @@ type ReportOutcomeFn = (o: {
   cageTotals?: number[][] | null | undefined;
   givenDigits?: number[][] | null | undefined;
 }) => void;
+
+function timingPayload(
+  parseElapsedMs: number, solveElapsedMs: number,
+  fallbackUsed: boolean, specError: string | null,
+): { parseElapsedMs: number; solveElapsedMs: number; fallbackUsed: boolean; specError: string | null } {
+  return { parseElapsedMs, solveElapsedMs, fallbackUsed, specError };
+}
 
 function contourPayload(upload: UploadResult | null, spec: PuzzleSpec | null): object {
   const win = window as unknown as Record<string, unknown>;
@@ -1305,8 +1314,11 @@ async function handleProcess(file?: File): Promise<void> {
   (window as unknown as Record<string, unknown>)['__lastSolverResult'] = null;
   setStatus('Processing image…');
   setLoading(true);
+  const parseStartMs = Date.now();
+  let parseDoneMs = parseStartMs;
   try {
     const uploadResult = await uploadPuzzle(f);
+    parseDoneMs = Date.now();
     const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs, detectedBigApple } = uploadResult;
     const specHash = await computeSpecHash(state);
     pendingCellThumbs = new Map(cellThumbs);
@@ -1356,6 +1368,7 @@ async function handleProcess(file?: File): Promise<void> {
             detectedBigApple,
             specHash,
             ...contourPayload(uploadResult, ocrSpec),
+            ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           });
           const playing = confirmPuzzle(board);
           renderPlayingMode(playing);
@@ -1387,6 +1400,7 @@ async function handleProcess(file?: File): Promise<void> {
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'layout errors', puzzleType: PuzzleState.kind(state),
           detectedBigApple, specHash, ...contourPayload(uploadResult, ocrSpec),
+          ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
         });
         reviewErrorCells = layoutResult.errorCells;
         redrawGrid();
@@ -1396,6 +1410,7 @@ async function handleProcess(file?: File): Promise<void> {
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'sum warning', puzzleType: PuzzleState.kind(state),
           detectedBigApple, specHash, ...contourPayload(uploadResult, ocrSpec),
+          ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
         });
         setStatus(layoutResult.warnings.join('; ') + ' — please correct the totals before confirming', true);
       } else {
@@ -1403,6 +1418,7 @@ async function handleProcess(file?: File): Promise<void> {
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'solver incomplete', puzzleType: PuzzleState.kind(state),
           detectedBigApple, specHash, ...contourPayload(uploadResult, ocrSpec),
+          ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
         });
         setStatus('Solver could not determine all cells — please check the cage layout and totals', true);
       }
@@ -1421,6 +1437,7 @@ async function handleProcess(file?: File): Promise<void> {
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket, reason, puzzleType: PuzzleState.kind(state), detectedBigApple, specHash,
         ...contourPayload(uploadResult, ocrSpec),
+        ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
       });
       confirmDisabled = assessment.bucket === 'notSolved';
     } else {
@@ -1428,6 +1445,7 @@ async function handleProcess(file?: File): Promise<void> {
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket: 'notSolved', reason: 'ocr warning', puzzleType: PuzzleState.kind(state),
         detectedBigApple, specHash, ...contourPayload(uploadResult, ocrSpec),
+        ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
       });
     }
     applyUploadResult(state, warpedImageUrl, warning ?? 'Review the detected digits and press Confirm & Solve', detectedBigApple);
@@ -1444,6 +1462,7 @@ async function handleProcess(file?: File): Promise<void> {
         bucket: 'notSolved', reason: `GridNotFoundError: ${e.message}`,
         puzzleType: null, detectedBigApple: false, specHash: null,
         ...contourPayload(null, null),
+        ...timingPayload(Date.now() - parseStartMs, 0, false, null),
       });
     } else {
       setStatus(`Processing failed: ${String(e)}`, true);
@@ -1452,6 +1471,7 @@ async function handleProcess(file?: File): Promise<void> {
         bucket: 'notSolved', reason: `error: ${String(e)}`,
         puzzleType: null, detectedBigApple: false, specHash: null,
         ...contourPayload(null, null),
+        ...timingPayload(Date.now() - parseStartMs, 0, false, null),
       });
     }
   }
@@ -1727,6 +1747,7 @@ async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number)
     (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
       bucket, reason, puzzleType: PuzzleState.kind(currentState), detectedBigApple, specHash,
       ...contourPayload(null, null),
+      ...timingPayload(0, 0, false, null),
     });
   }
 }
