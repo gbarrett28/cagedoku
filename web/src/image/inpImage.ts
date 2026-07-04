@@ -138,10 +138,10 @@ export async function parsePuzzleImage(
   srcPts.delete(); dstPts.delete();
 
   // Warp grayscale then adaptively threshold for cage-digit contour extraction.
-  const [blkMat2,] = prepareGrayMat(cv, imageData, resolution);
+  // gryMat (from the first prepareGrayMat call) is reused here — warpPerspective
+  // only reads its source, so sharing it does not affect later uses of gryMat.
   const warpedGryTmp = new cv.Mat();
-  cv.warpPerspective(blkMat2, warpedGryTmp, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
-  blkMat2.delete();
+  cv.warpPerspective(gryMat, warpedGryTmp, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
   let warpedBlkMat = new cv.Mat();
   cv.adaptiveThreshold(
     warpedGryTmp, warpedBlkMat, 255,
@@ -177,11 +177,9 @@ export async function parsePuzzleImage(
     mMat = cv.getPerspectiveTransform(srcPts2, dstPts2);
     srcPts2.delete(); dstPts2.delete();
 
-    // Re-warp all three Mats.
-    const [blkMat3,] = prepareGrayMat(cv, imageData, resolution);
+    // Re-warp all three Mats (reuse gryMat — see comment above for rationale).
     const warpedGryTmp2 = new cv.Mat();
-    cv.warpPerspective(blkMat3, warpedGryTmp2, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
-    blkMat3.delete();
+    cv.warpPerspective(gryMat, warpedGryTmp2, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
     warpedBlkMat.delete();
     warpedBlkMat = new cv.Mat();
     cv.adaptiveThreshold(

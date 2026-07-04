@@ -450,6 +450,7 @@ export function contourHier(
       for (let p = 0; p < c.rows; p++) {
         pts.push([c.data32S[p * 2]!, c.data32S[p * 2 + 1]!]);
       }
+      c.delete();
       ret.push([pts, brTuple, area, children]);
     }
     seen.add(i);
@@ -690,11 +691,15 @@ export function readClassicDigits(
       let bestIdx = 0;
       let bestArea = 0;
       for (let i = 0; i < cnts.size(); i++) {
-        const area = cv.contourArea(cnts.get(i));
+        const ci = cnts.get(i);
+        const area = cv.contourArea(ci);
+        ci.delete();
         if (area > bestArea) { bestArea = area; bestIdx = i; }
       }
 
-      const br = cv.boundingRect(cnts.get(bestIdx));
+      const cBest = cnts.get(bestIdx);
+      const br = cv.boundingRect(cBest);
+      cBest.delete();
       cnts.delete();
 
       if (br.width === 0 || br.height === 0) continue;

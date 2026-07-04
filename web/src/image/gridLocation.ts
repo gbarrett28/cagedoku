@@ -47,7 +47,9 @@ export function contourQuad(
 
   const areas: Array<[number, number]> = [];
   for (let i = 0; i < contours.size(); i++) {
-    const a = cv.contourArea(contours.get(i));
+    const ci = contours.get(i);
+    const a = cv.contourArea(ci);
+    ci.delete();
     if (a >= minArea) areas.push([a, i]);
   }
   areas.sort((a, b) => b[0] - a[0]);
@@ -59,6 +61,7 @@ export function contourQuad(
     const peri = cv.arcLength(c, true);
     const approx = new cv.Mat();
     cv.approxPolyDP(c, approx, 0.02 * peri, true);
+    c.delete();
 
     if (approx.rows !== 4) {
       approx.delete();
