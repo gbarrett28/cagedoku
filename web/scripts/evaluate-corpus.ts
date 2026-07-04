@@ -141,7 +141,7 @@ async function runWorker(
       .prepare('SELECT path FROM puzzles WHERE content_hash = ?')
       .get(claim.puzzle_hash) as { path: string } | undefined;
     if (puzzle === undefined) {
-      completeEvaluation(db, claim.id, 'failed', 'error', 'puzzle path not found', null, 0, null, null, null);
+      completeEvaluation(db, claim.id, 'failed', 'error', 'puzzle path not found', null, 0, null);
       continue;
     }
 
@@ -257,22 +257,10 @@ async function runWorker(
       }
     }
 
-    let cellCentroidDistSq: number | null = null;
-    let boxCentroidDistSq: number | null = null;
-    try {
-      const dbg = await page.evaluate(
-        (): { cellGroupCentroidDistSq: number; boxGroupCentroidDistSq: number } | undefined =>
-          (window as any).__detectPuzzleDebug,
-      );
-      if (dbg !== undefined) {
-        cellCentroidDistSq = dbg.cellGroupCentroidDistSq;
-        boxCentroidDistSq = dbg.boxGroupCentroidDistSq;
-      }
-    } catch { /* non-fatal: debug hook unavailable */ }
+
 
     completeEvaluation(
       db, claim.id, status, bucket, reason, detectedType, Date.now() - startMs, specHash,
-      cellCentroidDistSq, boxCentroidDistSq,
     );
     progress.done++;
 

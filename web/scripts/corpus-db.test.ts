@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   addGroundTruth, claimEvaluation, completeEvaluation, getCorpora, getPuzzle,
-  insertPuzzle, openDb, upsertCorpus,
+  insertPuzzle, openDb, upsertCorpus, type CtEvalExtras,
 } from './corpus-db.js';
 
 let dbPath = '';
@@ -86,7 +86,7 @@ describe('claimEvaluation / completeEvaluation', () => {
     const claim = claimEvaluation(db, 'gitabc', 1);
     expect(claim).toBeDefined();
     expect(claim!.puzzle_hash).toBe('aabbcc');
-    completeEvaluation(db, claim!.id, 'done', 'clean', null, 'killer', 1234, null, null, null);
+    completeEvaluation(db, claim!.id, 'done', 'clean', null, 'killer', 1234, null);
     const row = db.prepare(
       'SELECT status, bucket FROM evaluations WHERE id=?',
     ).get(claim!.id) as { status: string; bucket: string };
@@ -108,7 +108,7 @@ describe('claimEvaluation / completeEvaluation', () => {
     const db = tmpDb();
     insertPuzzle(db, 'aabbcc', '/p.jpg', 'test', 'killer');
     const first = claimEvaluation(db, 'git111', 1);
-    completeEvaluation(db, first!.id, 'done', 'clean', null, 'killer', 100, null, null, null);
+    completeEvaluation(db, first!.id, 'done', 'clean', null, 'killer', 100, null);
     const second = claimEvaluation(db, 'git222', 1);
     expect(second).toBeDefined();
   });
@@ -117,7 +117,7 @@ describe('claimEvaluation / completeEvaluation', () => {
     const db = tmpDb();
     insertPuzzle(db, 'aabbcc', '/p.jpg', 'test', 'killer');
     const claim = claimEvaluation(db, 'gitabc', 1);
-    completeEvaluation(db, claim!.id, 'done', 'clean', null, 'killer', 1234, 'deadbeef', null, null);
+    completeEvaluation(db, claim!.id, 'done', 'clean', null, 'killer', 1234, 'deadbeef');
     const row = db.prepare(
       'SELECT spec_hash FROM evaluations WHERE id=?',
     ).get(claim!.id) as { spec_hash: string };
@@ -125,16 +125,46 @@ describe('claimEvaluation / completeEvaluation', () => {
     db.close();
   });
 
-  it('stores cell_centroid_dist_sq and box_centroid_dist_sq', () => {
+  it('drops the dead centroid columns on open', () => {
+    const db = tmpDb();
+    const cols = (db.prepare('PRAGMA table_info(evaluations)').all() as { name: string }[]).map(r => r.name);
+    expect(cols).not.toContain('cell_centroid_dist_sq');
+    expect(cols).not.toContain('box_centroid_dist_sq');
+    db.close();
+  });
+
+  it('stores CtEvalExtras columns', () => {
     const db = tmpDb();
     insertPuzzle(db, 'aabbcc', '/p.jpg', 'test', 'killer');
-    const claim = claimEvaluation(db, 'gitabc', 1);
-    completeEvaluation(db, claim!.id, 'done', 'clean', null, 'killer', 1234, null, 2.34, 1.12);
-    const row = db.prepare(
-      'SELECT cell_centroid_dist_sq, box_centroid_dist_sq FROM evaluations WHERE id=?',
-    ).get(claim!.id) as { cell_centroid_dist_sq: number; box_centroid_dist_sq: number };
-    expect(row.cell_centroid_dist_sq).toBeCloseTo(2.34);
-    expect(row.box_centroid_dist_sq).toBeCloseTo(1.12);
+    const claim = claimEvaluation(db, 'gitabc', 1)!;
+    const extras: CtEvalExtras = {
+      liveMats: 3, heapBytes: 1_000_000, allocBytes: 500_000,
+      ctD1Count: 81, ctD2Count: 120, ctType: 'killer',
+      ctOrientation: 0, quadSumOrientation: 0,
+      ctBorderAgreement: 0.97, ctBorderFp: 2, ctBorderFn: 1,
+      ctDigitAgreement: 0.95,
+      detectedBigApple: false, specError: null, fallbackUsed: false,
+      parseElapsedMs: 800, solveElapsedMs: 200,
+    };
+    completeEvaluation(db, claim.id, 'done', 'clean', null, 'killer', 1234, null, extras);
+    const row = db.prepare('SELECT * FROM evaluations WHERE id=?').get(claim.id) as Record<string, unknown>;
+    expect(row['live_mats']).toBe(3);
+    expect(row['heap_bytes']).toBe(1_000_000);
+    expect(row['alloc_bytes']).toBe(500_000);
+    expect(row['ct_d1_count']).toBe(81);
+    expect(row['ct_d2_count']).toBe(120);
+    expect(row['ct_type']).toBe('killer');
+    expect(row['ct_orientation']).toBeCloseTo(0);
+    expect(row['quad_sum_orientation']).toBeCloseTo(0);
+    expect(row['ct_border_agreement']).toBeCloseTo(0.97);
+    expect(row['ct_border_fp']).toBe(2);
+    expect(row['ct_border_fn']).toBe(1);
+    expect(row['ct_digit_agreement']).toBeCloseTo(0.95);
+    expect(row['detected_big_apple']).toBe(0);
+    expect(row['spec_error']).toBeNull();
+    expect(row['fallback_used']).toBe(0);
+    expect(row['parse_elapsed_ms']).toBe(800);
+    expect(row['solve_elapsed_ms']).toBe(200);
     db.close();
   });
 });

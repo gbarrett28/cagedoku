@@ -61,19 +61,44 @@ export function openDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
     );
   `);
   // Migrations for columns added after initial schema
-  const puzzleCols = (db.prepare("PRAGMA table_info(puzzles)").all() as { name: string }[]).map(r => r.name);
+  const puzzleCols = (db.prepare('PRAGMA table_info(puzzles)').all() as { name: string }[]).map(r => r.name);
   if (!puzzleCols.includes('corpus')) {
     db.exec("ALTER TABLE puzzles ADD COLUMN corpus TEXT NOT NULL DEFAULT ''");
   }
-  const evalCols = (db.prepare("PRAGMA table_info(evaluations)").all() as { name: string }[]).map(r => r.name);
+  const evalCols = (db.prepare('PRAGMA table_info(evaluations)').all() as { name: string }[]).map(r => r.name);
   if (!evalCols.includes('spec_hash')) {
     db.exec('ALTER TABLE evaluations ADD COLUMN spec_hash TEXT');
   }
-  if (!evalCols.includes('cell_centroid_dist_sq')) {
-    db.exec('ALTER TABLE evaluations ADD COLUMN cell_centroid_dist_sq REAL');
+  // Drop columns that no longer exist (populated by __detectPuzzleDebug which was removed)
+  for (const dead of ['cell_centroid_dist_sq', 'box_centroid_dist_sq'] as const) {
+    if (evalCols.includes(dead)) {
+      db.exec(`ALTER TABLE evaluations DROP COLUMN ${dead}`);
+    }
   }
-  if (!evalCols.includes('box_centroid_dist_sq')) {
-    db.exec('ALTER TABLE evaluations ADD COLUMN box_centroid_dist_sq REAL');
+  // Add all measurement columns introduced after the initial schema
+  const newCols: Array<[string, string]> = [
+    ['live_mats',            'INTEGER'],
+    ['heap_bytes',           'INTEGER'],
+    ['alloc_bytes',          'INTEGER'],
+    ['ct_d1_count',          'INTEGER'],
+    ['ct_d2_count',          'INTEGER'],
+    ['ct_type',              'TEXT'],
+    ['ct_orientation',       'REAL'],
+    ['quad_sum_orientation', 'REAL'],
+    ['ct_border_agreement',  'REAL'],
+    ['ct_border_fp',         'INTEGER'],
+    ['ct_border_fn',         'INTEGER'],
+    ['ct_digit_agreement',   'REAL'],
+    ['detected_big_apple',   'INTEGER'],
+    ['spec_error',           'TEXT'],
+    ['fallback_used',        'INTEGER'],
+    ['parse_elapsed_ms',     'INTEGER'],
+    ['solve_elapsed_ms',     'INTEGER'],
+  ];
+  for (const [col, type] of newCols) {
+    if (!evalCols.includes(col)) {
+      db.exec(`ALTER TABLE evaluations ADD COLUMN ${col} ${type}`);
+    }
   }
   return db;
 }
@@ -155,6 +180,31 @@ export function claimEvaluation(
   `).get(gitHash, workerId, gitHash) as ClaimedEvaluation | undefined;
 }
 
+/** All optional per-run measurements stored alongside the core outcome fields. */
+export interface CtEvalExtras {
+  // WASM heap monitors (set by installCvMonitors)
+  readonly liveMats?: number | null;
+  readonly heapBytes?: number | null;
+  readonly allocBytes?: number | null;
+  // Contour-tree parallel-path diagnostics (Sprints 1–4; killer only for orientation/border/digit)
+  readonly ctD1Count?: number | null;
+  readonly ctD2Count?: number | null;
+  readonly ctType?: string | null;
+  readonly ctOrientation?: number | null;
+  readonly quadSumOrientation?: number | null;
+  readonly ctBorderAgreement?: number | null;
+  readonly ctBorderFp?: number | null;
+  readonly ctBorderFn?: number | null;
+  readonly ctDigitAgreement?: number | null;
+  // Outcome flags
+  readonly detectedBigApple?: boolean | null;
+  readonly specError?: string | null;
+  readonly fallbackUsed?: boolean | null;
+  // Timing (browser-measured)
+  readonly parseElapsedMs?: number | null;
+  readonly solveElapsedMs?: number | null;
+}
+
 export function completeEvaluation(
   db: Database.Database,
   id: number,
@@ -164,16 +214,33 @@ export function completeEvaluation(
   detectedType: string | null,
   elapsedMs: number,
   specHash: string | null,
-  cellCentroidDistSq: number | null,
-  boxCentroidDistSq: number | null,
+  extras: CtEvalExtras = {},
 ): void {
+  const e = extras;
   db.prepare(`
     UPDATE evaluations
     SET status = ?, bucket = ?, reason = ?, detected_type = ?,
         elapsed_ms = ?, spec_hash = ?,
-        cell_centroid_dist_sq = ?, box_centroid_dist_sq = ?,
+        live_mats = ?, heap_bytes = ?, alloc_bytes = ?,
+        ct_d1_count = ?, ct_d2_count = ?, ct_type = ?,
+        ct_orientation = ?, quad_sum_orientation = ?,
+        ct_border_agreement = ?, ct_border_fp = ?, ct_border_fn = ?,
+        ct_digit_agreement = ?,
+        detected_big_apple = ?, spec_error = ?, fallback_used = ?,
+        parse_elapsed_ms = ?, solve_elapsed_ms = ?,
         finished_at = datetime('now')
     WHERE id = ?
-  `).run(status, bucket, reason, detectedType, elapsedMs, specHash,
-         cellCentroidDistSq, boxCentroidDistSq, id);
+  `).run(
+    status, bucket, reason, detectedType, elapsedMs, specHash,
+    e.liveMats ?? null, e.heapBytes ?? null, e.allocBytes ?? null,
+    e.ctD1Count ?? null, e.ctD2Count ?? null, e.ctType ?? null,
+    e.ctOrientation ?? null, e.quadSumOrientation ?? null,
+    e.ctBorderAgreement ?? null, e.ctBorderFp ?? null, e.ctBorderFn ?? null,
+    e.ctDigitAgreement ?? null,
+    e.detectedBigApple == null ? null : (e.detectedBigApple ? 1 : 0),
+    e.specError ?? null,
+    e.fallbackUsed == null ? null : (e.fallbackUsed ? 1 : 0),
+    e.parseElapsedMs ?? null, e.solveElapsedMs ?? null,
+    id,
+  );
 }
