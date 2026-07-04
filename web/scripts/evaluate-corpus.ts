@@ -27,7 +27,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
-import { DEFAULT_DB_PATH, claimEvaluation, completeEvaluation, openDb } from './corpus-db.js';
+import { DEFAULT_DB_PATH, claimEvaluation, completeEvaluation, openDb, type CtEvalExtras } from './corpus-db.js';
 import { waitForPipelineReady } from '../e2e/helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -52,6 +52,26 @@ interface UploadOutcomeJson {
   readonly puzzleType: string | null;
   readonly detectedBigApple: boolean;
   readonly specHash: string | null;
+  readonly fallbackUsed: boolean;
+  readonly specError: string | null;
+  readonly parseElapsedMs: number;
+  readonly solveElapsedMs: number;
+  // Optional: only present when running against the contour-tree feature branch
+  readonly contourTreeDiagnostics?: {
+    readonly d1Count: number;
+    readonly d2Count: number;
+    readonly contourTreeType: string;
+    readonly tlFractionType: string;
+    readonly contourTreeOrientation?: number;
+    readonly quadSumOrientation?: number;
+    readonly contourTreeBorderAgreement?: number;
+    readonly ctBorderFP?: number;
+    readonly ctBorderFN?: number;
+    readonly contourTreeDigitAgreement?: number;
+  };
+  readonly liveMats?: number;
+  readonly heapBytes?: number;
+  readonly allocBytes?: number;
 }
 
 interface BucketCounts {
@@ -151,6 +171,15 @@ async function runWorker(
     let reason: string | null = null;
     let detectedType: string | null = null;
     let specHash: string | null = null;
+    let outcome: UploadOutcomeJson | undefined;
+    let contourTreeDiagnostics: UploadOutcomeJson['contourTreeDiagnostics'] | undefined;
+    let liveMats: number | undefined;
+    let heapBytes: number | undefined;
+    let allocBytes: number | undefined;
+    let fallbackUsed: boolean | undefined;
+    let specError: string | null | undefined;
+    let parseElapsedMs: number | undefined;
+    let solveElapsedMs: number | undefined;
 
     try {
       const outcomePromise = new Promise<UploadOutcomeJson>(r => {
@@ -161,13 +190,15 @@ async function runWorker(
       );
 
       await page.locator('#file-input').setInputFiles(puzzle.path);
-      const outcome = await Promise.race([outcomePromise, timeoutPromise]);
+      outcome = await Promise.race([outcomePromise, timeoutPromise]);
 
       bucket = outcome.bucket;
       reason = outcome.reason;
       detectedType = outcome.puzzleType;
       specHash = outcome.specHash;
       counts[outcome.bucket]++;
+      ({ contourTreeDiagnostics, liveMats, heapBytes, allocBytes,
+         fallbackUsed, specError, parseElapsedMs, solveElapsedMs } = outcome);
 
       if (dumpContoursDir !== null) {
         const patches = await page.evaluate(() => {
@@ -257,11 +288,27 @@ async function runWorker(
       }
     }
 
-
-
-    completeEvaluation(
-      db, claim.id, status, bucket, reason, detectedType, Date.now() - startMs, specHash,
-    );
+    const diag = contourTreeDiagnostics;
+    const extras: CtEvalExtras = {
+      liveMats:           liveMats           ?? null,
+      heapBytes:          heapBytes          ?? null,
+      allocBytes:         allocBytes         ?? null,
+      ctD1Count:          diag?.d1Count          ?? null,
+      ctD2Count:          diag?.d2Count          ?? null,
+      ctType:             diag?.contourTreeType   ?? null,
+      ctOrientation:      diag?.contourTreeOrientation   ?? null,
+      quadSumOrientation: diag?.quadSumOrientation ?? null,
+      ctBorderAgreement:  diag?.contourTreeBorderAgreement ?? null,
+      ctBorderFp:         diag?.ctBorderFP        ?? null,
+      ctBorderFn:         diag?.ctBorderFN        ?? null,
+      ctDigitAgreement:   diag?.contourTreeDigitAgreement ?? null,
+      detectedBigApple:   outcome?.detectedBigApple ?? null,
+      specError:          specError          ?? null,
+      fallbackUsed:       fallbackUsed       ?? null,
+      parseElapsedMs:     parseElapsedMs     ?? null,
+      solveElapsedMs:     solveElapsedMs     ?? null,
+    };
+    completeEvaluation(db, claim.id, status, bucket, reason, detectedType, Date.now() - startMs, specHash, extras);
     progress.done++;
 
     const { clean, backtracked, notSolved, timeout, failed } = counts;
