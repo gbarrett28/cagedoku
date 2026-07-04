@@ -66,6 +66,7 @@ export class GridNotFoundError extends Error {
 export interface ParseResult {
   spec: PuzzleSpec | null;
   specError: string | null;
+  fallbackUsed: boolean;
   puzzleType: 'killer' | 'classic';
   givenDigits: number[][] | null;
   warpedImageData: ImageData | null;
@@ -255,7 +256,7 @@ export async function parsePuzzleImage(
     } catch (err) {
       specError = String(err);
     }
-    return { spec, specError, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: classicThumbs, mergedThumbs: new Map(), ...(includeTree ? { contourTree: earlyContourTree, selectedNumbers: earlySelectedNumbers, outerGridBR: earlyOuterGridBR } : {}) };
+    return { spec, specError, fallbackUsed: false, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: classicThumbs, mergedThumbs: new Map(), ...(includeTree ? { contourTree: earlyContourTree, selectedNumbers: earlySelectedNumbers, outerGridBR: earlyOuterGridBR } : {}) };
   }
 
   // --- Killer path: Stage 4 border clustering (via per-image calibration) ---
@@ -371,6 +372,7 @@ export async function parsePuzzleImage(
     return {
       spec: null,
       specError: 'Could not extract cage totals',
+      fallbackUsed: calibration.fallbackUsed,
       puzzleType: 'killer',
       givenDigits,
       warpedImageData: warpedImgData,
@@ -416,7 +418,7 @@ export async function parsePuzzleImage(
   }
 
   return {
-    spec, specError, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs, mergedThumbs,
+    spec, specError, fallbackUsed: calibration.fallbackUsed, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs, mergedThumbs,
     ...(includeTree ? {
       contourTree: earlyContourTree,
       selectedNumbers: earlySelectedNumbers,

@@ -985,6 +985,7 @@ describe('buildCandidatesFromParseResult', () => {
     return {
       spec,
       specError: null,
+      fallbackUsed: false,
       puzzleType,
       givenDigits: blankGivenDigits,
       warpedImageData: null,

@@ -139,6 +139,8 @@ export interface UploadResult {
   cellThumbs: ReadonlyMap<string, Uint8Array[]>;
   mergedThumbs: ReadonlyMap<string, Uint8Array>;
   detectedBigApple: boolean;
+  fallbackUsed: boolean;
+  specError: string | null;
   /** Populated only when window.__reportContourTree is truthy */
   contourTree?: ContourInfo[] | null | undefined;
   selectedNumbers?: BRect[] | undefined;
@@ -156,7 +158,7 @@ export function loadSpecDirect(spec: PuzzleSpec): UploadResult {
   const settings = loadSettings();
   const state = PuzzleState.createKiller(specToData(spec), specToCageStates(spec), [...settings.alwaysApplyRules], null, null);
   setState(state);
-  return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map(), mergedThumbs: new Map(), detectedBigApple: false };
+  return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map(), mergedThumbs: new Map(), detectedBigApple: false, fallbackUsed: false, specError: null };
 }
 
 /**
@@ -177,6 +179,8 @@ export function loadClassicDirect(givenDigits: readonly (readonly number[])[]): 
     cellThumbs: new Map(),
     mergedThumbs: new Map(),
     detectedBigApple: false,
+    fallbackUsed: false,
+    specError: null,
   };
 }
 
@@ -199,6 +203,7 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
     result = {
       spec: null,
       specError: `Image pipeline failed: ${String(e)}`,
+      fallbackUsed: false,
       puzzleType: 'killer',
       givenDigits: null,
       warpedImageData: null,
@@ -211,6 +216,8 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
   const { state, warpedImageUrl, warning, detectedBigApple } = await buildStateFromParseResult(result, originalImageUrl);
   return {
     state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, mergedThumbs: result.mergedThumbs, detectedBigApple,
+    fallbackUsed: result.fallbackUsed,
+    specError: result.specError,
     contourTree: result.contourTree,
     selectedNumbers: result.selectedNumbers,
     outerGridBR: result.outerGridBR,
