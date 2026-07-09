@@ -1121,7 +1121,9 @@ describe('buildCandidatesFromParseResult', () => {
   });
 
   it('returns only [classicCandidate] when OCR detects classic', () => {
-    const result = makeParseResult('classic');
+    // Use a real classic puzzle (not blank): blank givenDigits are now detected as
+    // Big Apple after #160 fix (backtracking finds a solution on the empty board).
+    const result = { ...makeParseResult('classic'), givenDigits: makeClassicGivenDigits() };
     const { candidates } = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
 
     expect(candidates).toHaveLength(1);
@@ -1156,7 +1158,9 @@ describe('buildCandidatesFromParseResult', () => {
   });
 
   it('reports detectedBigApple: false for an ordinary classic scan', () => {
-    const result = makeParseResult('classic');
+    // Use a real classic puzzle (not blank): blank givenDigits are now detected as
+    // Big Apple after #160 fix (backtracking finds a solution on the empty board).
+    const result = { ...makeParseResult('classic'), givenDigits: makeClassicGivenDigits() };
     const { detectedBigApple } = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
 
     expect(detectedBigApple).toBe(false);

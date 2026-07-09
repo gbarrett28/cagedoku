@@ -67,6 +67,16 @@ function checkStalled(board: BoardState): boolean {
  * — brute-force search would solve a valid classic puzzle regardless of
  * windows, making it useless as a discriminator.
  */
+/**
+ * Heuristic Big Apple detector: runs classic-only constraint propagation; if
+ * it stalls before every cell is solved, retries with the 4 extra window
+ * units (BigAppleBoardState). If window rules also stall, falls back to
+ * MRV backtracking constrained to the window board — returning true if any
+ * Big Apple solution exists. Backtracking is excluded from the classic pass
+ * because brute-force finds classic solutions regardless of windows; the
+ * window pass may use it because we are testing whether Big Apple constraints
+ * (not just classic ones) can resolve the puzzle.
+ */
 export function detectBigApple(givenDigits: number[][]): boolean {
   const classicBoard = new BoardState();
   const classicEngine = new SolverEngine(classicBoard, defaultRules().filter(r => !r.killerOnly));
@@ -78,7 +88,11 @@ export function detectBigApple(givenDigits: number[][]): boolean {
   const windowEngine = new SolverEngine(windowBoard, defaultRules().filter(r => !r.killerOnly));
   seedGivenDigits(windowEngine, windowBoard, givenDigits);
   windowEngine.solve();
-  return !checkStalled(windowBoard);
+  if (!checkStalled(windowBoard)) return true;
+
+  // Window rules stalled — fall back to backtracking on the window board.
+  // A non-null result means at least one Big Apple solution exists.
+  return mrvBacktrack(windowBoard) !== null;
 }
 
 export type ClassicSolveAssessment =
