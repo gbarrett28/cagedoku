@@ -462,6 +462,89 @@ duplicate digit in any row, column, or 3x3 box.
 
 ---
 
+## OCR Execution and Error Paths
+
+This section maps the complete execution path from raw photograph to the playing
+screen, showing every failure point, the data available at each, and the error
+surface presented to the user.  It is the reference for choosing error messages
+in `handleConfirm`.
+
+### Pipeline overview
+
+```mermaid
+flowchart TD
+    IMG[Photograph] --> S15[Stages 1–5\nimage → digit recognition]
+    S15 --> BCT["buildCageTotals → cageTotals[9][9]\n· 0  at cell (r,c) = no digit contour detected\n· >0 at cell (r,c) = recognised cage total\nAll non-anchor cells are 0 by construction"]
+
+    BCT --> VCL[validateCageLayout]
+    VCL --> CHK1{any cage head with\ntotal out of range\nlo..hi for cage size?}
+    CHK1 -- yes --> RCT[repairCageTotals:\nclamp out-of-range head totals to lo]
+    RCT --> VCL2[validateCageLayout retry]
+    VCL2 -- ProcessingError --> PE
+    CHK1 -- no --> CHK2{structural errors?\nunassigned cell or\ntwo heads in one region}
+    CHK2 -- yes --> PE[ProcessingError\nUser sees: image could not be parsed]
+    CHK2 -- no --> SPEC["PuzzleSpec\n· regions[r][c] — 1-based cage id\n· cageTotals[r][c] — positive at every\n  cage head, 0 elsewhere\nInvariant: no cage head has total = 0"]
+
+    SPEC --> REV[Review screen\nUser inspects & corrects OCR]
+    REV --> CNF[User clicks Confirm & Solve]
+
+    CNF --> VCR[validateCurrentReview]
+    VCR --> CHK3{validation error?}
+    CHK3 -- yes --> VE[User sees: structural error message]
+    CHK3 -- no --> SLV["solveCurrentSpec\n→ { board, usedBacktracking, stalledCandidates }"]
+
+    SLV --> EVAL["extractAndValidateSolution(board)\n1. extractSolutionGrid: pick single candidate per cell;\n   cells with 0 or 2+ candidates → 0\n2. validateSudokuSolution: check no zeros,\n   no row/col/box duplicates\nNote: cage-sum correctness is NOT checked here"]
+
+    EVAL --> CHK4{solutionError?}
+    CHK4 -- null --> OK[confirmPuzzle → Playing mode]
+    CHK4 -- "unsolved cell or\nduplicate digit" --> EMSG{Which message?}
+
+    EMSG --> MSG_OCR["'cage totals appear to have OCR errors'\n— appropriate when wrong cage total\n  caused a contradiction"]
+    EMSG --> MSG_GEN["'check cage totals and borders are correct'\n— appropriate for ambiguous puzzles\n  or structural misreads"]
+```
+
+### What `solutionError` means in practice
+
+`validateSudokuSolution` returns a description of the **first** violation it finds:
+
+| Error string | Most likely cause |
+|---|---|
+| `"Cell rXcY is unsolved (0)"` | Solver stalled — cells with 2+ candidates or no candidates. Happens for wrong cage total (contradiction → cells drain to 0 candidates) and for ambiguous puzzles (rules alone can't narrow to 1). |
+| `"Row N has duplicate digit D"` | Solver placed a duplicate. Rare; more likely a logic bug than OCR error. |
+| `"Col N has duplicate digit D"` | Same. |
+| `"Box (M,N) has duplicate digit D"` | Same. |
+
+### Data available at the error branch
+
+All of these are in scope when `solutionError !== null`:
+
+| Variable | Type | Notes |
+|---|---|---|
+| `solutionError` | `string` | First violation found by `validateSudokuSolution` |
+| `usedBacktracking` | `boolean` | True if the solver fell back to MRV backtracking |
+| `stalledCandidates` | `number[][][]` | Candidate sets when rules stalled (before backtracking) |
+| `state.specData.cageTotals` | `number[][]` | Cage head totals — **all non-zero** (invariant from `validateCageLayout`) |
+
+**Invariant:** by the time `handleConfirm` runs, every cage head has a positive total.
+Checking `cageTotals.some(t === 0)` at confirm time is therefore always false and
+cannot be used as an OCR fingerprint.
+
+### Candidate signals for choosing the error message
+
+The error is the same string whether the puzzle is **contradicted** (OCR error) or
+**ambiguous** (genuinely multiple solutions).  Possible discriminators:
+
+| Signal | Contradicted (OCR) | Ambiguous |
+|---|---|---|
+| `usedBacktracking` | typically `true` (MRV exhausted all branches) | may be `false` (rules stall before BT) |
+| number of unsolved cells in `stalledCandidates` | large (many contradictions propagate) | smaller (a few cells underdetermined) |
+| solver returns 0-candidate cells | yes (impossible constraint) | no (cells have ≥2 candidates) |
+
+No single signal is definitive.  The user should decide which combination
+(or a different approach entirely) produces the least-surprising message.
+
+---
+
 ## Puzzle Type Detection
 
 Detection is based on the aggregate confidence from Stage 3.

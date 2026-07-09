@@ -1531,13 +1531,15 @@ async function handleConfirm(): Promise<void> {
     await new Promise<void>(resolve => setTimeout(resolve, 0));
     const { board: confirmedBoard, usedBacktracking: confirmUsedBacktracking, stalledCandidates: confirmStalledCandidates } = solveCurrentSpec();
 
-    // Guard: validate the solver's output before confirming. Corrupted cage totals
-    // can cause the rule engine to fill all cells with duplicate digits (invalid but
-    // appearing complete). Returning early prevents the playing screen and stall upload.
+    // Guard: validate the solver's output before confirming. Wrong cage totals or
+    // ambiguous borders can cause the solver to stall or produce an inconsistent
+    // grid. Use a generic message — at this point zeros are structurally impossible
+    // (validateCageLayout enforces every cage head has a positive total), so we
+    // cannot reliably attribute the failure specifically to OCR.
     const solutionError = extractAndValidateSolution(confirmedBoard);
     if (solutionError !== null) {
       setStatus(
-        `Invalid puzzle — cage totals appear to have OCR errors (${solutionError}). Correct the totals and try again.`,
+        `Puzzle could not be solved — check that cage totals and borders are correct (${solutionError}).`,
         true,
       );
       return;
@@ -1700,10 +1702,55 @@ async function handleUndo(): Promise<void> {
 
 async function handleCandidateCycle(row1b: number, col1b: number, digit: number): Promise<void> {
   try {
-    const state = cycleCandidate(row1b, col1b, digit);
-    currentState = state;
-    refreshDisplay();
-    updateUndoButton(state);
+    const delay = getAutoPlacementDelay();
+    if (delay === 0) {
+      const { state } = cycleCandidate(row1b, col1b, digit);
+      currentState = state;
+      refreshDisplay();
+      updateUndoButton(state);
+    } else {
+      setAutoApplyLock(true);
+      try {
+        const animRefresh = (player: AnimationPlayer): void => {
+          currentState = AnimationPlayer.stateAtCursor(player);
+          if (showCandidates) {
+            const data = AnimationPlayer.boardAtCursor(player);
+            currentCandidates = data;
+            setCandidatesCache(data);
+          }
+          redrawGrid();
+        };
+
+        const { state: finalState, ruleSteps, baseState } = cycleCandidate(row1b, col1b, digit);
+        updateUndoButton(finalState);
+
+        let player: AnimationPlayer = { baseState, ruleSteps, cursor: 0, playing: true };
+        animRefresh(player);
+
+        while (player.cursor < ruleSteps.length) {
+          const step = AnimationPlayer.currentStep(player)!;
+          hintHighlightCells = new Set(step.highlightCells.map(([r, c]) => `${r},${c}`));
+          hintElimCells = new Set(
+            step.mutations
+              .filter((m): m is EliminateCandidateMutation => m.type === 'eliminateCandidate')
+              .map(m => `${m.row},${m.col}`),
+          );
+          showHintPill(el('hint-pill'), el('hint-pill-label'), step.displayName);
+          await new Promise<void>(resolve => { setTimeout(resolve, fastForwardRequested ? 0 : delay); });
+
+          player = AnimationPlayer.tick(player);
+          hintHighlightCells = new Set();
+          hintElimCells = new Set();
+          hideHintPill(el('hint-pill'));
+          animRefresh(player);
+        }
+
+        currentState = finalState;
+        refreshDisplay();
+      } finally {
+        setAutoApplyLock(false);
+      }
+    }
   } catch (e) { setStatus(String(e), true); }
 }
 

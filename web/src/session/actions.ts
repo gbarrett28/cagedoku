@@ -899,31 +899,38 @@ export function rewind(turnIdx: number): PuzzleState {
  * Cycles a digit's candidate state (normal ↔ removed). digit=0 resets cell.
  * Row/col are 1-based. Replaces PATCH /candidates/cell.
  */
-export function cycleCandidate(row1b: number, col1b: number, digit: number): PuzzleState {
+export function cycleCandidate(
+  row1b: number,
+  col1b: number,
+  digit: number,
+): { state: PuzzleState; ruleSteps: readonly RuleStep[]; baseState: PuzzleState } {
   const state = requireConfirmed();
   const r = row1b - 1;
   const c = col1b - 1;
 
-  let result: SessionResult;
   if (digit === 0) {
-    result = PuzzleStateOps.resetCellCandidates(state, r, c);
+    const result = PuzzleStateOps.resetCellCandidates(state, r, c);
+    setState(result.state);
+    return { state: result.state, ruleSteps: result.ruleSteps, baseState: state };
+  }
+
+  const cellRemoved = new Set(
+    userRemoved(state).filter(([rr, cc]) => rr === r && cc === c).map(([,, d]) => d),
+  );
+  const { board } = buildEngine(state);
+
+  let result: SessionResult;
+  if (cellRemoved.has(digit)) {
+    result = PuzzleStateOps.restoreCandidate(state, r, c, digit);
+  } else if (board.cands(r, c).has(digit)) {
+    result = PuzzleStateOps.eliminateCandidate(state, r, c, digit);
   } else {
-    const cellRemoved = new Set(
-      userRemoved(state).filter(([rr, cc]) => rr === r && cc === c).map(([,, d]) => d),
-    );
-    const { board } = buildEngine(state);
-    if (cellRemoved.has(digit)) {
-      result = PuzzleStateOps.restoreCandidate(state, r, c, digit);
-    } else if (board.cands(r, c).has(digit)) {
-      result = PuzzleStateOps.eliminateCandidate(state, r, c, digit);
-    } else {
-      // auto-impossible and not user-removed — no-op
-      return state;
-    }
+    // auto-impossible and not user-removed — no-op
+    return { state, ruleSteps: [], baseState: state };
   }
 
   setState(result.state);
-  return result.state;
+  return { state: result.state, ruleSteps: result.ruleSteps, baseState: state };
 }
 
 // ---------------------------------------------------------------------------
@@ -1038,7 +1045,9 @@ export function addVirtualCage(
   }
 
   if (isDiff) {
-    // Diff cage validation
+    // Diff cage validation — do not reject total=0; cells outside the same unit
+    // can legally repeat digits, making diff=0 valid. If the annotated total
+    // disagrees with the golden solution, findWrongVirtualCageTurnIdx surfaces a Rewind hint.
     if (total < 0) throw new Error('Total must be non-negative for a difference cage');
     const negKeys = new Set(negativeCells!.map(([r, c]) => `${r},${c}`));
     for (const k of negKeys) {
@@ -1046,12 +1055,6 @@ export function addVirtualCage(
     }
     if (negKeys.size === cells.length) {
       throw new Error('At least one positive cell is required');
-    }
-    const posCount = cells.length - negKeys.size;
-    const negCount = negKeys.size;
-    const solutions = solDiffs(posCount, negCount, total);
-    if (solutions.length === 0) {
-      throw new Error(`Total ${total} has no valid solutions for ${posCount} positive and ${negCount} negative cells`);
     }
   } else {
     const n = cells.length;

@@ -493,7 +493,13 @@ function buildRuleSteps(
  */
 export function applyRuleSteps(state: PuzzleState): { state: PuzzleState; ruleSteps: readonly RuleStep[]; board: BoardState } {
   const { ruleSteps, board } = buildEngine(state, { skipValidation: true });
-  const folded = ruleSteps.flatMap(s => s.mutations).reduce((s, m) => m.apply(s), state);
+  // EliminateCandidateMutation is excluded: solver-derived eliminations are
+  // re-computed by buildEngine on each call and must not be persisted in
+  // userRemovedCandidates (that field is for user-initiated removals only).
+  const folded = ruleSteps
+    .flatMap(s => s.mutations)
+    .filter(m => m.type !== 'eliminateCandidate')
+    .reduce((s, m) => m.apply(s), state);
   return { state: folded, ruleSteps, board };
 }
 

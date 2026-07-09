@@ -49,8 +49,9 @@ import {
   extractAndValidateSolution,
   activeCandidate,
   revertToOcr,
+  eliminateCageSolution,
 } from './actions.js';
-import { findLastConsistentTurnIdx } from './engine.js';
+import { findLastConsistentTurnIdx, buildEngine } from './engine.js';
 import { BoardState } from '../engine/index.js';
 import { DEFAULT_ALWAYS_APPLY_RULES } from './settings.js';
 import { DISABLED_RULES } from '../engine/rules/disabled-rules.js';
@@ -756,6 +757,107 @@ describe('addVirtualCage — error path', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Sprint 2 (#165) — diff cage total=0 must be accepted by addVirtualCage
+// ---------------------------------------------------------------------------
+
+describe('addVirtualCage — diff cage total=0 (#165)', () => {
+  beforeEach(() => { setState(makeKillerConfirmed()); });
+
+  it('does not throw for total=0 on a diff cage (cells outside same unit may repeat digits)', () => {
+    // Previously threw "Total 0 has no valid solutions for 1 positive and 1 negative cells"
+    // because solDiffs(1,1,0) returns []. Now allowed: rewind mechanism handles mismatch.
+    expect(() => addVirtualCage([[0, 0], [3, 0]], 0, [[3, 0]])).not.toThrow();
+  });
+
+  it('returns a Rewind hint when diff cage total=0 disagrees with golden solution', () => {
+    const gs = getState()!.goldenSolution!;
+    // Cells (0,0) and (1,0) are in the same column — guaranteed different digits.
+    // diff = gs[0][0] - gs[1][0] ≠ 0, so annotating 0 is wrong → Rewind.
+    const goldDiff = gs[0]![0]! - gs[1]![0]!;
+    if (goldDiff === 0) return; // extremely unlikely but guard anyway
+    addVirtualCage([[0, 0], [1, 0]], 0, [[1, 0]]);
+    const { hints } = getHints();
+    expect(hints.find(h => h.rewindToTurnIdx !== null)).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sprint 3 (#162) — solver eliminations must not pollute userRemovedCandidates
+// ---------------------------------------------------------------------------
+
+describe('eliminateCageSolution — solver eliminations not persisted in userRemovedCandidates (#162)', () => {
+  beforeEach(() => {
+    const spec = makeTwoCellCageSpec();
+    const pre = PuzzleState.createKiller(
+      specToData(spec), specToCageStates(spec), [...DEFAULT_ALWAYS_APPLY_RULES], null, null,
+    );
+    setState(pre);
+    confirmPuzzle(solveCurrentSpec().board);
+  });
+
+  it('striking out a cage solution does not add solver-derived eliminations to userRemovedCandidates', () => {
+    // Cage 'A' = 2-cell cage (rows 0–1, col 0), total 11. Valid ordered solutions include
+    // [3, 8] (digit 3 at row0col0, digit 8 at row1col0). Striking it out causes
+    // CageCandidateFilter (in alwaysApplyRules) to eliminate digit 3 from (0,0) and
+    // digit 8 from (1,0) via EliminateCandidateMutation inside applyRuleSteps.
+    // These solver-derived mutations must NOT be written to userRemovedCandidates.
+    const beforeRemoved = getState()!.userRemovedCandidates.length;
+    eliminateCageSolution('A', [3, 8]);
+    expect(getState()!.userRemovedCandidates.length).toBe(beforeRemoved);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sprint 4 (#166) — candidatesFromBoard must not expose solver eliminations in userRemoved
+// ---------------------------------------------------------------------------
+
+describe('candidatesFromBoard — userRemoved does not contain solver eliminations (#166)', () => {
+  it('a digit auto-eliminated by CageCandidateFilter after cage strikeout is absent from userRemoved', () => {
+    // Cage 'A' (2-cell, total 11): striking out [3,8] causes CageCandidateFilter to
+    // eliminate digit 3 from (0,0) via EliminateCandidateMutation. With Sprint 3's fix,
+    // that mutation is NOT persisted in userRemovedCandidates, so candidatesFromBoard
+    // must not list digit 3 in cell (0,0)'s userRemoved array.
+    const spec = makeTwoCellCageSpec();
+    const pre = PuzzleState.createKiller(
+      specToData(spec), specToCageStates(spec), [...DEFAULT_ALWAYS_APPLY_RULES], null, null,
+    );
+    setState(pre);
+    confirmPuzzle(solveCurrentSpec().board);
+
+    eliminateCageSolution('A', [3, 8]);
+
+    const state = getState()!;
+    const { board } = buildEngine(state);
+    const data = candidatesFromBoard(board, state);
+    const cell = data.cells[0]![0]!;
+    expect(cell.userRemoved).not.toContain(3);
+    // Digit 3 is still excluded from cell (0,0) but via solver — not user removal
+    expect(cell.candidates).not.toContain(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sprint 5 (#161) — cycleCandidate must return ruleSteps for animation
+// ---------------------------------------------------------------------------
+
+describe('cycleCandidate — returns { state, ruleSteps, baseState } (#161)', () => {
+  beforeEach(() => { setState(makeKillerConfirmed()); });
+
+  it('returns the triple shape (not bare PuzzleState) so the caller can animate rule steps', () => {
+    // Previously returned bare PuzzleState; handleCandidateCycle discarded ruleSteps
+    // and could not animate auto-placed digits. New shape: { state, ruleSteps, baseState }.
+    const { board } = buildEngine(getState()!);
+    const cands = [...board.cands(0, 0)];
+    const digit = cands[0]!;
+    const result = cycleCandidate(1, 1, digit); // 1-based row/col
+    expect(result).toHaveProperty('state');
+    expect(result).toHaveProperty('ruleSteps');
+    expect(result).toHaveProperty('baseState');
+    expect(Array.isArray((result as { ruleSteps: unknown }).ruleSteps)).toBe(true);
+  });
+});
+
 describe('getHints', () => {
   it('returns hints for a confirmed killer puzzle', () => {
     setState(makeKillerConfirmed());
@@ -1019,7 +1121,9 @@ describe('buildCandidatesFromParseResult', () => {
   });
 
   it('returns only [classicCandidate] when OCR detects classic', () => {
-    const result = makeParseResult('classic');
+    // Use a real classic puzzle (not blank): blank givenDigits are now detected as
+    // Big Apple after #160 fix (backtracking finds a solution on the empty board).
+    const result = { ...makeParseResult('classic'), givenDigits: makeClassicGivenDigits() };
     const { candidates } = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
 
     expect(candidates).toHaveLength(1);
@@ -1054,7 +1158,9 @@ describe('buildCandidatesFromParseResult', () => {
   });
 
   it('reports detectedBigApple: false for an ordinary classic scan', () => {
-    const result = makeParseResult('classic');
+    // Use a real classic puzzle (not blank): blank givenDigits are now detected as
+    // Big Apple after #160 fix (backtracking finds a solution on the empty board).
+    const result = { ...makeParseResult('classic'), givenDigits: makeClassicGivenDigits() };
     const { detectedBigApple } = buildCandidatesFromParseResult(result, spec, ['nakedSingle'], null, null);
 
     expect(detectedBigApple).toBe(false);

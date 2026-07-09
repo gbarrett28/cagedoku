@@ -64,10 +64,7 @@ describe('solveFromCandidates', () => {
 });
 
 describe('detectBigApple', () => {
-  it('returns false for an all-blank grid (both passes stall identically)', () => {
-    const blank = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-    expect(detectBigApple(blank)).toBe(false);
-  });
+  // blank-grid case: see the updated test at the end of this describe block (#160 fix)
 
   it('returns false when classic rules alone already solve the grid', () => {
     expect(detectBigApple(makeClassicGivenDigits())).toBe(false);
@@ -85,6 +82,16 @@ describe('detectBigApple', () => {
     const grid = makeBigAppleMisreadGivenDigits();
     grid[1]![4] = 6;
     expect(detectBigApple(grid)).toBe(true);
+  });
+
+  it.todo('returns true for a puzzle that stalls both classic and window rules but is solvable via Big Apple backtracking (#160)');
+
+  it('returns true for an all-blank grid (backtracking fallback finds a Big Apple solution for any valid input)', () => {
+    // Degenerate: a blank grid has many solutions; mrvBacktrack on the window board
+    // finds one and returns true. In production OCR always provides given digits, so
+    // this case does not arise. Behavior changed in #160 fix.
+    const blank = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+    expect(detectBigApple(blank)).toBe(true);
   });
 });
 
