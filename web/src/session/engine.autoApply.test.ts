@@ -177,14 +177,17 @@ describe('applyRuleSteps', () => {
     expect(twice).toEqual(once);
   });
 
-  itCageSolns('on a base state, folding CageCandidateFilter eliminations is idempotent', () => {
+  itCageSolns('CageCandidateFilter eliminations are not persisted in userRemovedCandidates (#162)', () => {
+    // Solver-derived EliminateCandidateMutation must be filtered out by applyRuleSteps
+    // and NOT written to userRemovedCandidates. Previously the fold included all
+    // mutations, so cage-filter eliminations accumulated in userRemovedCandidates and
+    // appeared as phantom strikethrough candidates. The fix: only PlaceDigitMutation
+    // and cage-level mutations are persisted; EliminateCandidateMutation is re-derived
+    // on each buildEngine call.
     const state = makeBaseState();
     const { state: once, ruleSteps: firstSteps } = applyRuleSteps(state);
     expect(firstSteps.length).toBeGreaterThan(0);
-
-    const { state: twice, ruleSteps: secondSteps } = applyRuleSteps(once);
-    expect(secondSteps).toEqual([]);
-    expect(twice).toEqual(once);
+    expect(once.userRemovedCandidates).toEqual([]);
   });
 });
 
