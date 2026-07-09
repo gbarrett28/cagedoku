@@ -23,7 +23,9 @@ jobs:
           python-version: '3.12'
 
       - name: Install Python dependencies
-        run: pip install scikit-learn numpy scipy pillow matplotlib boto3 numba
+        # Pin coverage<7.8: numba 0.66.0 uses coverage.types.Tracer which was
+        # removed in coverage 7.8; pin to keep the import working.
+        run: pip install scikit-learn numpy scipy pillow matplotlib boto3 numba "coverage<7.8"
 
       - name: List pending R2 uploads
         id: list
