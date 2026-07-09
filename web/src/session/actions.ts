@@ -899,31 +899,38 @@ export function rewind(turnIdx: number): PuzzleState {
  * Cycles a digit's candidate state (normal ↔ removed). digit=0 resets cell.
  * Row/col are 1-based. Replaces PATCH /candidates/cell.
  */
-export function cycleCandidate(row1b: number, col1b: number, digit: number): PuzzleState {
+export function cycleCandidate(
+  row1b: number,
+  col1b: number,
+  digit: number,
+): { state: PuzzleState; ruleSteps: readonly RuleStep[]; baseState: PuzzleState } {
   const state = requireConfirmed();
   const r = row1b - 1;
   const c = col1b - 1;
 
-  let result: SessionResult;
   if (digit === 0) {
-    result = PuzzleStateOps.resetCellCandidates(state, r, c);
+    const result = PuzzleStateOps.resetCellCandidates(state, r, c);
+    setState(result.state);
+    return { state: result.state, ruleSteps: result.ruleSteps, baseState: state };
+  }
+
+  const cellRemoved = new Set(
+    userRemoved(state).filter(([rr, cc]) => rr === r && cc === c).map(([,, d]) => d),
+  );
+  const { board } = buildEngine(state);
+
+  let result: SessionResult;
+  if (cellRemoved.has(digit)) {
+    result = PuzzleStateOps.restoreCandidate(state, r, c, digit);
+  } else if (board.cands(r, c).has(digit)) {
+    result = PuzzleStateOps.eliminateCandidate(state, r, c, digit);
   } else {
-    const cellRemoved = new Set(
-      userRemoved(state).filter(([rr, cc]) => rr === r && cc === c).map(([,, d]) => d),
-    );
-    const { board } = buildEngine(state);
-    if (cellRemoved.has(digit)) {
-      result = PuzzleStateOps.restoreCandidate(state, r, c, digit);
-    } else if (board.cands(r, c).has(digit)) {
-      result = PuzzleStateOps.eliminateCandidate(state, r, c, digit);
-    } else {
-      // auto-impossible and not user-removed — no-op
-      return state;
-    }
+    // auto-impossible and not user-removed — no-op
+    return { state, ruleSteps: [], baseState: state };
   }
 
   setState(result.state);
-  return result.state;
+  return { state: result.state, ruleSteps: result.ruleSteps, baseState: state };
 }
 
 // ---------------------------------------------------------------------------

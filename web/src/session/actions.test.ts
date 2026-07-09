@@ -837,6 +837,27 @@ describe('candidatesFromBoard — userRemoved does not contain solver eliminatio
   });
 });
 
+// ---------------------------------------------------------------------------
+// Sprint 5 (#161) — cycleCandidate must return ruleSteps for animation
+// ---------------------------------------------------------------------------
+
+describe('cycleCandidate — returns { state, ruleSteps, baseState } (#161)', () => {
+  beforeEach(() => { setState(makeKillerConfirmed()); });
+
+  it('returns the triple shape (not bare PuzzleState) so the caller can animate rule steps', () => {
+    // Previously returned bare PuzzleState; handleCandidateCycle discarded ruleSteps
+    // and could not animate auto-placed digits. New shape: { state, ruleSteps, baseState }.
+    const { board } = buildEngine(getState()!);
+    const cands = [...board.cands(0, 0)];
+    const digit = cands[0]!;
+    const result = cycleCandidate(1, 1, digit); // 1-based row/col
+    expect(result).toHaveProperty('state');
+    expect(result).toHaveProperty('ruleSteps');
+    expect(result).toHaveProperty('baseState');
+    expect(Array.isArray((result as { ruleSteps: unknown }).ruleSteps)).toBe(true);
+  });
+});
+
 describe('getHints', () => {
   it('returns hints for a confirmed killer puzzle', () => {
     setState(makeKillerConfirmed());

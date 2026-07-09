@@ -128,7 +128,7 @@ describe('session fuzz — random operation sequences', () => {
           } else if (op === 1) {
             state = enterCell(r, c, 0);
           } else if (op === 2) {
-            state = cycleCandidate(r, c, d);
+            ({ state } = cycleCandidate(r, c, d));
           } else {
             state = undo();
           }

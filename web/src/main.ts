@@ -1702,10 +1702,55 @@ async function handleUndo(): Promise<void> {
 
 async function handleCandidateCycle(row1b: number, col1b: number, digit: number): Promise<void> {
   try {
-    const state = cycleCandidate(row1b, col1b, digit);
-    currentState = state;
-    refreshDisplay();
-    updateUndoButton(state);
+    const delay = getAutoPlacementDelay();
+    if (delay === 0) {
+      const { state } = cycleCandidate(row1b, col1b, digit);
+      currentState = state;
+      refreshDisplay();
+      updateUndoButton(state);
+    } else {
+      setAutoApplyLock(true);
+      try {
+        const animRefresh = (player: AnimationPlayer): void => {
+          currentState = AnimationPlayer.stateAtCursor(player);
+          if (showCandidates) {
+            const data = AnimationPlayer.boardAtCursor(player);
+            currentCandidates = data;
+            setCandidatesCache(data);
+          }
+          redrawGrid();
+        };
+
+        const { state: finalState, ruleSteps, baseState } = cycleCandidate(row1b, col1b, digit);
+        updateUndoButton(finalState);
+
+        let player: AnimationPlayer = { baseState, ruleSteps, cursor: 0, playing: true };
+        animRefresh(player);
+
+        while (player.cursor < ruleSteps.length) {
+          const step = AnimationPlayer.currentStep(player)!;
+          hintHighlightCells = new Set(step.highlightCells.map(([r, c]) => `${r},${c}`));
+          hintElimCells = new Set(
+            step.mutations
+              .filter((m): m is EliminateCandidateMutation => m.type === 'eliminateCandidate')
+              .map(m => `${m.row},${m.col}`),
+          );
+          showHintPill(el('hint-pill'), el('hint-pill-label'), step.displayName);
+          await new Promise<void>(resolve => { setTimeout(resolve, fastForwardRequested ? 0 : delay); });
+
+          player = AnimationPlayer.tick(player);
+          hintHighlightCells = new Set();
+          hintElimCells = new Set();
+          hideHintPill(el('hint-pill'));
+          animRefresh(player);
+        }
+
+        currentState = finalState;
+        refreshDisplay();
+      } finally {
+        setAutoApplyLock(false);
+      }
+    }
   } catch (e) { setStatus(String(e), true); }
 }
 
