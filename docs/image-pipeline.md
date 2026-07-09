@@ -465,9 +465,7 @@ duplicate digit in any row, column, or 3x3 box.
 ## OCR Execution and Error Paths
 
 This section maps the complete execution path from raw photograph to the playing
-screen, showing every failure point, the data available at each, and the error
-surface presented to the user.  It is the reference for choosing error messages
-in `handleConfirm`.
+screen, showing every failure point and the error surface presented to the user.
 
 ### Pipeline overview
 
@@ -497,10 +495,7 @@ flowchart TD
 
     EVAL --> CHK4{solutionError?}
     CHK4 -- null --> OK[confirmPuzzle → Playing mode]
-    CHK4 -- "unsolved cell or\nduplicate digit" --> EMSG{Which message?}
-
-    EMSG --> MSG_OCR["'cage totals appear to have OCR errors'\n— appropriate when wrong cage total\n  caused a contradiction"]
-    EMSG --> MSG_GEN["'check cage totals and borders are correct'\n— appropriate for ambiguous puzzles\n  or structural misreads"]
+    CHK4 -- "unsolved cell or\nduplicate digit" --> MSG_GEN["'Puzzle could not be solved —\ncheck that cage totals and borders\nare correct'\n(#167: always use generic message)"]
 ```
 
 ### What `solutionError` means in practice
@@ -523,25 +518,22 @@ All of these are in scope when `solutionError !== null`:
 | `solutionError` | `string` | First violation found by `validateSudokuSolution` |
 | `usedBacktracking` | `boolean` | True if the solver fell back to MRV backtracking |
 | `stalledCandidates` | `number[][][]` | Candidate sets when rules stalled (before backtracking) |
-| `state.specData.cageTotals` | `number[][]` | Cage head totals — **all non-zero** (invariant from `validateCageLayout`) |
+| `state.specData.cageTotals` | `number[][]` | Cage head cells have positive totals; non-head cells are 0 by construction |
 
-**Invariant:** by the time `handleConfirm` runs, every cage head has a positive total.
-Checking `cageTotals.some(t === 0)` at confirm time is therefore always false and
-cannot be used as an OCR fingerprint.
+### Error message choice (Sprint #167)
 
-### Candidate signals for choosing the error message
+`handleConfirm` always uses the generic message: *"Puzzle could not be solved — check
+that cage totals and borders are correct."*
 
-The error is the same string whether the puzzle is **contradicted** (OCR error) or
-**ambiguous** (genuinely multiple solutions).  Possible discriminators:
+A zero-total OCR fingerprint cannot work here for two reasons:
+- `validateCageLayout` guarantees every cage head has a positive total before
+  `handleConfirm` runs, so cage-head zeros are impossible at this point.
+- Non-head cells are always 0 by construction, so any zero-check on the full
+  `cageTotals` array is trivially true and not discriminating.
 
-| Signal | Contradicted (OCR) | Ambiguous |
-|---|---|---|
-| `usedBacktracking` | typically `true` (MRV exhausted all branches) | may be `false` (rules stall before BT) |
-| number of unsolved cells in `stalledCandidates` | large (many contradictions propagate) | smaller (a few cells underdetermined) |
-| solver returns 0-candidate cells | yes (impossible constraint) | no (cells have ≥2 candidates) |
-
-No single signal is definitive.  The user should decide which combination
-(or a different approach entirely) produces the least-surprising message.
+The `usedBacktracking` and `stalledCandidates` signals could theoretically
+distinguish contradicted (OCR error) from ambiguous puzzles, but no single signal
+is reliable enough to justify a more specific message.
 
 ---
 
