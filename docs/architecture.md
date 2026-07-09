@@ -128,6 +128,17 @@ lets `mrvBacktrack`'s forward-checking respect window constraints without an
 `instanceof` check — the same template-method shape `cageConstraints()`
 already established for cage validity in the backtracker.
 
+`detectBigApple(givenDigits)` (`web/src/engine/index.ts`) is the OCR-time
+variant-detection heuristic. It runs two rule-only passes: first a Classic
+`BoardState` + `SolverEngine`, then (if Classic stalls) a `BigAppleBoardState` +
+`SolverEngine`. If the window-rules pass fully solves the board, it is a Big Apple
+puzzle. If the window-rules pass also stalls, `detectBigApple` falls back to
+`mrvBacktrack(windowBoard)` and returns `true` if any Big Apple solution exists.
+Backtracking is excluded from the Classic pass (brute-force finds Classic solutions
+regardless of window constraints, so it cannot discriminate); the window pass uses
+it because we are testing whether Big Apple constraints — not just Classic ones —
+can resolve the puzzle.
+
 `userGrid` is always a real 9×9 grid — all-zero before `/confirm` (OCR review
 phase). The "has this session been confirmed?" signal is
 `state.goldenSolution === null` / `!== null` (an existing field that is `null`
@@ -502,15 +513,19 @@ export function applyRuleSteps(state: PuzzleState): { state: PuzzleState; ruleSt
 ```
 
 It runs `buildEngine(state, { skipValidation: true })` once and reduces every
-`ruleSteps[i].mutations` via `.apply()` onto `state` — placements, candidate
-eliminations, virtual cages, and cage-solution eliminations alike. Folding
-eliminations into `userRemovedCandidates` is what stops the *next* `buildEngine`
-call from re-deriving and re-presenting the same deductions as new rule steps.
-Calling `applyRuleSteps` again on its own output is a no-op (`ruleSteps` empty,
-`state` unchanged). The returned `board` is `buildEngine`'s board for the
-pre-fold `state` — by the no-op invariant above, this is identical to the board
-`buildEngine(folded state)` would produce, so callers get a renderable `board`
-for free.
+`ruleSteps[i].mutations` via `.apply()` onto `state`, **excluding
+`EliminateCandidateMutation`** — placements (`PlaceDigitMutation`), virtual-cage
+additions (`AddVirtualCageMutation`), and cage-solution eliminations
+(`EliminateCageSolutionMutation`) are folded; solver-derived candidate eliminations
+are not. The invariant: `userRemovedCandidates` must contain only user-initiated
+removals (explicit `cycleCandidate` calls). Solver eliminations are re-derived
+identically on every `buildEngine` call and must never be persisted — if they were,
+they would appear as phantom strikethrough candidates in `candidatesFromBoard`
+(`candidates` shows live solver state; `userRemoved` is explicitly user-removed
+only). Calling `applyRuleSteps` again on its own output produces the same
+`ruleSteps` for solver-derived eliminations (they are re-computed each time), but
+is a no-op for placements and cage mutations (already folded). The returned `board`
+is `buildEngine`'s board for the pre-fold `state`.
 
 `recordTurn(state, action)` returns
 `{ state: PuzzleState; ruleSteps: readonly RuleStep[]; baseState: PuzzleState; board: BoardState }`:
@@ -613,15 +628,16 @@ delegates to `recordTurn`/`applyRuleSteps` and repackages the result as a
 last turn is a given-digit `placeDigit`.
 
 `session/actions.ts` wraps each `PuzzleStateOps` method in a thin function
-(`enterCell`, `cycleCandidate`, `addVirtualCage`, `applyHint`, `undo`,
-`removeVirtualCage`) that resolves the current `PuzzleState` via
-`requireConfirmed()`, calls the corresponding `PuzzleStateOps` method, calls
-`setState(result.state)`, and returns `result.state` — the `board` and
-`ruleSteps` fields of the `SessionResult` are currently unused by these wrappers
-but are available for future callers that need to render without a follow-up
-`buildEngine` call. `enterCellStep` and `rewind` are unchanged — `enterCellStep`
-still calls `recordTurn` directly because it needs `baseState` for
-`AnimationPlayer`, which `SessionResult` doesn't carry.
+(`enterCell`, `addVirtualCage`, `applyHint`, `undo`, `removeVirtualCage`) that
+resolves the current `PuzzleState` via `requireConfirmed()`, calls the
+corresponding `PuzzleStateOps` method, calls `setState(result.state)`, and
+returns `result.state`. `cycleCandidate` is an exception: it returns the full
+`{ state: PuzzleState; ruleSteps: readonly RuleStep[]; baseState: PuzzleState }`
+triple so that `handleCandidateCycle` in `main.ts` can drive `AnimationPlayer`
+for any auto-solve steps triggered by a candidate elimination — the same animated
+path `enterCellStep` / `handleCellEntry` already uses. `enterCellStep` and
+`rewind` are unchanged — `enterCellStep` still calls `recordTurn` directly because
+it needs `baseState` for `AnimationPlayer`.
 
 ### `PuzzleState.rules()` and `Command` / `availableCommands`
 
