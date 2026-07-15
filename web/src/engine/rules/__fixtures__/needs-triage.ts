@@ -113,4 +113,11 @@ export const NEEDS_TRIAGE_FIXTURES: readonly string[] = [  "NakedSingle-trigger-
   "SolutionMapFilter-trigger-miss-2026-07-12T17-47-58-765Z",
   "SolutionMapFilter-trigger-miss-2026-07-12T17-50-34-317Z",
   "SolutionMapFilter-trigger-miss-2026-07-12T17-59-15-892Z",
+  "CageCandidateFilter-trigger-miss-2026-07-14T19-40-04-424Z",
+  "CageCandidateFilter-trigger-miss-2026-07-14T19-40-43-654Z",
+  "CageCandidateFilter-trigger-miss-2026-07-14T19-41-31-126Z",
+  "SolutionMapFilter-trigger-miss-2026-07-14T19-40-04-457Z",
+  "SolutionMapFilter-trigger-miss-2026-07-14T19-40-43-656Z",
+  "SolutionMapFilter-trigger-miss-2026-07-14T19-41-31-128Z",
+  "SolutionMapFilter-trigger-miss-2026-07-14T19-44-13-961Z",
 ];
