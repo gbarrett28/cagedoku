@@ -265,6 +265,12 @@ suite is TypeScript/Vitest, not Python).
 - Inviting external collaborators to `shipwright` — the repo is created
   public so that's possible later, but no specific collaborators are added
   as part of this work.
+- An `html-css-guidelines` skill — considered and deliberately deferred:
+  unlike `python-guidelines`/`typescript-guidelines`, there's no existing
+  enforced HTML/CSS convention in `killer_sudoku` to extract, and inventing
+  rules with no proven usage risks baking untested preferences into a
+  shared plugin. Add this skill later if/when a project has real,
+  already-enforced HTML/CSS conventions worth generalizing.
 
 ## Verification approach
 
