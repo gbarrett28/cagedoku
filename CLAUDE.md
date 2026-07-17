@@ -1,25 +1,28 @@
 # Agent Behaviour
 
-## Required Superpowers
+## Methodology
 
-These three skills **must always** be invoked at the moments described — no exceptions:
+This project uses [`shipwright`](https://github.com/gbarrett28/shipwright)
+for engineering methodology — skill-invocation policy, quality gates,
+commit/issue/doc hygiene, tool preferences, and language guidelines. It's
+registered and enabled for this repo via `.claude/settings.json`. Start
+with `shipwright:using-shipwright`, which carries the required-invocation
+table for both `superpowers` and `shipwright` skills, the check-before-
+you-build discipline, token-efficiency and plan-sprint-size guidance, and
+the git-worktree caveat.
 
-| Skill | Invoke when |
+Concrete tool bindings for shipwright's generic skills, in this repo:
+
+| Role (shipwright skill) | This repo's concrete tool |
 |---|---|
-| `superpowers:brainstorming` | Before any new feature, significant code change, or design decision. No code is written until a design is presented and approved. |
-| `superpowers:verification-before-completion` | Before claiming any task is complete, before stating tests pass, and before creating a commit or PR. |
-| `superpowers:systematic-debugging` | Before attempting to fix any bug, test failure, or unexpected behaviour. Root cause first, fix second. |
-| `superpowers:test-driven-development` | Before writing any implementation code for a feature or bugfix — write the failing test first. |
-| `superpowers:finishing-a-development-branch` | After all implementation tasks are complete and verified, before merging/pushing — structures the merge/PR/cleanup decision. |
-| `superpowers:requesting-code-review` | Before merging any feature branch — dispatches a fresh subagent reviewer with no session history for unbiased review. |
-| `superpowers:receiving-code-review` | When receiving code review feedback — verify technically before implementing; never agree blindly. |
-
----
-
-## Git Worktrees
-
-Do **not** use git worktrees — not all tools work correctly inside them.
-Use a feature branch in the main working directory instead.
+| Code navigation/analysis (`tool-preferences`) | `serena` — see "Agent Protocol: Tool Use" below |
+| TypeScript diagnostics (`tool-preferences`) | `typescript-lsp` plugin (`typescript-language-server` via npx); complements serena for cross-file type navigation |
+| PR review (`tool-preferences`) | `pr-review-toolkit` — `code-reviewer`, `pr-test-analyzer`, `silent-failure-hunter`, `type-design-analyzer`, `comment-analyzer`, `code-simplifier`; also `coderabbit:code-reviewer` |
+| Library documentation (`tool-preferences`) | `context7` (`mcp__plugin_context7_context7__*`) — e.g. Vite config, Playwright APIs, TypeScript compiler options, OpenCV.js |
+| Issue tracker (`issue-hygiene`) | GitHub Issues, via `gh` CLI / `github` MCP plugin |
+| Gate scripts (`quality-gates`) | `scripts/run-bronze-gate.sh`, `scripts/run-silver-gate.sh` — see "Quality Gates" below |
+| Python lint config (`python-guidelines`) | `[tool.ruff]` / `[tool.mypy]` in `pyproject.toml` |
+| Visual-companion alternative (`using-shipwright`) | Playwright MCP — see "UI Visual Verification" below |
 
 ## Document Review Requests
 
@@ -30,32 +33,6 @@ user the GitHub URL to the file on that branch
 (`https://github.com/gbarrett28/cagedoku/blob/<branch>/<path>`), not just the
 local path.
 
-## Token Efficiency
-
-When there is a choice of approaches, always prefer the one that achieves the final
-result with the fewest total tokens. Avoid redundant reads, intermediate explorations
-that are not necessary for the task, and verbose output where concise output suffices.
-
-When choosing a plan execution mode, always choose **inline execution** (executing-plans)
-over subagent-driven execution — it uses fewer total tokens.
-
-Never offer the visual companion feature during brainstorming — use Playwright MCP directly.
-
-## Plan Sprint Size
-
-When writing an implementation plan, **strongly prefer** breaking it into sprints of at
-most ~3 hours of inline execution tokens. Sprints are separate plan files, each
-producing working, independently-testable software.
-
-- If a spec covers multiple independent subsystems, each subsystem is its own sprint.
-- If a single subsystem exceeds ~3 hours, break it at a natural integration point
-  (e.g., after the data layer is done and tested, before the UI layer).
-- Only combine into a single sprint when splitting would produce code that cannot be
-  meaningfully tested on its own (rare — usually a sign the design needs refinement).
-
-This is a strong preference, not an absolute rule: if a feature is genuinely simpler
-to implement atomically and the token cost is low, a single sprint is fine.
-
 ## UI Visual Verification
 
 The Playwright MCP plugin is available for visual testing of layout and CSS changes.
@@ -63,32 +40,6 @@ Start the dev server first (`cd web && npm run dev -- --port 5175`), then use
 `mcp__plugin_playwright_playwright__browser_*` tools to navigate, resize the viewport,
 evaluate JS (measure element dimensions, check overflow), and take screenshots.
 Use it when working on responsive layout, canvas sizing, or any visual rendering change.
-
-## PR Review Tools
-
-The `pr-review-toolkit` plugin provides 6 specialist review agents for targeted
-pre-merge analysis — invoke individually or together:
-- `pr-review-toolkit:code-reviewer` — bugs, security, quality
-- `pr-review-toolkit:pr-test-analyzer` — test coverage gaps
-- `pr-review-toolkit:silent-failure-hunter` — swallowed errors / bad fallbacks
-- `pr-review-toolkit:type-design-analyzer` — type invariants and encapsulation
-- `pr-review-toolkit:comment-analyzer` — stale / inaccurate comments
-- `pr-review-toolkit:code-simplifier` — clarity and maintainability
-
-The `coderabbit` plugin provides automated PR-level review via the CodeRabbit CLI
-(`coderabbit:code-reviewer`). Useful once PRs are opened against the repo.
-
-## Library Documentation
-
-The context7 MCP plugin (`mcp__plugin_context7_context7__*`) fetches up-to-date library
-docs. Use it when working with Vite config, Playwright APIs, TypeScript compiler options,
-or OpenCV.js — prefer it over relying on training-data knowledge for external APIs.
-
-## TypeScript Language Server
-
-The `typescript-lsp` plugin is installed and `typescript-language-server` is available
-via npx. The built-in `LSP` tool provides go-to-definition, find-references, and
-compiler diagnostics. Use it to complement serena for precise cross-file type navigation.
 
 ## Frontend Design Scope
 
@@ -193,167 +144,13 @@ Untitled.png"), it is at the project root. Read it with the Read tool. Never com
 
 ---
 
-# Python Coding Guidelines
+# Quality Gates: Concrete Commands
 
-## Linting and Type Checking
+Gate policy (the bronze/silver contract, TDD-tests-in-bronze rule, doc-hygiene
+split, branch workflow) is defined generically by `shipwright:quality-gates`.
+This project's concrete implementation of that contract:
 
-Python code is checked at **every bronze-gate** with:
-
-```bash
-python -m ruff check .          # enforced in CI and pre-commit
-python -m mypy . --ignore-missing-imports
-```
-
-**Rules:**
-
-- **ruff** — strict extended rule-set (see `[tool.ruff]` in `pyproject.toml`). Zero tolerance.
-- **mypy** — `strict = true`. All public functions require full type annotations.
-- **No `#noqa`** — never add inline `# noqa: …` comments. Fix the violation or add a `per-file-ignores` entry with a comment explaining why.
-- **No inline `# type: ignore`** — use `cast()`, fix the stub, or add a `per-file-ignores` entry instead.
-- **Stubs for missing third-party types** — create `stubs/<pkg>/` with `.pyi` files rather than adding `# type: ignore[import-untyped]` per-import.
-
-## Auto-fix Workflow
-
-Before manually fixing violations, always try auto-fix first:
-
-```bash
-# 1. Safe fixes only (always run first)
-python -m ruff check --fix .
-
-# 2. Unsafe fixes — may change semantics; ALWAYS review the diff before staging
-python -m ruff check --unsafe-fixes --fix .
-git diff                         # review every change before git add
-```
-
-The `--unsafe-fixes` flag enables transforms that could alter runtime behaviour
-(e.g. `try/except/pass` → `contextlib.suppress`, nested `if` → single `and`).
-They are often correct but must be verified in context.
-
-## Per-File Ignores
-
-When a rule conflicts with a legitimate domain convention (e.g. N803/N806 for
-ML matrix naming `X`, T20 for CLI scripts, PLW0603 for module-level singletons),
-add a `[tool.ruff.lint.per-file-ignores]` entry in `pyproject.toml` with a
-comment explaining the reason. Never suppress project-wide.
-
----
-
-# TypeScript Coding Guidelines
-
-## Design Philosophy: Safety By Construction
-
-**Core principle:** Prefer language features and structures that make errors **impossible** rather than just **unlikely**.
-
-- **Type system:** Make invalid states unrepresentable through strong typing; prefer `readonly` arrays and tuples
-- **Iteration:** Use `for...of` and destructuring to couple related variables; avoid raw index loops unless necessary
-- **Configuration:** Single source of truth — no magic numbers scattered through code
-- **Error handling:** Surface errors to the user unless there is a clear automatic resolution
-
-## Self-Documenting Code
-
-- Keep JSDoc comments up to date; tiered: short summary first, then detail
-- Inline comments should explain WHY or WHAT, not HOW (mechanics are visible in the code)
-
-## OO Over Discriminated Unions
-
-**Strong preference: use the namespace-merging pattern instead of bare discriminated unions** whenever a type has per-variant behaviour.
-
-### Why
-
-A bare discriminated union (`type Foo = A | B | C`) scatters behaviour into switch statements elsewhere in the codebase. The compiler cannot enforce that every variant is handled in every dispatch site. The result is:
-
-- Silent fallthrough (`default: return state`) — new variants do nothing, no compile error
-- External metadata that drifts (`Set<string>`, `string[]` tracking which variants have a property)
-- Behaviour spread across multiple files, far from the type definition
-
-### The namespace-merging pattern
-
-Keep the type as plain data (serialisable, no class instances) and put per-variant static methods in a same-name namespace:
-
-```typescript
-// Each variant is a named interface + namespace
-export interface PlaceDigitAction {
-  readonly type: 'placeDigit';
-  readonly row: number; readonly col: number; readonly digit: number;
-}
-export namespace PlaceDigitAction {
-  export function apply(a: PlaceDigitAction, state: PuzzleState): PuzzleState { ... }
-}
-
-// The union gets its own namespace with an exhaustiveness guard
-export type UserAction = PlaceDigitAction | RemoveDigitAction | ...;
-export namespace UserAction {
-  export function apply(action: UserAction, state: PuzzleState): PuzzleState {
-    switch (action.type) {
-      case 'placeDigit': return PlaceDigitAction.apply(action, state);
-      // ...
-      default: assertNeverAction(action);  // compile error on missing case
-    }
-  }
-}
-```
-
-The compiler now **enforces** that every variant defines all required methods. Adding a new variant without updating every dispatch function is a type error.
-
-### When a property belongs on the type itself
-
-If code elsewhere maintains a `Set<string>` or `string[]` to track which variants of a type have a given property — that is a red flag. The property belongs on the type. Example: `CLASSIC_EXCLUDED_RULES: Set<string>` should be `rule.killerOnly: boolean` on `SolverRule`.
-
-### When a plain discriminated union is still fine
-
-- Very small, stable unions (2–3 variants) with no per-variant behaviour
-- Pure structural narrowing with no dispatch (e.g. `type GitHubAction = CommentAction | IssueAction`)
-- When all dispatch is in a single, focused location and the union will never grow
-
-### Warning signs to refactor
-
-- Any `default: return x` (silent fallthrough) in a switch over a union discriminant
-- An external `Set<string>` / `string[]` tracking which variants of a type have a property
-- More than one `switch` / `if-else` chain dispatching on the same discriminant across the codebase
-- Behaviour relevant to a type variant living in a different file from the type definition
-
-## Type Safety
-
-- Always use the strongest possible return type annotation
-- Always use the weakest possible parameter type annotation
-- Never use `any` unless the object truly can be anything at runtime
-- Prefer `unknown` over `any` for external data; narrow explicitly
-
-## Code Hygiene
-
-- All `import` statements at the top of the file — no dynamic/inline imports
-- No `* as` star imports — name every symbol explicitly
-- Before removing code, use serena's `find_referencing_symbols` to verify it is unused
-
-## Error Handling
-
-- Surface exceptions unless there is a clear way to resolve them automatically
-- Catch only for graceful degradation; always log or rethrow otherwise
-
----
-
-# Branch Workflow
-
-- All new work must be done on a **feature branch** (never commit directly to `master`).
-- Name branches descriptively: `feature/short-description`.
-- **Bronze gate must pass before every commit** on any branch.
-- **Silver gate must pass before merging to `master`**.
-
-## Doc Conventions
-
-| Kind | Location | Lifecycle |
-|---|---|---|
-| **Spec** | `docs/superpowers/specs/YYYY-MM-DD-<topic>.md` | Design intent for a feature under development (per `superpowers:brainstorming` defaults). Deleted once incorporated into a live doc. |
-| **Plan** | `docs/superpowers/plans/YYYY-MM-DD-<feature>.md` | Step-by-step implementation plan with `- [ ]` checkboxes (per `superpowers:writing-plans` defaults). Deleted once all steps are done. |
-| **Live doc** | `docs/architecture.md`, `docs/image-pipeline.md`, etc. | Permanent reference; always reflects the current codebase. |
-
----
-
-# Quality Gates
-
-**CRITICAL:** Before creating any commit, you MUST automatically run the **bronze gate** checks.
-
-## Bronze Gate (MANDATORY before every commit on a feature branch)
+## Bronze Gate
 
 Run the gate script from the repo root:
 
@@ -362,16 +159,14 @@ bash scripts/run-bronze-gate.sh
 ```
 
 This runs `tsc --noEmit`, `tsc -p tsconfig.node.json --noEmit`, and `npm test`.
-If all pass it creates a one-time `.bronze-gate-ok` token that the pre-commit hook
-consumes when you commit. **The hook blocks the commit if no token is present.**
+If all pass it creates a one-time `.bronze-gate-ok` token that the pre-commit
+hook (`scripts/hooks/pre-commit`) consumes when you commit — it blocks the
+commit if no token is present. The hook also runs `tsc --noEmit` and
+`tsc -p tsconfig.node.json --noEmit` automatically; `npm test` is not run in
+the hook itself (too slow for every commit) but must have been run via the
+script above before committing.
 
-Also verify manually (not automated):
-- Every spec in `docs/specs/` still accurately describes the intended design.
-- Every plan in `docs/plans/` has its completed steps checked off.
-
-**Do not commit if either doc check fails.**
-
-## Silver Gate (REQUIRED before merging to `master`)
+## Silver Gate
 
 Run from the `web/` directory:
 
@@ -382,114 +177,31 @@ npx playwright test
 npx playwright test --config playwright.dev.config.ts
 ```
 
-**If ANY step fails, DO NOT MERGE.**
-
-Then verify manually — these checks are part of the gate, not optional:
-
-### Doc hygiene (mandatory — do not skip)
-
-**Specs** — check all three locations:
-- `docs/specs/`
-- `docs/superpowers/specs/`
-
-For each spec file found: the implementation details must be written into the
-relevant live doc (`docs/architecture.md`, `docs/ui.md`, `docs/image-pipeline.md`,
-etc.) with concrete descriptions of what was actually built — not a summary or a
-pointer back to the spec. Once incorporated, **delete the spec file**.
-
-**Plans** — check all three locations:
-- `docs/plans/`
-- `docs/superpowers/plans/`
-- `~/.claude/plans/`  ← session-scoped plans created by the agent during work
-
-For each plan file found: every `- [ ]` step must be ticked. Once all steps are
-complete, **delete the plan file**. A plan with unchecked steps means work is
-unfinished — do not merge.
-
-**Do not merge if any spec or plan file remains.**
-
-After merging, **delete the feature branch**:
-```bash
-git branch -d feature/<name>
-```
-
-Pushing to `master` triggers GitHub Actions which auto-deploys to GitHub Pages — no
-manual deploy step needed. Verify with `gh run list --limit 3`.
-
 `playwright.config.ts` runs `app.spec.ts` and `offline.spec.ts` against `vite preview`
 (production build). `playwright.dev.config.ts` runs `flow.spec.ts` against `vite dev`
 because `flow.spec.ts` uses `window.__testLoad`, a hook only available in dev builds.
-
 Run Playwright only when touching UI rendering, image pipeline, or session flow —
 it runs against the production build and takes ~2–3 min.
 
-## Pre-commit Hook
-
-A `pre-commit` git hook (`scripts/hooks/pre-commit`) enforces the appropriate gate
-for the branch being committed to. Every commit on `master` is therefore a verified
-state, which makes `git bisect` reliable.
-
-| Branch | Gate enforced |
-|---|---|
-| `master` / `main` | Silver gate — blocks until confirmed (see below) |
-| Any feature branch | Bronze gate — runs `tsc` checks automatically; blocks on failure |
-
-### Feature branches (bronze gate)
-
-The hook runs `tsc --noEmit` and `tsc -p tsconfig.node.json --noEmit` automatically.
-If either fails the commit is blocked. `npm test` is not run in the hook (too slow
-for every commit) but **must** have been run before committing — see Bronze Gate above.
-
-### Master — commit sequence (MANDATORY for agent and human)
-
-The pre-commit hook requires a silver gate token for every commit on master.
+The pre-commit hook requires a silver gate token for every commit on `master`.
 The token is only created by `scripts/run-silver-gate.sh`, which actually
-executes all the checks — so the token cannot be obtained without running them.
+executes all the checks — so the token cannot be obtained without running them:
 
-Steps every time you commit to `master` (including merge commits):
-
-1. Run the silver gate script from the repo root:
-   ```bash
-   bash scripts/run-silver-gate.sh
-   ```
-   This runs all code checks, then prompts to confirm doc hygiene, then
-   creates the `.silver-gate-ok` token.
+1. Run from the repo root: `bash scripts/run-silver-gate.sh`. This runs all
+   code checks, then prompts to confirm doc hygiene, then creates the
+   `.silver-gate-ok` token.
 2. Commit immediately after (the token is consumed on first use):
-   ```bash
-   git merge feature/<name>   # or git commit
-   ```
+   `git merge feature/<name>` (or `git commit`).
 
 If the commit fails for any reason, re-run step 1 before retrying.
 
-**Never use `--no-verify`** to bypass the hook.
+After merging, delete the feature branch: `git branch -d feature/<name>`.
 
-Install the hooks once after cloning:
-```bash
-bash scripts/hooks/install.sh
-```
+Pushing to `master` triggers GitHub Actions which auto-deploys to GitHub Pages
+— no manual deploy step needed. Verify with `gh run list --limit 3`.
 
----
+Install the hooks once after cloning: `bash scripts/hooks/install.sh`.
 
-# Test Specification Integrity
-
-**CRITICAL RULE:** Tests define the specification for each module.
-
-**When tests fail after code changes:**
-1. **Assume the implementation is wrong, not the test**
-2. If you believe the test is wrong, you MUST:
-   - Document the spec change in detail (what changed and why)
-   - Get explicit user approval for the spec change
-   - Update the test with clear comments explaining the change
-   - NEVER silently modify tests to make them pass
-
----
-
-# Commit Conventions
-
-- Follow Conventional Commits format: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`
-- Clear, descriptive commit messages focused on "why" not "what"
-- Co-Authored-By tag if AI-assisted:
-  ```
-  Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
-  ```
-- **Always confirm before deleting or changing anything that is not committed to git**
+`killer_sudoku`'s doc locations (`docs/superpowers/specs/`,
+`docs/superpowers/plans/`) already match `shipwright:quality-gates`' defaults
+— no project-specific override needed.
