@@ -35,6 +35,7 @@ ones) installs and references, the same way this repo already references the
       using-shipwright/SKILL.md
       quality-gates/SKILL.md
       commit-and-test-integrity/SKILL.md
+      issue-hygiene/SKILL.md
       tool-preferences/SKILL.md
       python-guidelines/SKILL.md
       typescript-guidelines/SKILL.md
@@ -137,6 +138,36 @@ from `test-driven-development`'s natural entry point (writing a new test).
   test requires documenting the spec change and getting explicit user
   approval.
 
+### `issue-hygiene`
+
+Generic policy for working with an issue tracker, deliberately written
+tracker-agnostic (GitHub Issues, Linear, Jira, GitLab Issues, etc. all
+qualify) — this is net-new content, not extracted from `killer_sudoku`'s
+current CLAUDE.md, which has no issues section today:
+
+- **Search before creating.** Check for an existing open (or recently
+  closed) issue covering the same problem before filing a new one, to avoid
+  duplicates accumulating over time.
+- **Link work to issues.** When a commit or PR resolves an issue, reference
+  it using the tracker's linking convention (e.g. GitHub's `Closes #123` /
+  `Fixes #123` keywords) so closure is automatic and traceable, rather than
+  closing manually with no link back to the change that fixed it.
+- **Set the real closure reason**, not just "closed," when the tracker
+  supports it (resolved vs. won't-fix vs. duplicate vs. not-planned) — a
+  pile of issues closed with no reason recorded is no more useful than an
+  open pile.
+- **Keep descriptions current.** If investigation reveals the actual
+  scope/root-cause differs from the original issue text, update the
+  issue description to reflect current understanding rather than leaving a
+  stale title/body that misleads the next reader.
+- **Don't file an issue for something being fixed in the same session.**
+  Issues track work that isn't actionable *right now*; filing one for a bug
+  you're about to fix in the current change is process theater, not hygiene.
+- Each project's own CLAUDE.md states which concrete tracker is in use and
+  how to reach it (this repo: GitHub Issues via the `gh` CLI / `github` MCP
+  plugin) — `issue-hygiene` states the policy generically, the same
+  pattern `tool-preferences` uses for other tools.
+
 ### `tool-preferences`
 
 Generic, availability-conditional tool preferences (currently scattered
@@ -195,6 +226,10 @@ config).
 `/plugin install shipwright@shipwright`) and pointing at
 `using-shipwright` as the entry point, the same way the current doc points
 at `superpowers:using-superpowers` implicitly via the required-skills table.
+Since this repo has no existing issues section, `issue-hygiene`'s policy
+applies via that same pointer with no project-specific override needed
+beyond noting the concrete tracker (GitHub Issues via `gh`/`github` MCP,
+already in use for this repo's PR workflow).
 
 The existing `scripts/run-bronze-gate.sh` is checked against the new bronze
 gate contract (token-on-success semantics already match; the fast-subset
