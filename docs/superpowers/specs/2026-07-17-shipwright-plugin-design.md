@@ -77,10 +77,23 @@ to any language:
   script executes fast checks (typecheck/lint + a fast test subset — see TDD
   interaction below) and, on success, writes a one-time token consumed by
   the pre-commit hook. The hook blocks the commit if no token is present.
+  Bronze gate also carries a lightweight *manual* doc-hygiene check (not
+  scripted — it doesn't count against the 5-minute runtime budget): any
+  plan file touched by work in this commit must have its checkboxes
+  accurately reflect reality — steps actually completed are ticked, steps
+  not yet done are not. This is narrower than silver's full sweep (see
+  below): it only concerns plans/specs relevant to the current commit, not
+  every doc in the repo, and it doesn't require deleting a finished
+  plan/spec — just that the checkboxes aren't lying. Do not commit if a
+  touched plan's checkboxes are inaccurate.
 - **Silver gate** — runs before merging to `master`/`main`. A gate script
   runs the full check suite (typecheck/lint + full test suite + any
   slow/integration/e2e tests) plus a manual doc-hygiene pass, then writes a
-  token consumed by the pre-commit hook for the merge commit.
+  token consumed by the pre-commit hook for the merge commit. Silver's doc
+  pass is the thorough one: every spec/plan location in the repo is swept,
+  finished specs are incorporated into live docs and deleted, finished plans
+  (all steps ticked) are deleted — do not merge if any spec or plan file
+  with unchecked steps remains.
 - Each consuming project supplies its own `scripts/run-bronze-gate.sh` and
   `scripts/run-silver-gate.sh` implementing the checks appropriate to its
   language/stack (this repo's use `tsc`/`npm test`/`playwright`; the new
