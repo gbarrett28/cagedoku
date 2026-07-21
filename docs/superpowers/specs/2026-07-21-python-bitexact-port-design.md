@@ -118,11 +118,19 @@ differences.
 **First image:** `classic_guardian/easy/killer_sudoku_0.jpg` (simple, and
 alphabetically first in the corpus).
 
+**Excluded images:** `guardian/killer_sudoku_247.jpg` and
+`guardian/killer_sudoku_275.jpg` are the two puzzles where the Python
+reference itself returns `spec_error` (`notSolved`, git_hash `262ef03c...`).
+Never pick either as a bit-check target — there is no valid Python-side
+oracle output to diff against, so a TS mismatch there is uninformative.
+They stay unaddressed until the rest of the corpus matches (see Out of
+scope).
+
 ## Out of scope
 
 - Any change to `killer_sudoku/image/*.py` itself (it's the reference,
-  assumed correct given its 99.9% corpus clean rate — two known
-  `spec_error` failures are not addressed by this effort unless they
+  assumed correct given its 99.9% corpus clean rate — the two known
+  `spec_error` failures above are not addressed by this effort unless they
   block porting an image that happens to hit them).
 - Merging or deleting `feature/python-baseline` (parked until this
   branch's work is complete, then revisited).
