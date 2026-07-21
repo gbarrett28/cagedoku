@@ -99,6 +99,30 @@ probability arrays allow `1e-6` absolute tolerance, to absorb harmless
 cross-language float-summation-order noise — not as slack for algorithmic
 differences.
 
+## Memory-leak instrumentation
+
+The previous TS port effort was hit by undetected WASM/opencv.js `cv.Mat`
+leaks that degraded corpus clean rate independently of algorithmic
+correctness (a separate parked branch, `feature/adaptive-c-default-6`,
+diagnosed and fixed two such leaks in commit `ea7f144`, recovering clean
+rate from 36.8% to 94.5%). Since a leak can masquerade as — or compound —
+the kind of regression this effort is trying to avoid, this port reuses
+that branch's monitor mechanism rather than building new instrumentation:
+
+- `installCvMonitors(cv, win)` in `web/src/session/store.ts` (ported from
+  `ea7f144` unchanged, plus its `store.test.ts` coverage), wired into
+  `loadCV()`. Exposes `window.__cvLiveMats()`, `window.__cvHeapBytes()`,
+  `window.__cvAllocBytes()`.
+- `metricsPayload()` in `web/src/main.ts`, spread into every
+  `__reportOutcome` call, so the existing evaluator plumbing
+  (`live_mats`/`heap_bytes`/`alloc_bytes` columns already present in
+  `corpus-db.ts`/`evaluate-corpus.ts` on master) starts actually receiving
+  data instead of always storing `null`.
+- The per-image bit-check harness (`bitcheck-dump.ts`) reads
+  `window.__cvLiveMats()` before and after processing each image and
+  asserts it returns to its pre-image value — catching a leak at the
+  single-image granularity, not just as a corpus-wide statistic.
+
 ## Per-image workflow
 
 1. Pick the next image (see below).
