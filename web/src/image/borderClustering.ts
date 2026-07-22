@@ -335,6 +335,41 @@ function standardScale(X: Array<[number, number, number, number]>): number[][] {
  *
  * Returns labels array (0 or 1 per point) from the best run (lowest inertia).
  */
+/**
+ * k-means++ centroid initialization, specialized to k=2 (this module only
+ * ever clusters into 2 groups): the first centroid is uniformly random, the
+ * second is chosen with probability proportional to squared distance from
+ * the first. Matches sklearn's default KMeans init strategy (Python's
+ * KMeans(n_clusters=2, n_init=10, random_state=42) has no explicit `init`,
+ * so uses k-means++) — replacing the two prior uniform-random picks, which
+ * had no Python equivalent and could converge to a different local optimum
+ * than sklearn's runs on borderline (non-cleanly-separable) border data.
+ */
+function kmeansPlusPlusInit(X: number[][]): [number[], number[]] {
+  const n = X.length;
+  const i0 = (Math.random() * n) | 0;
+  const c0 = X[i0]!;
+
+  const d2 = X.map(p => dist2(p, c0));
+  const total = d2.reduce((a, b) => a + b, 0);
+
+  if (total <= 0) {
+    // All points coincide with c0 — fall back to a distinct point.
+    let i1 = (Math.random() * (n - 1)) | 0;
+    if (i1 >= i0) i1++;
+    return [c0.slice(), X[i1]!.slice()];
+  }
+
+  let target = Math.random() * total;
+  let i1 = 0;
+  for (; i1 < n; i1++) {
+    target -= d2[i1]!;
+    if (target <= 0) break;
+  }
+  if (i1 >= n) i1 = n - 1;
+  return [c0.slice(), X[i1]!.slice()];
+}
+
 function kmeans2(X: number[][], nInit: number): number[] {
   const n = X.length;
   const d = X[0]!.length;
@@ -342,11 +377,7 @@ function kmeans2(X: number[][], nInit: number): number[] {
   let bestInertia = Infinity;
 
   for (let init = 0; init < nInit; init++) {
-    // Pick 2 distinct random points as initial centroids.
-    const i0 = (Math.random() * n) | 0;
-    let i1 = (Math.random() * (n - 1)) | 0;
-    if (i1 >= i0) i1++;
-    const centroids = [X[i0]!.slice(), X[i1]!.slice()];
+    const centroids = kmeansPlusPlusInit(X);
     let labels = new Array<number>(n).fill(0);
 
     for (let iter = 0; iter < 100; iter++) {
