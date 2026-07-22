@@ -146,6 +146,9 @@ export interface UploadResult {
   selectedNumbers?: BRect[] | undefined;
   outerGridBR?: BRect | null | undefined;
   givenDigits?: number[][] | null | undefined;
+  gray?: number[] | undefined;
+  graySize?: [number, number] | undefined;
+  gridCorners?: number[] | undefined;
 }
 
 /**
@@ -222,6 +225,9 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
     selectedNumbers: result.selectedNumbers,
     outerGridBR: result.outerGridBR,
     givenDigits: result.givenDigits,
+    gray: result.gray,
+    graySize: result.graySize,
+    gridCorners: result.gridCorners,
   };
 }
 

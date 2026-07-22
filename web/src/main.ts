@@ -101,6 +101,9 @@ type ReportOutcomeFn = (o: {
   borderY?: boolean[][] | null | undefined;
   cageTotals?: number[][] | null | undefined;
   givenDigits?: number[][] | null | undefined;
+  gray?: number[] | undefined;
+  graySize?: [number, number] | undefined;
+  gridCorners?: number[] | undefined;
   /** WASM leak monitors — present when installCvMonitors() has run */
   liveMats?: number | undefined;
   heapBytes?: number | undefined;
@@ -134,6 +137,9 @@ function contourPayload(upload: UploadResult | null, spec: PuzzleSpec | null): o
     borderY: spec?.borderY ?? null,
     cageTotals: spec?.cageTotals ?? null,
     givenDigits: upload.givenDigits ?? null,
+    gray: upload.gray,
+    graySize: upload.graySize,
+    gridCorners: upload.gridCorners,
   };
 }
 

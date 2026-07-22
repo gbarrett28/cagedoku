@@ -25,7 +25,8 @@
     "../shared/src/**/*",
     "scripts/corpusEvalReport.ts",
     "scripts/evaluate-corpus.ts",
-    "scripts/dump-contour-trees.ts"
+    "scripts/dump-contour-trees.ts",
+    "scripts/bitcheck-dump.ts"
   ],
   "exclude": ["node_modules", "dist", "src/image/numberRecognition.test.ts"]
 }
