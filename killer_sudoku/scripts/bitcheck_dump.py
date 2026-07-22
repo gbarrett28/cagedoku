@@ -94,6 +94,22 @@ def dump_stages(image_path: Path) -> dict[str, Any]:
     info = InpImage(image_path, config, num_recogniser)
     warped_gry = _warped_gry_for(image_path, config)
 
+    # For classic puzzles, InpImage never assigns self.info.cage_totals (it stays
+    # at its all-zero dataclass default) -- the meaningful placeholder (each row
+    # modelled as one giant 45-total cage) only flows into self.spec.cage_totals
+    # via validate_cage_layout. Prefer spec.cage_totals (same array, by
+    # reference, on the killer path) so the dump reflects what actually drives
+    # puzzle validation for both puzzle types.
+    #
+    # cage_totals is indexed [col, row] in Python (see validation.py's
+    # docstring) but [row][col] in TS (this project's row-major convention,
+    # see CLAUDE.md) -- transpose here so the dump is directly comparable to
+    # the TS side without the diff script needing to know per-field
+    # conventions. (border_x/border_y are exempt from this: both sides
+    # intentionally keep them col-first, see web/src/image/validation.ts.)
+    cage_totals_raw = info.spec.cage_totals if info.spec is not None else info.info.cage_totals
+    cage_totals = cage_totals_raw.T
+
     return {
         "gray": info.gry.tolist(),
         "gray_shape": list(info.gry.shape),
@@ -103,7 +119,7 @@ def dump_stages(image_path: Path) -> dict[str, Any]:
         "strip_features": _strip_features_for(warped_gry, config),
         "border_x": info.info.border_x.tolist(),
         "border_y": info.info.border_y.tolist(),
-        "cage_totals": info.info.cage_totals.tolist(),
+        "cage_totals": cage_totals.tolist(),
         "given_digits": info.given_digits.tolist() if info.given_digits is not None else None,
         "spec_error": info.spec_error,
     }

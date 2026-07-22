@@ -63,7 +63,13 @@ def _compare(py_val: Any, ts_val: Any) -> str | None:
 def diff_dumps(py_dump: dict[str, Any], ts_dump: dict[str, Any]) -> str | None:
     """Returns None if all stages match, else '<label>: <detail>' for the first divergence."""
     for label, py_key, ts_key in _STAGES:
-        detail = _compare(py_dump.get(py_key), ts_dump.get(ts_key))
+        py_val = py_dump.get(py_key)
+        ts_val = ts_dump.get(ts_key)
+        # TS's gridCorners is flattened [x0,y0,x1,y1,...]; Python's grid_corners
+        # is a (4,2) array. Reshape so the two are directly comparable.
+        if py_key == "grid_corners" and ts_val is not None:
+            ts_val = np.asarray(ts_val).reshape(4, 2).tolist()
+        detail = _compare(py_val, ts_val)
         if detail is not None:
             return f"{label}: {detail}"
     return None
