@@ -1,40 +1,28 @@
 {
-  "classifier_type": "linear",
+  "classifier_type": "pca_rbf",
   "arrays": {
-    "hog_win_size": {
+    "pca_win_size": {
       "dtype": "int32",
       "shape": [],
       "offset": 0,
       "byteLength": 4
     },
-    "hog_cell_size": {
+    "pca_dims": {
       "dtype": "int32",
       "shape": [],
       "offset": 4,
       "byteLength": 4
     },
-    "hog_block_size": {
-      "dtype": "int32",
-      "shape": [],
-      "offset": 8,
-      "byteLength": 4
-    },
-    "hog_block_stride": {
-      "dtype": "int32",
-      "shape": [],
-      "offset": 12,
-      "byteLength": 4
-    },
-    "hog_nbins": {
-      "dtype": "int32",
-      "shape": [],
-      "offset": 16,
-      "byteLength": 4
-    },
     "confidence_threshold": {
       "dtype": "float64",
       "shape": [],
-      "offset": 20,
+      "offset": 8,
+      "byteLength": 8
+    },
+    "template_threshold": {
+      "dtype": "float64",
+      "shape": [],
+      "offset": 16,
       "byteLength": 8
     },
     "classes": {
@@ -42,25 +30,157 @@
       "shape": [
         10
       ],
-      "offset": 28,
+      "offset": 24,
       "byteLength": 40
     },
-    "linear_coef": {
+    "pca_mean": {
       "dtype": "float64",
       "shape": [
-        45,
-        1769
+        4096
       ],
-      "offset": 68,
-      "byteLength": 636840
+      "offset": 64,
+      "byteLength": 32768
     },
-    "linear_intercept": {
+    "pca_components": {
+      "dtype": "float64",
+      "shape": [
+        8,
+        4096
+      ],
+      "offset": 32832,
+      "byteLength": 262144
+    },
+    "rbf_support_vectors": {
+      "dtype": "float64",
+      "shape": [
+        118,
+        8
+      ],
+      "offset": 294976,
+      "byteLength": 7552
+    },
+    "rbf_dual_coef": {
+      "dtype": "float64",
+      "shape": [
+        9,
+        118
+      ],
+      "offset": 302528,
+      "byteLength": 8496
+    },
+    "rbf_intercept": {
       "dtype": "float64",
       "shape": [
         45
       ],
-      "offset": 636908,
+      "offset": 311024,
       "byteLength": 360
+    },
+    "rbf_n_support": {
+      "dtype": "int32",
+      "shape": [
+        10
+      ],
+      "offset": 311384,
+      "byteLength": 40
+    },
+    "rbf_gamma": {
+      "dtype": "float64",
+      "shape": [
+        1
+      ],
+      "offset": 311424,
+      "byteLength": 8
+    },
+    "template_0": {
+      "dtype": "float32",
+      "shape": [
+        64,
+        64
+      ],
+      "offset": 311432,
+      "byteLength": 16384
+    },
+    "template_1": {
+      "dtype": "float32",
+      "shape": [
+        64,
+        64
+      ],
+      "offset": 327816,
+      "byteLength": 16384
+    },
+    "template_2": {
+      "dtype": "float32",
+      "shape": [
+        64,
+        64
+      ],
+      "offset": 344200,
+      "byteLength": 16384
+    },
+    "template_3": {
+      "dtype": "float32",
+      "shape": [
+        64,
+        64
+      ],
+      "offset": 360584,
+      "byteLength": 16384
+    },
+    "template_4": {
+      "dtype": "float32",
+      "shape": [
+        64,
+        64
+      ],
+      "offset": 376968,
+      "byteLength": 16384
+    },
+    "template_5": {
+      "dtype": "float32",
+      "shape": [
+        64,
+        64
+      ],
+      "offset": 393352,
+      "byteLength": 16384
+    },
+    "template_6": {
+      "dtype": "float32",
+      "shape": [
+        64,
+        64
+      ],
+      "offset": 409736,
+      "byteLength": 16384
+    },
+    "template_7": {
+      "dtype": "float32",
+      "shape": [
+        64,
+        64
+      ],
+      "offset": 426120,
+      "byteLength": 16384
+    },
+    "template_8": {
+      "dtype": "float32",
+      "shape": [
+        64,
+        64
+      ],
+      "offset": 442504,
+      "byteLength": 16384
+    },
+    "template_9": {
+      "dtype": "float32",
+      "shape": [
+        64,
+        64
+      ],
+      "offset": 458888,
+      "byteLength": 16384
     }
   }
 }
