@@ -172,6 +172,12 @@ export async function parsePuzzleImage(
     srcMat.delete();
     srcMat = up;
   }
+  // Match the 3px white border added to the grayscale mat in prepareGrayMat,
+  // so mMat (computed in that bordered coordinate system) samples correctly.
+  const srcMatBordered = new cv.Mat();
+  cv.copyMakeBorder(srcMat, srcMatBordered, 3, 3, 3, 3, cv.BORDER_CONSTANT, new cv.Scalar(255, 255, 255, 255));
+  srcMat.delete();
+  srcMat = srcMatBordered;
   let warpedImgMat = new cv.Mat();
   cv.warpPerspective(srcMat, warpedImgMat, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
   srcMat.delete();
@@ -210,6 +216,10 @@ export async function parsePuzzleImage(
       srcMat2.delete();
       srcMat2 = up2;
     }
+    const srcMat2Bordered = new cv.Mat();
+    cv.copyMakeBorder(srcMat2, srcMat2Bordered, 3, 3, 3, 3, cv.BORDER_CONSTANT, new cv.Scalar(255, 255, 255, 255));
+    srcMat2.delete();
+    srcMat2 = srcMat2Bordered;
     warpedImgMat.delete();
     warpedImgMat = new cv.Mat();
     cv.warpPerspective(srcMat2, warpedImgMat, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
@@ -619,7 +629,9 @@ async function decodeImageFile(file: File): Promise<ImageData> {
   }
   let bitmap: ImageBitmap;
   try {
-    bitmap = await createImageBitmap(file);
+    // colorSpaceConversion: 'none' skips ICC profile application, matching
+    // cv2.imread's behaviour (which ignores embedded colour profiles).
+    bitmap = await createImageBitmap(file, { colorSpaceConversion: 'none' });
   } catch {
     throw new ImageDecodeError(`"${file.name}" is not a recognised image format`);
   }
@@ -696,6 +708,13 @@ function prepareGrayMat(cv: Cv, imageData: ImageData, resolution: number): [Open
     gry.delete();
     gry = up;
   }
+
+  // Add a 3px white border on all sides, matching Python's get_gry_img — this
+  // ensures Hough/contour detection near the true image edge is fully enclosed.
+  const bordered = new cv.Mat();
+  cv.copyMakeBorder(gry, bordered, 3, 3, 3, 3, cv.BORDER_CONSTANT, new cv.Scalar(255));
+  gry.delete();
+  gry = bordered;
 
   // Return a clone so the two handles are independent (caller deletes both).
   return [gry.clone(), gry];
