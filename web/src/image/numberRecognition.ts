@@ -551,16 +551,57 @@ export function getWarpFromRect(
 }
 
 
-function letterboxWarp(
-  cv: Cv, ax: number, ay: number, bw: number, bh: number,
-  gry: OpenCVMat, resH: number = 64, resW: number = 64,
-): Uint8Array {
-  const scale = Math.min((resW - 1) / bw, (resH - 1) / bh);
-  const destW = bw * scale, destH = bh * scale;
-  const offX = ((resW - 1) - destW) / 2, offY = ((resH - 1) - destH) / 2;
-  const src = [[ax, ay], [ax + bw, ay], [ax + bw, ay + bh], [ax, ay + bh]];
-  const dst = [[offX, offY], [offX + destW, offY], [offX + destW, offY + destH], [offX, offY + destH]];
-  return getWarpFromRect(cv, src, gry, resH, resW, dst);
+/**
+ * Local-maxima peak finder. Replaces `scipy.signal.find_peaks(x, height=...)`.
+ *
+ * Matches scipy's plateau handling exactly: a flat run of equal values
+ * bounded by strictly lower neighbours on both sides counts as one peak,
+ * located at the run's midpoint (floor). Boundary elements (index 0 and
+ * length-1) can never be peaks, matching scipy.
+ *
+ * @param x - Input signal.
+ * @param height - Minimum value for a peak to be reported.
+ */
+function findPeaks(x: ArrayLike<number>, height: number): number[] {
+  const n = x.length;
+  const midpoints: number[] = [];
+  let i = 1;
+  const iMax = n - 1;
+  while (i < iMax) {
+    if (x[i - 1]! < x[i]!) {
+      let iAhead = i + 1;
+      while (iAhead < iMax && x[iAhead] === x[i]) iAhead++;
+      if (x[iAhead]! < x[i]!) {
+        const leftEdge = i;
+        const rightEdge = iAhead - 1;
+        midpoints.push((leftEdge + rightEdge) >> 1);
+        i = iAhead;
+      }
+    }
+    i++;
+  }
+  return midpoints.filter(p => x[p]! >= height);
+}
+
+/**
+ * Column-wise "topmost ink row" profile for a bounding-rect crop of a binary
+ * (ink=255, background=0) image. Matches Python's
+ * `np.argmax(warped_blk[y:y+h, x:x+w], axis=0)`: for each column, the index
+ * (within [0, h)) of the first ink pixel from the top, or 0 if the column has
+ * no ink at all (argmax of an all-zero column returns its first index).
+ */
+function topInkRowProfile(warpedBlk: OpenCVMat, x: number, y: number, w: number, h: number): Int32Array {
+  const data = warpedBlk.data as Uint8Array;
+  const width = warpedBlk.cols as number;
+  const ys = new Int32Array(w);
+  for (let dx = 0; dx < w; dx++) {
+    let rowIdx = 0;
+    for (let dy = 0; dy < h; dy++) {
+      if (data[(y + dy) * width + (x + dx)]! > 0) { rowIdx = dy; break; }
+    }
+    ys[dx] = rowIdx;
+  }
+  return ys;
 }
 
 /**
@@ -587,74 +628,44 @@ export function splitNum(
   cv: Cv,
   br: BRect,
   warpedBlk: OpenCVMat,
-  splitRec?: NumRecogniser,
-  rec?: NumRecogniser,
+  subres: number,
 ): [Uint8Array[], Uint8Array, number, number] {
   const [x, y, w, h] = br;
 
-  // Always warp the full bounding rect to 64×64 — needed for ML classification
-  // and for returning as the merged thumbnail for training export.
+  // Always warp the full bounding rect to 64×64 — returned as the merged
+  // thumbnail for training export (not used for the split decision itself,
+  // unlike the earlier classifier-based approach this replaces).
   const fullSrc = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
   const mergedThumb = getWarpFromRect(cv, fullSrc, warpedBlk);
-  const sqThumb = letterboxWarp(cv, x, y, w, h, warpedBlk);
 
-  if (splitRec === undefined) return [[sqThumb], mergedThumb, x, y];
+  // Peak detection on the column-wise topmost-ink-row profile: a gap between
+  // two digit glyphs shows up as a peak (the profile dips down — less ink
+  // near the top — where there's no glyph). Matches Python's split_num
+  // exactly: no classifier involved in the split decision at all.
+  const ys = topInkRowProfile(warpedBlk, x, y, w, h);
+  const peaks = findPeaks(ys, 4);
+  const validPeaks = peaks.filter(p =>
+    contourIsNumber([x, y, p, h], subres) && contourIsNumber([x + p, y, w - p, h], subres),
+  );
 
-  const [result] = recognise(splitRec, [mergedThumb]);
-  if (result!.label !== 2) return [[sqThumb], mergedThumb, x, y];
-
-  const margin = Math.max(2, w >> 3);
-  const candidates: number[] = [];
-  for (let dx = margin; dx < w - margin; dx += 4) candidates.push(dx);
-
-  if (rec !== undefined && candidates.length > 0) {
-    const allThumbs: Uint8Array[] = [];
-    for (const sp of candidates) {
-      allThumbs.push(letterboxWarp(cv, x,      y, sp,     h, warpedBlk));
-      allThumbs.push(letterboxWarp(cv, x + sp, y, w - sp, h, warpedBlk));
+  let rects: Array<[yTop: number, yBottom: number, xLeft: number, xRight: number]>;
+  if (validPeaks.length === 0) {
+    rects = [[y, y + h, x, x + w]];
+  } else {
+    const sp = validPeaks[validPeaks.length - 1]!;
+    if (sp >= h || (w - sp) >= h) {
+      throw new Error(`splitNum: unexpected digit geometry — split point ${sp} invalid for bounding rect [${br.join(',')}]`);
     }
-    const recs = recognise(rec, allThumbs);
-
-    let bestSplit = -1;
-    let bestScore = -1;
-    for (let i = 0; i < candidates.length; i++) {
-      const score = (recs[i * 2]!.confident ? 1 : 0) + (recs[i * 2 + 1]!.confident ? 1 : 0);
-      const distFromCentre = Math.abs(candidates[i]! - (w >> 1));
-      if (score > bestScore || (score === bestScore && distFromCentre < Math.abs(bestSplit - (w >> 1)))) {
-        bestScore = score;
-        bestSplit = candidates[i]!;
-      }
-    }
-
-    if (bestScore > 0 && bestSplit > 0) {
-      return [
-        [
-          letterboxWarp(cv, x,             y, bestSplit,     h, warpedBlk),
-          letterboxWarp(cv, x + bestSplit, y, w - bestSplit, h, warpedBlk),
-        ],
-        mergedThumb, x, y,
-      ];
-    }
+    rects = [[y, y + h, x, x + sp], [y, y + h, x + sp, x + w]];
   }
 
-  // Fallback: ink-projection minimum (works for well-separated digits).
-  const data = warpedBlk.data as Uint8Array;
-  const width = warpedBlk.cols as number;
-  let splitCol = w >> 1;
-  let minInk = Infinity;
-  for (let dx = margin; dx < w - margin; dx++) {
-    let ink = 0;
-    for (let dy = 0; dy < h; dy++)
-      if (data[(y + dy) * width + (x + dx)]! > 0) ink++;
-    if (ink < minInk) { minInk = ink; splitCol = dx; }
-  }
-  return [
-    [
-      letterboxWarp(cv, x,            y, splitCol,     h, warpedBlk),
-      letterboxWarp(cv, x + splitCol, y, w - splitCol, h, warpedBlk),
-    ],
-    mergedThumb, x, y,
-  ];
+  const halfRes = subres >> 1;
+  const thumbs = rects.map(([yt, yb, xl, xr]) => {
+    const src = [[xl, yt], [xr, yt], [xr, yb], [xl, yb]];
+    return getWarpFromRect(cv, src, warpedBlk, halfRes, halfRes);
+  });
+
+  return [thumbs, mergedThumb, x, y];
 }
 
 /**
@@ -683,8 +694,7 @@ export function readClassicDigits(
   classicConf: number[][],
 ): { digits: number[][]; thumbs: Map<string, Uint8Array[]> } {
   const half = subres >> 1;
-  const margin = (subres / 6) | 0;
-  const patchSize = subres - 2 * margin;
+  const margin = subres >> 2;
   const digits: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
   const thumbs = new Map<string, Uint8Array[]>();
 
@@ -694,7 +704,7 @@ export function readClassicDigits(
 
       const y0 = r * subres + margin;
       const x0 = c * subres + margin;
-      const patch = warpedBlk.roi(new cv.Rect(x0, y0, patchSize, patchSize));
+      const patch = warpedBlk.roi(new cv.Rect(x0, y0, half, half));
 
       const cnts = new cv.MatVector();
       const hier = new cv.Mat();
@@ -725,7 +735,8 @@ export function readClassicDigits(
 
       const ax = x0 + br.x;
       const ay = y0 + br.y;
-      const thumb = letterboxWarp(cv, ax, ay, br.width, br.height, warpedBlk, half, half);
+      const src = [[ax, ay], [ax + br.width, ay], [ax + br.width, ay + br.height], [ax, ay + br.height]];
+      const thumb = getWarpFromRect(cv, src, warpedBlk, half, half);
       const [rec0] = recognise(rec, [thumb]);
       const d = rec0!.label;
       if (d > 0) {

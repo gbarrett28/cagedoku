@@ -103,7 +103,7 @@ export async function parsePuzzleImage(
   file: File,
   rec: NumRecogniser,
   config: ImagePipelineConfig = defaultImagePipelineConfig(),
-  splitRec?: NumRecogniser,
+  _splitRec?: NumRecogniser,
 ): Promise<ParseResult> {
   const resolution = cfgResolution(config);
   const subres = cfgSubres(config);
@@ -280,7 +280,7 @@ export async function parsePuzzleImage(
   try {
     const brdrs = buildBrdrs(initialBorderX, initialBorderY);
     lastCageTotalsResult = buildCageTotals(
-      cv, warpedBlkMat, rec, subres, brdrs, splitRec,
+      cv, warpedBlkMat, rec, subres, brdrs,
     );
     ({ cageTotals, cellThumbs, mergedThumbs } = lastCageTotalsResult);
   } catch (e) {
@@ -324,7 +324,7 @@ export async function parsePuzzleImage(
     try {
       const brdrs2 = buildBrdrs(bestBorderX, bestBorderY);
       lastCageTotalsResult = buildCageTotals(
-        cv, warpedBlkMat, rec, subres, brdrs2, splitRec,
+        cv, warpedBlkMat, rec, subres, brdrs2,
       );
       ({ cageTotals, cellThumbs, mergedThumbs } = lastCageTotalsResult);
 
@@ -339,7 +339,7 @@ export async function parsePuzzleImage(
         );
         try {
           lastCageTotalsResult = buildCageTotals(
-            cv, adaptiveBlk, rec, subres, brdrs2, splitRec,
+            cv, adaptiveBlk, rec, subres, brdrs2,
           );
           ({ cageTotals, cellThumbs, mergedThumbs } = lastCageTotalsResult);
           fallbackUsed = true;
@@ -451,7 +451,6 @@ export function buildCageTotals(
   rec: NumRecogniser,
   subres: number,
   brdrs: Brdrs,
-  splitRec?: NumRecogniser,
   includeTree?: boolean,
 ): CageTotalsResult {
   const numPixels: Array<Array<Uint8Array[] | null>> = Array.from(
@@ -487,7 +486,7 @@ export function buildCageTotals(
       let numThumbArr: Uint8Array[];
       let mergedThumb: Uint8Array;
       try {
-        [numThumbArr, mergedThumb] = splitNum(cv, br, warpedBlk, splitRec, rec);
+        [numThumbArr, mergedThumb] = splitNum(cv, br, warpedBlk, subres);
       } catch (err) {
         console.warn('splitNum failed for contour', br, err);
         continue;
