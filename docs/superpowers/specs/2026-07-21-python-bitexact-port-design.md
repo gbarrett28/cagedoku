@@ -156,6 +156,26 @@ scope).
   assumed correct given its 99.9% corpus clean rate — the two known
   `spec_error` failures above are not addressed by this effort unless they
   block porting an image that happens to hit them).
+
+  **Known caveat, found while porting `guardian/killer_sudoku_0.jpg`
+  (2026-07-22):** `killer_sudoku.image.validation.validate_cage_layout`
+  reads `cage_totals` with a col/row loop-variable swap that transposes it
+  relative to `border_x`/`border_y`'s own convention (verified empirically:
+  a from-scratch union-find replica, fed the real bit-exact-matching
+  border/cage-total data, reproduces Python's actual `info.spec.regions`
+  output only when replicating this transposed reading, not the
+  geometrically-correct one). It doesn't always throw, because the
+  resulting mismatch often still forms a structurally valid — if
+  geometrically wrong — region assignment; that's presumably why it hasn't
+  shown up in the 99.9% clean-rate corpus check. TS's port
+  (`web/src/image/validation.ts`) is self-consistent and does not
+  replicate this quirk, so on some killer images TS's `ProcessingError`
+  will legitimately differ from Python's success. Per the "transpose
+  Python's output to correct order" decision, this is treated as a
+  reference-oracle inconsistency to route around at the dump/tooling
+  boundary (`killer_sudoku/scripts/bitcheck_dump.py` transposes
+  `cage_totals` conditionally on `puzzle_type`), not something to fix in
+  `killer_sudoku/image/*.py` or to replicate in TS.
 - Merging or deleting `feature/python-baseline` (parked until this
   branch's work is complete, then revisited).
 - Any permanent addition to the Vitest suite for bit-exact comparison —
