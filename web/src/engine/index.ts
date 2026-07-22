@@ -139,12 +139,19 @@ function runWithBacktrack(board: BoardState, stalled: boolean): SolveResult {
 /**
  * Run the full solver engine on a validated PuzzleSpec.
  *
+ * Constructs KillerBoardState with virtual cages (required by LinearElimination
+ * to prune via other cage rules; matches Python's batch-solve
+ * killer_sudoku.solver.engine.solve(), which uses include_virtual_cages=True --
+ * as opposed to the interactive-coaching path (getHints/_build_engine), which
+ * deliberately omits them so algebraically-derived cages surface as opt-in
+ * hints rather than silently narrowing candidates during play).
+ *
  * Falls back to MRV backtracking if the rule engine stalls.
  * When backtracking is used, `stalledCandidates` in the result holds the
  * candidate grid as it was at the moment the engine stalled.
  */
 export function solve(spec: PuzzleSpec, givenDigits?: number[][]): SolveResult {
-  const board = new KillerBoardState(spec, { includeVirtualCages: false });
+  const board = new KillerBoardState(spec, { includeVirtualCages: true });
   const engine = new KillerSolverEngine(board, defaultRules());
 
   if (givenDigits) seedGivenDigits(engine, board, givenDigits);
@@ -211,7 +218,7 @@ export function solveFromStall(candidates: number[][][]): SolveResult {
  * candidates. Single-element arrays represent solved cells.
  */
 export function solveFromCandidates(spec: PuzzleSpec, candidates: number[][][]): SolveResult {
-  const board = new KillerBoardState(spec, { includeVirtualCages: false });
+  const board = new KillerBoardState(spec, { includeVirtualCages: true });
   const engine = new KillerSolverEngine(board, defaultRules());
 
   for (let r = 0; r < 9; r++)
