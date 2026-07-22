@@ -15,8 +15,48 @@ import json
 from pathlib import Path
 from typing import Any
 
+import cv2
+import numpy as np
+
+from killer_sudoku.image.cell_scan import detect_rotation, scan_cells
 from killer_sudoku.image.config import ImagePipelineConfig
+from killer_sudoku.image.grid_location import get_gry_img, locate_grid
 from killer_sudoku.image.inp_image import InpImage
+
+
+def _cage_conf_for(image_path: Path, config: ImagePipelineConfig) -> list[list[float]]:
+    """Independently replicates InpImage's locate_grid/warp/rotation/scan_cells.
+
+    Reproduces the killer_sudoku/image/inp_image.py __init__ sequence up to
+    scan_cells to get the cage_conf anchors _identify_borders actually
+    clusters against — InpImage doesn't expose this as a public attribute.
+    Diagnostic only; does not modify the reference pipeline.
+    """
+    resolution = config.resolution
+    subres = config.subres
+    gry, _img = get_gry_img(image_path, resolution)
+    _blk, grid = locate_grid(gry, config.grid_location)
+
+    dst_size = np.array(
+        [[0, 0], [resolution - 1, 0], [resolution - 1, resolution - 1], [0, resolution - 1]],
+        dtype=np.float32,
+    )
+    m = np.asarray(cv2.getPerspectiveTransform(grid, dst_size), dtype=np.float64)
+    warped_gry = np.asarray(
+        cv2.warpPerspective(gry, m, (resolution, resolution), flags=cv2.INTER_LINEAR), dtype=np.uint8
+    )
+
+    rotation_k = detect_rotation(warped_gry, subres, config.cell_scan.rotation_dominance_threshold)
+    if rotation_k != 0:
+        grid = np.roll(grid, -rotation_k, axis=0)
+        m = np.asarray(cv2.getPerspectiveTransform(grid, dst_size), dtype=np.float64)
+        warped_gry = np.asarray(
+            cv2.warpPerspective(gry, m, (resolution, resolution), flags=cv2.INTER_LINEAR), dtype=np.uint8
+        )
+
+    cage_conf, _classic_conf = scan_cells(warped_gry, subres, config.cell_scan)
+    result: list[list[float]] = cage_conf.tolist()
+    return result
 
 
 def dump_stages(image_path: Path) -> dict[str, Any]:
@@ -30,6 +70,7 @@ def dump_stages(image_path: Path) -> dict[str, Any]:
         "gray_shape": list(info.gry.shape),
         "grid_corners": info.info.grid.tolist(),
         "puzzle_type": info.puzzle_type,
+        "cage_conf": _cage_conf_for(image_path, config),
         "border_x": info.info.border_x.tolist(),
         "border_y": info.info.border_y.tolist(),
         "cage_totals": info.info.cage_totals.tolist(),
