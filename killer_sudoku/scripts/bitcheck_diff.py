@@ -28,6 +28,7 @@ _STAGES: list[tuple[str, str, str]] = [
     ("Stage 4: border_y", "border_y", "borderY"),
     ("Stage 5: cage totals", "cage_totals", "cageTotals"),
     ("Stage 5: given digits", "given_digits", "givenDigits"),
+    ("Stage 6: regions", "regions", "regions"),
     ("Stage 6: spec_error", "spec_error", "specError"),
 ]
 

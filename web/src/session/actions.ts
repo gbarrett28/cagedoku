@@ -148,6 +148,8 @@ export interface UploadResult {
   detectedBorderX?: boolean[][] | undefined;
   detectedBorderY?: boolean[][] | undefined;
   detectedCageTotals?: number[][] | undefined;
+  /** spec.regions when spec construction succeeded, else null. Bitcheck harness only. */
+  regions?: number[][] | null | undefined;
 }
 
 /**
@@ -227,6 +229,7 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
     detectedBorderX: result.detectedBorderX,
     detectedBorderY: result.detectedBorderY,
     detectedCageTotals: result.detectedCageTotals,
+    regions: result.spec?.regions ?? null,
   };
 }
 

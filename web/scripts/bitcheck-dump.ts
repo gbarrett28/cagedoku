@@ -22,6 +22,7 @@ interface OutcomeJson {
   borderX?: boolean[][] | null;
   borderY?: boolean[][] | null;
   cageTotals?: number[][] | null;
+  regions?: number[][] | null;
   givenDigits?: number[][] | null;
   gray?: number[][];
   graySize?: [number, number];
@@ -69,6 +70,7 @@ async function main(): Promise<void> {
     borderX: outcome.borderX ?? null,
     borderY: outcome.borderY ?? null,
     cageTotals: outcome.cageTotals ?? null,
+    regions: outcome.regions ?? null,
     givenDigits: outcome.givenDigits ?? null,
     specError: outcome.specError,
     liveMatsBefore,

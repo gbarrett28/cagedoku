@@ -95,6 +95,7 @@ type ReportOutcomeFn = (o: {
   borderX?: boolean[][] | null | undefined;
   borderY?: boolean[][] | null | undefined;
   cageTotals?: number[][] | null | undefined;
+  regions?: number[][] | null | undefined;
   givenDigits?: number[][] | null | undefined;
   gray?: number[][] | undefined;
   graySize?: [number, number] | undefined;
@@ -132,6 +133,9 @@ function debugStagePayload(upload: UploadResult | null): object {
     borderX: upload.detectedBorderX ?? null,
     borderY: upload.detectedBorderY ?? null,
     cageTotals: upload.detectedCageTotals ?? null,
+    // regions is null when spec construction failed (it's derived from the
+    // validated PuzzleSpec, unlike the raw detectedX fields above).
+    regions: upload.regions ?? null,
     givenDigits: upload.givenDigits ?? null,
     gray: upload.gray,
     graySize: upload.graySize,

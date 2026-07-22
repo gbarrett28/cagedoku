@@ -135,6 +135,12 @@ def dump_stages(image_path: Path) -> dict[str, Any]:
     cage_totals_raw = info.spec.cage_totals if info.spec is not None else info.info.cage_totals
     cage_totals = cage_totals_raw.T
 
+    # spec.regions is built by validate_cage_layout's same [col, row] union-find
+    # as cage_totals (see validation.py), so it needs the same transpose to
+    # compare against TS's row-major spec.regions. Only meaningful once spec
+    # construction succeeds -- null otherwise, matching TS's own regions field.
+    regions = info.spec.regions.T.tolist() if info.spec is not None else None
+
     return {
         "gray": info.gry.tolist(),
         "gray_shape": list(info.gry.shape),
@@ -145,6 +151,7 @@ def dump_stages(image_path: Path) -> dict[str, Any]:
         "border_x": info.info.border_x.tolist(),
         "border_y": info.info.border_y.tolist(),
         "cage_totals": cage_totals.tolist(),
+        "regions": regions,
         "given_digits": info.given_digits.tolist() if info.given_digits is not None else None,
         "spec_error": info.spec_error,
     }
