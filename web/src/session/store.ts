@@ -156,7 +156,12 @@ export function loadCV(
       console.log('[CV] script loaded, waiting for WASM init…');
       const w = window as unknown as { cv?: Promise<Cv> | Cv };
       Promise.resolve(w.cv as Promise<Cv>)
-        .then((module: Cv) => { console.log('[CV] ready'); _cv = module; resolve(_cv); })
+        .then((module: Cv) => {
+          console.log('[CV] ready');
+          _cv = module;
+          installCvMonitors(_cv);
+          resolve(_cv);
+        })
         .catch(e => { console.error('[CV] WASM init failed', e); reject(e as Error); });
     };
     script.onerror = (e) => {
@@ -237,4 +242,76 @@ export function loadSplitRec(
   })();
 
   return _splitRecLoading;
+}
+
+/**
+ * Installs WASM leak monitors on the cv module and exposes three diagnostic
+ * functions on the window object:
+ *
+ *   window.__cvLiveMats()  — count of cv.Mat / cv.MatVector objects not yet .delete()d
+ *   window.__cvHeapBytes() — current WASM heap watermark (cv.HEAPU8.byteLength)
+ *   window.__cvAllocBytes() — bytes currently allocated by dlmalloc (-1 if unavailable)
+ *
+ * Called once immediately after cv is ready. The second parameter defaults to
+ * window and is overridable for unit testing.
+ */
+export function installCvMonitors(
+  cv: Cv,
+  win: Record<string, unknown> = window as unknown as Record<string, unknown>,
+): void {
+  let liveMats = 0;
+  const m = cv as unknown as Record<string, unknown>;
+
+  // Patch MatVector.prototype.get before wrapping the constructor so the patch
+  // applies to every instance. Each accessor-returned Mat is a separate WASM
+  // allocation that needs .delete().
+  const OrigMatVec = m['MatVector'] as { prototype: { get(i: number): { delete(): void } } };
+  const origGet = OrigMatVec.prototype.get;
+  OrigMatVec.prototype.get = function (i: number) {
+    liveMats++;
+    const mat = origGet.call(this, i) as { delete(): void };
+    const origDel = mat.delete.bind(mat);
+    mat.delete = () => { liveMats--; origDel(); };
+    return mat;
+  };
+
+  // Wrap Mat constructor.
+  const OrigMat = m['Mat'] as new (...a: unknown[]) => { delete(): void };
+  m['Mat'] = new Proxy(OrigMat, {
+    construct(target, args) {
+      liveMats++;
+      const inst = Reflect.construct(target, args) as { delete(): void };
+      const origDel = inst.delete.bind(inst);
+      inst.delete = () => { liveMats--; origDel(); };
+      return inst;
+    },
+  });
+
+  // Wrap MatVector constructor.
+  const OrigMatVector = m['MatVector'] as new (...a: unknown[]) => { delete(): void };
+  m['MatVector'] = new Proxy(OrigMatVector, {
+    construct(target, args) {
+      liveMats++;
+      const inst = Reflect.construct(target, args) as { delete(): void };
+      const origDel = inst.delete.bind(inst);
+      inst.delete = () => { liveMats--; origDel(); };
+      return inst;
+    },
+  });
+
+  win['__cvLiveMats'] = (): number => liveMats;
+  win['__cvHeapBytes'] = (): number => {
+    const heapu8 = m['HEAPU8'] as Uint8Array | undefined;
+    return heapu8?.byteLength ?? -1;
+  };
+  win['__cvAllocBytes'] = (): number => {
+    try {
+      const mallinfo = m['_mallinfo'] as (() => number) | undefined;
+      if (!mallinfo) return -1;
+      const ptr = mallinfo();
+      const heap32 = m['HEAP32'] as Int32Array | undefined;
+      // dlmalloc struct: uordblks (total allocated bytes) is field index 7
+      return heap32?.[(ptr >> 2) + 7] ?? -1;
+    } catch { return -1; }
+  };
 }

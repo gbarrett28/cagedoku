@@ -101,6 +101,10 @@ type ReportOutcomeFn = (o: {
   borderY?: boolean[][] | null | undefined;
   cageTotals?: number[][] | null | undefined;
   givenDigits?: number[][] | null | undefined;
+  /** WASM leak monitors — present when installCvMonitors() has run */
+  liveMats?: number | undefined;
+  heapBytes?: number | undefined;
+  allocBytes?: number | undefined;
 }) => void;
 
 function timingPayload(
@@ -108,6 +112,15 @@ function timingPayload(
   fallbackUsed: boolean, specError: string | null,
 ): { parseElapsedMs: number; solveElapsedMs: number; fallbackUsed: boolean; specError: string | null } {
   return { parseElapsedMs, solveElapsedMs, fallbackUsed, specError };
+}
+
+function metricsPayload(): { liveMats: number; heapBytes: number; allocBytes: number } {
+  const win = window as unknown as Record<string, unknown>;
+  return {
+    liveMats: (win['__cvLiveMats'] as (() => number) | undefined)?.() ?? -1,
+    heapBytes: (win['__cvHeapBytes'] as (() => number) | undefined)?.() ?? -1,
+    allocBytes: (win['__cvAllocBytes'] as (() => number) | undefined)?.() ?? -1,
+  };
 }
 
 function contourPayload(upload: UploadResult | null, spec: PuzzleSpec | null): object {
@@ -1369,6 +1382,7 @@ async function handleProcess(file?: File): Promise<void> {
             specHash,
             ...contourPayload(uploadResult, ocrSpec),
             ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
+            ...metricsPayload(),
           });
           const playing = confirmPuzzle(board);
           renderPlayingMode(playing);
@@ -1401,6 +1415,7 @@ async function handleProcess(file?: File): Promise<void> {
           bucket: 'notSolved', reason: 'layout errors', puzzleType: PuzzleState.kind(state),
           detectedBigApple, specHash, ...contourPayload(uploadResult, ocrSpec),
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
+          ...metricsPayload(),
         });
         reviewErrorCells = layoutResult.errorCells;
         redrawGrid();
@@ -1411,6 +1426,7 @@ async function handleProcess(file?: File): Promise<void> {
           bucket: 'notSolved', reason: 'sum warning', puzzleType: PuzzleState.kind(state),
           detectedBigApple, specHash, ...contourPayload(uploadResult, ocrSpec),
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
+          ...metricsPayload(),
         });
         setStatus(layoutResult.warnings.join('; ') + ' — please correct the totals before confirming', true);
       } else {
@@ -1419,6 +1435,7 @@ async function handleProcess(file?: File): Promise<void> {
           bucket: 'notSolved', reason: 'solver incomplete', puzzleType: PuzzleState.kind(state),
           detectedBigApple, specHash, ...contourPayload(uploadResult, ocrSpec),
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
+          ...metricsPayload(),
         });
         setStatus('Solver could not determine all cells — please check the cage layout and totals', true);
       }
@@ -1438,6 +1455,7 @@ async function handleProcess(file?: File): Promise<void> {
         bucket, reason, puzzleType: PuzzleState.kind(state), detectedBigApple, specHash,
         ...contourPayload(uploadResult, ocrSpec),
         ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
+        ...metricsPayload(),
       });
       confirmDisabled = assessment.bucket === 'notSolved';
     } else {
@@ -1446,6 +1464,7 @@ async function handleProcess(file?: File): Promise<void> {
         bucket: 'notSolved', reason: 'ocr warning', puzzleType: PuzzleState.kind(state),
         detectedBigApple, specHash, ...contourPayload(uploadResult, ocrSpec),
         ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
+        ...metricsPayload(),
       });
     }
     applyUploadResult(state, warpedImageUrl, warning ?? 'Review the detected digits and press Confirm & Solve', detectedBigApple);
@@ -1463,6 +1482,7 @@ async function handleProcess(file?: File): Promise<void> {
         puzzleType: null, detectedBigApple: false, specHash: null,
         ...contourPayload(null, null),
         ...timingPayload(Date.now() - parseStartMs, 0, false, null),
+        ...metricsPayload(),
       });
     } else {
       setStatus(`Processing failed: ${String(e)}`, true);
@@ -1472,6 +1492,7 @@ async function handleProcess(file?: File): Promise<void> {
         puzzleType: null, detectedBigApple: false, specHash: null,
         ...contourPayload(null, null),
         ...timingPayload(Date.now() - parseStartMs, 0, false, null),
+        ...metricsPayload(),
       });
     }
   }
@@ -1795,6 +1816,7 @@ async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number)
       bucket, reason, puzzleType: PuzzleState.kind(currentState), detectedBigApple, specHash,
       ...contourPayload(null, null),
       ...timingPayload(0, 0, false, null),
+      ...metricsPayload(),
     });
   }
 }

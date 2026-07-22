@@ -9,10 +9,25 @@ import {
   enqueueTelemetryFailure,
   drainTelemetryFailure,
   onTelemetryFailure,
+  installCvMonitors,
 } from './store.js';
+import type { OpenCVModule } from '../image/opencv.js';
 
 function makeState(): PuzzleState {
   return PuzzleState.createClassic(null, [], null);
+}
+
+function makeFakeCv(heapSize = 0): OpenCVModule {
+  class FakeMat { delete(): void {} }
+  class FakeMatVector {
+    delete(): void {}
+    get(_i: number): FakeMat { return new FakeMat(); }
+  }
+  return {
+    Mat: FakeMat,
+    MatVector: FakeMatVector,
+    HEAPU8: new Uint8Array(heapSize),
+  } as unknown as OpenCVModule;
 }
 
 describe('store candidate list', () => {
@@ -79,5 +94,77 @@ describe('telemetry failure queue', () => {
     onTelemetryFailure(handler);
     enqueueTelemetryFailure('a failure');
     expect(handler).toHaveBeenCalledOnce();
+  });
+});
+
+describe('installCvMonitors', () => {
+  it('exposes __cvLiveMats, __cvHeapBytes, __cvAllocBytes on the window object', () => {
+    const win: Record<string, unknown> = {};
+    installCvMonitors(makeFakeCv(), win);
+    expect(typeof win['__cvLiveMats']).toBe('function');
+    expect(typeof win['__cvHeapBytes']).toBe('function');
+    expect(typeof win['__cvAllocBytes']).toBe('function');
+  });
+
+  it('starts with zero live mats', () => {
+    const win: Record<string, unknown> = {};
+    installCvMonitors(makeFakeCv(), win);
+    expect((win['__cvLiveMats'] as () => number)()).toBe(0);
+  });
+
+  it('increments count on new Mat() and decrements on delete()', () => {
+    const win: Record<string, unknown> = {};
+    const cv = makeFakeCv();
+    installCvMonitors(cv, win);
+    const live = () => (win['__cvLiveMats'] as () => number)();
+
+    const m = new (cv.Mat as new () => { delete(): void })();
+    expect(live()).toBe(1);
+    m.delete();
+    expect(live()).toBe(0);
+  });
+
+  it('increments count on new MatVector() and decrements on delete()', () => {
+    const win: Record<string, unknown> = {};
+    const cv = makeFakeCv();
+    installCvMonitors(cv, win);
+    const live = () => (win['__cvLiveMats'] as () => number)();
+
+    const v = new (cv.MatVector as new () => { delete(): void })();
+    expect(live()).toBe(1);
+    v.delete();
+    expect(live()).toBe(0);
+  });
+
+  it('counts MatVector.get() accessor mats separately', () => {
+    const win: Record<string, unknown> = {};
+    const cv = makeFakeCv();
+    installCvMonitors(cv, win);
+    const live = () => (win['__cvLiveMats'] as () => number)();
+
+    type MV = { delete(): void; get(i: number): { delete(): void } };
+    const v = new (cv.MatVector as new () => MV)();
+    expect(live()).toBe(1);
+
+    const m = v.get(0);
+    expect(live()).toBe(2);
+
+    m.delete();
+    expect(live()).toBe(1);
+
+    v.delete();
+    expect(live()).toBe(0);
+  });
+
+  it('reports HEAPU8 byteLength as __cvHeapBytes', () => {
+    const win: Record<string, unknown> = {};
+    installCvMonitors(makeFakeCv(4096), win);
+    expect((win['__cvHeapBytes'] as () => number)()).toBe(4096);
+  });
+
+  it('returns -1 for __cvAllocBytes when _mallinfo is absent', () => {
+    const win: Record<string, unknown> = {};
+    installCvMonitors(makeFakeCv(), win);
+    expect((win['__cvAllocBytes'] as () => number)()).toBe(-1);
   });
 });
