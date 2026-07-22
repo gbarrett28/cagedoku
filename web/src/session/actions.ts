@@ -145,6 +145,9 @@ export interface UploadResult {
   gray?: number[][] | undefined;
   graySize?: [number, number] | undefined;
   gridCorners?: number[] | undefined;
+  detectedBorderX?: boolean[][] | undefined;
+  detectedBorderY?: boolean[][] | undefined;
+  detectedCageTotals?: number[][] | undefined;
 }
 
 /**
@@ -221,6 +224,9 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
     gray: result.gray,
     graySize: result.graySize,
     gridCorners: result.gridCorners,
+    detectedBorderX: result.detectedBorderX,
+    detectedBorderY: result.detectedBorderY,
+    detectedCageTotals: result.detectedCageTotals,
   };
 }
 

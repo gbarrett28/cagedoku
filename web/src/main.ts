@@ -82,7 +82,6 @@ import { INSTALL_DISMISSED_KEY, shouldShowInstallBanner } from './installPrompt.
 import { saveSession, loadSession, clearPersistedSession } from './session/persistence.js';
 import { toCanvas as qrToCanvas } from 'qrcode';
 import { computeSpecHash } from './solver/specHash.js';
-import type { PuzzleSpec } from './solver/puzzleSpec.js';
 import type { UploadResult } from './session/actions.js';
 
 // ---------------------------------------------------------------------------
@@ -122,13 +121,17 @@ function metricsPayload(): { liveMats: number; heapBytes: number; allocBytes: nu
   };
 }
 
-function debugStagePayload(upload: UploadResult | null, spec: PuzzleSpec | null): object {
+function debugStagePayload(upload: UploadResult | null): object {
   const win = window as unknown as Record<string, unknown>;
   if (!win['__reportContourTree'] || upload?.gray === undefined) return {};
   return {
-    borderX: spec?.borderX ?? null,
-    borderY: spec?.borderY ?? null,
-    cageTotals: spec?.cageTotals ?? null,
+    // detectedBorderX/Y/CageTotals reflect what the pipeline actually found,
+    // independent of whether spec construction (validateCageLayout) later
+    // succeeded — spec is null on validation failure, but the bit-check
+    // harness needs the real detection result, not a UI placeholder.
+    borderX: upload.detectedBorderX ?? null,
+    borderY: upload.detectedBorderY ?? null,
+    cageTotals: upload.detectedCageTotals ?? null,
     givenDigits: upload.givenDigits ?? null,
     gray: upload.gray,
     graySize: upload.graySize,
@@ -1379,7 +1382,7 @@ async function handleProcess(file?: File): Promise<void> {
             puzzleType: 'killer',
             detectedBigApple,
             specHash,
-            ...debugStagePayload(uploadResult, ocrSpec),
+            ...debugStagePayload(uploadResult),
             ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
             ...metricsPayload(),
           });
@@ -1412,7 +1415,7 @@ async function handleProcess(file?: File): Promise<void> {
         logAction('review_shown', 'layout errors');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'layout errors', puzzleType: PuzzleState.kind(state),
-          detectedBigApple, specHash, ...debugStagePayload(uploadResult, ocrSpec),
+          detectedBigApple, specHash, ...debugStagePayload(uploadResult),
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
         });
@@ -1423,7 +1426,7 @@ async function handleProcess(file?: File): Promise<void> {
         logAction('review_shown', 'sum warning');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'sum warning', puzzleType: PuzzleState.kind(state),
-          detectedBigApple, specHash, ...debugStagePayload(uploadResult, ocrSpec),
+          detectedBigApple, specHash, ...debugStagePayload(uploadResult),
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
         });
@@ -1432,7 +1435,7 @@ async function handleProcess(file?: File): Promise<void> {
         logAction('review_shown', 'solver incomplete');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'solver incomplete', puzzleType: PuzzleState.kind(state),
-          detectedBigApple, specHash, ...debugStagePayload(uploadResult, ocrSpec),
+          detectedBigApple, specHash, ...debugStagePayload(uploadResult),
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
         });
@@ -1452,7 +1455,7 @@ async function handleProcess(file?: File): Promise<void> {
       logAction('review_shown', reason);
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket, reason, puzzleType: PuzzleState.kind(state), detectedBigApple, specHash,
-        ...debugStagePayload(uploadResult, ocrSpec),
+        ...debugStagePayload(uploadResult),
         ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
         ...metricsPayload(),
       });
@@ -1461,7 +1464,7 @@ async function handleProcess(file?: File): Promise<void> {
       logAction('review_shown', 'ocr warning');
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket: 'notSolved', reason: 'ocr warning', puzzleType: PuzzleState.kind(state),
-        detectedBigApple, specHash, ...debugStagePayload(uploadResult, ocrSpec),
+        detectedBigApple, specHash, ...debugStagePayload(uploadResult),
         ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
         ...metricsPayload(),
       });
@@ -1479,7 +1482,7 @@ async function handleProcess(file?: File): Promise<void> {
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket: 'notSolved', reason: `GridNotFoundError: ${e.message}`,
         puzzleType: null, detectedBigApple: false, specHash: null,
-        ...debugStagePayload(null, null),
+        ...debugStagePayload(null),
         ...timingPayload(Date.now() - parseStartMs, 0, false, null),
         ...metricsPayload(),
       });
@@ -1489,7 +1492,7 @@ async function handleProcess(file?: File): Promise<void> {
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket: 'notSolved', reason: `error: ${String(e)}`,
         puzzleType: null, detectedBigApple: false, specHash: null,
-        ...debugStagePayload(null, null),
+        ...debugStagePayload(null),
         ...timingPayload(Date.now() - parseStartMs, 0, false, null),
         ...metricsPayload(),
       });
@@ -1813,7 +1816,7 @@ async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number)
     const specHash = await computeSpecHash(currentState);
     (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
       bucket, reason, puzzleType: PuzzleState.kind(currentState), detectedBigApple, specHash,
-      ...debugStagePayload(null, null),
+      ...debugStagePayload(null),
       ...timingPayload(0, 0, false, null),
       ...metricsPayload(),
     });

@@ -78,6 +78,16 @@ export interface ParseResult {
   graySize?: [number, number] | undefined;
   /** Stage 2 grid corners (post-rotation-correction), flattened [x0,y0,...,x3,y3]. */
   gridCorners?: number[] | undefined;
+  /**
+   * The actual detected border/cage-total arrays, independent of whether
+   * `spec` construction succeeded. `spec`/`spec.cageTotals` etc. are null on
+   * validation failure, but the bit-check harness needs to see what the
+   * pipeline actually detected (not a UI review-screen placeholder) to
+   * compare against the Python reference. Bitcheck harness only.
+   */
+  detectedBorderX?: boolean[][] | undefined;
+  detectedBorderY?: boolean[][] | undefined;
+  detectedCageTotals?: number[][] | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -256,6 +266,9 @@ export async function parsePuzzleImage(
       gray: grayForDump,
       graySize: graySizeForDump,
       gridCorners: gridCornersForDump,
+      detectedBorderX: borderX,
+      detectedBorderY: borderY,
+      detectedCageTotals: cageTotals,
     } : {}) };
   }
 
@@ -374,6 +387,8 @@ export async function parsePuzzleImage(
         gray: grayForDump,
         graySize: graySizeForDump,
         gridCorners: gridCornersForDump,
+        detectedBorderX: bestBorderX,
+        detectedBorderY: bestBorderY,
       } : {}),
     };
   }
@@ -415,6 +430,9 @@ export async function parsePuzzleImage(
       gray: grayForDump,
       graySize: graySizeForDump,
       gridCorners: gridCornersForDump,
+      detectedBorderX: bestBorderX,
+      detectedBorderY: bestBorderY,
+      detectedCageTotals: usedTotals,
     } : {}),
   };
 }

@@ -101,14 +101,33 @@ def dump_stages(image_path: Path) -> dict[str, Any]:
     # reference, on the killer path) so the dump reflects what actually drives
     # puzzle validation for both puzzle types.
     #
-    # cage_totals is indexed [col, row] in Python (see validation.py's
-    # docstring) but [row][col] in TS (this project's row-major convention,
-    # see CLAUDE.md) -- transpose here so the dump is directly comparable to
-    # the TS side without the diff script needing to know per-field
-    # conventions. (border_x/border_y are exempt from this: both sides
-    # intentionally keep them col-first, see web/src/image/validation.ts.)
+    # Two DIFFERENT Python code paths build this array with DIFFERENT native
+    # axis conventions, despite both flowing through the same
+    # self.spec.cage_totals field:
+    #   - Classic: cage_totals_classic[0, r] = 45 for r in range(9) is genuinely
+    #     col-major ([col][row]) -- verified empirically (matches TS's
+    #     row-major array only after transposing).
+    #   - Killer: _build_cage_totals's returned array is genuinely row-major
+    #     ([row][col]) already -- verified empirically (matches TS directly,
+    #     with NO transpose) by dumping info.info.cage_totals live and
+    #     comparing element-for-element against TS's own computed array.
+    # (validate_cage_layout itself reads cage_totals with a col/row loop-swap
+    # that -- also verified empirically via a from-scratch union-find replica
+    # -- ends up transposing it relative to border_x/border_y's convention;
+    # this doesn't throw for most images because the resulting mismatch often
+    # still forms a structurally valid, if geometrically wrong, region
+    # assignment. That's a latent inconsistency in the reference pipeline,
+    # not something this dump script can or should paper over -- it's flagged
+    # here for visibility, not fixed, since killer_sudoku/image/*.py is out of
+    # scope for this port.)
+    #
+    # Normalise both to row-major on the way out (this project's canonical
+    # convention, see CLAUDE.md) so the dump is always directly comparable to
+    # TS without the diff script needing to special-case per field. (border_x/
+    # border_y are exempt: both sides intentionally keep those col-first, see
+    # web/src/image/validation.ts.)
     cage_totals_raw = info.spec.cage_totals if info.spec is not None else info.info.cage_totals
-    cage_totals = cage_totals_raw.T
+    cage_totals = cage_totals_raw.T if info.puzzle_type == "classic" else cage_totals_raw
 
     return {
         "gray": info.gry.tolist(),

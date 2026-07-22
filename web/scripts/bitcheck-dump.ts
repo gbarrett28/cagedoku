@@ -40,6 +40,7 @@ async function main(): Promise<void> {
 
   const browser = await chromium.launch();
   const page = await browser.newPage();
+  page.on('console', msg => console.log(`[browser:${msg.type()}]`, msg.text()));
   await page.goto(BASE_URL);
   await waitForPipelineReady(page);
   await page.evaluate(() => { (window as unknown as Record<string, unknown>)['__reportContourTree'] = true; });
