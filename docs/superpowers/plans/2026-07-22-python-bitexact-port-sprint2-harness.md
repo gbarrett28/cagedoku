@@ -583,9 +583,51 @@ independent finding: `web/scripts/bitcheck-dump.ts` reported 1 leaked `cv.Mat`
 processing this image (`liveMatsBefore: 0`, `liveMatsAfter: 1`) — Sprint 1's
 leak monitor catching something real on its very first use.
 
+### Root-causing (commit `7085e4d`)
+
+Two real bugs found and fixed, via `superpowers:systematic-debugging`:
+
+1. **Missing 3px border** — Python's `get_gry_img` adds a 3px white border on
+   all sides before grid detection; TS's `prepareGrayMat` had none. Fixed via
+   `cv.copyMakeBorder`, mirrored onto the `srcMat`/`srcMat2` colour-image
+   constructions too (their warp uses the same corners/matrix found in the
+   now-bordered grayscale coordinate system, so they had to move in lockstep).
+2. **ICC colour profile** — `decodeImageFile`'s `createImageBitmap(file)` let
+   the browser apply the image's embedded colour profile; `cv2.imread` ignores
+   it entirely. Fixed with `{ colorSpaceConversion: 'none' }`.
+
+Together these took the Stage 1 divergence from a shape mismatch to 64,970
+differing pixels out of 2,979,076 (max abs diff 1) — consistent with an
+inherent rounding difference between the browser's native JPEG decoder and
+libjpeg (via cv2), the same wall `feature/python-baseline`'s abandoned
+"rebuild opencv.js with imgcodecs + imdecode" commit was written to solve.
+
+**Despite that residual Stage 1 noise, `puzzle_type` and `cage_totals` already
+match exactly** (both sum to 405, element-wise identical) — the noise doesn't
+propagate that far. `border_x`/`border_y` do **not** match (confirmed not a
+transpose/indexing-convention artifact — shapes and direct/transposed
+comparisons all disagree), a real, distinct Stage 4 divergence.
+
+The leaked `cv.Mat` was tested against the `__reportContourTree` hypothesis
+(leak only in debug-only contour-tree code) and that was **falsified** — it
+leaks identically with the flag on or off, so it's in the always-exercised
+pipeline path. Every `MatVector.get()` call site in `gridLocation.ts`,
+`cellScan.ts`, and `numberRecognition.ts` was checked and each already
+balances with a `.delete()`; the leak's source is still unknown.
+
 ## After this sprint
 
-Both findings above need root-causing via `superpowers:systematic-debugging` (fix
-the TS side only, never the Python reference), then the Task 3/4 dump-and-diff
-steps re-run until image 0 matches on every stage. Only then does image 2 get
-picked, in a new plan.
+Two open threads, both requiring fresh root-cause investigation (not yet
+attempted beyond ruling out the above):
+
+1. **Stage 4 `border_x`/`border_y` divergence** on image 0 — puzzle_type and
+   cage_totals already agree, so this is likely isolated to the anchored
+   border-clustering logic (`web/src/image/borderClustering.ts` vs
+   `killer_sudoku/image/border_clustering.py` / `border_detection.py`).
+2. **1 leaked `cv.Mat`**, confirmed to be in the main pipeline path (not the
+   debug-only contour-tree extraction). Needs bisection — e.g. temporarily
+   checking `__cvLiveMats()` at intermediate points within `parsePuzzleImage`
+   to narrow down which stage introduces it.
+
+Once both are resolved and image 0 fully matches, image 2 gets picked, in a
+new plan.
