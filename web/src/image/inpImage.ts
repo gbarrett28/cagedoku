@@ -78,6 +78,11 @@ export interface ParseResult {
   contourTree?: ContourInfo[] | null;
   selectedNumbers?: BRect[];
   outerGridBR?: BRect | null;
+  /** Stage 1 grayscale mat (pre-warp), flattened row-major. Bitcheck harness only. */
+  gray?: number[] | undefined;
+  graySize?: [number, number] | undefined;
+  /** Stage 2 grid corners (post-rotation-correction), flattened [x0,y0,...,x3,y3]. */
+  gridCorners?: number[] | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +119,8 @@ export async function parsePuzzleImage(
   const imageData = await decodeImageFile(file);
   // --- Stage 1: Grid location ---
   const [blkMat, gryMat] = prepareGrayMat(cv, imageData, resolution);
+  const grayForDump: number[] | undefined = includeTree ? Array.from(gryMat.data) : undefined;
+  const graySizeForDump: [number, number] | undefined = includeTree ? [gryMat.rows, gryMat.cols] : undefined;
 
   let rectArr: Float32Array;
   try {
@@ -206,6 +213,7 @@ export async function parsePuzzleImage(
     cv.warpPerspective(srcMat2, warpedImgMat, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
     srcMat2.delete();
   }
+  const gridCornersForDump: number[] | undefined = includeTree ? Array.from(rectArr) : undefined;
   gryMat.delete(); blkMat.delete(); mMat.delete();
 
   // Convert warped colour image to ImageData for the result.
@@ -256,7 +264,14 @@ export async function parsePuzzleImage(
     } catch (err) {
       specError = String(err);
     }
-    return { spec, specError, fallbackUsed: false, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: classicThumbs, mergedThumbs: new Map(), ...(includeTree ? { contourTree: earlyContourTree, selectedNumbers: earlySelectedNumbers, outerGridBR: earlyOuterGridBR } : {}) };
+    return { spec, specError, fallbackUsed: false, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: classicThumbs, mergedThumbs: new Map(), ...(includeTree ? {
+      contourTree: earlyContourTree,
+      selectedNumbers: earlySelectedNumbers,
+      outerGridBR: earlyOuterGridBR,
+      gray: grayForDump,
+      graySize: graySizeForDump,
+      gridCorners: gridCornersForDump,
+    } : {}) };
   }
 
   // --- Killer path: Stage 4 border clustering (via per-image calibration) ---
@@ -382,6 +397,9 @@ export async function parsePuzzleImage(
         contourTree: earlyContourTree,
         selectedNumbers: earlySelectedNumbers,
         outerGridBR: earlyOuterGridBR,
+        gray: grayForDump,
+        graySize: graySizeForDump,
+        gridCorners: gridCornersForDump,
       } : {}),
     };
   }
@@ -423,6 +441,9 @@ export async function parsePuzzleImage(
       contourTree: earlyContourTree,
       selectedNumbers: earlySelectedNumbers,
       outerGridBR: earlyOuterGridBR,
+      gray: grayForDump,
+      graySize: graySizeForDump,
+      gridCorners: gridCornersForDump,
     } : {}),
   };
 }
