@@ -640,9 +640,22 @@ investigation beyond ruling out the above:
 2. **1 leaked `cv.Mat`**, confirmed to be in the main pipeline path (not the
    debug-only contour-tree extraction). Needs bisection — e.g. temporarily
    checking `__cvLiveMats()` at intermediate points within `parsePuzzleImage`
-   to narrow down which stage introduces it. **Still open** — reproduced
-   again on the current pipeline state, not yet bisected.
+   to narrow down which stage introduces it. **Resolved**: `matToImageData`
+   (`web/src/image/inpImage.ts`) allocated `rgba = new cv.Mat()`
+   unconditionally, then reassigned `rgba = mat.clone()` in the 4-channel
+   branch without deleting the first allocation. The warped colour Mat
+   passed in is always 4-channel (RGBA `ImageData`), so this ran every
+   call, leaking exactly one Mat per image — found by code inspection
+   rather than runtime bisection, once the Stage 4/5 fixes above ruled out
+   everything in `numberRecognition.ts`/`cellScan.ts`. Verified via the
+   harness on both a classic and killer test image: no leak reported on
+   either, no change to image 0's matching output.
 
-Once the leak is resolved (Stage 1's JPEG-decode noise is accepted as
-out-of-scope while using the default opencv.js build), image 0 is
-considered fully matched and image 2 gets picked, in a new plan.
+Both threads are now resolved. Stage 1's JPEG-decode noise remains
+accepted as out-of-scope while using the default opencv.js build; image 0
+is otherwise fully matched. A real, distinct killer-path divergence was
+found while testing `guardian/killer_sudoku_0.jpg` as a candidate next
+image — `border_x`/`border_y` and `cage_totals` disagree, and TS raises
+`ProcessingError: region reassigned` where Python succeeds. Not yet
+root-caused; this is the next thread to pick up, likely in a new plan
+once scoped.
