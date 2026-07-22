@@ -101,7 +101,7 @@ type ReportOutcomeFn = (o: {
   borderY?: boolean[][] | null | undefined;
   cageTotals?: number[][] | null | undefined;
   givenDigits?: number[][] | null | undefined;
-  gray?: number[] | undefined;
+  gray?: number[][] | undefined;
   graySize?: [number, number] | undefined;
   gridCorners?: number[] | undefined;
   /** WASM leak monitors — present when installCvMonitors() has run */

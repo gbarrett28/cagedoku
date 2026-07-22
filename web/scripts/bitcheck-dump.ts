@@ -23,7 +23,7 @@ interface OutcomeJson {
   borderY?: boolean[][] | null;
   cageTotals?: number[][] | null;
   givenDigits?: number[][] | null;
-  gray?: number[];
+  gray?: number[][];
   graySize?: [number, number];
   gridCorners?: number[];
 }

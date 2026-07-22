@@ -79,7 +79,7 @@ export interface ParseResult {
   selectedNumbers?: BRect[];
   outerGridBR?: BRect | null;
   /** Stage 1 grayscale mat (pre-warp), flattened row-major. Bitcheck harness only. */
-  gray?: number[] | undefined;
+  gray?: number[][] | undefined;
   graySize?: [number, number] | undefined;
   /** Stage 2 grid corners (post-rotation-correction), flattened [x0,y0,...,x3,y3]. */
   gridCorners?: number[] | undefined;
@@ -119,7 +119,9 @@ export async function parsePuzzleImage(
   const imageData = await decodeImageFile(file);
   // --- Stage 1: Grid location ---
   const [blkMat, gryMat] = prepareGrayMat(cv, imageData, resolution);
-  const grayForDump: number[] | undefined = includeTree ? Array.from(gryMat.data) : undefined;
+  const grayForDump: number[][] | undefined = includeTree
+    ? Array.from({ length: gryMat.rows }, (_, r) => Array.from(gryMat.data.slice(r * gryMat.cols, (r + 1) * gryMat.cols)))
+    : undefined;
   const graySizeForDump: [number, number] | undefined = includeTree ? [gryMat.rows, gryMat.cols] : undefined;
 
   let rectArr: Float32Array;
