@@ -16,6 +16,8 @@
  *   --base-url URL    App URL (default http://localhost:4173)
  *   --git-hash SHA    Git commit to tag results against (default: current HEAD)
  *   --db-path PATH    Path to corpus.db (default: ../../corpus.db)
+ *   --stop-on-fail [N]  Stop all workers once N puzzles (default 1) have
+ *                        landed in notSolved/timeout/failed (i.e. didn't solve)
  *
  * Note: if the process is killed (SIGKILL/crash), in-flight evaluation rows
  * are left as status='running'. They will not be re-claimed for the same
@@ -43,6 +45,7 @@ interface Args {
   readonly dbPath: string;
   readonly filter: string | undefined;
   readonly dumpContoursDir: string | null;
+  readonly stopOnFailCount: number | null;
 }
 
 
@@ -95,6 +98,7 @@ function parseArgs(argv: readonly string[]): Args {
   let dbPath = DEFAULT_DB_PATH;
   let filter: string | undefined;
   let dumpContoursDir: string | null = null;
+  let stopOnFailCount: number | null = null;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--workers') workers = Number(argv[++i]);
     else if (argv[i] === '--limit') limit = Number(argv[++i]);
@@ -103,8 +107,17 @@ function parseArgs(argv: readonly string[]): Args {
     else if (argv[i] === '--db-path') dbPath = argv[++i]!;
     else if (argv[i] === '--filter') filter = argv[++i];
     else if (argv[i] === '--dump-contours') dumpContoursDir = argv[++i] ?? null;
+    else if (argv[i] === '--stop-on-fail') {
+      const next = argv[i + 1];
+      if (next !== undefined && /^\d+$/.test(next)) {
+        stopOnFailCount = Number(next);
+        i++;
+      } else {
+        stopOnFailCount = 1;
+      }
+    }
   }
-  return { workers, limit, baseUrl, gitHash, dbPath, filter, dumpContoursDir };
+  return { workers, limit, baseUrl, gitHash, dbPath, filter, dumpContoursDir, stopOnFailCount };
 }
 
 async function checkServerReachable(baseUrl: string): Promise<void> {
@@ -141,6 +154,7 @@ async function runWorker(
   dumpContoursDir: string | null,
   counts: BucketCounts,
   progress: { done: number; total: number },
+  stopOnFailCount: number | null,
 ): Promise<void> {
   const page = await makeWarmPage(browser, baseUrl);
 
@@ -315,13 +329,25 @@ async function runWorker(
     console.log(
       `[${progress.done}/${progress.total}] clean: ${clean} | backtracked: ${backtracked} | notSolved: ${notSolved} | timeout: ${timeout} | failed: ${failed}`,
     );
+
+    if (stopOnFailCount !== null && (bucket === 'notSolved' || bucket === 'timeout' || bucket === 'failed' || bucket === 'error')) {
+      const failuresSoFar = notSolved + timeout + failed;
+      console.log(
+        `[evaluate-corpus] FAIL (${failuresSoFar}/${stopOnFailCount}): ${puzzle.path} did not solve (bucket=${bucket}, reason=${reason ?? 'n/a'})`,
+      );
+      if (failuresSoFar >= stopOnFailCount) {
+        console.log(`\n[evaluate-corpus] STOP: reached ${stopOnFailCount} failure(s) — stopping all workers.`);
+        shuttingDown = true;
+        break;
+      }
+    }
   }
 
   await page.close();
 }
 
 async function main(): Promise<void> {
-  const { workers, limit, baseUrl, gitHash, dbPath, filter, dumpContoursDir } = parseArgs(process.argv.slice(2));
+  const { workers, limit, baseUrl, gitHash, dbPath, filter, dumpContoursDir, stopOnFailCount } = parseArgs(process.argv.slice(2));
   if (dumpContoursDir !== null) fs.mkdirSync(dumpContoursDir, { recursive: true });
   await checkServerReachable(baseUrl);
 
@@ -360,7 +386,7 @@ async function main(): Promise<void> {
   try {
     await Promise.all(
       Array.from({ length: workers }, (_, i) =>
-        runWorker(browser, baseUrl, db, gitHash, i + 1, limit, filter, dumpContoursDir, counts, progress),
+        runWorker(browser, baseUrl, db, gitHash, i + 1, limit, filter, dumpContoursDir, counts, progress, stopOnFailCount),
       ),
     );
   } finally {
