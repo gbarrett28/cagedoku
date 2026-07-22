@@ -497,8 +497,19 @@ export function buildCageTotals(
 
     for (const [, br] of rawNums) {
       const [brx, bry, brw, brh] = br;
-      const col = ((brx + (brw >> 1)) / subres) | 0;
-      const row = ((bry + (brh >> 1)) / subres) | 0;
+      // Swapped, not a typo: the warped image's pixel data is transposed
+      // relative to standard row-major raster order (the same quirk
+      // `sampleStrip`/`_sample_strip` documents for Stage 4's border
+      // detection -- "the first numpy axis is x/column"), so a contour's
+      // x-coordinate maps to grid ROW and its y-coordinate maps to grid COL
+      // here, not the intuitive other way round. Verified empirically
+      // against a real killer image: connectivityScore only reaches a
+      // perfect 30/30 (every cage exactly one head) when cageTotals is
+      // built this way; the un-swapped assignment produces sane region
+      // shapes (proving border detection is correct) but misassigns which
+      // cell in each region holds the head total.
+      const row = ((brx + (brw >> 1)) / subres) | 0;
+      const col = ((bry + (brh >> 1)) / subres) | 0;
       if (col < 0 || col >= 9 || row < 0 || row >= 9) continue;
 
       let numThumbArr: Uint8Array[];
