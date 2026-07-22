@@ -44,6 +44,29 @@ export interface HOGParams {
   nbins: number;        // 9
 }
 
+/**
+ * PCA + template-matching + RBF-SVM classifier parameters.
+ *
+ * Mirrors Python's `CayenneNumber` (killer_sudoku/image/number_recognition.py):
+ * two-stage inference — template matching (fast path) against per-digit mean
+ * images, falling through to PCA-projected RBF-SVM classification when no
+ * template scores above `templateThreshold`.
+ */
+export interface PCAParams {
+  /** Thumbnail side length (64); image is winSize×winSize before PCA. */
+  winSize: number;
+  /** Number of PCA components to use (dims). */
+  dims: number;
+  /** (winSize*winSize,) per-pixel training mean. */
+  mean: Float64Array;
+  /** (dims * winSize*winSize,) component matrix, row-major. Row d is eigenvector d. */
+  components: Float64Array;
+  /** Per-digit mean template images (winSize*winSize each), keyed by digit label. */
+  templates: ReadonlyMap<number, Float32Array>;
+  /** Minimum TM_CCOEFF_NORMED score for the template fast path. */
+  templateThreshold: number;
+}
+
 export interface LinearClassifier {
   kind: 'linear';
   coef: Float64Array;       // (nClassifiers, nFeatures) row-major
@@ -185,7 +208,8 @@ function rbfPredictWithConfidence(clf: RBFClassifier, x: Float64Array, nSamples:
 // ---------------------------------------------------------------------------
 
 export interface NumRecogniser {
-  hog: HOGParams;
+  hog?: HOGParams;
+  pca?: PCAParams;
   classifier: Classifier;
   confidenceThreshold: number;
 }
@@ -269,11 +293,108 @@ function hogExtract(imgs: Uint8Array[], params: HOGParams): Float64Array {
   return result;
 }
 
+/**
+ * Project winSize×winSize uint8 thumbnails into PCA space.
+ *
+ * Matches Python's `CayenneNumber._classify` exactly: centre (subtract the
+ * training mean) then project onto each retained eigenvector — no sklearn
+ * `PCA.transform` call, to avoid sklearn version skew (a bare `PCA()`
+ * reconstructed from the .npz lacks `explained_variance_`).
+ *
+ * @param imgs - flat uint8 pixel data for each image, each of length winSize².
+ * @returns Float64Array of shape [n × dims].
+ */
+function pcaExtract(imgs: Uint8Array[], pca: PCAParams): Float64Array {
+  const { winSize, dims, mean, components } = pca;
+  const nPixels = winSize * winSize;
+  const n = imgs.length;
+  const result = new Float64Array(n * dims);
+  for (let i = 0; i < n; i++) {
+    const img = imgs[i]!;
+    for (let d = 0; d < dims; d++) {
+      let sum = 0;
+      const base = d * nPixels;
+      for (let p = 0; p < nPixels; p++) {
+        sum += (img[p]! - mean[p]!) * components[base + p]!;
+      }
+      result[i * dims + d] = sum;
+    }
+  }
+  return result;
+}
+
+/**
+ * Normalised cross-correlation coefficient between two same-size images.
+ *
+ * Matches `cv2.matchTemplate(img, tmpl, cv2.TM_CCOEFF_NORMED)` for the
+ * single-position case (image and template are the same size, so there is
+ * exactly one overlap position — no sliding window needed).
+ */
+function templateMatchNormed(img: ArrayLike<number>, tmpl: ArrayLike<number>): number {
+  const n = img.length;
+  let sumI = 0, sumT = 0;
+  for (let i = 0; i < n; i++) { sumI += img[i]!; sumT += tmpl[i]!; }
+  const meanI = sumI / n, meanT = sumT / n;
+  let num = 0, denI = 0, denT = 0;
+  for (let i = 0; i < n; i++) {
+    const di = img[i]! - meanI;
+    const dt = tmpl[i]! - meanT;
+    num += di * dt;
+    denI += di * di;
+    denT += dt * dt;
+  }
+  const denom = Math.sqrt(denI * denT);
+  return denom > 0 ? num / denom : 0;
+}
+
 /** Classify digit images using HOG + OVO classifier. */
 function classify(rec: NumRecogniser, imgs: Uint8Array[]): Recognition[] {
   const n = imgs.length;
-  const hog = hogExtract(imgs, rec.hog);
-  const hole = extractHoleFeatures(imgs, rec.hog.winSize);
+  const { classifier, confidenceThreshold } = rec;
+
+  if (rec.pca) {
+    const { pca } = rec;
+    const results: Recognition[] = new Array(n);
+    const fallbackIndices: number[] = [];
+    const fallbackImgs: Uint8Array[] = [];
+
+    // Template matching (fast path): compare each thumbnail to every stored
+    // per-digit mean template via TM_CCOEFF_NORMED; accept the best match
+    // directly if it clears templateThreshold, else fall through to PCA+RBF.
+    // Matches Python's CayenneNumber.get_sums exactly.
+    if (pca.templates.size > 0) {
+      for (let i = 0; i < n; i++) {
+        const img = imgs[i]!;
+        let bestScore = -2.0;
+        let bestDigit = 0;
+        for (const [digit, tmpl] of pca.templates) {
+          const score = templateMatchNormed(img, tmpl);
+          if (score > bestScore) { bestScore = score; bestDigit = digit; }
+        }
+        if (bestScore >= pca.templateThreshold) {
+          results[i] = { label: bestDigit, confident: true };
+        } else {
+          fallbackIndices.push(i);
+          fallbackImgs.push(img);
+        }
+      }
+    } else {
+      for (let i = 0; i < n; i++) { fallbackIndices.push(i); fallbackImgs.push(imgs[i]!); }
+    }
+
+    if (fallbackImgs.length > 0) {
+      const x = pcaExtract(fallbackImgs, pca);
+      const recs = rbfPredictWithConfidence(classifier as RBFClassifier, x, fallbackImgs.length, confidenceThreshold);
+      for (let k = 0; k < fallbackIndices.length; k++) {
+        results[fallbackIndices[k]!] = recs[k]!;
+      }
+    }
+
+    return results;
+  }
+
+  const hog = hogExtract(imgs, rec.hog!);
+  const hole = extractHoleFeatures(imgs, rec.hog!.winSize);
   const nHog = hog.length / n;
   const nHole = hole.length / n;
   const x = new Float64Array(n * (nHog + nHole));
@@ -281,7 +402,6 @@ function classify(rec: NumRecogniser, imgs: Uint8Array[]): Recognition[] {
     x.set(hog.subarray(i * nHog, (i + 1) * nHog), i * (nHog + nHole));
     x.set(hole.subarray(i * nHole, (i + 1) * nHole), i * (nHog + nHole) + nHog);
   }
-  const { classifier, confidenceThreshold } = rec;
   if (classifier.kind === 'linear') return linearPredict(classifier, x, n, confidenceThreshold);
   return rbfPredictWithConfidence(classifier, x, n, confidenceThreshold);
 }
@@ -317,6 +437,11 @@ export function loadNumRecogniser(
     if (offset % 8 === 0) return new Float64Array(binBuffer, offset, byteLength / 8);
     return new Float64Array(binBuffer.slice(offset, offset + byteLength));
   }
+  function getF32(name: string): Float32Array {
+    const { offset, byteLength } = arrays[name]!;
+    if (offset % 4 === 0) return new Float32Array(binBuffer, offset, byteLength / 4);
+    return new Float32Array(binBuffer.slice(offset, offset + byteLength));
+  }
   function getI32(name: string): Int32Array {
     const { offset, byteLength } = arrays[name]!;
     if (offset % 4 === 0) return new Int32Array(binBuffer, offset, byteLength / 4);
@@ -325,6 +450,41 @@ export function loadNumRecogniser(
   const scalarI32 = (name: string): number => getI32(name)[0]!;
   const scalarF64 = (name: string): number => getF64(name)[0]!;
 
+  const classesArr = getI32('classes');
+  const nClasses = classesArr.length;
+
+  if (classifierType === 'pca_rbf') {
+    const winSize = scalarI32('pca_win_size');
+    const dims = scalarI32('pca_dims');
+    const [nSv, nFeatures] = arrays['rbf_support_vectors']!.shape as [number, number];
+    const templates = new Map<number, Float32Array>();
+    for (const digit of classesArr) {
+      const key = `template_${digit}`;
+      if (key in arrays) templates.set(digit, getF32(key));
+    }
+    const pca: PCAParams = {
+      winSize,
+      dims,
+      mean:       getF64('pca_mean'),
+      components: getF64('pca_components'),
+      templates,
+      templateThreshold: scalarF64('template_threshold'),
+    };
+    const classifier: RBFClassifier = {
+      kind:           'rbf',
+      supportVectors: getF64('rbf_support_vectors'),
+      dualCoef:       getF64('rbf_dual_coef'),
+      intercept:      getF64('rbf_intercept'),
+      nSupport:       getI32('rbf_n_support'),
+      gamma:          scalarF64('rbf_gamma'),
+      classes:        classesArr,
+      nClasses,
+      nSv,
+      nFeatures,
+    };
+    return { pca, classifier, confidenceThreshold: scalarF64('confidence_threshold') };
+  }
+
   const hog: HOGParams = {
     winSize:     scalarI32('hog_win_size'),
     cellSize:    scalarI32('hog_cell_size'),
@@ -332,9 +492,6 @@ export function loadNumRecogniser(
     blockStride: scalarI32('hog_block_stride'),
     nbins:       scalarI32('hog_nbins'),
   };
-
-  const classesArr = getI32('classes');
-  const nClasses = classesArr.length;
 
   let classifier: Classifier;
   if (classifierType === 'linear') {
