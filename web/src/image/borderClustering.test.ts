@@ -91,21 +91,25 @@ function whiteImage(size: number): GrayImage {
 }
 
 /**
- * Build a synthetic image where horizontal borders at the specified rowGap
- * indices are dark (cage borders) and everything else is white.
+ * Build a synthetic image where horizontal (isHorizontal=true) borders at the
+ * specified gap indices are dark (cage borders) and everything else is white.
  *
- * The dark band spans the full sampling region around the boundary:
+ * sampleStrip(isHorizontal=true) reads the gap/perpendicular direction along
+ * *columns* and the along-direction along rows (matching Python's
+ * _sample_strip transposed convention — see sampleStrip's docstring), so the
+ * dark band spans the full sampling region around the boundary along the
+ * column axis, all rows:
  *   boundary = (gapIdx + 1) * subres
- *   dark band = [boundary - subres/2, boundary + subres/2)
+ *   dark band = columns [boundary - subres/2, boundary + subres/2), all rows
  */
 function imageWithDarkHBorders(size: number, subres: number, darkGaps: number[]): GrayImage {
   const data = new Uint8Array(size * size).fill(255);
   const halfBand = (subres / 2) | 0;
   for (const g of darkGaps) {
     const boundary = (g + 1) * subres;
-    for (let row = boundary - halfBand; row < boundary + halfBand; row++) {
-      if (row < 0 || row >= size) continue;
-      for (let col = 0; col < size; col++) {
+    for (let col = boundary - halfBand; col < boundary + halfBand; col++) {
+      if (col < 0 || col >= size) continue;
+      for (let row = 0; row < size; row++) {
         data[row * size + col] = 30; // dark ink colour
       }
     }

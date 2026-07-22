@@ -11,8 +11,10 @@
  *   KMeans(k=2, n_init=10) → kmeans2() (~40 lines)
  *
  * Image convention: warpedGry is a standard row-major grayscale image where
- * pixel(row, col) = data[row * size + col].  (The Python source uses a
- * column-first convention that is geometrically equivalent for a square grid.)
+ * pixel(row, col) = data[row * size + col]. Python's source treats the first
+ * numpy axis as "x" (column) throughout its border-detection code — a
+ * transposed convention, not equivalent to swapping row/col naively (see
+ * sampleStrip's docstring for the isHorizontal mapping this requires).
  */
 
 import type { BorderClusteringConfig } from './config.js';
@@ -203,18 +205,34 @@ function anchorSet(cageTotalConfidence: number[][], threshold: number): Set<stri
  *
  * Uses standard row-major indexing: pixel(row, col) = data[row * size + col].
  *
- * For a horizontal border (between rows gap_idx and gap_idx+1):
- *   - Perpendicular direction = rows, range = boundary ± sampleHalf.
- *   - Along direction = cols, sampled from centre of alongIdx cell ± margin.
- *   - Min projected over columns → 1-D array of length 2*sampleHalf in row direction.
+ * Python's `_sample_strip` (killer_sudoku/image/border_clustering.py) treats
+ * the first numpy axis as "x" (column) throughout its border-detection code —
+ * a documented, deliberate transposed convention, not a bug on its side. That
+ * means what it labels `is_horizontal=True` actually samples with the gap
+ * position varying along columns and the along-position varying along rows —
+ * the opposite of the naive row-major reading. This function mirrors that
+ * exact behaviour (matching Python's isHorizontal-labeled output) rather than
+ * the geometrically "intuitive" one:
  *
- * For a vertical border (between cols gap_idx and gap_idx+1):
- *   - Perpendicular direction = cols, range = boundary ± sampleHalf.
+ * For isHorizontal=true:
+ *   - Perpendicular (gap) direction = cols, range = boundary ± sampleHalf.
  *   - Along direction = rows, sampled from centre of alongIdx cell ± margin.
  *   - Min projected over rows → 1-D array of length 2*sampleHalf in col direction.
  *
+ * For isHorizontal=false:
+ *   - Perpendicular (gap) direction = rows, range = boundary ± sampleHalf.
+ *   - Along direction = cols, sampled from centre of alongIdx cell ± margin.
+ *   - Min projected over columns → 1-D array of length 2*sampleHalf in row direction.
+ *
+ * An earlier version of this function assumed the row-major/x-first
+ * difference was "geometrically equivalent for a square grid" and kept the
+ * naive mapping — verified via the bit-check harness to be wrong (all 144
+ * strip features differed from Python's; swapping which branch runs for
+ * which isHorizontal value brought every one within the expected ±1 Stage 1
+ * pixel-noise tolerance).
+ *
  * @param warpedGry - Standard row-major square grayscale image.
- * @param isHorizontal - True for horizontal border (between rows), false for vertical.
+ * @param isHorizontal - Matches Python's `is_horizontal` labeling exactly (see above).
  * @param gapIdx - 0-indexed gap position (0..7) perpendicular to the border.
  * @param alongIdx - 0-indexed cell position (0..8) along the border.
  * @param subresParam - Pixels per cell side.
@@ -245,19 +263,19 @@ function sampleStrip(
   const result = new Uint8Array(len).fill(255);
 
   if (isHorizontal) {
-    // Min over columns in [cStart, cEnd), result indexed by row offset from pStart.
-    for (let row = pStart; row < pEnd; row++) {
-      for (let col = cStart; col < cEnd; col++) {
-        const v = data[row * size + col]!;
-        if (v < result[row - pStart]!) result[row - pStart] = v;
-      }
-    }
-  } else {
     // Min over rows in [cStart, cEnd), result indexed by col offset from pStart.
     for (let col = pStart; col < pEnd; col++) {
       for (let row = cStart; row < cEnd; row++) {
         const v = data[row * size + col]!;
         if (v < result[col - pStart]!) result[col - pStart] = v;
+      }
+    }
+  } else {
+    // Min over columns in [cStart, cEnd), result indexed by row offset from pStart.
+    for (let row = pStart; row < pEnd; row++) {
+      for (let col = cStart; col < cEnd; col++) {
+        const v = data[row * size + col]!;
+        if (v < result[row - pStart]!) result[row - pStart] = v;
       }
     }
   }

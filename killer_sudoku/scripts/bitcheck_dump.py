@@ -17,20 +17,23 @@ from typing import Any
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 
+from killer_sudoku.image.border_clustering import _sample_strip, strip_features
 from killer_sudoku.image.cell_scan import detect_rotation, scan_cells
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.grid_location import get_gry_img, locate_grid
 from killer_sudoku.image.inp_image import InpImage
 
 
-def _cage_conf_for(image_path: Path, config: ImagePipelineConfig) -> list[list[float]]:
-    """Independently replicates InpImage's locate_grid/warp/rotation/scan_cells.
+def _warped_gry_for(image_path: Path, config: ImagePipelineConfig) -> npt.NDArray[np.uint8]:
+    """Independently replicates InpImage's locate_grid/warp/rotation sequence.
 
     Reproduces the killer_sudoku/image/inp_image.py __init__ sequence up to
-    scan_cells to get the cage_conf anchors _identify_borders actually
-    clusters against — InpImage doesn't expose this as a public attribute.
-    Diagnostic only; does not modify the reference pipeline.
+    (and including) rotation correction, to get the same warped_gry
+    _identify_borders actually clusters against — InpImage doesn't expose
+    this as a public attribute. Diagnostic only; does not modify the
+    reference pipeline.
     """
     resolution = config.resolution
     subres = config.subres
@@ -53,10 +56,35 @@ def _cage_conf_for(image_path: Path, config: ImagePipelineConfig) -> list[list[f
         warped_gry = np.asarray(
             cv2.warpPerspective(gry, m, (resolution, resolution), flags=cv2.INTER_LINEAR), dtype=np.uint8
         )
+    return warped_gry
 
-    cage_conf, _classic_conf = scan_cells(warped_gry, subres, config.cell_scan)
+
+def _cage_conf_for(warped_gry: npt.NDArray[np.uint8], config: ImagePipelineConfig) -> list[list[float]]:
+    """Stage 3 cage_conf anchors, from the independently-replicated warped_gry."""
+    cage_conf, _classic_conf = scan_cells(warped_gry, config.subres, config.cell_scan)
     result: list[list[float]] = cage_conf.tolist()
     return result
+
+
+def _strip_features_for(warped_gry: npt.NDArray[np.uint8], config: ImagePipelineConfig) -> list[list[float]]:
+    """All 144 border-strip feature vectors, in canonical order.
+
+    Same order cluster_borders builds them (gap_idx 0..7, along_idx 0..8,
+    is_h True then False) — matching web/src/image/borderClustering.ts's
+    clusterBorders loop order exactly, so entries are directly comparable
+    by index.
+    """
+    subres = config.subres
+    sample_half = subres // config.border_clustering.sample_fraction
+    sample_margin_px = subres // config.border_clustering.sample_margin
+
+    features: list[list[float]] = []
+    for gap_idx in range(8):
+        for along_idx in range(9):
+            for is_h in (True, False):
+                strip = _sample_strip(warped_gry, is_h, gap_idx, along_idx, subres, sample_half, sample_margin_px)
+                features.append(strip_features(strip).tolist())
+    return features
 
 
 def dump_stages(image_path: Path) -> dict[str, Any]:
@@ -64,13 +92,15 @@ def dump_stages(image_path: Path) -> dict[str, Any]:
     config = ImagePipelineConfig(rework=True)
     num_recogniser = InpImage.make_num_recogniser()
     info = InpImage(image_path, config, num_recogniser)
+    warped_gry = _warped_gry_for(image_path, config)
 
     return {
         "gray": info.gry.tolist(),
         "gray_shape": list(info.gry.shape),
         "grid_corners": info.info.grid.tolist(),
         "puzzle_type": info.puzzle_type,
-        "cage_conf": _cage_conf_for(image_path, config),
+        "cage_conf": _cage_conf_for(warped_gry, config),
+        "strip_features": _strip_features_for(warped_gry, config),
         "border_x": info.info.border_x.tolist(),
         "border_y": info.info.border_y.tolist(),
         "cage_totals": info.info.cage_totals.tolist(),
