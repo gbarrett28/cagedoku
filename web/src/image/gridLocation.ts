@@ -32,25 +32,18 @@ export function contourQuad(
   cv: Cv,
   blk: OpenCVMat,
   minAspect: number = 0.5,
-  minAreaFraction: number = 0.05,
 ): Float32Array | null {
   const contours = new cv.MatVector();
   const hierarchy = new cv.Mat();
   cv.findContours(blk, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
   hierarchy.delete();
 
-  // Reject contours smaller than minAreaFraction of the image area.
-  // This prevents artefacts (e.g. a thin border frame added to the image)
-  // from being mistakenly identified as the grid quadrilateral.
-  const imageArea = blk.rows * blk.cols;
-  const minArea = imageArea * minAreaFraction;
-
   const areas: Array<[number, number]> = [];
   for (let i = 0; i < contours.size(); i++) {
     const ci = contours.get(i);
     const a = cv.contourArea(ci);
     ci.delete();
-    if (a >= minArea) areas.push([a, i]);
+    areas.push([a, i]);
   }
   areas.sort((a, b) => b[0] - a[0]);
 
@@ -130,20 +123,20 @@ export function locateGrid(
   }
 
   // Walk from the bright end; stop when count rises — that's the valley.
+  // isblack takes the *upper* edge of the darkest-so-far bin, matching
+  // Python's locate_grid (killer_sudoku/image/grid_location.py), which reads
+  // `b` from `reversed(bins.tolist())` — the right edge of each bin, not the left.
   let cm = pixels.length;
   let isblack = 256;
   for (let b = 15; b >= 0; b--) {
     if (counts[b]! < cm) {
       cm = counts[b]!;
-      isblack = b * 16;
+      isblack = (b + 1) * 16;
     } else {
       break;
     }
   }
   isblack -= isblackOffset;
-  // Guard against monotonically-decreasing histograms (clean digital screenshots
-  // with no medium-grey valley): ensure at least near-black pixels are captured.
-  isblack = Math.max(isblack, 16);
 
   // Threshold: pixels darker than isblack become 255 (white = dark region).
   // Use 1×1 Mat bounds with Scalar fill — cv.inRange requires Mat (not Scalar) bounds.
