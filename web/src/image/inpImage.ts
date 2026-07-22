@@ -696,13 +696,16 @@ function rollCorners(corners: Float32Array, shift: number): Float32Array {
  * Convert an OpenCV Mat to an ImageData (RGBA).
  */
 function matToImageData(cv: Cv, mat: OpenCVMat, size: number): ImageData {
-  let rgba = new cv.Mat();
+  let rgba: OpenCVMat;
   if (mat.channels() === 4) {
     rgba = mat.clone();
-  } else if (mat.channels() === 3) {
-    cv.cvtColor(mat, rgba, cv.COLOR_BGR2RGBA);
   } else {
-    cv.cvtColor(mat, rgba, cv.COLOR_GRAY2RGBA);
+    rgba = new cv.Mat();
+    if (mat.channels() === 3) {
+      cv.cvtColor(mat, rgba, cv.COLOR_BGR2RGBA);
+    } else {
+      cv.cvtColor(mat, rgba, cv.COLOR_GRAY2RGBA);
+    }
   }
   const imageData = new ImageData(new Uint8ClampedArray(rgba.data), size, size);
   rgba.delete();
