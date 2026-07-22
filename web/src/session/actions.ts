@@ -20,7 +20,6 @@ import { AssertionViolation, validateSudokuSolution, isCageSumCorrect } from './
 import { formatActionLog } from './actionLog.js';
 
 import type { ParseResult } from '../image/inpImage.js';
-import type { ContourInfo, BRect } from '../image/numberRecognition.js';
 import { defaultImagePipelineConfig } from '../image/config.js';
 import { validateCageLayout, hasMultipleCageTotals } from '../image/validation.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
@@ -141,11 +140,8 @@ export interface UploadResult {
   detectedBigApple: boolean;
   fallbackUsed: boolean;
   specError: string | null;
-  /** Populated only when window.__reportContourTree is truthy */
-  contourTree?: ContourInfo[] | null | undefined;
-  selectedNumbers?: BRect[] | undefined;
-  outerGridBR?: BRect | null | undefined;
   givenDigits?: number[][] | null | undefined;
+  /** Populated only when window.__reportContourTree is truthy. Bitcheck harness only. */
   gray?: number[][] | undefined;
   graySize?: [number, number] | undefined;
   gridCorners?: number[] | undefined;
@@ -221,9 +217,6 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
     state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, mergedThumbs: result.mergedThumbs, detectedBigApple,
     fallbackUsed: result.fallbackUsed,
     specError: result.specError,
-    contourTree: result.contourTree,
-    selectedNumbers: result.selectedNumbers,
-    outerGridBR: result.outerGridBR,
     givenDigits: result.givenDigits,
     gray: result.gray,
     graySize: result.graySize,

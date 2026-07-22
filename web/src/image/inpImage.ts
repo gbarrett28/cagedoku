@@ -23,8 +23,8 @@ import { defaultImagePipelineConfig, subres as cfgSubres, resolution as cfgResol
 import type { ImagePipelineConfig } from './config.js';
 import { locateGrid } from './gridLocation.js';
 import {
-  collectCageTotalContours, scanClassicDigits, calibrateCageTotalThreshold,
-  contourFillRatios, detectRotation, detectPuzzleType,
+  collectCageTotalContours, scanClassicDigits, cageConfFromSize,
+  detectRotation, detectPuzzleType,
 } from './cellScan.js';
 import type { GrayImage } from './borderClustering.js';
 import {
@@ -36,8 +36,7 @@ import { buildBrdrs } from '../solver/puzzleSpec.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import { ProcessingError } from '../solver/errors.js';
 import type { Brdrs } from '../solver/errors.js';
-import { boundaryKind, BoundaryKind } from './borderClustering.js';
-import { submitCageThresholdCalibrationReport } from './trainingUpload.js';
+import { boundaryKind, BoundaryKind, clusterBorders } from './borderClustering.js';
 
 // ---------------------------------------------------------------------------
 // Error types
@@ -74,11 +73,7 @@ export interface ParseResult {
   cellThumbs: ReadonlyMap<string, Uint8Array[]>;
   /** Pre-split merged thumbnails for split-recogniser training, keyed "row,col". */
   mergedThumbs: ReadonlyMap<string, Uint8Array>;
-  /** Present only when window.__reportContourTree is set */
-  contourTree?: ContourInfo[] | null;
-  selectedNumbers?: BRect[];
-  outerGridBR?: BRect | null;
-  /** Stage 1 grayscale mat (pre-warp), flattened row-major. Bitcheck harness only. */
+  /** Present only when window.__reportContourTree is set. Bitcheck harness only. */
   gray?: number[][] | undefined;
   graySize?: [number, number] | undefined;
   /** Stage 2 grid corners (post-rotation-correction), flattened [x0,y0,...,x3,y3]. */
@@ -232,25 +227,6 @@ export async function parsePuzzleImage(
   const warpedImgData = matToImageData(cv, warpedImgMat, dstSize);
   warpedImgMat.delete();
 
-  // --- Extract contour tree once, before type detection ---
-  let earlyContourTree: ContourInfo[] | null = null;
-  let earlySelectedNumbers: BRect[] = [];
-  let earlyOuterGridBR: BRect | null = null;
-  if (includeTree) {
-    const earlyContours = new cv.MatVector();
-    const earlyHierMat = new cv.Mat();
-    cv.findContours(warpedBlkMat, earlyContours, earlyHierMat, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE);
-    if (earlyContours.size() > 0 && earlyHierMat.rows > 0) {
-      const chiers = contourHier(cv, earlyContours, earlyHierMat, new Set<number>(), 0);
-      const rawNums = getNumContours(chiers, subres, config.cellScan.cageTotalMinFillRatio);
-      earlyContourTree = chiers;
-      earlySelectedNumbers = rawNums.map(([, br]) => br);
-      earlyOuterGridBR = chiers[0]?.[1] ?? null;
-    }
-    earlyContours.delete();
-    earlyHierMat.delete();
-  }
-
   // --- Stage 3: Puzzle type detection ---
   const contourMetrics = collectCageTotalContours(cv, warpedGryMat, subres);
   const classicConf = scanClassicDigits(cv, warpedGryMat, subres, config.cellScan.classicMinSizeFraction);
@@ -277,42 +253,30 @@ export async function parsePuzzleImage(
       specError = String(err);
     }
     return { spec, specError, fallbackUsed: false, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: classicThumbs, mergedThumbs: new Map(), ...(includeTree ? {
-      contourTree: earlyContourTree,
-      selectedNumbers: earlySelectedNumbers,
-      outerGridBR: earlyOuterGridBR,
       gray: grayForDump,
       graySize: graySizeForDump,
       gridCorners: gridCornersForDump,
     } : {}) };
   }
 
-  // --- Killer path: Stage 4 border clustering (via per-image calibration) ---
+  // --- Killer path: Stage 4 anchored border clustering ---
+  // Mirrors Python's InpImage._identify_borders: cell scan (Stage 3, pure
+  // bounding-box size check, no fill-ratio threshold) feeds anchored border
+  // clustering (Stage 4) directly — no per-image threshold calibration.
   const gryImg: GrayImage = { data: new Uint8Array(warpedGryMat.data), size: dstSize };
-
-  const calibration = calibrateCageTotalThreshold(
-    contourMetrics, gryImg, subres,
-    config.cellScan.cageTotalFillRatioCandidates,
-    config.borderClustering, config.cellScan.anchorConfidenceThreshold,
-    config.cellScan.cageTotalMinFillRatio,
+  const cageConf = cageConfFromSize(contourMetrics);
+  const [bxProb, byProb] = clusterBorders(
+    gryImg, cageConf, subres, config.borderClustering, config.cellScan.anchorConfidenceThreshold,
   );
-  const bxProb = calibration.borderXProb;
-  const byProb = calibration.borderYProb;
 
-  submitCageThresholdCalibrationReport({
-    chosenThreshold: calibration.threshold,
-    fallbackUsed: calibration.fallbackUsed,
-    candidates: calibration.candidateResults,
-    contourFillRatios: contourFillRatios(contourMetrics),
-  });
-
-  // Compute cage totals once (image-dependent only).
-  let initialBorderX = calibration.borderX;
-  let initialBorderY = calibration.borderY;
+  let initialBorderX = bxProb.map(row => row.map(v => v > 0.5));
+  let initialBorderY = byProb.map(row => row.map(v => v > 0.5));
 
   let cageTotals: number[][] | null = null;
   let cellThumbs = new Map<string, Uint8Array[]>();
   let mergedThumbs = new Map<string, Uint8Array>();
   let lastCageTotalsResult: CageTotalsResult | null = null;
+  let fallbackUsed = false;
   try {
     const brdrs = buildBrdrs(initialBorderX, initialBorderY);
     lastCageTotalsResult = buildCageTotals(
@@ -378,6 +342,7 @@ export async function parsePuzzleImage(
             cv, adaptiveBlk, rec, subres, brdrs2, config.cellScan.cageTotalMinFillRatio, splitRec,
           );
           ({ cageTotals, cellThumbs, mergedThumbs } = lastCageTotalsResult);
+          fallbackUsed = true;
         } finally {
           adaptiveBlk.delete();
         }
@@ -399,16 +364,13 @@ export async function parsePuzzleImage(
     return {
       spec: null,
       specError: 'Could not extract cage totals',
-      fallbackUsed: calibration.fallbackUsed,
+      fallbackUsed,
       puzzleType: 'killer',
       givenDigits,
       warpedImageData: warpedImgData,
       cellThumbs: new Map(),
       mergedThumbs: new Map(),
       ...(includeTree ? {
-        contourTree: earlyContourTree,
-        selectedNumbers: earlySelectedNumbers,
-        outerGridBR: earlyOuterGridBR,
         gray: grayForDump,
         graySize: graySizeForDump,
         gridCorners: gridCornersForDump,
@@ -448,11 +410,8 @@ export async function parsePuzzleImage(
   }
 
   return {
-    spec, specError, fallbackUsed: calibration.fallbackUsed, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs, mergedThumbs,
+    spec, specError, fallbackUsed, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs, mergedThumbs,
     ...(includeTree ? {
-      contourTree: earlyContourTree,
-      selectedNumbers: earlySelectedNumbers,
-      outerGridBR: earlyOuterGridBR,
       gray: grayForDump,
       graySize: graySizeForDump,
       gridCorners: gridCornersForDump,

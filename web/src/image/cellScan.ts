@@ -9,10 +9,6 @@
  */
 
 import type { OpenCVModule, OpenCVMat } from './opencv.js';
-import { clusterBorders } from './borderClustering.js';
-import type { GrayImage } from './borderClustering.js';
-import type { BorderClusteringConfig } from './config.js';
-import { validateCageGeometry } from './validation.js';
 type Cv = OpenCVModule;
 
 /**
@@ -81,164 +77,17 @@ export interface ContourMetrics {
 }
 
 /**
- * Per-cell cage-total confidence at a given fill-ratio threshold.
- *
- * Pure function: for each cell, returns `1.0` if any of its size-valid
- * contours satisfies `isCageTotalContour`'s fill-ratio check at `minFillRatio`,
- * else `0.0`.
+ * Per-cell cage-total confidence: pure bounding-box size check, no fill-ratio
+ * threshold. Mirrors Python's `scan_cells` (killer_sudoku.image.cell_scan)
+ * exactly — any size-valid contour in a cell's top-left quadrant marks it as
+ * a cage-total cell.
  *
  * @param contours - (9, 9) array [row][col] of size-valid contour metrics,
  *   as returned by `collectCageTotalContours`.
- * @param subres - Pixels per cell side.
- * @param minFillRatio - Minimum area / (width * height) to count as a digit.
  * @returns (9, 9) array [row][col] with values in {0.0, 1.0}.
  */
-export function cageConfFromContours(
-  contours: ContourMetrics[][][],
-  subres: number,
-  minFillRatio: number,
-): number[][] {
-  return contours.map(rowContours =>
-    rowContours.map(cellContours =>
-      cellContours.some(c => isCageTotalContour(c.width, c.height, c.area, subres, minFillRatio)) ? 1.0 : 0.0,
-    ),
-  );
-}
-
-/**
- * Minimum distance from `threshold` to any individual size-valid contour's
- * fillRatio across all 81 cells. Larger margin = cleaner separation between
- * the dash cluster and the digit cluster at this threshold. Returns `Infinity`
- * if there are no contours at all (no information to separate).
- *
- * @param contours - (9, 9) array [row][col] of size-valid contour metrics.
- * @param subres - Pixels per cell side (unused directly, kept for symmetry
- *   with `cageConfFromContours` and future fillRatio-shape changes).
- * @param threshold - Candidate fill-ratio threshold.
- */
-export function thresholdMargin(contours: ContourMetrics[][][], _subres: number, threshold: number): number {
-  let minDist = Infinity;
-  for (const rowContours of contours) {
-    for (const cellContours of rowContours) {
-      for (const c of cellContours) {
-        const fillRatio = c.area / (c.width * c.height);
-        const dist = Math.abs(fillRatio - threshold);
-        if (dist < minDist) minDist = dist;
-      }
-    }
-  }
-  return minDist;
-}
-
-/** Per-candidate calibration outcome, also used as `CageThresholdCalibrationReport.candidates`. */
-export interface ThresholdCandidateResult {
-  readonly threshold: number;
-  readonly valid: boolean;
-  readonly margin: number;
-}
-
-/**
- * Among candidates with `valid === true`, return the one with the largest
- * margin (cleanest separation). Returns `null` if none are valid.
- *
- * Isolated so a future tie-break rule can replace this body without touching
- * the calibration search loop in `calibrateCageTotalThreshold`.
- */
-export function pickBestThreshold(candidateResults: readonly ThresholdCandidateResult[]): number | null {
-  let best: ThresholdCandidateResult | null = null;
-  for (const c of candidateResults) {
-    if (!c.valid) continue;
-    if (best === null || c.margin > best.margin) best = c;
-  }
-  return best === null ? null : best.threshold;
-}
-
-/** Full result of `calibrateCageTotalThreshold`, including the chosen geometry. */
-export interface CageThresholdCalibrationResult {
-  readonly threshold: number;
-  readonly fallbackUsed: boolean;
-  readonly cageConf: number[][];
-  readonly borderX: boolean[][];
-  readonly borderY: boolean[][];
-  readonly borderXProb: number[][];
-  readonly borderYProb: number[][];
-  readonly candidateResults: ThresholdCandidateResult[];
-}
-
-/**
- * Search `candidates` for the fill-ratio threshold that yields the most
- * plausible cage geometry for this image, falling back to `fallbackThreshold`
- * if no candidate validates.
- *
- * For each candidate: derive `cageConf` via `cageConfFromContours`, cluster
- * borders via `clusterBorders`, threshold the resulting probabilities at >0.5,
- * and check structural plausibility via `validateCageGeometry`. Among valid
- * candidates, `pickBestThreshold` chooses the one with the largest
- * `thresholdMargin`. The chosen candidate's `cageConf`/`borderX`/`borderY`/
- * `borderXProb`/`borderYProb` are returned directly — `clusterBorders` is not
- * re-run for the chosen threshold.
- *
- * @param contours - (9, 9) array [row][col] of size-valid contour metrics,
- *   as returned by `collectCageTotalContours`.
- * @param warpedGry - Perspective-corrected grayscale image.
- * @param subres - Pixels per cell side.
- * @param candidates - Fill-ratio thresholds to try, in order.
- * @param borderClusteringConfig - Passed through to `clusterBorders`.
- * @param anchorConfidenceThreshold - Passed through to `clusterBorders`.
- * @param fallbackThreshold - Used (and evaluated once) if no candidate validates.
- */
-export function calibrateCageTotalThreshold(
-  contours: ContourMetrics[][][],
-  warpedGry: GrayImage,
-  subres: number,
-  candidates: readonly number[],
-  borderClusteringConfig: BorderClusteringConfig,
-  anchorConfidenceThreshold: number,
-  fallbackThreshold: number,
-): CageThresholdCalibrationResult {
-  interface Evaluated {
-    readonly threshold: number;
-    readonly cageConf: number[][];
-    readonly borderX: boolean[][];
-    readonly borderY: boolean[][];
-    readonly borderXProb: number[][];
-    readonly borderYProb: number[][];
-    readonly valid: boolean;
-    readonly margin: number;
-  }
-
-  function evaluate(threshold: number): Evaluated {
-    const cageConf = cageConfFromContours(contours, subres, threshold);
-    const [borderXProb, borderYProb] = clusterBorders(
-      warpedGry, cageConf, subres, borderClusteringConfig, anchorConfidenceThreshold,
-    );
-    const borderX = borderXProb.map(row => row.map(v => v > 0.5));
-    const borderY = borderYProb.map(row => row.map(v => v > 0.5));
-    const valid = validateCageGeometry(cageConf, borderX, borderY);
-    const margin = thresholdMargin(contours, subres, threshold);
-    return { threshold, cageConf, borderX, borderY, borderXProb, borderYProb, valid, margin };
-  }
-
-  const evaluated = candidates.map(evaluate);
-  const candidateResults: ThresholdCandidateResult[] = evaluated.map(
-    ({ threshold, valid, margin }) => ({ threshold, valid, margin }),
-  );
-
-  const bestThreshold = pickBestThreshold(candidateResults);
-  const chosen = bestThreshold !== null
-    ? evaluated.find(e => e.threshold === bestThreshold)!
-    : evaluate(fallbackThreshold);
-
-  return {
-    threshold: chosen.threshold,
-    fallbackUsed: bestThreshold === null,
-    cageConf: chosen.cageConf,
-    borderX: chosen.borderX,
-    borderY: chosen.borderY,
-    borderXProb: chosen.borderXProb,
-    borderYProb: chosen.borderYProb,
-    candidateResults,
-  };
+export function cageConfFromSize(contours: ContourMetrics[][][]): number[][] {
+  return contours.map(rowContours => rowContours.map(cellContours => (cellContours.length > 0 ? 1.0 : 0.0)));
 }
 
 /**
@@ -360,25 +209,6 @@ export function scanClassicDigits(
   }
 
   return classicConf;
-}
-
-/**
- * Flatten all size-valid contour fill ratios across the image, for the
- * `contourFillRatios` field of `CageThresholdCalibrationReport` — the raw data
- * needed to re-tune the candidate sweep or margin rule from real-world data.
- *
- * @param contours - (9, 9) array [row][col] of size-valid contour metrics.
- */
-export function contourFillRatios(contours: ContourMetrics[][][]): number[] {
-  const ratios: number[] = [];
-  for (const rowContours of contours) {
-    for (const cellContours of rowContours) {
-      for (const c of cellContours) {
-        ratios.push(c.area / (c.width * c.height));
-      }
-    }
-  }
-  return ratios;
 }
 
 /**

@@ -8,12 +8,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeQuadSums, detectPuzzleType, detectRotation, isCageTotalContour,
-  cageConfFromContours, thresholdMargin, pickBestThreshold, calibrateCageTotalThreshold,
-  contourFillRatios,
+  cageConfFromSize,
 } from './cellScan.js';
-import type { ContourMetrics, ThresholdCandidateResult } from './cellScan.js';
-import type { GrayImage } from './borderClustering.js';
-import { defaultImagePipelineConfig, subres as cfgSubres } from './config.js';
+import type { ContourMetrics } from './cellScan.js';
 import type { OpenCVMat } from './opencv.js';
 
 // ---------------------------------------------------------------------------
@@ -103,230 +100,36 @@ describe('isCageTotalContour', () => {
 });
 
 // ---------------------------------------------------------------------------
-// cageConfFromContours
+// cageConfFromSize
 // ---------------------------------------------------------------------------
 
-describe('cageConfFromContours', () => {
+describe('cageConfFromSize', () => {
   /** Build a 9x9 grid of empty contour lists. */
   function emptyContours(): ContourMetrics[][][] {
     return Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => []));
   }
 
   it('returns all-zero when no cell has any contours', () => {
-    const result = cageConfFromContours(emptyContours(), SUBRES_FULL, 0.3);
+    const result = cageConfFromSize(emptyContours());
     for (const row of result) for (const v of row) expect(v).toBe(0);
   });
 
-  it('returns 1.0 for a cell with a real-digit contour (fillRatio 0.81) at threshold 0.3', () => {
+  it('returns 1.0 for a cell with any size-valid contour, regardless of fill ratio', () => {
     const contours = emptyContours();
-    contours[0]![0] = [{ width: 24, height: 30, area: 581 }]; // fillRatio ~0.81
-    const result = cageConfFromContours(contours, SUBRES_FULL, 0.3);
+    contours[0]![0] = [{ width: 11, height: 52, area: 84 }]; // fillRatio ~0.15 (a dash, by TS's old — now removed — fill-ratio check)
+    const result = cageConfFromSize(contours);
     expect(result[0]![0]).toBe(1.0);
     expect(result[0]![1]).toBe(0);
   });
 
-  it('returns 0.0 for a cell with only a dash-segment contour (fillRatio 0.15) at threshold 0.3', () => {
-    const contours = emptyContours();
-    contours[0]![0] = [{ width: 11, height: 52, area: 84 }]; // fillRatio ~0.15
-    const result = cageConfFromContours(contours, SUBRES_FULL, 0.3);
-    expect(result[0]![0]).toBe(0);
-  });
-
-  it('returns 1.0 for the same dash-segment contour at threshold 0.10 (lower than its fillRatio)', () => {
-    const contours = emptyContours();
-    contours[0]![0] = [{ width: 11, height: 52, area: 84 }]; // fillRatio ~0.15
-    const result = cageConfFromContours(contours, SUBRES_FULL, 0.10);
-    expect(result[0]![0]).toBe(1.0);
-  });
-
-  it('returns 1.0 if any contour in a cell passes, even if others do not', () => {
+  it('returns 1.0 if any contour is present, even alongside others', () => {
     const contours = emptyContours();
     contours[3]![4] = [
-      { width: 11, height: 52, area: 84 },   // fillRatio ~0.15, fails at 0.3
-      { width: 24, height: 30, area: 581 },  // fillRatio ~0.81, passes at 0.3
+      { width: 11, height: 52, area: 84 },
+      { width: 24, height: 30, area: 581 },
     ];
-    const result = cageConfFromContours(contours, SUBRES_FULL, 0.3);
+    const result = cageConfFromSize(contours);
     expect(result[3]![4]).toBe(1.0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// thresholdMargin
-// ---------------------------------------------------------------------------
-
-describe('thresholdMargin', () => {
-  function emptyContours(): ContourMetrics[][][] {
-    return Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => []));
-  }
-
-  it('returns Infinity when there are no contours', () => {
-    expect(thresholdMargin(emptyContours(), SUBRES_FULL, 0.3)).toBe(Infinity);
-  });
-
-  it('returns the distance from threshold to a single contour fillRatio', () => {
-    const contours = emptyContours();
-    contours[0]![0] = [{ width: 24, height: 30, area: 581 }]; // fillRatio ~0.8069
-    const margin = thresholdMargin(contours, SUBRES_FULL, 0.3);
-    expect(margin).toBeCloseTo(581 / (24 * 30) - 0.3, 5);
-  });
-
-  it('returns the minimum distance across multiple contours', () => {
-    const contours = emptyContours();
-    // fillRatios: ~0.1615 (dash) and ~0.8069 (digit)
-    contours[0]![0] = [{ width: 11, height: 52, area: 84 }];
-    contours[0]![1] = [{ width: 24, height: 30, area: 581 }];
-    const margin = thresholdMargin(contours, SUBRES_FULL, 0.3);
-    const dashRatio = 84 / (11 * 52);
-    const digitRatio = 581 / (24 * 30);
-    expect(margin).toBeCloseTo(Math.min(Math.abs(dashRatio - 0.3), Math.abs(digitRatio - 0.3)), 5);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// pickBestThreshold
-// ---------------------------------------------------------------------------
-
-describe('pickBestThreshold', () => {
-  it('returns null when no candidate is valid', () => {
-    const results: ThresholdCandidateResult[] = [
-      { threshold: 0.1, valid: false, margin: 0.05 },
-      { threshold: 0.3, valid: false, margin: 0.20 },
-    ];
-    expect(pickBestThreshold(results)).toBeNull();
-  });
-
-  it('returns the only valid candidate', () => {
-    const results: ThresholdCandidateResult[] = [
-      { threshold: 0.1, valid: false, margin: 0.20 },
-      { threshold: 0.3, valid: true, margin: 0.05 },
-    ];
-    expect(pickBestThreshold(results)).toBe(0.3);
-  });
-
-  it('returns the valid candidate with the largest margin', () => {
-    const results: ThresholdCandidateResult[] = [
-      { threshold: 0.1, valid: true, margin: 0.05 },
-      { threshold: 0.3, valid: true, margin: 0.20 },
-      { threshold: 0.5, valid: true, margin: 0.10 },
-    ];
-    expect(pickBestThreshold(results)).toBe(0.3);
-  });
-
-  it('ignores invalid candidates even if they have the largest margin', () => {
-    const results: ThresholdCandidateResult[] = [
-      { threshold: 0.1, valid: true, margin: 0.05 },
-      { threshold: 0.3, valid: false, margin: 0.99 },
-    ];
-    expect(pickBestThreshold(results)).toBe(0.1);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// calibrateCageTotalThreshold
-// ---------------------------------------------------------------------------
-
-describe('calibrateCageTotalThreshold', () => {
-  const config = defaultImagePipelineConfig();
-  const subres = cfgSubres(config); // 128
-  const size = subres * 9;
-
-  /** All 81 cells have one contour with fillRatio ~0.2 (w=20,h=20,area=80). */
-  function uniformContours(): ContourMetrics[][][] {
-    return Array.from({ length: 9 }, () =>
-      Array.from({ length: 9 }, () => [{ width: 20, height: 20, area: 80 }]),
-    );
-  }
-
-  /**
-   * Image where every horizontal AND vertical inter-cell border band is dark
-   * (cage-border ink), everything else white.
-   */
-  function imageWithAllDarkBorders(): GrayImage {
-    const data = new Uint8Array(size * size).fill(255);
-    const halfBand = (subres / 2) | 0;
-    for (let g = 0; g < 8; g++) {
-      const boundary = (g + 1) * subres;
-      for (let i = boundary - halfBand; i < boundary + halfBand; i++) {
-        if (i < 0 || i >= size) continue;
-        for (let j = 0; j < size; j++) {
-          data[i * size + j] = 30; // horizontal band
-          data[j * size + i] = 30; // vertical band
-        }
-      }
-    }
-    return { data, size };
-  }
-
-  it('picks the lower candidate when it yields a valid 81-cage geometry and the higher does not', () => {
-    // At threshold 0.1, fillRatio 0.2 >= 0.1 -> cageConf all 1.0 -> every cell is
-    // its own cage head; with all borders dark and all anchors confident,
-    // clusterBorders should classify all inner borders as cage walls -> valid.
-    // At threshold 0.5, fillRatio 0.2 < 0.5 -> cageConf all 0.0 -> no cage heads
-    // at all -> validateCageGeometry returns false (unassigned regions).
-    const result = calibrateCageTotalThreshold(
-      uniformContours(),
-      imageWithAllDarkBorders(),
-      subres,
-      [0.1, 0.5],
-      config.borderClustering,
-      config.cellScan.anchorConfidenceThreshold,
-      0.3, // fallbackThreshold
-    );
-
-    expect(result.fallbackUsed).toBe(false);
-    expect(result.threshold).toBe(0.1);
-    expect(result.candidateResults).toHaveLength(2);
-    expect(result.candidateResults[0]!.threshold).toBe(0.1);
-    expect(result.candidateResults[0]!.valid).toBe(true);
-    expect(result.candidateResults[0]!.margin).toBeCloseTo(0.1, 5);
-    expect(result.candidateResults[1]!.valid).toBe(false);
-    for (const row of result.cageConf) for (const v of row) expect(v).toBe(1.0);
-  });
-
-  it('falls back to fallbackThreshold when no candidate is valid', () => {
-    // fillRatio 0.2 < both 0.4 and 0.5 -> cageConf all 0.0 for both candidates
-    // -> validateCageGeometry false for both -> fallback to 0.3.
-    const result = calibrateCageTotalThreshold(
-      uniformContours(),
-      imageWithAllDarkBorders(),
-      subres,
-      [0.4, 0.5],
-      config.borderClustering,
-      config.cellScan.anchorConfidenceThreshold,
-      0.3, // fallbackThreshold
-    );
-
-    expect(result.fallbackUsed).toBe(true);
-    expect(result.threshold).toBe(0.3);
-    expect(result.candidateResults).toHaveLength(2);
-    expect(result.candidateResults.every(c => !c.valid)).toBe(true);
-    // fillRatio 0.2 < 0.3 -> cageConf still all 0 at the fallback threshold too.
-    for (const row of result.cageConf) for (const v of row) expect(v).toBe(0.0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// contourFillRatios
-// ---------------------------------------------------------------------------
-
-describe('contourFillRatios', () => {
-  it('returns an empty array when there are no contours', () => {
-    const contours: ContourMetrics[][][] = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => []));
-    expect(contourFillRatios(contours)).toEqual([]);
-  });
-
-  it('flattens fill ratios across cells, preserving multiple contours per cell', () => {
-    const contours: ContourMetrics[][][] = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => []));
-    contours[0]![0] = [{ width: 24, height: 30, area: 581 }]; // ~0.8069
-    contours[3]![4] = [
-      { width: 11, height: 52, area: 84 },  // ~0.1469
-      { width: 20, height: 20, area: 80 },  // 0.2
-    ];
-    const ratios = contourFillRatios(contours);
-    expect(ratios).toHaveLength(3);
-    expect(ratios[0]).toBeCloseTo(581 / (24 * 30), 5);
-    expect(ratios[1]).toBeCloseTo(84 / (11 * 52), 5);
-    expect(ratios[2]).toBeCloseTo(80 / (20 * 20), 5);
   });
 });
 
