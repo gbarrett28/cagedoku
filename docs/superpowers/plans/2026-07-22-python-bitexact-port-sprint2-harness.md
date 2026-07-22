@@ -30,7 +30,7 @@
   (flattened `[x0,y0,x1,y1,x2,y2,x3,y3]`, post-rotation-correction) — all three present
   only when `window.__reportContourTree` is set, same gate as `contourTree`.
 
-- [ ] **Step 1: Add the three fields to `ParseResult`**
+- [x] **Step 1: Add the three fields to `ParseResult`**
 
 In `web/src/image/inpImage.ts`, change the `ParseResult` interface (currently ending
 `outerGridBR?: BRect | null;`) to:
@@ -59,7 +59,7 @@ export interface ParseResult {
 }
 ```
 
-- [ ] **Step 2: Capture the grayscale array right after `prepareGrayMat`**
+- [x] **Step 2: Capture the grayscale array right after `prepareGrayMat`**
 
 In `parsePuzzleImage`, immediately after the line
 `const [blkMat, gryMat] = prepareGrayMat(cv, imageData, resolution);`, add:
@@ -69,7 +69,7 @@ In `parsePuzzleImage`, immediately after the line
   const graySizeForDump: [number, number] | undefined = includeTree ? [gryMat.rows, gryMat.cols] : undefined;
 ```
 
-- [ ] **Step 3: Capture grid corners after rotation correction**
+- [x] **Step 3: Capture grid corners after rotation correction**
 
 Immediately before the line `gryMat.delete(); blkMat.delete(); mMat.delete();` (which
 comes right after the `if (rotK !== 0) { ... }` rotation-correction block), add:
@@ -78,7 +78,7 @@ comes right after the `if (rotK !== 0) { ... }` rotation-correction block), add:
   const gridCornersForDump: number[] | undefined = includeTree ? Array.from(rectArr) : undefined;
 ```
 
-- [ ] **Step 4: Add the three fields to all 3 `return` statements**
+- [x] **Step 4: Add the three fields to all 3 `return` statements**
 
 Each of the 3 `return` statements in `parsePuzzleImage` has a
 `...(includeTree ? { contourTree: ..., selectedNumbers: ..., outerGridBR: ... } : {})`
@@ -107,7 +107,7 @@ e.g. the classic-path return's spread becomes:
 Use serena's `find_symbol` on `parsePuzzleImage` to locate the current exact text of
 each of the 3 spreads before editing (line numbers shift as earlier steps are applied).
 
-- [ ] **Step 5: Type-check and run the existing test suite**
+- [x] **Step 5: Type-check and run the existing test suite**
 
 ```bash
 cd web && npx tsc --noEmit && npm test
@@ -116,7 +116,7 @@ cd web && npx tsc --noEmit && npm test
 Expected: no type errors; all existing tests still pass (nothing consumes the new
 optional fields yet, so no existing test should change behavior).
 
-- [ ] **Step 6: Bronze gate and commit**
+- [x] **Step 6: Bronze gate and commit**
 
 ```bash
 cd .. && bash scripts/run-bronze-gate.sh
@@ -148,7 +148,7 @@ EOF
   `border_x`, `border_y`, `cage_totals`, `given_digits`, `spec_error` — consumed by
   `bitcheck_diff.py` (Task 4).
 
-- [ ] **Step 1: Write `killer_sudoku/scripts/bitcheck_dump.py`**
+- [x] **Step 1: Write `killer_sudoku/scripts/bitcheck_dump.py`**
 
 ```python
 """Dumps InpImage stage checkpoints for one puzzle image to JSON, for
@@ -207,7 +207,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 2: Run it against image 0 to confirm it produces valid output**
+- [x] **Step 2: Run it against image 0 to confirm it produces valid output**
 
 ```bash
 python -m killer_sudoku.scripts.bitcheck_dump guardian/killer_sudoku_0.jpg --out /tmp/py0.json
@@ -221,7 +221,7 @@ upscaled+bordered size), a `puzzle_type` of `'killer'` or `'classic'`, and
 expected, not a bug (the `.jpg` itself, which is irreplaceable training data,
 is untouched).
 
-- [ ] **Step 3: Bronze gate and commit**
+- [x] **Step 3: Bronze gate and commit**
 
 ```bash
 bash scripts/run-bronze-gate.sh
@@ -253,7 +253,7 @@ EOF
   `borderX`, `borderY`, `cageTotals`, `givenDigits`, `specError`, `liveMatsBefore`,
   `liveMatsAfter` — consumed by `bitcheck_diff.py` (Task 4).
 
-- [ ] **Step 1: Write `web/scripts/bitcheck-dump.ts`**
+- [x] **Step 1: Write `web/scripts/bitcheck-dump.ts`**
 
 ```ts
 #!/usr/bin/env vite-node
@@ -340,7 +340,7 @@ async function main(): Promise<void> {
 main().catch(e => { console.error(e); process.exit(1); });
 ```
 
-- [ ] **Step 2: Build and preview the app, then run the script against image 0**
+- [x] **Step 2: Build and preview the app, then run the script against image 0**
 
 ```bash
 npm run build
@@ -353,7 +353,7 @@ python -c "import json; d = json.load(open('/tmp/ts0.json')); print(d['graySize'
 Expected: `liveMatsBefore` and `liveMatsAfter` are equal (no leak on this image);
 `puzzleType` and `specError` printed; `graySize` is a `[rows, cols]` pair.
 
-- [ ] **Step 3: Bronze gate and commit**
+- [x] **Step 3: Bronze gate and commit**
 
 ```bash
 cd .. && bash scripts/run-bronze-gate.sh
@@ -384,7 +384,7 @@ EOF
 - Produces: exit code 0 + `MATCH` on stdout if all stages agree; exit code 1 +
   `DIVERGES at <stage>: <detail>` (first divergence only) otherwise.
 
-- [ ] **Step 1: Write `killer_sudoku/scripts/bitcheck_diff.py`**
+- [x] **Step 1: Write `killer_sudoku/scripts/bitcheck_diff.py`**
 
 ```python
 """Compares a Python-side and TS-side bitcheck dump stage-by-stage, reporting
@@ -478,7 +478,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 2: Write a unit test for `diff_dumps` before running it for real**
+- [x] **Step 2: Write a unit test for `diff_dumps` before running it for real**
 
 Create `tests/test_bitcheck_diff.py`:
 
@@ -526,7 +526,7 @@ def test_shape_mismatch_reported() -> None:
 
 Run: `python -m pytest tests/test_bitcheck_diff.py -v`. Expected: all 3 tests PASS.
 
-- [ ] **Step 3: Run the harness end-to-end on image 0**
+- [x] **Step 3: Run the harness end-to-end on image 0**
 
 ```bash
 python -m killer_sudoku.scripts.bitcheck_diff /tmp/py0.json /tmp/ts0.json
@@ -536,7 +536,7 @@ Record the actual result (MATCH, or the first divergence and its detail) — thi
 determines what comes next (see "After this sprint" below). Do not guess at the
 outcome; run it and read the real output.
 
-- [ ] **Step 4: Bronze gate and commit**
+- [x] **Step 4: Bronze gate and commit**
 
 ```bash
 bash scripts/run-bronze-gate.sh
@@ -555,14 +555,37 @@ EOF
 
 ---
 
+## Results
+
+All 4 tasks executed and committed (`758bcfe`, `41a24e2`, `c653431`, `757a5e5`).
+Two bugs were found and fixed mid-execution, before the harness produced a
+trustworthy result:
+
+1. `ParseResult` alone wasn't enough to get `gray`/`graySize`/`gridCorners` into
+   the reported outcome — `web/src/session/actions.ts`'s `UploadResult` and
+   `web/src/main.ts`'s `contourPayload()` both hand-pick specific fields rather
+   than forwarding `ParseResult` verbatim, so both had to be updated too.
+2. The TS `gray` checkpoint was initially a flat `Array.from(gryMat.data)`,
+   while Python's `info.gry.tolist()` preserves the 2D shape — reshaped to
+   nested rows in `web/src/image/inpImage.ts` to make the two comparable.
+3. `web/scripts/bitcheck-dump.ts` had to be added to `web/tsconfig.json`'s
+   `include` list (`web/scripts/*.ts` isn't a glob there — each script is
+   listed individually), or it silently isn't type-checked at all.
+
+With those fixed, the harness's first real run reported:
+
+```
+DIVERGES at Stage 1: grayscale image: shape mismatch: python=(1726, 1726) ts=(1720, 1720)
+```
+
+— confirming the predicted cause (Python's 3px border, absent in TS). A second,
+independent finding: `web/scripts/bitcheck-dump.ts` reported 1 leaked `cv.Mat`
+processing this image (`liveMatsBefore: 0`, `liveMatsAfter: 1`) — Sprint 1's
+leak monitor catching something real on its very first use.
+
 ## After this sprint
 
-If Step 3 of Task 4 reports `MATCH`, image 0 is already bit-exact and the next
-step is picking image 2 (a new plan). If it reports a divergence, use
-`superpowers:systematic-debugging` to root-cause it — starting from the Python and
-TS implementations of whatever stage diverged first — fix the TS side (never the
-Python reference), re-run the Task 3/Task 4 dump-and-diff steps, and repeat until
-image 0 matches. This is expected to take at least one iteration: `prepareGrayMat`
-in `web/src/image/inpImage.ts` does not add the 3px black border that Python's
-`get_gry_img` does (`killer_sudoku/image/grid_location.py`), which will very
-likely surface as the first Stage 1 divergence.
+Both findings above need root-causing via `superpowers:systematic-debugging` (fix
+the TS side only, never the Python reference), then the Task 3/4 dump-and-diff
+steps re-run until image 0 matches on every stage. Only then does image 2 get
+picked, in a new plan.
