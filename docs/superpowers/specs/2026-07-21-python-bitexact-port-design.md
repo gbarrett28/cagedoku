@@ -157,25 +157,33 @@ scope).
   `spec_error` failures above are not addressed by this effort unless they
   block porting an image that happens to hit them).
 
-  **Known caveat, found while porting `guardian/killer_sudoku_0.jpg`
-  (2026-07-22):** `killer_sudoku.image.validation.validate_cage_layout`
-  reads `cage_totals` with a col/row loop-variable swap that transposes it
-  relative to `border_x`/`border_y`'s own convention (verified empirically:
-  a from-scratch union-find replica, fed the real bit-exact-matching
-  border/cage-total data, reproduces Python's actual `info.spec.regions`
-  output only when replicating this transposed reading, not the
-  geometrically-correct one). It doesn't always throw, because the
-  resulting mismatch often still forms a structurally valid — if
-  geometrically wrong — region assignment; that's presumably why it hasn't
-  shown up in the 99.9% clean-rate corpus check. TS's port
-  (`web/src/image/validation.ts`) is self-consistent and does not
-  replicate this quirk, so on some killer images TS's `ProcessingError`
-  will legitimately differ from Python's success. Per the "transpose
-  Python's output to correct order" decision, this is treated as a
-  reference-oracle inconsistency to route around at the dump/tooling
-  boundary (`killer_sudoku/scripts/bitcheck_dump.py` transposes
-  `cage_totals` conditionally on `puzzle_type`), not something to fix in
-  `killer_sudoku/image/*.py` or to replicate in TS.
+  **Known caveat, found and root-caused while porting
+  `guardian/killer_sudoku_0.jpg` (2026-07-22):**
+  `killer_sudoku.image.inp_image.InpImage._build_cage_totals` has the same
+  axis-swap quirk `_sample_strip` documents for Stage 4 ("the first numpy
+  axis is x/column") — a contour's x-coordinate should map to grid row and
+  y to grid col here, not the intuitive other way round — but
+  `_build_cage_totals` doesn't account for it, so its returned array is
+  transposed relative to what `border_x`/`border_y` and
+  `validate_cage_layout` expect. It doesn't always throw, because
+  `validate_cage_layout` happens to read `cage_totals` with a col/row
+  loop-variable swap that compensates for it internally (two
+  Stage-4/Stage-5 inconsistencies cancelling out) — presumably why this
+  hasn't shown up in the 99.9% clean-rate corpus check; the resulting
+  region assignment can still be geometrically wrong even when no
+  exception is thrown. **Resolved on the TS side**: `buildCageTotals`
+  (`web/src/image/inpImage.ts`) was fixed to swap which pixel coordinate
+  feeds row vs col, so it now produces the correctly-oriented array
+  directly — `connectivityScore`/`validateCageLayout`/`repairCageTotals`
+  needed no changes (all pre-existing tests, including the Bug #29
+  regression suite, still pass). Verified: both `border_x`/`border_y` and
+  `cage_totals` now match Python bit-exact (once `cage_totals` is
+  transposed, since Python's raw array remains unfixed) on
+  `guardian/killer_sudoku_0.jpg`, and both pipelines validate successfully.
+  `killer_sudoku/image/*.py` itself is left unchanged (out of scope);
+  `killer_sudoku/scripts/bitcheck_dump.py` transposes `cage_totals`
+  unconditionally (both puzzle types) to compare Python's raw output
+  against TS's now-correct one.
 - Merging or deleting `feature/python-baseline` (parked until this
   branch's work is complete, then revisited).
 - Any permanent addition to the Vitest suite for bit-exact comparison —

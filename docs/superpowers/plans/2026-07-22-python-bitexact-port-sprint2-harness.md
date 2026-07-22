@@ -653,9 +653,23 @@ investigation beyond ruling out the above:
 
 Both threads are now resolved. Stage 1's JPEG-decode noise remains
 accepted as out-of-scope while using the default opencv.js build; image 0
-is otherwise fully matched. A real, distinct killer-path divergence was
-found while testing `guardian/killer_sudoku_0.jpg` as a candidate next
-image — `border_x`/`border_y` and `cage_totals` disagree, and TS raises
-`ProcessingError: region reassigned` where Python succeeds. Not yet
-root-caused; this is the next thread to pick up, likely in a new plan
-once scoped.
+is otherwise fully matched.
+
+A real, distinct killer-path divergence was found while testing
+`guardian/killer_sudoku_0.jpg` as a candidate next image —
+`border_x`/`border_y` and `cage_totals` disagreed (via a harness bug: the
+dump was reading the UI's placeholder spec, not the real detection
+result), and once that was fixed, TS raised `ProcessingError: region
+reassigned` where Python succeeds. **Root-caused and resolved**:
+`buildCageTotals`'s contour-to-cell assignment had the same axis-swap
+quirk `_sample_strip` already accounts for in Stage 4 (x-coordinate maps
+to row, y to col — not the intuitive mapping) — verified by confirming
+region *shapes* were already correct (30 regions, sizes 2–4, matching a
+real killer layout) before finding the total-value/cell misattribution.
+Fixed in `buildCageTotals` only; `connectivityScore`/`validateCageLayout`/
+`repairCageTotals` needed no changes and all their existing tests
+(including the Bug #29 regression suite) still pass. Both
+`classic_guardian/easy/killer_sudoku_0.jpg` and
+`guardian/killer_sudoku_0.jpg` now match Python bit-exact on every field
+and validate successfully — image 2 (a genuine killer puzzle) can now be
+picked as the next bit-check target, in a new plan.
