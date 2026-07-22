@@ -617,17 +617,32 @@ balances with a `.delete()`; the leak's source is still unknown.
 
 ## After this sprint
 
-Two open threads, both requiring fresh root-cause investigation (not yet
-attempted beyond ruling out the above):
+Two open threads were identified, both requiring fresh root-cause
+investigation beyond ruling out the above:
 
 1. **Stage 4 `border_x`/`border_y` divergence** on image 0 — puzzle_type and
    cage_totals already agree, so this is likely isolated to the anchored
    border-clustering logic (`web/src/image/borderClustering.ts` vs
    `killer_sudoku/image/border_clustering.py` / `border_detection.py`).
+   **Resolved** (root-caused in follow-up work, not a separate plan): the
+   true cause was an `isHorizontal` semantic inversion in `sampleStrip`
+   (Python's `_sample_strip` treats the first numpy axis as x/column, a
+   transposed convention TS had backwards), plus the digit recogniser
+   (Stage 5) needing to be reverted from HOG+OVO-SVM back to Python's
+   PCA+template+RBF-SVM so cage_totals — which Stage 4's polarity
+   flip-search depends on via connectivity scoring — agreed too. With both
+   fixed, `border_x`/`border_y`, `cage_totals`, and `given_digits` all now
+   match Python bit-exact on image 0 (verified via the harness; a dump-tool
+   bug was also found and fixed along the way — classic-puzzle
+   `cage_totals` needed reading from `info.spec.cage_totals` instead of the
+   never-assigned `info.info.cage_totals`, and transposing to row-major).
+   Only Stage 1's known JPEG-decode noise (below) remains on this image.
 2. **1 leaked `cv.Mat`**, confirmed to be in the main pipeline path (not the
    debug-only contour-tree extraction). Needs bisection — e.g. temporarily
    checking `__cvLiveMats()` at intermediate points within `parsePuzzleImage`
-   to narrow down which stage introduces it.
+   to narrow down which stage introduces it. **Still open** — reproduced
+   again on the current pipeline state, not yet bisected.
 
-Once both are resolved and image 0 fully matches, image 2 gets picked, in a
-new plan.
+Once the leak is resolved (Stage 1's JPEG-decode noise is accepted as
+out-of-scope while using the default opencv.js build), image 0 is
+considered fully matched and image 2 gets picked, in a new plan.
