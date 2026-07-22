@@ -45,7 +45,7 @@
   (default-constructible, `ImagePipelineConfig()`), `killer_sudoku.scripts.evaluate_corpus`
   (CLI script) — these are what Sprint 2's `bitcheck_dump.py` will import.
 
-- [ ] **Step 1: Copy the four Python packages and evaluator script from `feature/python-baseline`**
+- [x] **Step 1: Copy the four Python packages and evaluator script from `feature/python-baseline`**
 
 ```bash
 git checkout feature/python-baseline -- \
@@ -65,7 +65,7 @@ Expected: a long list of new files under `killer_sudoku/api/`, `killer_sudoku/ou
 `killer_sudoku/solver/`, `killer_sudoku/image/`, `killer_sudoku/scripts/`, plus the two
 new test files and two modified files (`pyproject.toml`, `stubs/sklearn/decomposition.pyi`).
 
-- [ ] **Step 2: Run pytest to confirm the restored packages import and their tests pass**
+- [x] **Step 2: Run pytest to confirm the restored packages import and their tests pass**
 
 ```bash
 python -m pytest tests/test_evaluate_corpus.py tests/test_inp_image_diagnostics.py -v
@@ -76,7 +76,9 @@ under `killer_sudoku/api/` or `killer_sudoku/output/` was missed in Step 1 — r
 against `git diff master feature/python-baseline --stat -- killer_sudoku/` for
 completeness rather than adding new code.
 
-- [ ] **Step 3: Run the full pytest suite to confirm no collateral breakage**
+Result: all 8 tests passed.
+
+- [x] **Step 3: Run the full pytest suite to confirm no collateral breakage**
 
 ```bash
 python -m pytest tests/ -v
@@ -96,7 +98,7 @@ This runs `ruff check .` and `mypy . --ignore-missing-imports` over the newly-re
 Python files too (the `pyproject.toml` per-file-ignores from Step 1 are what make this
 pass cleanly rather than flooding with legacy-code lint errors).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add killer_sudoku/api killer_sudoku/output killer_sudoku/solver killer_sudoku/image \
@@ -133,7 +135,7 @@ EOF
   `bitcheck-dump.ts` will call `window.__cvLiveMats()` before/after processing each
   image.
 
-- [ ] **Step 1: Write the failing tests for `installCvMonitors`**
+- [x] **Step 1: Write the failing tests for `installCvMonitors`**
 
 Add to the end of `web/src/session/store.test.ts` (after the existing
 `describe('telemetry failure queue', ...)` block, and add `installCvMonitors` to the
@@ -228,7 +230,7 @@ describe('installCvMonitors', () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to confirm they fail**
+- [x] **Step 2: Run the tests to confirm they fail**
 
 ```bash
 cd web && npx vitest run src/session/store.test.ts
@@ -236,7 +238,9 @@ cd web && npx vitest run src/session/store.test.ts
 
 Expected: FAIL — `installCvMonitors` is not exported from `./store.js`.
 
-- [ ] **Step 3: Implement `installCvMonitors` in `web/src/session/store.ts`**
+Result: confirmed FAIL as expected (`TypeError: installCvMonitors is not a function`).
+
+- [x] **Step 3: Implement `installCvMonitors` in `web/src/session/store.ts`**
 
 Append to the end of `web/src/session/store.ts`:
 
@@ -332,7 +336,7 @@ to
         })
 ```
 
-- [ ] **Step 4: Run the tests to confirm they pass**
+- [x] **Step 4: Run the tests to confirm they pass**
 
 ```bash
 cd web && npx vitest run src/session/store.test.ts
@@ -340,7 +344,9 @@ cd web && npx vitest run src/session/store.test.ts
 
 Expected: PASS (all 7 new tests plus existing `telemetry failure queue` tests).
 
-- [ ] **Step 5: Extend `ReportOutcomeFn` and add `metricsPayload()` in `web/src/main.ts`**
+Result: all 16 tests in the file passed.
+
+- [x] **Step 5: Extend `ReportOutcomeFn` and add `metricsPayload()` in `web/src/main.ts`**
 
 In `web/src/main.ts`, change the `ReportOutcomeFn` type (currently ending at
 `givenDigits?: number[][] | null | undefined;`) to add three optional fields:
@@ -380,30 +386,29 @@ function metricsPayload(): { liveMats: number; heapBytes: number; allocBytes: nu
 }
 ```
 
-- [ ] **Step 6: Spread `metricsPayload()` into every `__reportOutcome` call**
+- [x] **Step 6: Spread `metricsPayload()` into every `__reportOutcome` call**
 
 All 9 call sites in `web/src/main.ts` end their object literal with a
-`...timingPayload(...)` spread on its own line, immediately followed by a `});` line
-(at whatever indentation that call site uses). Use serena's `replace_content` in
-regex mode to add `...metricsPayload(),` right after each one, in a single pass:
+`...timingPayload(...)` spread on its own line. There are only 5 distinct
+(indentation, arguments) combinations among the 9 (several call sites share
+identical text), which matters for how this step must be done: a single
+`replace_content` regex call with a *literal* `\n` in the `repl` string
+inserts that literal two-character escape, not a real newline (it breaks the
+file); and an *unanchored* literal-mode needle matches as a substring inside
+longer-indented lines that share the same suffix, corrupting nearby lines
+when combined with `allow_multiple_occurrences`. Both were hit and reverted
+during execution.
 
-```
-pattern (regex):  ^(\s*)(\.\.\.timingPayload\([^\n]*\),)$
-replacement:       $1$2\n$1...metricsPayload(),
-```
-
-Apply across `web/src/main.ts` with `replace_all` semantics (all 9 occurrences).
-After applying, spot-check with:
+What actually works: regex mode, one call per distinct `^<indentation>\.\.\.timingPayload\(<escaped args>\),$` pattern (5 calls total, anchored with `^`/`$` so indentation naturally disambiguates), with a real embedded newline typed directly into the `repl` parameter — not the `\n` escape sequence. Verify after each call with:
 
 ```bash
 grep -n "timingPayload\|metricsPayload" web/src/main.ts
 ```
 
-Expected: 9 occurrences of `...timingPayload(` each immediately followed by a line
-containing `...metricsPayload(),` — 18 matching lines total (plus the two function
-definitions from Step 5, and the `ReportOutcomeFn` type's mention).
+Expected (final state): 9 occurrences of `...timingPayload(`, each immediately
+followed by a line containing `...metricsPayload(),`.
 
-- [ ] **Step 7: Run the full TS check and test suite**
+- [x] **Step 7: Run the full TS check and test suite**
 
 ```bash
 cd web && npx tsc --noEmit && npm test
@@ -415,7 +420,10 @@ mocks won't have `installCvMonitors` run against them — `metricsPayload()`'s
 `?? -1` defaults handle that case, which is exactly what the "unavailable" tests in
 Step 1 cover for the monitor functions themselves).
 
-- [ ] **Step 8: Run the bronze gate**
+Result: `tsc --noEmit` clean; `npm test` — 846 passed (up from 839 — the 7 new
+`installCvMonitors` tests), 146 skipped, 1 todo.
+
+- [x] **Step 8: Run the bronze gate**
 
 ```bash
 cd /path/to/repo/root && bash scripts/run-bronze-gate.sh
@@ -423,7 +431,7 @@ cd /path/to/repo/root && bash scripts/run-bronze-gate.sh
 
 Expected: `=== Bronze gate: code checks passed ===` and `.bronze-gate-ok` token created.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add web/src/session/store.ts web/src/session/store.test.ts web/src/main.ts
