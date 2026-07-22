@@ -22,102 +22,71 @@ describe('isDigitSizedContour', () => {
   });
 });
 
-describe('contourIsNumber (pinning the existing behaviour through the refactor)', () => {
-  it('accepts a digit-sized contour at an even-parity y', () => {
-    // yy = floor(2*(y + h/2) / subres) must be even. subres=128, h=20 -> y=0: yy = floor(2*10/128) = 0 (even)
+describe('contourIsNumber (matches Python contour_is_number exactly)', () => {
+  it('accepts a digit-sized contour at even x/y parity', () => {
+    // xx = floor(2*(x + w/2) / subres), yy = floor(2*(y + h/2) / subres); both must be even.
     const br: BRect = [0, 0, 10, 20];
-    expect(contourIsNumber(br, SUBRES_FULL, 120, 0.3)).toBe(true); // fillRatio 120/200 = 0.6
+    expect(contourIsNumber(br, SUBRES_FULL)).toBe(true);
   });
 
-  it('rejects an odd-parity y even when width/height/fill-ratio are digit-like', () => {
+  it('rejects an odd-parity y even when width/height are digit-like', () => {
     const br: BRect = [0, 64, 10, 20]; // y=64, h=20 -> yy = floor(2*74/128) = 1 (odd)
-    expect(contourIsNumber(br, SUBRES_FULL, 120, 0.3)).toBe(false);
+    expect(contourIsNumber(br, SUBRES_FULL)).toBe(false);
   });
 
-  it('rejects a too-narrow contour regardless of parity or fill ratio', () => {
+  it('rejects an odd-parity x even when width/height are digit-like', () => {
+    const br: BRect = [64, 0, 10, 20]; // x=64, w=10 -> xx = floor(2*69/128) = 1 (odd)
+    expect(contourIsNumber(br, SUBRES_FULL)).toBe(false);
+  });
+
+  it('rejects a too-narrow contour regardless of parity', () => {
     const br: BRect = [0, 0, 4, 10];
-    expect(contourIsNumber(br, SUBRES_FULL, 30, 0.3)).toBe(false); // fillRatio 30/40 = 0.75, still rejected on size
+    expect(contourIsNumber(br, SUBRES_FULL)).toBe(false);
   });
 
-  it('rejects a low-fill-ratio border-corner artifact despite digit-like size and even parity', () => {
-    // width=11, height=52, area=84 -> fillRatio ~0.15, the same dashed
-    // border-line-segment shape as isCageTotalContour's reference case
-    // (cellScan.test.ts). A killer cage's L-shaped border corner produces a
-    // contour with this shape when it falls in a non-head cell's top half,
-    // and was previously misread as a digit (bug: spurious cage-total
-    // duplicate, e.g. observer/killer_sudoku_397.jpg's false "11" at r1c5).
-    const br: BRect = [0, 0, 11, 52];
-    expect(contourIsNumber(br, SUBRES_FULL, 84, 0.3)).toBe(false);
-  });
-
-  it('accepts a real digit glyph matching the "20" left-digit reference fill ratio', () => {
+  it('accepts a real digit glyph matching the "20" left-digit reference shape', () => {
     const br: BRect = [0, 0, 24, 30];
-    expect(contourIsNumber(br, SUBRES_FULL, 581, 0.3)).toBe(true); // fillRatio ~0.81
+    expect(contourIsNumber(br, SUBRES_FULL)).toBe(true);
   });
 });
 
 // ---------------------------------------------------------------------------
-// getNumContours -- depth requirement
+// getNumContours -- matches Python get_num_contours exactly (no depth requirement)
 // ---------------------------------------------------------------------------
 
-/**
- * RETR_TREE hierarchy for a warped killer-puzzle image: depth 0 is the
- * single outer-grid contour, depth 1 is the 81 per-cell border frames (plus,
- * on images with fragmented border ink, stray non-cell line fragments),
- * depth 2 is genuine digit ink nested inside a cell's frame, depth 3 is a
- * digit's individual strokes nested inside a merged multi-stroke blob.
- * Diagnostic values below are real, from observer/killer_sudoku_397.jpg
- * (the bug) and guardian/killer_sudoku_0.jpg (the regression this guards
- * against).
- */
 function makeNode(br: BRect, area: number, children: ContourInfo[] = []): ContourInfo {
   return [[], br, area, children];
 }
 
-describe('getNumContours (depth requirement)', () => {
-  it('rejects a digit-sized, high-fill-ratio contour at depth 1 (cage-border corner notch, not nested in a cell)', () => {
-    // observer/killer_sudoku_397.jpg: the L-shaped "18" cage's corner notch
-    // at r1c5, br=[640,135,8,18], fillRatio ~0.65 -- passes contourIsNumber
-    // on shape/fill-ratio alone, but sits as a sibling of cell frames
-    // (depth 1, a direct child of the outer-grid contour), not nested inside
-    // one.
-    const depth1Notch = makeNode([640, 135, 8, 18], 93);
-    const outerGrid = makeNode([0, 0, 1152, 1152], 1324801, [depth1Notch]);
-    expect(getNumContours([outerGrid], SUBRES_FULL, 0.3)).toEqual([]);
-  });
-
+describe('getNumContours (matches Python — no hierarchy-depth requirement)', () => {
   it('accepts a digit-sized contour nested at depth 2 inside a cell frame', () => {
     // guardian/killer_sudoku_0.jpg r8c0's real total digit, br=[30,1024,15,32].
     const digit = makeNode([30, 1024, 15, 32], 262.5);
     const cellFrame = makeNode([0, 1024, 123, 123], 14600, [digit]);
     const outerGrid = makeNode([0, 0, 1152, 1152], 1324801, [cellFrame]);
-    expect(getNumContours([outerGrid], SUBRES_FULL, 0.3)).toEqual([digit]);
+    expect(getNumContours([outerGrid], SUBRES_FULL)).toEqual([digit]);
   });
 
-  it('still finds a depth-2 digit nested inside a rejected depth-1 fragment\'s sibling tree', () => {
-    // The depth-1 frame itself is never digit-sized (it's ~123x123), so it's
-    // never a candidate match -- but the search must still recurse into its
-    // children to find the real digit underneath.
+  it('still finds a digit nested inside a rejected fragment\'s sibling tree', () => {
     const digit = makeNode([777, 16, 12, 31], 171.5);
     const cellFrame = makeNode([768, 10, 123, 123], 13101.5, [digit]);
     const outerGrid = makeNode([0, 0, 1152, 1152], 1324801, [cellFrame]);
-    expect(getNumContours([outerGrid], SUBRES_FULL, 0.3)).toEqual([digit]);
+    expect(getNumContours([outerGrid], SUBRES_FULL)).toEqual([digit]);
   });
 
-  it('accepts a depth-2 merged multi-stroke blob whole, without descending into its strokes', () => {
-    // Pre-existing behaviour, unaffected by the depth requirement: once a
-    // node matches, it's accepted as a single unit (split into individual
-    // digit thumbnails later by splitNum) rather than recursing into its
-    // own digit-sized children.
+  it('accepts a merged multi-stroke blob whole, without descending into its strokes', () => {
+    // Once a node matches contourIsNumber, it's accepted as a single unit
+    // (split into individual digit thumbnails later by splitNum) rather than
+    // recursing into its own digit-sized children.
     const stroke = makeNode([799, 147, 9, 22], 134);
     const mergedBlob = makeNode([795, 142, 18, 32], 430, [stroke]);
     const cellFrame = makeNode([768, 133, 123, 126], 12396.5, [mergedBlob]);
     const outerGrid = makeNode([0, 0, 1152, 1152], 1324801, [cellFrame]);
-    expect(getNumContours([outerGrid], SUBRES_FULL, 0.3)).toEqual([mergedBlob]);
+    expect(getNumContours([outerGrid], SUBRES_FULL)).toEqual([mergedBlob]);
   });
 
-  it('rejects the single outer-grid contour itself (depth 0), even though it is never digit-sized', () => {
+  it('rejects the single outer-grid contour itself (never digit-sized)', () => {
     const outerGrid = makeNode([0, 0, 1152, 1152], 1324801);
-    expect(getNumContours([outerGrid], SUBRES_FULL, 0.3)).toEqual([]);
+    expect(getNumContours([outerGrid], SUBRES_FULL)).toEqual([]);
   });
 });

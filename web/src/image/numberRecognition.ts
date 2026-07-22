@@ -14,7 +14,6 @@
 
 import type { OpenCVModule, OpenCVMat, OpenCVMatVector } from './opencv.js';
 import { extractHoleFeatures } from './holeFeatures.js';
-import { isCageTotalContour } from './cellScan.js';
 type Cv = OpenCVModule;
 
 // ---------------------------------------------------------------------------
@@ -405,11 +404,23 @@ export function isDigitSizedContour(w: number, h: number, subres: number): boole
  *   `isCageTotalContour`.
  * @param minFillRatio - Minimum area / (width * height) to count as a digit.
  */
-export function contourIsNumber(br: BRect, subres: number, area: number, minFillRatio: number): boolean {
-  const [, y, w, h] = br;
+/**
+ * Decide whether a bounding rectangle could be a digit in a cage total.
+ *
+ * Matches Python's `contour_is_number` (killer_sudoku/image/number_recognition.py)
+ * exactly: both x and y parity checked (centre falls in the first half-cell
+ * of both its column and row), pure bounding-box size, no fill-ratio and no
+ * hierarchy-depth requirement — those were later TS-only additions with no
+ * Python equivalent.
+ *
+ * @param br - [x, y, w, h] bounding rect.
+ * @param subres - Pixels per cell side.
+ */
+export function contourIsNumber(br: BRect, subres: number): boolean {
+  const [x, y, w, h] = br;
+  const xx = (2 * (x + (w >> 1))) / subres | 0;
   const yy = (2 * (y + (h >> 1))) / subres | 0;
-  // x-parity omitted: yy + height checks exclude solution digits; x-parity falsely rejects second digits of "1X" totals near right-side cage borders.
-  return yy % 2 === 0 && isCageTotalContour(w, h, area, subres, minFillRatio);
+  return xx % 2 === 0 && yy % 2 === 0 && isDigitSizedContour(w, h, subres);
 }
 
 /**
@@ -477,19 +488,27 @@ export function contourHier(
  *   happens to pass the size/fill-ratio checks). A genuine cage-total digit
  *   is only ever found nested inside a cell's frame, i.e. depth >= 2.
  */
-export function getNumContours(chier: ContourInfo[], subres: number, minFillRatio: number, depth: number = 0): ContourInfo[] {
+/**
+ * Filter contour hierarchy to digit-sized contours only.
+ *
+ * Matches Python's `get_num_contours` exactly: recursively searches for
+ * contours whose bounding rect passes `contourIsNumber`. Non-matching
+ * contours are discarded but their children are still searched — no
+ * hierarchy-depth requirement (an earlier TS-only addition with no Python
+ * equivalent, added to fix a real bug — see git history around
+ * contourIsNumber.test.ts — being deliberately reverted for now to match
+ * Python while the rest of the pipeline is brought to parity).
+ *
+ * @param chier - Contour hierarchy.
+ * @param subres - Pixels per cell side.
+ */
+export function getNumContours(chier: ContourInfo[], subres: number): ContourInfo[] {
   const ret: ContourInfo[] = [];
   for (const [c, br, area, ds] of chier) {
-    // depth 0 is the single outer-grid contour; depth 1 is the 81 per-cell
-    // border frames (plus, on images with fragmented border ink, stray
-    // non-cell line fragments -- e.g. a cage's L-shaped corner notch). A
-    // cage-total digit is only ever found nested *inside* a cell's frame
-    // (depth >= 2): requiring that rejects border-line fragments
-    // structurally, without depending on any per-image border geometry.
-    if (depth >= 2 && contourIsNumber(br, subres, area, minFillRatio)) {
+    if (contourIsNumber(br, subres)) {
       ret.push([c, br, area, ds]);
     } else {
-      ret.push(...getNumContours(ds, subres, minFillRatio, depth + 1));
+      ret.push(...getNumContours(ds, subres));
     }
   }
   return ret;

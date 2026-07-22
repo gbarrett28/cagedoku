@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  computeQuadSums, detectPuzzleType, detectRotation, isCageTotalContour,
+  computeQuadSums, detectPuzzleType, detectRotation,
   cageConfFromSize,
 } from './cellScan.js';
 import type { ContourMetrics } from './cellScan.js';
@@ -65,39 +65,6 @@ function quadrantBlackMat(quadrant: 0 | 1 | 2 | 3): OpenCVMat {
   }
   return fakeMat(data);
 }
-
-// ---------------------------------------------------------------------------
-// isCageTotalContour
-// ---------------------------------------------------------------------------
-
-const SUBRES_FULL = 128; // diagnostic values were captured at this subres
-
-describe('isCageTotalContour', () => {
-  it('accepts a real digit contour ("20" left digit, fillRatio 0.81)', () => {
-    expect(isCageTotalContour(24, 30, 581, SUBRES_FULL, 0.3)).toBe(true);
-  });
-
-  it('accepts a real digit contour ("20" right digit, fillRatio 0.50)', () => {
-    expect(isCageTotalContour(20, 30, 299.5, SUBRES_FULL, 0.3)).toBe(true);
-  });
-
-  it('accepts a real digit contour ("11" first digit, fillRatio 0.53)', () => {
-    expect(isCageTotalContour(13, 31, 214, SUBRES_FULL, 0.3)).toBe(true);
-  });
-
-  it('accepts a real digit contour ("11" second digit, fillRatio 0.51)', () => {
-    expect(isCageTotalContour(14, 30, 214.5, SUBRES_FULL, 0.3)).toBe(true);
-  });
-
-  it('rejects a dashed border-line segment (fillRatio 0.15) despite passing size check', () => {
-    expect(isCageTotalContour(11, 52, 84, SUBRES_FULL, 0.3)).toBe(false);
-  });
-
-  it('rejects a contour outside the size range regardless of fill ratio', () => {
-    // width=5 is below minW (subres >> 4 = 8), even with a solid fill
-    expect(isCageTotalContour(5, 20, 100, SUBRES_FULL, 0.3)).toBe(false);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // cageConfFromSize

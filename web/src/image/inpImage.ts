@@ -280,7 +280,7 @@ export async function parsePuzzleImage(
   try {
     const brdrs = buildBrdrs(initialBorderX, initialBorderY);
     lastCageTotalsResult = buildCageTotals(
-      cv, warpedBlkMat, rec, subres, brdrs, config.cellScan.cageTotalMinFillRatio, splitRec,
+      cv, warpedBlkMat, rec, subres, brdrs, splitRec,
     );
     ({ cageTotals, cellThumbs, mergedThumbs } = lastCageTotalsResult);
   } catch (e) {
@@ -324,7 +324,7 @@ export async function parsePuzzleImage(
     try {
       const brdrs2 = buildBrdrs(bestBorderX, bestBorderY);
       lastCageTotalsResult = buildCageTotals(
-        cv, warpedBlkMat, rec, subres, brdrs2, config.cellScan.cageTotalMinFillRatio, splitRec,
+        cv, warpedBlkMat, rec, subres, brdrs2, splitRec,
       );
       ({ cageTotals, cellThumbs, mergedThumbs } = lastCageTotalsResult);
 
@@ -339,7 +339,7 @@ export async function parsePuzzleImage(
         );
         try {
           lastCageTotalsResult = buildCageTotals(
-            cv, adaptiveBlk, rec, subres, brdrs2, config.cellScan.cageTotalMinFillRatio, splitRec,
+            cv, adaptiveBlk, rec, subres, brdrs2, splitRec,
           );
           ({ cageTotals, cellThumbs, mergedThumbs } = lastCageTotalsResult);
           fallbackUsed = true;
@@ -451,7 +451,6 @@ export function buildCageTotals(
   rec: NumRecogniser,
   subres: number,
   brdrs: Brdrs,
-  minFillRatio: number,
   splitRec?: NumRecogniser,
   includeTree?: boolean,
 ): CageTotalsResult {
@@ -470,7 +469,7 @@ export function buildCageTotals(
 
   if (contours.size() > 0 && hierMat.rows > 0) {
     const chiers = contourHier(cv, contours, hierMat, new Set<number>(), 0);
-    const rawNums = getNumContours(chiers, subres, minFillRatio);
+    const rawNums = getNumContours(chiers, subres);
     rawNums.sort((a, b) => a[1][0] - b[1][0]);
 
     if (includeTree) {
