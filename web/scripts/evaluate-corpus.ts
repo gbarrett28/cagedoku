@@ -29,7 +29,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
-import { DEFAULT_DB_PATH, claimEvaluation, completeEvaluation, openDb, type CtEvalExtras } from './corpus-db.js';
+import {
+  DEFAULT_DB_PATH, claimEvaluation, completeEvaluation, insertRetrainingSuggestion, openDb, type CtEvalExtras,
+} from './corpus-db.js';
 import { waitForPipelineReady } from '../e2e/helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -331,6 +333,20 @@ async function runWorker(
       solveElapsedMs:     solveElapsedMs     ?? null,
     };
     completeEvaluation(db, claim.id, status, bucket, reason, detectedType, Date.now() - startMs, specHash, extras);
+
+    for (const s of outcome?.retrainingSuggestions ?? []) {
+      insertRetrainingSuggestion(db, {
+        puzzleHash: claim.puzzle_hash,
+        gitHash,
+        row: s.row,
+        col: s.col,
+        predictedLabel: s.predictedLabel,
+        suggestedLabel: s.suggestedLabel,
+        confidenceTier: s.confidenceTier,
+        cropPixels: s.crop,
+      });
+    }
+
     progress.done++;
 
     const { clean, backtracked, notSolved, timeout, failed } = counts;

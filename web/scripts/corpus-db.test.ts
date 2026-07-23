@@ -4,7 +4,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   addGroundTruth, claimEvaluation, completeEvaluation, getCorpora, getPuzzle,
-  insertPuzzle, insertRetrainingSuggestion, openDb, upsertCorpus, type CtEvalExtras,
+  insertPuzzle, insertRetrainingSuggestion, openDb, upsertCorpus,
+  type CtEvalExtras, type RetrainingSuggestionRow,
 } from './corpus-db.js';
 
 let dbPath = '';
@@ -213,6 +214,21 @@ describe('retraining_suggestions table', () => {
     expect(row?.status).toBe('pending');
     expect(row?.predicted_label).toBe(7);
     expect(row?.suggested_label).toBe(2);
+    db.close();
+  });
+
+  it('is safe to call multiple times for the same puzzle/cell (append, not upsert)', () => {
+    const db = tmpDb();
+    insertPuzzle(db, 'hashA', '/path/a.jpg', 'guardian', 'classic');
+    const row: RetrainingSuggestionRow = {
+      puzzleHash: 'hashA', gitHash: 'g1', row: 0, col: 0,
+      predictedLabel: 7, suggestedLabel: 2,
+      confidenceTier: 'proven_unique', cropPixels: [0],
+    };
+    insertRetrainingSuggestion(db, row);
+    insertRetrainingSuggestion(db, row);
+    const count = (db.prepare('SELECT COUNT(*) AS n FROM retraining_suggestions').get() as { n: number }).n;
+    expect(count).toBe(2); // by design: every run's findings are recorded, review script dedupes by judgement
     db.close();
   });
 });

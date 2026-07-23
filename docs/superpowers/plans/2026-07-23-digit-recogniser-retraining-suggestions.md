@@ -958,7 +958,7 @@ git commit -m "feat: attach retraining suggestions to the classic-review outcome
 **Interfaces:**
 - Consumes: `insertRetrainingSuggestion` (Task 7), `outcome.retrainingSuggestions` (Task 8).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Given `runWorker` drives a real Playwright browser end-to-end, this is best covered by a targeted unit test of the persistence call in isolation rather than a full browser round-trip. Add `RetrainingSuggestionRow` to the existing `import { ... } from './corpus-db.js';` in `web/scripts/corpus-db.test.ts`, then add:
 
@@ -979,12 +979,12 @@ it('insertRetrainingSuggestion is safe to call multiple times for the same puzzl
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run scripts/corpus-db.test.ts -t "safe to call multiple times"`
 Expected: PASS already (Task 7's `insertRetrainingSuggestion` has no uniqueness constraint) — this step documents the intended append-only behavior as a regression guard, not a new failing case.
 
-- [ ] **Step 3: Wire persistence into `runWorker`**
+- [x] **Step 3: Wire persistence into `runWorker`**
 
 In `web/scripts/evaluate-corpus.ts`, in `runWorker`, immediately after the existing `completeEvaluation(db, claim.id, status, bucket, reason, detectedType, Date.now() - startMs, specHash, extras);` line, add:
 
@@ -1005,12 +1005,12 @@ In `web/scripts/evaluate-corpus.ts`, in `runWorker`, immediately after the exist
 
 Add `insertRetrainingSuggestion` to the existing `import { ... } from './corpus-db.js';` at the top of the file.
 
-- [ ] **Step 4: Run the full suite for regressions**
+- [x] **Step 4: Run the full suite for regressions**
 
 Run: `npx vitest run`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/scripts/evaluate-corpus.ts
