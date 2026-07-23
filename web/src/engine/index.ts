@@ -79,6 +79,13 @@ function checkStalled(board: BoardState): boolean {
  * (not just classic ones) can resolve the puzzle.
  */
 export function detectBigApple(givenDigits: number[][]): boolean {
+  // SolverEngine.applyEliminations silently skips eliminating a digit from a cell
+  // already at candidates.size===1 (see BoardState.removeCandidate, which would
+  // otherwise throw NoSolnError) — so two given cells that duplicate the same digit
+  // never surface as a contradiction via propagation or backtracking. Gate here
+  // rather than relying on solve() to detect it.
+  if (hasDuplicateDigits(givenDigits)) return false;
+
   const classicBoard = new BoardState();
   const classicEngine = new SolverEngine(classicBoard, defaultRules().filter(r => !r.killerOnly));
   seedGivenDigits(classicEngine, classicBoard, givenDigits);

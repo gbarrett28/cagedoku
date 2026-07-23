@@ -74,6 +74,17 @@ describe('detectBigApple', () => {
     expect(detectBigApple(makeBigAppleGivenDigits())).toBe(true);
   });
 
+  it('returns false when given digits contain a duplicate, even alongside a genuine deadly-rectangle case', () => {
+    // SolverEngine.applyEliminations silently skips eliminating a digit from a cell
+    // already at candidates.size===1 (see boardState.ts's removeCandidate, which would
+    // otherwise throw NoSolnError) -- so two given cells sharing the same peer digit
+    // never surface as a contradiction via propagation. Without an explicit gate,
+    // detectBigApple can solve straight through a duplicate and misclassify.
+    const grid = makeBigAppleGivenDigits();
+    grid[8]![8] = grid[8]![7]!; // row-8 duplicate, unrelated to the deadly rectangle
+    expect(detectBigApple(grid)).toBe(false);
+  });
+
   it('returns false when a misread given masks an otherwise-detectable Big Apple grid', () => {
     expect(detectBigApple(makeBigAppleMisreadGivenDigits())).toBe(false);
   });
