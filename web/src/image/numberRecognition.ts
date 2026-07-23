@@ -752,11 +752,21 @@ function topInkRowProfile(warpedBlk: OpenCVMat, x: number, y: number, w: number,
   const width = warpedBlk.cols as number;
   const ys = new Int32Array(w);
   for (let dx = 0; dx < w; dx++) {
-    let rowIdx = 0;
-    for (let dy = 0; dy < h; dy++) {
-      if (data[(y + dy) * width + (x + dx)]! > 0) { rowIdx = dy; break; }
+    // Row index of the strongest pixel in this column, not the first nonzero
+    // one: matches np.argmax(warped_blk[y:y+h, x:x+w], axis=0) exactly,
+    // including its "first occurrence of the max" tie-break. warpedBlk isn't
+    // strictly binary here -- INTER_LINEAR perspective warp antialiases glyph
+    // edges into a 0-255 continuum, so a faint fringe pixel can be nonzero
+    // one row above the column's true (saturated) ink; using ">0" there
+    // instead of the true per-column max desyncs this profile from Python's
+    // and silently corrupts downstream peak detection for some digits.
+    let bestVal = data[y * width + (x + dx)]!;
+    let bestIdx = 0;
+    for (let dy = 1; dy < h; dy++) {
+      const v = data[(y + dy) * width + (x + dx)]!;
+      if (v > bestVal) { bestVal = v; bestIdx = dy; }
     }
-    ys[dx] = rowIdx;
+    ys[dx] = bestIdx;
   }
   return ys;
 }
