@@ -131,6 +131,8 @@ Same principle: a single active instance, no CLI flag, no branching.
 ```python
 class NumRecogniser(ABC):
     @abstractmethod
+    def fit_to_thumbnail(self, crop: NDArray[np.uint8], win_size: int) -> NDArray[np.uint8]: ...
+    @abstractmethod
     def extract_features(self, imgs: NDArray[np.uint8]) -> NDArray[np.float64]: ...
     @abstractmethod
     def fit(self, X, y, sample_weights) -> dict[str, Any]: ...
@@ -139,12 +141,23 @@ class NumRecogniser(ABC):
 
 
 class PcaRbfRecogniser(NumRecogniser):
+    def fit_to_thumbnail(self, crop, win_size):
+        # Direct stretch, no aspect preservation — matches getWarpFromRect.
+        return np.array(Image.fromarray(crop).resize((win_size, win_size), Image.Resampling.LANCZOS), dtype=np.uint8)
     def extract_features(self, imgs): return imgs.reshape(len(imgs), -1).astype(np.float64)
     def fit(self, X, y, sample_weights): ...   # PCA-on-class-means + RBF-SVM, today's code
     def save(self, model, out_dir, **t): ...    # pca_rbf manifest, today's code
 
 
 class HogRecogniser(NumRecogniser):
+    def fit_to_thumbnail(self, crop, win_size):
+        # Pad to a square (aspect-preserving), then uniform-scale — matches letterboxWarp.
+        # Today's generate_synthetic_samples logic, moved here unchanged.
+        h_c, w_c = crop.shape
+        side = max(h_c, w_c)
+        square = np.zeros((side, side), dtype=np.uint8)
+        square[(side - h_c) // 2:(side - h_c) // 2 + h_c, (side - w_c) // 2:(side - w_c) // 2 + w_c] = crop
+        return np.array(Image.fromarray(square).resize((win_size, win_size), Image.Resampling.LANCZOS), dtype=np.uint8)
     def extract_features(self, imgs): return np.hstack([extract_hog(imgs), extract_hole_features(imgs)])
     def fit(self, X, y, sample_weights): ...   # LinearSVC/RBF OVO, restored from git history (99cbb70^)
     def save(self, model, out_dir, **t): ...    # linear/rbf manifest, restored from git history
@@ -160,12 +173,19 @@ then `ACTIVE_RECOGNISER.save(...)`. Switching architectures means changing the o
 the pipeline. This mirrors the TS side's single point of truth (there, which model files
 ship; here, which class is instantiated).
 
-Cropping is not a method on the Python class, unlike TS — `train_recogniser.py` only ever
-consumes already-cropped 64×64 samples from `browser_train.json`/bulk JSON (captured
-client-side) or `numerals.pkl` (`killer_sudoku`'s own independent Python image pipeline,
-untouched by this refactor). `extract_hog`/`extract_hole_features` (kept as utilities in
-last session's rewrite) become `HogRecogniser.extract_features`'s implementation; no
-change to those functions themselves.
+Cropping is partially a Python-class concern, and this needed correcting from an earlier
+draft of this spec: `load_training_file` (browser/bulk JSON, already 64×64) and
+`dither_batch` (operates on already-fixed-size arrays) never touch variable-aspect-ratio
+pixels, so they're unaffected either way. But `generate_synthetic_samples` does — it
+crops each rendered glyph to a tight bounding box (variable aspect ratio) and must decide
+how to fit that into a 64×64 thumbnail. Today this is hardcoded to pad-to-square-then-scale
+(letterbox-style) regardless of which architecture is active, which would silently train
+PCA on synthetic samples shaped like HOG's crop geometry — the exact class of mismatch
+`known-stale-training-hashes.json` exists to paper over, reintroduced by a different route.
+`generate_synthetic_samples` calls `ACTIVE_RECOGNISER.fit_to_thumbnail(crop, win_size)`
+instead of doing the pad+resize inline. `extract_hog`/`extract_hole_features` (kept as
+utilities in last session's rewrite) become `HogRecogniser.extract_features`'s
+implementation; no change to those functions themselves.
 
 `tests/test_train_recogniser.py` gets a `HogRecogniser`-equivalent of
 `test_save_model_pca_rbf_keys` (manifest schema round-trip), matching the existing
