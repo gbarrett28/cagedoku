@@ -19,7 +19,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { loadNumRecogniser, recognise } from './numberRecognition.js';
+import { loadNumRecogniser, recognise, PcaRbfRecogniser, HogRecogniser } from './numberRecognition.js';
 import type { NumRecogniser } from './numberRecognition.js';
 
 // ---------------------------------------------------------------------------
@@ -129,8 +129,7 @@ const KNOWN_FAILURE_SAMPLE_HASHES: ReadonlySet<string> = new Set(
 describe('digit recogniser — TypeScript PCA+RBF inference on training data', () => {
   it('loads model without error', () => {
     expect(rec).toBeDefined();
-    expect(rec.pca).toBeDefined();
-    expect(rec.classifier).toBeDefined();
+    expect(rec).toBeInstanceOf(PcaRbfRecogniser);
   });
 
   it('achieves at least total - knownFailures.size accuracy, with no unexpected failures', () => {
@@ -192,3 +191,36 @@ describe('Recognition.runnerUp', () => {
 // can never be a real CI/bronze-gate check. Those datasets are bulk training
 // input only; browser_train.json (committed, hand-verified) is the ground
 // truth this suite holds to 100% minus KNOWN_FAILURE_SAMPLE_HASHES above.
+
+describe('loadNumRecogniser class dispatch', () => {
+  it('returns a PcaRbfRecogniser instance for classifier_type "pca_rbf"', () => {
+    expect(rec).toBeInstanceOf(PcaRbfRecogniser);
+    expect(rec).not.toBeInstanceOf(HogRecogniser);
+  });
+
+  it('returns a HogRecogniser instance for classifier_type "linear"', () => {
+    const manifest = { classifier_type: 'linear', arrays: {
+      hog_win_size:     { dtype: 'int32',   shape: [1],  offset: 0,  byteLength: 4 },
+      hog_cell_size:    { dtype: 'int32',   shape: [1],  offset: 4,  byteLength: 4 },
+      hog_block_size:   { dtype: 'int32',   shape: [1],  offset: 8,  byteLength: 4 },
+      hog_block_stride: { dtype: 'int32',   shape: [1],  offset: 12, byteLength: 4 },
+      hog_nbins:        { dtype: 'int32',   shape: [1],  offset: 16, byteLength: 4 },
+      confidence_threshold: { dtype: 'float64', shape: [1], offset: 24, byteLength: 8 },
+      classes:          { dtype: 'int32',   shape: [2],  offset: 32, byteLength: 8 },
+      linear_coef:      { dtype: 'float64', shape: [1, 2], offset: 40, byteLength: 16 },
+      linear_intercept: { dtype: 'float64', shape: [1],  offset: 56, byteLength: 8 },
+    } };
+    const buf = new ArrayBuffer(64);
+    new DataView(buf).setInt32(0, 64, true);   // hog_win_size
+    new DataView(buf).setInt32(4, 8, true);    // hog_cell_size
+    new DataView(buf).setInt32(8, 16, true);   // hog_block_size
+    new DataView(buf).setInt32(12, 8, true);   // hog_block_stride
+    new DataView(buf).setInt32(16, 9, true);   // hog_nbins
+    new DataView(buf).setFloat64(24, 0.7, true); // confidence_threshold
+    new DataView(buf).setInt32(32, 1, true);   // classes[0]
+    new DataView(buf).setInt32(36, 2, true);   // classes[1]
+    const hogRec = loadNumRecogniser(buf, manifest);
+    expect(hogRec).toBeInstanceOf(HogRecogniser);
+    expect(hogRec).not.toBeInstanceOf(PcaRbfRecogniser);
+  });
+});
