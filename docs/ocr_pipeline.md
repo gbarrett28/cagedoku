@@ -290,6 +290,12 @@ as a pre-scan.
 **Classifier:** LinearSVC OvO, 45 binary classifiers (digits 0–9). Confidence =
 vote fraction; flagged uncertain below 0.7.
 
+> Temporarily on `feature/python-bitexact-port`, the bundled model is the Python
+> reference's PCA + template-match + RBF-SVM classifier instead (see
+> `docs/architecture.md` § Web Recogniser Training). This section describes the
+> HOG + LinearSVC architecture that `train_recogniser.py` still produces and that
+> ships once the bit-exact port investigation concludes.
+
 The non-digit binary classifier (Stage 3b, not yet implemented) is distinct from the
 digit recogniser. It operates on contour metrics (fill ratio, aspect ratio, area,
 contour tree depth) to gate contours before they reach the digit recogniser. Once

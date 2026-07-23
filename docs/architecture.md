@@ -201,7 +201,15 @@ The [Training Pipeline](image-pipeline.md#training-pipeline) section covers the 
 
 ### Web Recogniser Training
 
-The web app bundles a HOG + LinearSVC model in `web/public/num_recogniser.{json,bin}`.
+The web app bundles a HOG + LinearSVC model in `web/public/num_recogniser.{json,bin}`,
+trained by the `train_recogniser.py` workflow below. **Temporarily on
+`feature/python-bitexact-port`**, the bundled model is instead the Python reference's
+original PCA + template-match + RBF-SVM classifier (`classifier_type: "pca_rbf"` in
+`num_recogniser.json`; see `numberRecognition.ts`'s `classify()` for both code paths) —
+swapped in as a directly-comparable baseline for the bit-exact port investigation. HOG
+is restored once that investigation concludes; `train_recogniser.py` itself is
+unaffected and still produces HOG + LinearSVC models.
+
 When a user corrects OCR errors and confirms a killer puzzle, the app automatically
 uploads the digit thumbnails (user-verified labels, 64×64 uint8) to a remote
 collection pipeline. A consent modal is shown on first upload; "Always send" sets a

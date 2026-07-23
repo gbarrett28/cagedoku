@@ -306,6 +306,17 @@ Cage totals are printed in the top-left of the cage's top-left cell.  This stage
 classifies each contour candidate (located in Stage 3) using HOG + hole-count features
 and a LinearSVC.
 
+> **Temporarily on `feature/python-bitexact-port`:** both this stage and Classic
+> digit reading below now warp every thumbnail via a single `getWarpFromRect`
+> (direct corner-to-corner stretch to 64×64, matching Python's
+> `get_warp_from_rect`), not the aspect-preserving `letterboxWarp` described
+> below — `letterboxWarp` no longer exists in `numberRecognition.ts`. This was
+> required so TS crops land in the same feature space as the Python reference's
+> PCA model (see `docs/architecture.md` § Web Recogniser Training). Whether
+> letterbox warping returns alongside HOG once the port investigation concludes
+> is an open question, not a settled fact — treat the formula and rationale
+> below as describing the pre-port-investigation implementation.
+
 `buildCageTotals` (`inpImage.ts`) runs `cv.findContours` once over the whole warped
 board (`RETR_TREE`), walks the resulting hierarchy (`contourHier`), and keeps contours
 matching `contourIsNumber` — a digit-sized bounding rect (`isDigitSizedContour`: width
