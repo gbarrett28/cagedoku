@@ -18,6 +18,7 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.44",
     "python-multipart>=0.0.9",
+    "pydantic",
 ]
 
 [project.optional-dependencies]
@@ -95,6 +96,11 @@ dummy-variable-rgx = "^_.*$"
 "web/train_recogniser.py" = ["PLC0415", "T20", "N803", "N806", "PLW2901"]
 # N806: X is a standard feature-matrix variable (sklearn convention).
 "web/train_split_recogniser.py" = ["PLC0415", "T20", "N806"]
+# PreToolUse hook: print(json.dumps(...)) to stdout IS the hook protocol's
+# output mechanism (Claude Code reads it), not debug output. PLR0911: a
+# hook structured as a series of early-exit guard clauses naturally has
+# more return points than the default limit.
+".claude/hooks/enforce-serena.py" = ["T20", "PLR0911"]
 # Standalone scripts legitimately use print() for progress output
 "web/scripts/compare-recognisers.py" = ["T20"]
 "web/scripts/analyse-contours.py" = ["T20"]

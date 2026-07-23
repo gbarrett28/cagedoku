@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""PreToolUse hook: block Bash/Read/Grep on files CLAUDE.md says must go
-through serena (TypeScript, Python, HTML, CSS source).
+"""PreToolUse hook: block Bash/Read/Grep on files CLAUDE.md says must go through serena.
 
-CLAUDE.md's "Agent Protocol: Tool Use" section requires serena MCP tools for
+TypeScript, Python, HTML, CSS source. CLAUDE.md's "Agent Protocol: Tool Use" section requires serena MCP tools for
 all code analysis/retrieval/modification on these file types, and explicitly
 forbids falling back to generic filesystem tools even when serena seems
 unavailable (in that case, stop and ask for the MCP server to be restarted,
@@ -33,7 +32,7 @@ EXEMPT_MARKERS = ("node_modules", "/dist/", "dist/", "coverage/", ".vite/")
 SERENA_NOTE = (
     "This project's CLAUDE.md requires serena MCP tools for TypeScript, "
     "Python, HTML, and CSS source files (see 'Agent Protocol: Tool Use'). "
-    "Load serena via ToolSearch (\"serena get_symbols\") if its tools "
+    'Load serena via ToolSearch ("serena get_symbols") if its tools '
     "aren't already available, then use get_symbols_overview/find_symbol/"
     "search_for_pattern instead. If serena tools genuinely don't appear, "
     "stop and ask the user to check the plugin rather than falling back "
