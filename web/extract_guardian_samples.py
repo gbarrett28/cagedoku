@@ -31,6 +31,7 @@ from typing import Any, cast
 import cv2
 import numpy as np
 from numpy.typing import NDArray
+from train_recogniser import ACTIVE_RECOGNISER
 
 _log = logging.getLogger(__name__)
 
@@ -191,28 +192,6 @@ def select_digit_blobs(
 # Thumbnail extraction
 # ---------------------------------------------------------------------------
 
-def letterbox_warp(
-    ax: float, ay: float, bw: float, bh: float, warped: NDArray[np.uint8],
-) -> NDArray[np.uint8]:
-    """Extract a letterboxed (no square-stretch) 64x64 thumbnail from the warped binary image.
-
-    Matches the TypeScript letterboxWarp helper exactly.
-    """
-    scale = min((THUMB - 1) / bw, (THUMB - 1) / bh)
-    dest_w, dest_h = bw * scale, bh * scale
-    off_x, off_y = ((THUMB - 1) - dest_w) / 2, ((THUMB - 1) - dest_h) / 2
-    src = np.array([
-        [ax, ay], [ax + bw, ay], [ax + bw, ay + bh], [ax, ay + bh],
-    ], dtype=np.float32)
-    dst = np.array([
-        [off_x, off_y], [off_x + dest_w, off_y],
-        [off_x + dest_w, off_y + dest_h], [off_x, off_y + dest_h],
-    ], dtype=np.float32)
-    M = cv2.getPerspectiveTransform(src, dst)
-    thumb = cv2.warpPerspective(warped, M, (THUMB, THUMB), flags=cv2.INTER_LINEAR)
-    return ((thumb > 127).astype(np.uint8) * 255)
-
-
 def split_bounding_rect(
     ax: int, ay: int, bw: int, bh: int, warped: NDArray[np.uint8],
 ) -> tuple[tuple[int, int, int, int], tuple[int, int, int, int]] | None:
@@ -356,7 +335,7 @@ def extract_puzzle_samples(
                 oy = round(abs_y * scale)
                 ow = max(1, round(bw * scale))
                 oh = max(1, round(bh * scale))
-                samples.append((int(total_str[i]), letterbox_warp(ox, oy, ow, oh, warped)))
+                samples.append((int(total_str[i]), ACTIVE_RECOGNISER.warp_from_rect(ox, oy, ow, oh, warped, THUMB)))
 
     return samples
 
