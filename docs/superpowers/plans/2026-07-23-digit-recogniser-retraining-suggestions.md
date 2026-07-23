@@ -760,7 +760,7 @@ export interface RetrainingSuggestionRow {
 export function insertRetrainingSuggestion(db: Database.Database, s: RetrainingSuggestionRow): void
 ```
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add `insertRetrainingSuggestion` to the existing `import { ... } from './corpus-db.js';` at the top of `web/scripts/corpus-db.test.ts`, then add a new `describe` block using the file's existing `tmpDb()` helper (defined at the top of the file, reused by every other `describe` block — do not redefine it):
 
@@ -800,12 +800,12 @@ Also update the existing `describe('openDb', ...)` block's `'creates all three t
   });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run scripts/corpus-db.test.ts`
 Expected: FAIL — both the new `retraining_suggestions table` describe block (table/function don't exist yet) and the updated `'creates all four tables'` test (still only 3 tables exist).
 
-- [ ] **Step 3: Add the table to `openDb`**
+- [x] **Step 3: Add the table to `openDb`**
 
 In `web/scripts/corpus-db.ts`, add to the `CREATE TABLE IF NOT EXISTS` block inside `openDb` (after the `corpora` table):
 
@@ -825,7 +825,7 @@ In `web/scripts/corpus-db.ts`, add to the `CREATE TABLE IF NOT EXISTS` block ins
     );
 ```
 
-- [ ] **Step 4: Add the interface and insert helper**
+- [x] **Step 4: Add the interface and insert helper**
 
 In `web/scripts/corpus-db.ts`, add near the other row interfaces:
 
@@ -854,12 +854,12 @@ export function insertRetrainingSuggestion(db: Database.Database, s: RetrainingS
 }
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `npx vitest run scripts/corpus-db.test.ts`
 Expected: PASS.
 
-- [ ] **Step 6: Document the new table**
+- [x] **Step 6: Document the new table**
 
 In `docs/corpus-db.md`, add a new `### \`retraining_suggestions\`` section (after `### evaluations`'s subsections, before the `## Evaluator CLI options` section), following the existing table-documentation style:
 
@@ -885,7 +885,7 @@ Never auto-applied — `status` starts `pending` and only changes via
 | `created_at` | TEXT | ISO datetime |
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add web/scripts/corpus-db.ts web/scripts/corpus-db.test.ts docs/corpus-db.md

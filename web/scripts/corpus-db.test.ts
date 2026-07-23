@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   addGroundTruth, claimEvaluation, completeEvaluation, getCorpora, getPuzzle,
-  insertPuzzle, openDb, upsertCorpus, type CtEvalExtras,
+  insertPuzzle, insertRetrainingSuggestion, openDb, upsertCorpus, type CtEvalExtras,
 } from './corpus-db.js';
 
 let dbPath = '';
@@ -20,12 +20,12 @@ function tmpDb(): ReturnType<typeof openDb> {
 }
 
 describe('openDb', () => {
-  it('creates all three tables', () => {
+  it('creates all four tables', () => {
     const db = tmpDb();
     const names = (
       db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as { name: string }[]
     ).map(r => r.name).filter(n => !n.startsWith('sqlite_'));
-    expect(names).toEqual(['corpora', 'evaluations', 'puzzles']);
+    expect(names).toEqual(['corpora', 'evaluations', 'puzzles', 'retraining_suggestions']);
     db.close();
   });
 
@@ -192,6 +192,27 @@ describe('upsertCorpus / getCorpora', () => {
     upsertCorpus(db, '/repo/observer', 'killer', 424);
     upsertCorpus(db, '/repo/classic_observer', 'classic', 504);
     expect(getCorpora(db).map(r => r.ground_truth)).toEqual(['classic', 'killer']);
+    db.close();
+  });
+});
+
+describe('retraining_suggestions table', () => {
+  it('creates the table and accepts a pending suggestion', () => {
+    const db = tmpDb();
+    insertPuzzle(db, 'hash123', '/path/to/img.jpg', 'guardian', 'classic');
+    insertRetrainingSuggestion(db, {
+      puzzleHash: 'hash123',
+      gitHash: 'test-hash',
+      row: 1, col: 0,
+      predictedLabel: 7, suggestedLabel: 2,
+      confidenceTier: 'proven_unique',
+      cropPixels: new Array(64 * 64).fill(0),
+    });
+    const row = db.prepare('SELECT * FROM retraining_suggestions WHERE puzzle_hash = ?').get('hash123') as
+      { status: string; predicted_label: number; suggested_label: number } | undefined;
+    expect(row?.status).toBe('pending');
+    expect(row?.predicted_label).toBe(7);
+    expect(row?.suggested_label).toBe(2);
     db.close();
   });
 });

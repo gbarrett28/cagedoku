@@ -107,6 +107,26 @@ against the existing pipeline. All are NULL for classic puzzles except
 | `ct_border_fn` | INTEGER | Walls existing pipeline detects that CT does not (killer only) |
 | `ct_digit_agreement` | REAL | Fraction of non-zero cage total cells where CT value equals existing OCR value (0–1; killer only) |
 
+### `retraining_suggestions`
+
+One row per proposed digit-recognizer correction, found via the classic
+given-digit validity/solvability pipeline (`web/src/engine/retrainingSuggestions.ts`).
+Never auto-applied — `status` starts `pending` and only changes via
+`web/scripts/review-retraining-suggestions.ts`.
+
+| Column | Type | Meaning |
+|--------|------|---------|
+| `id` | INTEGER PK | Auto-increment |
+| `puzzle_hash` | TEXT | FK → `puzzles.content_hash` |
+| `git_hash` | TEXT | Evaluation run that produced this suggestion |
+| `row`, `col` | INTEGER | 0-indexed cell coordinates |
+| `predicted_label` | INTEGER | The classifier's original (rejected) label |
+| `suggested_label` | INTEGER | The runner-up label being proposed as the correction |
+| `confidence_tier` | TEXT | `proven_unique` (folklore rules alone proved the corrected grid's uniqueness) or `feasible_only` (a solution exists but uniqueness wasn't proven — weaker evidence, review with more skepticism) |
+| `crop_pixels` | TEXT | JSON array, flattened 64×64 uint8 — the exact thumbnail the classifier saw |
+| `status` | TEXT | `pending` / `approved` / `rejected` — set only by manual review |
+| `created_at` | TEXT | ISO datetime |
+
 ---
 
 ## Evaluator CLI options → columns

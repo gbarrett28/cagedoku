@@ -59,6 +59,19 @@ export function openDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
       file_count    INTEGER NOT NULL,
       last_scanned  TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS retraining_suggestions (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      puzzle_hash       TEXT NOT NULL REFERENCES puzzles(content_hash),
+      git_hash          TEXT NOT NULL,
+      row               INTEGER NOT NULL,
+      col               INTEGER NOT NULL,
+      predicted_label   INTEGER NOT NULL,
+      suggested_label   INTEGER NOT NULL,
+      confidence_tier   TEXT NOT NULL,
+      crop_pixels       TEXT NOT NULL, -- JSON array, flattened 64x64
+      status            TEXT NOT NULL DEFAULT 'pending', -- pending | approved | rejected
+      created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
   // Migrations for columns added after initial schema
   const puzzleCols = (db.prepare('PRAGMA table_info(puzzles)').all() as { name: string }[]).map(r => r.name);
@@ -120,6 +133,30 @@ export function insertPuzzle(
   db.prepare(
     'INSERT OR IGNORE INTO puzzles (content_hash, path, corpus, ground_truth) VALUES (?, ?, ?, ?)',
   ).run(contentHash, filePath, corpus, JSON.stringify([groundTruth]));
+}
+
+
+export interface RetrainingSuggestionRow {
+  puzzleHash: string;
+  gitHash: string;
+  row: number;
+  col: number;
+  predictedLabel: number;
+  suggestedLabel: number;
+  confidenceTier: 'proven_unique' | 'feasible_only';
+  cropPixels: number[];
+}
+
+export function insertRetrainingSuggestion(db: Database.Database, s: RetrainingSuggestionRow): void {
+  db.prepare(`
+    INSERT INTO retraining_suggestions
+      (puzzle_hash, git_hash, row, col, predicted_label, suggested_label, confidence_tier, crop_pixels)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    s.puzzleHash, s.gitHash, s.row, s.col,
+    s.predictedLabel, s.suggestedLabel, s.confidenceTier,
+    JSON.stringify(s.cropPixels),
+  );
 }
 
 export function addGroundTruth(
