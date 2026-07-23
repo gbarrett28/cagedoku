@@ -1182,7 +1182,15 @@ function main(): void {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+// vite-node consumes the target script path as its own CLI argument and never
+// re-exposes it via process.argv/import.meta.url matching, so the usual
+// "am I the entry point" check doesn't work under it (confirmed empirically:
+// process.argv[1] under `vite-node scripts/foo.ts` is vite-node.mjs's own
+// path, and the target script path never appears in process.argv at all).
+// Vitest sets VITEST=true for every test process, including when this module
+// is only imported (not run directly) by its own *.test.ts -- that's the one
+// case main() must not run automatically.
+if (process.env['VITEST'] === undefined) main();
 ```
 
 Check whether `pngjs` is already a dependency (`grep pngjs web/package.json`); if not, add it: `npm install --save-dev pngjs @types/pngjs` (from `web/`) before this step compiles.
@@ -1216,7 +1224,7 @@ git commit -m "feat: add manual review script for retraining suggestions"
 - Consumes: `retraining_suggestions` rows with `status='approved'` (Task 7/10).
 - Produces: a JSON file matching `TrainingExport`'s shape (`web/src/image/trainingExport.ts`), directly loadable by `load_training_file` in `web/train_recogniser.py` — no changes to the Python training pipeline needed.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `web/scripts/export-retraining-suggestions.test.ts`, again with a local `tmpDb()` helper matching `corpus-db.test.ts`'s established pattern:
 
@@ -1269,12 +1277,12 @@ describe('exportApprovedSuggestions', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run scripts/export-retraining-suggestions.test.ts`
 Expected: FAIL — module doesn't exist yet.
 
-- [ ] **Step 3: Implement the export script**
+- [x] **Step 3: Implement the export script**
 
 Create `web/scripts/export-retraining-suggestions.ts`:
 
@@ -1327,15 +1335,23 @@ function main(): void {
   console.log(`Wrote ${result.sampleCount} approved samples to ${outPath}`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+// vite-node consumes the target script path as its own CLI argument and never
+// re-exposes it via process.argv/import.meta.url matching, so the usual
+// "am I the entry point" check doesn't work under it (confirmed empirically:
+// process.argv[1] under `vite-node scripts/foo.ts` is vite-node.mjs's own
+// path, and the target script path never appears in process.argv at all).
+// Vitest sets VITEST=true for every test process, including when this module
+// is only imported (not run directly) by its own *.test.ts -- that's the one
+// case main() must not run automatically.
+if (process.env['VITEST'] === undefined) main();
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/export-retraining-suggestions.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Confirm Python-side compatibility**
+- [x] **Step 5: Confirm Python-side compatibility**
 
 Run a real export, then confirm `train_recogniser.py`'s own loader accepts it unmodified:
 
@@ -1352,12 +1368,12 @@ print(f'loaded {len(samples)} samples')
 
 Expected: loads without error; `len(samples)` matches the `sampleCount` printed by the export step. (`load_training_file` only reads `data["samples"]`, each with `digit`/`pixels` — this export's extra top-level fields, e.g. `reportType`, are ignored, not rejected.)
 
-- [ ] **Step 6: Run the full suite for regressions**
+- [x] **Step 6: Run the full suite for regressions**
 
 Run: `npx vitest run`
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add web/scripts/export-retraining-suggestions.ts web/scripts/export-retraining-suggestions.test.ts
@@ -1368,6 +1384,6 @@ git commit -m "feat: export approved retraining suggestions to a train_recognise
 
 ## After All Tasks: Bronze Gate and Doc Sweep
 
-- [ ] Run `bash scripts/run-bronze-gate.sh` from the repo root — must pass before the final commit of this plan's work.
-- [ ] Update this plan file's checkboxes to reflect actual completion state (per `shipwright:quality-gates`'s bronze doc-hygiene rule) before considering the branch done.
-- [ ] Confirm `docs/corpus-db.md` accurately describes the final `retraining_suggestions` schema (Task 7, Step 6) — re-check against the actual `CREATE TABLE` if any column changed during implementation.
+- [x] Run `bash scripts/run-bronze-gate.sh` from the repo root — must pass before the final commit of this plan's work.
+- [x] Update this plan file's checkboxes to reflect actual completion state (per `shipwright:quality-gates`'s bronze doc-hygiene rule) before considering the branch done.
+- [x] Confirm `docs/corpus-db.md` accurately describes the final `retraining_suggestions` schema (Task 7, Step 6) — re-check against the actual `CREATE TABLE` if any column changed during implementation.

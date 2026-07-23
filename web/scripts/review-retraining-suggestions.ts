@@ -84,4 +84,10 @@ function main(): void {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+// vite-node consumes the target script path as its own CLI argument and never
+// re-exposes it via process.argv/import.meta.url matching, so the usual
+// "am I the entry point" check doesn't work under it. Vitest sets VITEST=true
+// for every test process, including when this module is only imported (not
+// run directly) by review-retraining-suggestions.test.ts -- that's the one
+// case main() must not run automatically.
+if (process.env['VITEST'] === undefined) main();
