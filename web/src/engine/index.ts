@@ -108,15 +108,26 @@ export type ClassicSolveAssessment =
  * solves the board → clean. If it stalls, falls back to MRV backtracking:
  * solution found → backtracked; null returned → notSolved.
  */
-export function assessClassicSolvability(givenDigits: number[][]): ClassicSolveAssessment {
-  if (hasDuplicateDigits(givenDigits)) {
-    return { bucket: 'notSolved', reason: 'duplicate given digits' };
-  }
+/**
+ * Seeds given digits and runs the folklore rule engine (no killer-only rules,
+ * no backtracking). `solvedByRulesAlone: true` is a sound proof that the
+ * grid has a unique solution — every cell's value was logically forced.
+ * Does not check `hasDuplicateDigits` — callers must gate on that themselves.
+ */
+export function solveClassicByRulesOnly(givenDigits: number[][]): { board: BoardState; solvedByRulesAlone: boolean } {
   const board = new BoardState();
   const engine = new SolverEngine(board, defaultRules().filter(r => !r.killerOnly));
   seedGivenDigits(engine, board, givenDigits);
   engine.solve();
-  if (!checkStalled(board)) return { bucket: 'clean' };
+  return { board, solvedByRulesAlone: !checkStalled(board) };
+}
+
+export function assessClassicSolvability(givenDigits: number[][]): ClassicSolveAssessment {
+  if (hasDuplicateDigits(givenDigits)) {
+    return { bucket: 'notSolved', reason: 'duplicate given digits' };
+  }
+  const { board, solvedByRulesAlone } = solveClassicByRulesOnly(givenDigits);
+  if (solvedByRulesAlone) return { bucket: 'clean' };
   const solution = mrvBacktrack(board);
   if (solution !== null) return { bucket: 'backtracked' };
   return { bucket: 'notSolved', reason: 'no solution found' };

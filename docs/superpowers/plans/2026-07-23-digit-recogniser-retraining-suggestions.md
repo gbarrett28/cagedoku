@@ -454,7 +454,7 @@ git commit -m "feat: add mrvBacktrackProvenInfeasible, a capping-aware infeasibi
 **Interfaces:**
 - Produces: `solveClassicByRulesOnly(givenDigits: number[][]): { board: BoardState; solvedByRulesAlone: boolean }`. Does **not** run `hasDuplicateDigits` or backtracking — callers that need the validity gate (like `assessClassicSolvability`) or a backtracking fallback (like Task 6's module) apply those themselves. `solvedByRulesAlone: true` is a sound uniqueness proof (every cell was logically forced).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add `makeClassicGivenDigits` to the existing `import { ... } from './fixtures.js';` at the top of `web/src/engine/index.test.ts`, then add:
 
@@ -475,12 +475,12 @@ describe('solveClassicByRulesOnly', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/engine/index.test.ts -t "solveClassicByRulesOnly"`
 Expected: FAIL — function not exported yet.
 
-- [ ] **Step 3: Add the helper and refactor `assessClassicSolvability` to use it**
+- [x] **Step 3: Add the helper and refactor `assessClassicSolvability` to use it**
 
 In `web/src/engine/index.ts`, add before `assessClassicSolvability`:
 
@@ -515,12 +515,12 @@ export function assessClassicSolvability(givenDigits: number[][]): ClassicSolveA
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/engine/index.test.ts`
 Expected: PASS, all tests (including Task 3's new test and every pre-existing `assessClassicSolvability` test — behavior is unchanged, only internally refactored).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/engine/index.ts web/src/engine/index.test.ts

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { solveFromStall, solveFromCandidates, detectBigApple, solveBigApple, assessClassicSolvability } from './index.js';
+import { solveFromStall, solveFromCandidates, detectBigApple, solveBigApple, assessClassicSolvability, solveClassicByRulesOnly } from './index.js';
 import {
   makeTrivialSpec, makeClassicGivenDigits, makeBigAppleGivenDigits, makeBigAppleMisreadGivenDigits,
   BIG_APPLE_SOLUTION,
@@ -140,5 +140,20 @@ describe('assessClassicSolvability', () => {
     const result = assessClassicSolvability(grid);
     expect(result.bucket).toBe('notSolved');
     expect(result.bucket === 'notSolved' && result.reason).toBe('duplicate given digits');
+  });
+});
+
+describe('solveClassicByRulesOnly', () => {
+  it('proves uniqueness (solvedByRulesAlone=true) for a puzzle the folklore rules fully resolve', () => {
+    // makeClassicGivenDigits() (fixtures.ts) is KNOWN_SOLUTION with only cell
+    // (0,0) blanked -- a single naked/hidden single, trivially rules-solvable.
+    const result = solveClassicByRulesOnly(makeClassicGivenDigits());
+    expect(result.solvedByRulesAlone).toBe(true);
+  });
+
+  it('reports solvedByRulesAlone=false when propagation stalls', () => {
+    const empty = Array.from({ length: 9 }, () => Array<number>(9).fill(0));
+    const result = solveClassicByRulesOnly(empty);
+    expect(result.solvedByRulesAlone).toBe(false);
   });
 });
