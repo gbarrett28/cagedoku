@@ -44,7 +44,18 @@ export function dumpPendingSuggestions(db: Database.Database, outDir: string): M
   for (const r of rows) {
     const pixels: number[] = JSON.parse(r.crop_pixels);
     const png = new PNG({ width: 64, height: 64, colorType: 0 });
-    for (let i = 0; i < pixels.length; i++) png.data[i] = pixels[i]!;
+    // pngjs's PNG.data buffer is always RGBA (4 bytes/pixel) regardless of the
+    // colorType constructor option -- that option only affects the encoded
+    // output on pack()/write(). Replicate each grayscale value across R/G/B
+    // and set full opacity, or only the top-left quarter of the image gets
+    // any data at all.
+    for (let i = 0; i < pixels.length; i++) {
+      const v = pixels[i]!;
+      png.data[i * 4] = v;
+      png.data[i * 4 + 1] = v;
+      png.data[i * 4 + 2] = v;
+      png.data[i * 4 + 3] = 255;
+    }
     const pngPath = path.join(outDir, `${r.id}_pred${r.predicted_label}_suggest${r.suggested_label}.png`);
     fs.writeFileSync(pngPath, PNG.sync.write(png));
     manifest.push({

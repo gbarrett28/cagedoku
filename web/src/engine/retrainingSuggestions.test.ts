@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { findRetrainingSuggestions } from './retrainingSuggestions.js';
-import { KNOWN_SOLUTION } from './fixtures.js';
+import { KNOWN_SOLUTION, makeClassicPartialGivenDigits } from './fixtures.js';
 import type { Recognition } from '../image/numberRecognition.js';
 
 function thumb(seed: number): Uint8Array {
@@ -30,6 +30,31 @@ describe('findRetrainingSuggestions', () => {
     expect(suggestions[0]).toMatchObject({
       row: 0, col: 0, predictedLabel: 6, suggestedLabel: 5,
       confidenceTier: 'proven_unique',
+    });
+  });
+
+  it('proposes a feasible_only correction when the corrected grid does not solve by rules alone but a completion exists', () => {
+    // makeClassicPartialGivenDigits() blanks rows 0-2 entirely (fixtures.ts),
+    // which stalls solveClassicByRulesOnly immediately regardless of any
+    // other cell -- so the column-0 clash below can never resolve via rules
+    // alone. It is still feasible: rows 0-2 have a real completion (the rest
+    // of KNOWN_SOLUTION), so a full backtracking search finds a solution and
+    // mrvBacktrackProvenInfeasible must report false, not true.
+    const givenDigits = makeClassicPartialGivenDigits();
+    // Column 0 rows 3-8 (KNOWN_SOLUTION): [8,4,7,9,2,3]. Corrupt row 3 from
+    // its true value 8 to 4, clashing with row 4's given 4.
+    givenDigits[3]![0] = 4;
+
+    const cellThumbs = new Map<string, Uint8Array[]>([['3,0', [thumb(1)]]]);
+    const recognitions = new Map<string, Recognition>([
+      ['3,0', { label: 4, confident: true, runnerUp: { label: 8, score: 5 } }],
+    ]);
+
+    const suggestions = findRetrainingSuggestions(givenDigits, cellThumbs, recognitions);
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0]).toMatchObject({
+      row: 3, col: 0, predictedLabel: 4, suggestedLabel: 8,
+      confidenceTier: 'feasible_only',
     });
   });
 
