@@ -61,6 +61,7 @@ import type {
 import { buildEngine } from './session/engine.js';
 import type { BoardState, ClassicSolveAssessment } from './engine/index.js';
 import { detectBigApple, assessClassicSolvability } from './engine/index.js';
+import { findRetrainingSuggestions } from './engine/retrainingSuggestions.js';
 import type { Cell } from './engine/types.js';
 import { GridNotFoundError } from './image/inpImage.js';
 import { UserFacingError } from './session/errors.js';
@@ -106,6 +107,11 @@ type ReportOutcomeFn = (o: {
   liveMats?: number | undefined;
   heapBytes?: number | undefined;
   allocBytes?: number | undefined;
+  /** Proposed digit corrections for manual review — never auto-applied. */
+  retrainingSuggestions?: ReadonlyArray<{
+    row: number; col: number; predictedLabel: number; suggestedLabel: number;
+    confidenceTier: 'proven_unique' | 'feasible_only'; crop: number[];
+  }> | undefined;
 }) => void;
 
 function timingPayload(
@@ -1462,11 +1468,16 @@ async function handleProcess(file?: File): Promise<void> {
       const bucket = assessment.bucket;
       const reason = assessment.bucket === 'notSolved' ? assessment.reason : 'classic review';
       logAction('review_shown', reason);
+      const retrainingSuggestions = bucket !== 'clean' && uploadResult.classicRecognitions !== undefined
+        ? findRetrainingSuggestions(state.givenDigits, uploadResult.cellThumbs, uploadResult.classicRecognitions)
+          .map(s => ({ ...s, crop: Array.from(s.crop) }))
+        : [];
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket, reason, puzzleType: PuzzleState.kind(state), detectedBigApple, specHash,
         ...debugStagePayload(uploadResult),
         ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
         ...metricsPayload(),
+        retrainingSuggestions,
       });
       confirmDisabled = assessment.bucket === 'notSolved';
     } else {

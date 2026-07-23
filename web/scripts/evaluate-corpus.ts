@@ -75,6 +75,14 @@ interface UploadOutcomeJson {
   readonly liveMats?: number;
   readonly heapBytes?: number;
   readonly allocBytes?: number;
+  readonly retrainingSuggestions?: ReadonlyArray<{
+    readonly row: number;
+    readonly col: number;
+    readonly predictedLabel: number;
+    readonly suggestedLabel: number;
+    readonly confidenceTier: 'proven_unique' | 'feasible_only';
+    readonly crop: number[]; // JSON-serialised Uint8Array
+  }>;
 }
 
 interface BucketCounts {

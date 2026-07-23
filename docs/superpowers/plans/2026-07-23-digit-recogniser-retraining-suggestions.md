@@ -905,11 +905,11 @@ git commit -m "feat: add retraining_suggestions table to corpus.db"
 - Consumes: `findRetrainingSuggestions` (Task 6), `RetrainingSuggestion` (Task 6).
 - Produces: `UploadOutcomeJson.retrainingSuggestions?: readonly RetrainingSuggestion[]`.
 
-- [ ] **Step 1: Locate the exact current reporting site**
+- [x] **Step 1: Locate the exact current reporting site**
 
 Run: `Grep` for `assessClassicSolvability` in `web/src/main.ts` to find its current call site(s) (there were two in this session's investigation — the upload-time eager assessment and the `redrawGrid`-adjacent one after a manual digit edit). Confirm line numbers before editing.
 
-- [ ] **Step 2: Compute and attach suggestions at the eager upload-time assessment**
+- [x] **Step 2: Compute and attach suggestions at the eager upload-time assessment**
 
 At the call site where `main.ts` calls `assessClassicSolvability(state.givenDigits)` for the eager upload-time report (the one feeding `bucket`/`reason` into `__reportOutcome`), import `findRetrainingSuggestions` from `../engine/retrainingSuggestions.js`, and when `assessment.bucket !== 'clean'`, compute:
 
@@ -921,7 +921,7 @@ const retrainingSuggestions = state.givenDigits !== null && uploadResult.classic
 
 Add `retrainingSuggestions,` to the `__reportOutcome?.({...})` call's object at that site (only when non-empty is fine too, but always including an empty array keeps the shape predictable for `evaluate-corpus.ts`).
 
-- [ ] **Step 3: Extend `UploadOutcomeJson`**
+- [x] **Step 3: Extend `UploadOutcomeJson`**
 
 In `web/scripts/evaluate-corpus.ts`, add to the `UploadOutcomeJson` interface (after `readonly allocBytes?: number;`):
 
@@ -936,12 +936,12 @@ In `web/scripts/evaluate-corpus.ts`, add to the `UploadOutcomeJson` interface (a
   }>;
 ```
 
-- [ ] **Step 4: Type-check and run the full suite**
+- [x] **Step 4: Type-check and run the full suite**
 
 Run: `npx tsc --noEmit && npx vitest run`
 Expected: both pass. No behavior change yet for `evaluate-corpus.ts`'s persistence (that's Task 9) — this task only makes the data available on the outcome object.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/main.ts web/scripts/evaluate-corpus.ts
