@@ -71,11 +71,11 @@ killer_sudoku.training.train_number_recogniser's convention).
 from __future__ import annotations
 
 import argparse
-import contextlib
 import hashlib
 import json
 import math
 import time
+from abc import ABC, abstractmethod
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -141,6 +141,189 @@ def _load_stale_hashes() -> frozenset[str]:
 def _sample_hash(pixels: list[int]) -> str:
     """sha256 of the raw pixel array -- must match numberRecognition.test.ts's sha256()."""
     return hashlib.sha256(bytes(pixels)).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# NumRecogniser -- single active instance, no CLI flag, no branching.
+# ---------------------------------------------------------------------------
+
+
+class NumRecogniser(ABC):
+    """One implementation per digit-recogniser architecture.
+
+    ACTIVE_RECOGNISER (bottom of this section) is the single point of truth --
+    change that one line to switch every consumer (main(), generate_synthetic_samples,
+    extract_guardian_samples.py) to the other architecture at once.
+    """
+
+    @abstractmethod
+    def fit_to_thumbnail(self, crop: NDArray[np.uint8], win_size: int) -> NDArray[np.uint8]:
+        """Fit an already-extracted, variable-aspect-ratio crop into a win_size square."""
+
+    @abstractmethod
+    def warp_from_rect(
+        self, ax: float, ay: float, bw: float, bh: float,
+        source: NDArray[np.uint8], win_size: int,
+    ) -> NDArray[np.uint8]:
+        """Perspective-warp a bounding rect directly from a full source image."""
+
+    @abstractmethod
+    def extract_features(self, imgs: NDArray[np.uint8]) -> NDArray[np.float64]:
+        """Convert a stacked (n, 64, 64) uint8 image array into fit-ready features."""
+
+    @abstractmethod
+    def fit(
+        self, X: NDArray[np.float64], y: NDArray[np.int64],
+        sample_weights: NDArray[np.float64] | None,
+    ) -> dict[str, Any]:
+        """Fit a classifier on X/y, returning an opaque model dict for save()."""
+
+    @abstractmethod
+    def save(
+        self, model: dict[str, Any], out_dir: Path,
+        confidence_threshold: float = CONFIDENCE_THRESHOLD,
+        template_threshold: float = TEMPLATE_THRESHOLD,
+    ) -> None:
+        """Write num_recogniser.json (manifest) and num_recogniser.bin (arrays)."""
+
+
+class PcaRbfRecogniser(NumRecogniser):
+    def fit_to_thumbnail(self, crop: NDArray[np.uint8], win_size: int) -> NDArray[np.uint8]:
+        # Direct stretch, no aspect preservation -- matches TS's getWarpFromRect.
+        from PIL import Image
+        return np.array(
+            Image.fromarray(crop).resize((win_size, win_size), Image.Resampling.LANCZOS),
+            dtype=np.uint8,
+        )
+
+    def warp_from_rect(
+        self, ax: float, ay: float, bw: float, bh: float,
+        source: NDArray[np.uint8], win_size: int,
+    ) -> NDArray[np.uint8]:
+        # Direct stretch via cv2.warpPerspective -- matches TS's getWarpFromRect
+        # exactly (same mechanism). No square-padding step.
+        import cv2
+        src = np.array([[ax, ay], [ax + bw, ay], [ax + bw, ay + bh], [ax, ay + bh]], dtype=np.float32)
+        dst = np.array(
+            [[0, 0], [win_size - 1, 0], [win_size - 1, win_size - 1], [0, win_size - 1]],
+            dtype=np.float32,
+        )
+        m = cv2.getPerspectiveTransform(src, dst)
+        thumb = cv2.warpPerspective(source, m, (win_size, win_size), flags=cv2.INTER_LINEAR)
+        return ((thumb > 127).astype(np.uint8) * 255)
+
+    def extract_features(self, imgs: NDArray[np.uint8]) -> NDArray[np.float64]:
+        return imgs.reshape(len(imgs), -1).astype(np.float64)
+
+    def fit(
+        self, X: NDArray[np.float64], y: NDArray[np.int64],
+        sample_weights: NDArray[np.float64] | None,
+    ) -> dict[str, Any]:
+        return fit_model(X, y, svm_c=SVM_C, svm_gamma=SVM_GAMMA, sample_weights=sample_weights)
+
+    def save(
+        self, model: dict[str, Any], out_dir: Path,
+        confidence_threshold: float = CONFIDENCE_THRESHOLD,
+        template_threshold: float = TEMPLATE_THRESHOLD,
+    ) -> None:
+        save_model(model, out_dir, confidence_threshold=confidence_threshold, template_threshold=template_threshold)
+
+
+class HogRecogniser(NumRecogniser):
+    def fit_to_thumbnail(self, crop: NDArray[np.uint8], win_size: int) -> NDArray[np.uint8]:
+        # Pad to a square (aspect-preserving), then uniform-scale -- matches TS's
+        # letterboxWarp. This is generate_synthetic_samples' former inline logic.
+        from PIL import Image
+        h_c, w_c = crop.shape
+        side = max(h_c, w_c)
+        square = np.zeros((side, side), dtype=np.uint8)
+        square[(side - h_c) // 2:(side - h_c) // 2 + h_c, (side - w_c) // 2:(side - w_c) // 2 + w_c] = crop
+        return np.array(
+            Image.fromarray(square).resize((win_size, win_size), Image.Resampling.LANCZOS),
+            dtype=np.uint8,
+        )
+
+    def warp_from_rect(
+        self, ax: float, ay: float, bw: float, bh: float,
+        source: NDArray[np.uint8], win_size: int,
+    ) -> NDArray[np.uint8]:
+        # extract_guardian_samples.py's former standalone letterbox_warp, moved here unchanged.
+        import cv2
+        scale = min((win_size - 1) / bw, (win_size - 1) / bh)
+        dest_w, dest_h = bw * scale, bh * scale
+        off_x, off_y = ((win_size - 1) - dest_w) / 2, ((win_size - 1) - dest_h) / 2
+        src = np.array([[ax, ay], [ax + bw, ay], [ax + bw, ay + bh], [ax, ay + bh]], dtype=np.float32)
+        dst = np.array([
+            [off_x, off_y], [off_x + dest_w, off_y],
+            [off_x + dest_w, off_y + dest_h], [off_x, off_y + dest_h],
+        ], dtype=np.float32)
+        m = cv2.getPerspectiveTransform(src, dst)
+        thumb = cv2.warpPerspective(source, m, (win_size, win_size), flags=cv2.INTER_LINEAR)
+        return ((thumb > 127).astype(np.uint8) * 255)
+
+    def extract_features(self, imgs: NDArray[np.uint8]) -> NDArray[np.float64]:
+        return np.hstack([extract_hog(imgs), extract_hole_features(imgs)])
+
+    def fit(
+        self, X: NDArray[np.float64], y: NDArray[np.int64],
+        sample_weights: NDArray[np.float64] | None,
+    ) -> dict[str, Any]:
+        # Direct RBF-SVM fit only -- see this repo's implementation plan for why the
+        # original checkpointed LinearSVC/OVO path is not restored here.
+        svc = SVC(kernel="rbf", C=SVM_C, gamma=SVM_GAMMA, decision_function_shape="ovo")
+        svc.fit(X, y, sample_weight=sample_weights)
+        return {"kind": "rbf", "clf": svc, "classes": svc.classes_}
+
+    def save(
+        self, model: dict[str, Any], out_dir: Path,
+        confidence_threshold: float = CONFIDENCE_THRESHOLD,
+        # HOG has no templates; kept for a signature substitutable with PcaRbfRecogniser.save.
+        template_threshold: float = TEMPLATE_THRESHOLD,
+    ) -> None:
+        svc: SVC = model["clf"]
+        try:
+            gamma = float(svc._gamma)  # available after fit(); sklearn >= 0.22
+        except AttributeError:
+            gamma = 1.0
+
+        named: list[tuple[str, np.ndarray[Any, Any], str]] = [
+            ("hog_win_size",         np.array([HOG_WIN_SIZE], dtype=np.int32),     "int32"),
+            ("hog_cell_size",        np.array([HOG_CELL_SIZE], dtype=np.int32),    "int32"),
+            ("hog_block_size",       np.array([HOG_BLOCK_SIZE], dtype=np.int32),   "int32"),
+            ("hog_block_stride",     np.array([HOG_BLOCK_STRIDE], dtype=np.int32), "int32"),
+            ("hog_nbins",            np.array([HOG_NBINS], dtype=np.int32),        "int32"),
+            ("rbf_support_vectors",  svc.support_vectors_.astype(np.float64),      "float64"),
+            ("rbf_dual_coef",        svc.dual_coef_.astype(np.float64),            "float64"),
+            ("rbf_intercept",        svc.intercept_.astype(np.float64),            "float64"),
+            ("rbf_n_support",        svc.n_support_.astype(np.int32),              "int32"),
+            ("rbf_gamma",            np.array([gamma], dtype=np.float64),          "float64"),
+            ("classes",              svc.classes_.astype(np.int32),                "int32"),
+            ("confidence_threshold", np.array([confidence_threshold], dtype=np.float64), "float64"),
+        ]
+        blob = bytearray()
+        manifest_arrays: dict[str, dict[str, Any]] = {}
+        for name, arr, dtype_str in named:
+            arr = np.asarray(arr)
+            data = arr.tobytes()
+            manifest_arrays[name] = {
+                "dtype": dtype_str, "shape": list(arr.shape),
+                "offset": len(blob), "byteLength": len(data),
+            }
+            blob.extend(data)
+
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "num_recogniser.bin").write_bytes(bytes(blob))
+        (out_dir / "num_recogniser.json").write_text(
+            json.dumps({"classifier_type": "rbf", "arrays": manifest_arrays}, indent=2),
+            encoding="utf-8",
+        )
+        n_sv = svc.support_vectors_.shape[0]
+        print(f"\nSaved to {out_dir}/ [hog/rbf]", flush=True)
+        print(f"  SVM: {n_sv} support vectors, classes {svc.classes_.tolist()}", flush=True)
+        print(f"  Bin size: {len(blob):,} bytes", flush=True)
+
+
+ACTIVE_RECOGNISER: NumRecogniser = PcaRbfRecogniser()  # the one line that decides everything
 
 
 # ---------------------------------------------------------------------------
@@ -497,15 +680,7 @@ def generate_synthetic_samples(
                 x0 = max(0, int(xs.min()) - margin)
                 x1 = min(arr.shape[1], int(xs.max()) + margin + 1)
                 crop = arr[y0:y1, x0:x1]
-                h_c, w_c = crop.shape
-                side = max(h_c, w_c)
-                square = np.zeros((side, side), dtype=np.uint8)
-                square[(side - h_c) // 2:(side - h_c) // 2 + h_c,
-                       (side - w_c) // 2:(side - w_c) // 2 + w_c] = crop
-                out = np.array(
-                    Image.fromarray(square).resize((win_size, win_size), Image.Resampling.LANCZOS),
-                    dtype=np.uint8,
-                )
+                out = ACTIVE_RECOGNISER.fit_to_thumbnail(crop, win_size)
                 if out.max() > 0:
                     samples.append((digit, out))
 
@@ -632,18 +807,17 @@ def build_dataset(
     samples: list[tuple[int, NDArray[np.uint8]]],
     n_dither: int,
     sample_weights: list[float] | None = None,
-) -> tuple[NDArray[np.float64], NDArray[np.int64], NDArray[np.float64]]:
-    """Augment samples with dithering and flatten to raw pixel vectors for PCA.
+) -> tuple[NDArray[np.uint8], NDArray[np.int64], NDArray[np.float64]]:
+    """Augment samples with dithering, returning the stacked image array.
 
     Each (digit, img) pair produces n_dither+1 variants (original + n_dither
     augmented copies), generated by dither_batch's numba-JIT kernel.
 
     sample_weights assigns a per-source weight (before augmentation); all
     augmented variants from a source share the same weight. None means 1.0
-    for all samples. Returns (X, y, weights) where X is (n_aug, 4096) float64
-    -- raw flattened pixels, no HOG/hole features (PCA architecture projects
-    from raw pixel space directly, matching
-    killer_sudoku.training.train_number_recogniser).
+    for all samples. Returns (aug_imgs, y, weights) where aug_imgs is the
+    stacked (n_aug, 64, 64) uint8 image array -- feature extraction is the
+    caller's job via ACTIVE_RECOGNISER.extract_features().
     """
     t0 = time.time()
     n_samples = len(samples)
@@ -655,9 +829,8 @@ def build_dataset(
     aug_imgs, aug_labels, aug_weights = dither_batch(triples, n_dither, rng)
     print(f"  [+{time.time() - t0:.0f}s] Dithering done", flush=True)
 
-    n_aug = len(aug_labels)
-    X = aug_imgs.reshape(n_aug, THUMBNAIL_SIZE * THUMBNAIL_SIZE).astype(np.float64)
-    return X, np.array(aug_labels, dtype=np.int64), np.array(aug_weights, dtype=np.float64)
+    assert len(aug_labels) == len(aug_imgs)  # sanity: dither_batch's own invariant, not re-derived here
+    return aug_imgs, np.array(aug_labels, dtype=np.int64), np.array(aug_weights, dtype=np.float64)
 
 
 # ---------------------------------------------------------------------------
@@ -819,10 +992,6 @@ def main() -> None:
         "--template-threshold", type=float, default=TEMPLATE_THRESHOLD, metavar="T",
         help=f"Template-match score below which the SVM fallback runs (default: {TEMPLATE_THRESHOLD})",
     )
-    parser.add_argument("--svm-c", type=float, default=SVM_C,
-                        help=f"SVM regularisation C (default: {SVM_C})")
-    parser.add_argument("--svm-gamma", type=str, default=SVM_GAMMA,
-                        help=f"SVM gamma -- float or 'scale'/'auto' (default: {SVM_GAMMA})")
     parser.add_argument(
         "--browser-weight", type=float, default=0.0, metavar="W",
         help="sklearn sample_weight for --browser-file samples relative to bulk/synthetic "
@@ -896,28 +1065,28 @@ def main() -> None:
         print(f"{_elapsed()} Browser sample weight: {bw:.1f}x ({n_browser} browser, "
               f"{n_bulk} bulk, {n_synth} synthetic)", flush=True)
 
-    print(f"{_elapsed()} Augmenting and flattening for PCA...", flush=True)
-    X, y, weights = build_dataset(all_samples, args.dither, sample_weights)
-    print(f"{_elapsed()} Dataset: {X.shape[0]} samples x {X.shape[1]} pixel features", flush=True)
+    print(f"{_elapsed()} Augmenting...", flush=True)
+    aug_imgs, y, weights = build_dataset(all_samples, args.dither, sample_weights)
+    print(f"{_elapsed()} Dataset: {aug_imgs.shape[0]} augmented images", flush=True)
 
-    if X.shape[0] > args.max_fit_samples:
+    if aug_imgs.shape[0] > args.max_fit_samples:
         rng_fit = np.random.default_rng(0)
-        idx = rng_fit.choice(X.shape[0], size=args.max_fit_samples, replace=False)
+        idx = rng_fit.choice(aug_imgs.shape[0], size=args.max_fit_samples, replace=False)
         idx.sort()  # preserve original ordering; irrelevant to fit but keeps output deterministic-looking
-        before_n = X.shape[0]
-        X, y, weights = X[idx], y[idx], (weights[idx] if weights is not None else None)
+        before_n = aug_imgs.shape[0]
+        aug_imgs, y, weights = aug_imgs[idx], y[idx], (weights[idx] if weights is not None else None)
         print(f"{_elapsed()} Subsampled fit set (RBF-SVM cost backstop): "
-              f"{before_n} -> {X.shape[0]} rows (--max-fit-samples={args.max_fit_samples})", flush=True)
+              f"{before_n} -> {aug_imgs.shape[0]} rows (--max-fit-samples={args.max_fit_samples})", flush=True)
 
-    svm_gamma: float | str = args.svm_gamma
-    with contextlib.suppress(ValueError):
-        svm_gamma = float(args.svm_gamma)
+    print(f"{_elapsed()} Extracting features ({type(ACTIVE_RECOGNISER).__name__})...", flush=True)
+    X = ACTIVE_RECOGNISER.extract_features(aug_imgs)
+    print(f"{_elapsed()} Dataset: {X.shape[0]} samples x {X.shape[1]} features", flush=True)
 
-    print(f"{_elapsed()} Fitting PCA + RBF SVM...", flush=True)
-    model = fit_model(X, y, svm_c=args.svm_c, svm_gamma=svm_gamma, sample_weights=weights)
+    print(f"{_elapsed()} Fitting ({type(ACTIVE_RECOGNISER).__name__})...", flush=True)
+    model = ACTIVE_RECOGNISER.fit(X, y, weights)
 
     print(f"{_elapsed()} Saving model...", flush=True)
-    save_model(
+    ACTIVE_RECOGNISER.save(
         model, Path(args.out),
         confidence_threshold=args.confidence_threshold,
         template_threshold=args.template_threshold,
