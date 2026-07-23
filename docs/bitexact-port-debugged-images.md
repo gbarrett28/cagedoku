@@ -29,8 +29,8 @@ evaluated for a given hash, so a stale hash silently no-ops.
 | `classic_guardian/hard/killer_sudoku_441.jpg` | ignored | Python's own reference (`solve()`) also fails to fully solve this one — not comparable, per the design spec's exclusion rule | — |
 | `observer/killer_sudoku_163.jpg` | fixed | `topInkRowProfile` used "first nonzero pixel per column" where Python's `split_num` uses `np.argmax` ("row of the strongest pixel per column"). `warpedBlk` isn't strictly binary — `INTER_LINEAR` perspective-warp antialiasing puts a 0-255 continuum at glyph edges — so a faint antialiased fringe pixel could be nonzero one row above a column's true saturated ink, silently desyncing the peak-detection profile from Python's for specific digit shapes. Confirmed via a byte-for-byte dump of the raw `warpedBlk` region: identical pixels on both sides, yet different computed profiles — isolating the bug to this function, not any upstream geometry | `cb89cea` |
 | `observer/killer_sudoku_130.jpg` | fixed | Same root cause as `observer/killer_sudoku_163.jpg` above | `cb89cea` |
-| `classic_guardian/expert/killer_sudoku_274.jpg` | ignored | Given-digits are bit-exact between TS and Python and internally consistent, but the puzzle is genuinely **unsolvable** — confirmed with an independent, trivially-correct brute-force solver (no shared code with either engine). TS's `assessClassicSolvability` correctly reports `notSolved`; Python's `solve()` incorrectly reports success by silently returning a self-contradictory grid (duplicate digits within rows/columns) instead of detecting the failure — a bug in Python's own reference, not a TS regression | — |
-| `classic_guardian/easy/killer_sudoku_465.jpg` | ignored | Python's own given-digit OCR reading is internally invalid — literal duplicate digits within a single given row (two `7`s in row 0, two `7`s in row 3) — making the puzzle unsolvable by definition regardless of which engine solves it. Not comparable; the flaw is in the corpus image's OCR ground truth, not TS | — |
+| `classic_guardian/expert/killer_sudoku_274.jpg` | known limitation | Both puzzles below are **genuinely valid, solvable newspaper puzzles** — confirmed by visually reading the actual printed digit from the warped source photo and re-verifying with an independent brute-force solver — not invalid puzzles. Cell (row=1,col=0) is printed as `2`; both TS and Python misread it as `7`, and the crop each feeds the classifier is byte-for-byte identical (confirmed via direct pixel diff) with the same misclassification — a shared digit-recognizer accuracy limitation (this classifier confuses `2`↔`7` in this font/print style), not a port-fidelity bug. TS faithfully reproduces Python's exact behavior here, including the mistake — this *is* what a correct bit-exact port looks like when the thing being ported has its own bug | — |
+| `classic_guardian/easy/killer_sudoku_465.jpg` | known limitation | Same shared `2↔7` classifier confusion as `expert/274` above, at cell (row=0,col=6): printed digit is `2`, both engines read `7`, crop confirmed byte-identical. Also has a *second*, TS-only-correct divergence at (row=3,col=2): Python misreads the printed `2` as `7` (a real Python-side error TS does not repeat), while TS reads it correctly. Neither divergence needs a TS code fix; the (3,2) case shows TS already agrees with the source image where Python doesn't | — |
 
 ## Notes
 
@@ -44,14 +44,24 @@ evaluated for a given hash, so a stale hash silently no-ops.
   after `solve()` (as done for `guardian/killer_sudoku_220.jpg` and
   `observer/killer_sudoku_255.jpg` earlier in this doc) only proves nothing was
   left ambiguous — it does not prove the singleton values are mutually
-  consistent. `classic_guardian/expert/killer_sudoku_274.jpg` is a confirmed
-  case of `solve()` passing this check while returning a grid with duplicate
-  digits in the same row/column. When treating Python as ground truth for a
-  *specific puzzle* (not just "did it error"), also check row/column/box
-  uniqueness on the returned grid — or, more conclusively, verify against an
-  independent solver that shares no code with either engine (a trivial
-  textbook brute-force backtracker is enough and was used to resolve both
-  `expert/274` and `easy/465` above).
+  consistent. `classic_guardian/expert/killer_sudoku_274.jpg`'s given-digits
+  (as misread — see below) is a confirmed case of `solve()` passing this check
+  while returning a grid with duplicate digits in the same row/column. When
+  treating Python as ground truth for a *specific puzzle* (not just "did it
+  error"), also check row/column/box uniqueness on the returned grid.
+- **A given-digit set that brute-force-solves to "no solution" is *not* proof
+  the puzzle is invalid — these are real newspaper puzzles and are very
+  unlikely to actually be broken.** It far more often means a digit was
+  misread. Before concluding a puzzle is genuinely unsolvable/invalid, verify
+  the given-digits against the actual printed source image (crop the warped
+  color image — `InpImage.warped_img` in Python, the `warpedImageData` field
+  in TS — and view it directly) rather than trusting either engine's OCR
+  output as ground truth. Both `expert/274` and `easy/465` initially looked
+  like invalid/unsolvable puzzles from the OCR'd given-digits alone; both
+  turned out to be genuinely solvable once the misread digit was identified
+  by eye and corrected, then re-verified independently (a trivial textbook
+  brute-force backtracker sharing no code with either engine is enough for
+  that verification step).
 - Per the design spec, `guardian/killer_sudoku_247.jpg` and
   `guardian/killer_sudoku_275.jpg` are permanently excluded — Python's own
   reference fails on those two, so they're not comparable.
