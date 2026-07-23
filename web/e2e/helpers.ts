@@ -1,16 +1,27 @@
 import { type Page } from '@playwright/test';
 
 /**
- * Stub opencv.js with an empty script so it "loads" without starting WASM
- * compilation. Without this, DOMContentLoaded triggers loadCV() which kicks
- * off a cold WASM compile (~30 s in headless) that blocks browserContext.close().
- * Structural tests do not exercise the image pipeline at all.
+ * Stub opencv.js with a minimal fake `window.cv` so it "loads" without
+ * starting WASM compilation. Without this, DOMContentLoaded triggers loadCV()
+ * which kicks off a cold WASM compile (~30 s in headless) that blocks
+ * browserContext.close(). Structural tests do not exercise the image
+ * pipeline at all, but loadCV() unconditionally calls installCvMonitors() on
+ * whatever cv resolves to, so the stub must still expose real Mat/MatVector
+ * constructors rather than leaving window.cv undefined.
  */
 export async function stubOpenCV(page: Page): Promise<void> {
   await page.route('**/opencv.js', route => route.fulfill({
     status: 200,
     contentType: 'application/javascript',
-    body: '// opencv.js stubbed for structural tests',
+    body: `
+      // opencv.js stubbed for structural tests
+      function FakeMat() {}
+      FakeMat.prototype.delete = function () {};
+      function FakeMatVector() {}
+      FakeMatVector.prototype.delete = function () {};
+      FakeMatVector.prototype.get = function () { return new FakeMat(); };
+      window.cv = { Mat: FakeMat, MatVector: FakeMatVector, HEAPU8: new Uint8Array(0) };
+    `,
   }));
 }
 
