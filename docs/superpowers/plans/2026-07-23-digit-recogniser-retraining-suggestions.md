@@ -555,7 +555,7 @@ export function findRetrainingSuggestions(
 ): RetrainingSuggestion[]
 ```
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `web/src/engine/retrainingSuggestions.test.ts`:
 
@@ -620,12 +620,12 @@ describe('findRetrainingSuggestions', () => {
 
 `KNOWN_SOLUTION` is already `export const KNOWN_SOLUTION: readonly (readonly number[])[]` in `web/src/engine/fixtures.ts` — no export change needed.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/engine/retrainingSuggestions.test.ts`
 Expected: FAIL — module does not exist yet.
 
-- [ ] **Step 3: Implement `retrainingSuggestions.ts`**
+- [x] **Step 3: Implement `retrainingSuggestions.ts`**
 
 Create `web/src/engine/retrainingSuggestions.ts`:
 
@@ -718,17 +718,17 @@ export function findRetrainingSuggestions(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/engine/retrainingSuggestions.test.ts`
 Expected: PASS, all three tests.
 
-- [ ] **Step 5: Run the full suite for regressions**
+- [x] **Step 5: Run the full suite for regressions**
 
 Run: `npx vitest run`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/src/engine/retrainingSuggestions.ts web/src/engine/retrainingSuggestions.test.ts
