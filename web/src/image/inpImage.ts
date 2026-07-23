@@ -130,10 +130,15 @@ export async function parsePuzzleImage(
   const graySizeForDump: [number, number] | undefined = includeTree ? [gryMat.rows, gryMat.cols] : undefined;
 
   let rectArr: Float32Array;
+  let blkForDigits: OpenCVMat;
   try {
     const [blk, rect] = locateGrid(cv, gryMat, config.gridLocation.isblackOffset);
     rectArr = rect;
-    blk.delete();
+    // Kept (not deleted): Python's InpImage warps and reuses this same
+    // grid-location blk (a global cv2.inRange threshold) as warped_blk for
+    // digit extraction, rather than computing a fresh adaptiveThreshold on
+    // the warped grayscale -- see the warpedBlkMat construction below.
+    blkForDigits = blk;
   } catch {
     gryMat.delete();
     blkMat.delete();
@@ -152,18 +157,12 @@ export async function parsePuzzleImage(
   let mMat = cv.getPerspectiveTransform(srcPts, dstPts);
   srcPts.delete(); dstPts.delete();
 
-  // Warp grayscale then adaptively threshold for cage-digit contour extraction.
-  // gryMat (from the first prepareGrayMat call) is reused here — warpPerspective
-  // only reads its source, so sharing it does not affect later uses of gryMat.
-  const warpedGryTmp = new cv.Mat();
-  cv.warpPerspective(gryMat, warpedGryTmp, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
+  // Warp the grid-location blk (global threshold) for cage-digit contour
+  // extraction, matching Python's InpImage exactly: it warps and reuses this
+  // same blk as warped_blk for read_classic_digits/_build_cage_totals, rather
+  // than computing a fresh adaptive threshold on the warped grayscale.
   let warpedBlkMat = new cv.Mat();
-  cv.adaptiveThreshold(
-    warpedGryTmp, warpedBlkMat, 255,
-    cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV,
-    (subres >> 2) | 1, config.borderDetection.adaptiveC,
-  );
-  warpedGryTmp.delete();
+  cv.warpPerspective(blkForDigits, warpedBlkMat, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
 
   let warpedGryMat = new cv.Mat();
   cv.warpPerspective(gryMat, warpedGryMat, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
@@ -199,16 +198,9 @@ export async function parsePuzzleImage(
     srcPts2.delete(); dstPts2.delete();
 
     // Re-warp all three Mats (reuse gryMat — see comment above for rationale).
-    const warpedGryTmp2 = new cv.Mat();
-    cv.warpPerspective(gryMat, warpedGryTmp2, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
     warpedBlkMat.delete();
     warpedBlkMat = new cv.Mat();
-    cv.adaptiveThreshold(
-      warpedGryTmp2, warpedBlkMat, 255,
-      cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV,
-      (subres >> 2) | 1, config.borderDetection.adaptiveC,
-    );
-    warpedGryTmp2.delete();
+    cv.warpPerspective(blkForDigits, warpedBlkMat, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
 
     warpedGryMat.delete();
     warpedGryMat = new cv.Mat();
@@ -231,7 +223,7 @@ export async function parsePuzzleImage(
     srcMat2.delete();
   }
   const gridCornersForDump: number[] | undefined = includeTree ? Array.from(rectArr) : undefined;
-  gryMat.delete(); blkMat.delete(); mMat.delete();
+  gryMat.delete(); blkMat.delete(); mMat.delete(); blkForDigits.delete();
 
   // Convert warped colour image to ImageData for the result.
   const warpedImgData = matToImageData(cv, warpedImgMat, dstSize);

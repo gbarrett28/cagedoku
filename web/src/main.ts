@@ -97,6 +97,8 @@ type ReportOutcomeFn = (o: {
   cageTotals?: number[][] | null | undefined;
   regions?: number[][] | null | undefined;
   givenDigits?: number[][] | null | undefined;
+  /** cellThumbs keyed "row,col" -> array of thumbnail pixel arrays. Bitcheck harness only. */
+  cellThumbs?: Record<string, number[][]> | undefined;
   gray?: number[][] | undefined;
   graySize?: [number, number] | undefined;
   gridCorners?: number[] | undefined;
@@ -140,6 +142,9 @@ function debugStagePayload(upload: UploadResult | null): object {
     gray: upload.gray,
     graySize: upload.graySize,
     gridCorners: upload.gridCorners,
+    cellThumbs: Object.fromEntries(
+      [...upload.cellThumbs].map(([key, thumbs]) => [key, thumbs.map(t => Array.from(t))]),
+    ),
   };
 }
 

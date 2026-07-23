@@ -27,6 +27,7 @@ interface OutcomeJson {
   gray?: number[][];
   graySize?: [number, number];
   gridCorners?: number[];
+  cellThumbs?: Record<string, number[][]>;
 }
 
 async function main(): Promise<void> {
@@ -72,6 +73,7 @@ async function main(): Promise<void> {
     cageTotals: outcome.cageTotals ?? null,
     regions: outcome.regions ?? null,
     givenDigits: outcome.givenDigits ?? null,
+    cellThumbs: outcome.cellThumbs ?? {},
     specError: outcome.specError,
     liveMatsBefore,
     liveMatsAfter,
