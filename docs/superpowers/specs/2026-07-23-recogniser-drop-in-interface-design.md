@@ -5,11 +5,12 @@
 The digit recogniser has had two architectures over its history: HOG+LinearSVC/OVO-SVC
 (`classifier_type: "linear"`/`"rbf"`, live 2026-05-01 to 2026-07-22) and PCA+RBF-SVM+templates
 (`classifier_type: "pca_rbf"`, current, restored in the Stage 5 revert). Neither the app's
-call sites nor the retrainer (`web/train_recogniser.py`) treat these as interchangeable
-today — crop geometry (`getWarpFromRect` direct-stretch vs the deleted `letterboxWarp`
-aspect-preserving crop) is hardcoded at call sites rather than owned by the active
-recogniser, and the retrainer only knows how to produce a PCA+RBF model since last
-session's rewrite (`c43e99d`).
+call sites, the retrainer (`web/train_recogniser.py`), nor the bulk-sample extractor
+(`web/extract_guardian_samples.py`) treat these as interchangeable today — crop geometry
+(`getWarpFromRect` direct-stretch vs the deleted TS `letterboxWarp`/still-live Python
+`letterbox_warp` aspect-preserving crop) is hardcoded at each call site rather than owned
+by the active recogniser, and the retrainer only knows how to produce a PCA+RBF model
+since last session's rewrite (`c43e99d`).
 
 This spec covers refactoring both sides so swapping recognisers is a true drop-in change —
 enabling a benchmark of the last-committed HOG model (`99cbb70`) against the current PCA
@@ -124,14 +125,18 @@ a compatibility wrapper:
 permanent geometry-exclusion list) is unaffected — that one was already correctly
 independent of which model is shipped.
 
-## Python side (`web/train_recogniser.py`)
+## Python side (`web/train_recogniser.py` and `web/extract_guardian_samples.py`)
 
-Same principle: a single active instance, no CLI flag, no branching.
+Same principle: a single active instance, no CLI flag, no branching. Both files share
+`ACTIVE_RECOGNISER` — `extract_guardian_samples.py` imports it from `train_recogniser.py`
+rather than owning a second copy.
 
 ```python
 class NumRecogniser(ABC):
     @abstractmethod
     def fit_to_thumbnail(self, crop: NDArray[np.uint8], win_size: int) -> NDArray[np.uint8]: ...
+    @abstractmethod
+    def warp_from_rect(self, ax: float, ay: float, bw: float, bh: float, source: NDArray[np.uint8], win_size: int) -> NDArray[np.uint8]: ...
     @abstractmethod
     def extract_features(self, imgs: NDArray[np.uint8]) -> NDArray[np.float64]: ...
     @abstractmethod
@@ -144,6 +149,14 @@ class PcaRbfRecogniser(NumRecogniser):
     def fit_to_thumbnail(self, crop, win_size):
         # Direct stretch, no aspect preservation — matches getWarpFromRect.
         return np.array(Image.fromarray(crop).resize((win_size, win_size), Image.Resampling.LANCZOS), dtype=np.uint8)
+    def warp_from_rect(self, ax, ay, bw, bh, source, win_size):
+        # Direct stretch via cv2.warpPerspective — matches getWarpFromRect exactly
+        # (same mechanism, ported). No square-padding step.
+        src = np.array([[ax, ay], [ax+bw, ay], [ax+bw, ay+bh], [ax, ay+bh]], dtype=np.float32)
+        dst = np.array([[0, 0], [win_size-1, 0], [win_size-1, win_size-1], [0, win_size-1]], dtype=np.float32)
+        M = cv2.getPerspectiveTransform(src, dst)
+        thumb = cv2.warpPerspective(source, M, (win_size, win_size), flags=cv2.INTER_LINEAR)
+        return ((thumb > 127).astype(np.uint8) * 255)
     def extract_features(self, imgs): return imgs.reshape(len(imgs), -1).astype(np.float64)
     def fit(self, X, y, sample_weights): ...   # PCA-on-class-means + RBF-SVM, today's code
     def save(self, model, out_dir, **t): ...    # pca_rbf manifest, today's code
@@ -158,6 +171,17 @@ class HogRecogniser(NumRecogniser):
         square = np.zeros((side, side), dtype=np.uint8)
         square[(side - h_c) // 2:(side - h_c) // 2 + h_c, (side - w_c) // 2:(side - w_c) // 2 + w_c] = crop
         return np.array(Image.fromarray(square).resize((win_size, win_size), Image.Resampling.LANCZOS), dtype=np.uint8)
+    def warp_from_rect(self, ax, ay, bw, bh, source, win_size):
+        # today's extract_guardian_samples.py::letterbox_warp, moved here unchanged —
+        # already documented as matching TS's (pre-701423a) letterboxWarp exactly.
+        scale = min((win_size - 1) / bw, (win_size - 1) / bh)
+        dest_w, dest_h = bw * scale, bh * scale
+        off_x, off_y = ((win_size - 1) - dest_w) / 2, ((win_size - 1) - dest_h) / 2
+        src = np.array([[ax, ay], [ax+bw, ay], [ax+bw, ay+bh], [ax, ay+bh]], dtype=np.float32)
+        dst = np.array([[off_x, off_y], [off_x+dest_w, off_y], [off_x+dest_w, off_y+dest_h], [off_x, off_y+dest_h]], dtype=np.float32)
+        M = cv2.getPerspectiveTransform(src, dst)
+        thumb = cv2.warpPerspective(source, M, (win_size, win_size), flags=cv2.INTER_LINEAR)
+        return ((thumb > 127).astype(np.uint8) * 255)
     def extract_features(self, imgs): return np.hstack([extract_hog(imgs), extract_hole_features(imgs)])
     def fit(self, X, y, sample_weights): ...   # LinearSVC/RBF OVO, restored from git history (99cbb70^)
     def save(self, model, out_dir, **t): ...    # linear/rbf manifest, restored from git history
@@ -173,23 +197,72 @@ then `ACTIVE_RECOGNISER.save(...)`. Switching architectures means changing the o
 the pipeline. This mirrors the TS side's single point of truth (there, which model files
 ship; here, which class is instantiated).
 
-Cropping is partially a Python-class concern, and this needed correcting from an earlier
-draft of this spec: `load_training_file` (browser/bulk JSON, already 64×64) and
-`dither_batch` (operates on already-fixed-size arrays) never touch variable-aspect-ratio
-pixels, so they're unaffected either way. But `generate_synthetic_samples` does — it
-crops each rendered glyph to a tight bounding box (variable aspect ratio) and must decide
-how to fit that into a 64×64 thumbnail. Today this is hardcoded to pad-to-square-then-scale
-(letterbox-style) regardless of which architecture is active, which would silently train
-PCA on synthetic samples shaped like HOG's crop geometry — the exact class of mismatch
-`known-stale-training-hashes.json` exists to paper over, reintroduced by a different route.
-`generate_synthetic_samples` calls `ACTIVE_RECOGNISER.fit_to_thumbnail(crop, win_size)`
-instead of doing the pad+resize inline. `extract_hog`/`extract_hole_features` (kept as
-utilities in last session's rewrite) become `HogRecogniser.extract_features`'s
-implementation; no change to those functions themselves.
+Two methods, not one, because the two Python call sites hand the class differently-shaped
+input:
+
+- **`fit_to_thumbnail(crop, win_size)`** — `train_recogniser.py`'s `generate_synthetic_samples`
+  already has an *extracted*, variable-aspect-ratio numpy array (a PIL-rendered glyph,
+  tight-cropped) and needs it fit into a `win_size` square. `PcaRbfRecogniser` does a
+  direct stretch; `HogRecogniser` does today's pad-to-square-then-scale, moved here
+  unchanged.
+- **`warp_from_rect(ax, ay, bw, bh, source, win_size)`** — `extract_guardian_samples.py`'s
+  `extract_puzzle_samples` has a bounding rect *and* the full warped source image, and
+  needs a single perspective-warp-and-crop step (mirrors TS's `warpForRecognition`
+  exactly, same `cv2.getPerspectiveTransform`/`warpPerspective` mechanism as the deleted
+  TS `letterboxWarp`/current `getWarpFromRect`). `PcaRbfRecogniser`'s implementation is a
+  direct-stretch destination quad; `HogRecogniser`'s is today's
+  `extract_guardian_samples.py::letterbox_warp`, moved here unchanged.
+
+`extract_guardian_samples.py` was found during a completeness audit prompted by a
+review question on this spec — see that section below for how it and the exclusions were
+found. It imports `ACTIVE_RECOGNISER` from `train_recogniser.py` and calls
+`ACTIVE_RECOGNISER.warp_from_rect(...)` in place of its own `letterbox_warp` function,
+which is deleted.
+
+`load_training_file` (browser/bulk JSON, already 64×64) and `dither_batch` (operates on
+already-fixed-size arrays) never touch variable-aspect-ratio pixels, so neither needs a
+class method — they're the same regardless of which architecture is active.
+`extract_hog`/`extract_hole_features` (kept as utilities in last session's rewrite) become
+`HogRecogniser.extract_features`'s implementation; no change to those functions themselves.
 
 `tests/test_train_recogniser.py` gets a `HogRecogniser`-equivalent of
 `test_save_model_pca_rbf_keys` (manifest schema round-trip), matching the existing
-`_make_samples`/`build_dataset` fixture pattern.
+`_make_samples`/`build_dataset` fixture pattern, plus a `warp_from_rect`/`fit_to_thumbnail`
+parity test per subclass (stretch produces a different result than letterbox on a
+non-square input; assert both classes actually differ, not just that both run).
+
+## Completeness audit: every site that fits variable-aspect pixels into a fixed thumbnail
+
+This was checked explicitly, not assumed, after `generate_synthetic_samples` turned out to
+be a real gap in an earlier draft of this spec. Method: search the whole repo for
+`warpPerspective`/`getPerspectiveTransform`/fixed-size-resize calls, then classify each
+result by whether its output ever reaches digit-*value* classification or digit-*value*
+training data (as opposed to some other purpose entirely, or a different, non-swappable
+pipeline).
+
+**Needs `ACTIVE_RECOGNISER`/`activeRecogniser()` (3 sites, all covered above):**
+- `web/src/image/numberRecognition.ts` — `splitNum`/`readClassicDigits` digit-thumbnail crops.
+- `web/train_recogniser.py` — `generate_synthetic_samples`.
+- `web/extract_guardian_samples.py` — `extract_puzzle_samples` (via the now-deleted `letterbox_warp`).
+
+**Checked and excluded, with reason (not just asserted):**
+- `splitNum`'s *other* `getWarpFromRect` call (`mergedThumb`) — traced its consumer:
+  `buildCageTotals` → `mergedThumbs` → `trainingExport.ts`'s `extractTrainingData` →
+  `splitSamples`, which feeds `web/train_split_recogniser.py` — a *different* classifier
+  (1-vs-2-digit split detection), not digit-value classification. That classifier is
+  itself dead at inference time today (`parsePuzzleImage`'s `_splitRec` parameter is
+  unused, underscore-prefixed) — either way, out of scope for the digit-*value* recogniser
+  this spec covers.
+- `killer_sudoku/image/number_recognition.py`, `killer_sudoku/training/collect_numerals.py`,
+  `killer_sudoku/training/collect_classic_numerals.py` — feed `numerals.pkl` →
+  `killer_sudoku.training.train_number_recogniser`, a single-purpose PCA-only reference
+  pipeline with no HOG variant, ever. Not swappable, so it doesn't need the interface at all.
+- `killer_sudoku/image/inp_image.py`, `killer_sudoku/image/grid_location.py`,
+  `killer_sudoku/scripts/bitcheck_dump.py`, `killer_sudoku/training/debug_borders.py`,
+  `killer_sudoku/training/debug_border_strips.py`, and the two non-digit warps inside
+  `extract_guardian_samples.py::extract_puzzle_samples` (`warped_hr`/`warped` — full-grid
+  perspective correction, not digit thumbnails) — all whole-grid/whole-image perspective
+  correction, unrelated to individual digit thumbnails.
 
 ## Benchmark workflow (using this once built — not part of this refactor's own testing)
 
