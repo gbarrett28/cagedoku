@@ -298,7 +298,7 @@ git commit -m "feat: thread classic given-digit Recognition (incl. runner-up) th
 - Consumes: `hasDuplicateDigits` from `web/src/session/assertions.ts` (unchanged, already exported).
 - Produces: `ClassicSolveAssessment`'s `notSolved` reason can now be the literal string `'duplicate given digits'`, distinct from `'no solution found'`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to the existing `describe('assessClassicSolvability', ...)` block in `web/src/engine/index.test.ts`:
 
@@ -313,12 +313,12 @@ Add to the existing `describe('assessClassicSolvability', ...)` block in `web/sr
   });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/engine/index.test.ts -t "duplicate given digits"`
 Expected: FAIL — current code returns `reason: 'no solution found'` (from the backtracker), not `'duplicate given digits'`.
 
-- [ ] **Step 3: Add the import and the gate**
+- [x] **Step 3: Add the import and the gate**
 
 In `web/src/engine/index.ts`, add to the imports (after the existing `import { Cell, Elimination } from './types.js';`):
 
@@ -344,12 +344,12 @@ export function assessClassicSolvability(givenDigits: number[][]): ClassicSolveA
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/engine/index.test.ts`
 Expected: PASS, all tests including the existing "returns notSolved for a contradictory grid" test (still passes — that test's grid also has a row duplicate, so it now hits the new early-return path instead of the backtracker, and its assertions — `bucket === 'notSolved'` and a truthy `reason` — still hold).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/engine/index.ts web/src/engine/index.test.ts

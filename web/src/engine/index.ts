@@ -19,6 +19,7 @@ import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import { defaultRules } from './rules/index.js';
 import { DISABLED_RULES } from './rules/disabled-rules.js';
 import { Cell, Elimination } from './types.js';
+import { hasDuplicateDigits } from '../session/assertions.js';
 
 export { BoardState, KillerBoardState, intersectAll } from './boardState.js';
 export { SolverEngine } from './solverEngine.js';
@@ -108,6 +109,9 @@ export type ClassicSolveAssessment =
  * solution found → backtracked; null returned → notSolved.
  */
 export function assessClassicSolvability(givenDigits: number[][]): ClassicSolveAssessment {
+  if (hasDuplicateDigits(givenDigits)) {
+    return { bucket: 'notSolved', reason: 'duplicate given digits' };
+  }
   const board = new BoardState();
   const engine = new SolverEngine(board, defaultRules().filter(r => !r.killerOnly));
   seedGivenDigits(engine, board, givenDigits);

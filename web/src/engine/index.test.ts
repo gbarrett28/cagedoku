@@ -132,4 +132,13 @@ describe('assessClassicSolvability', () => {
     expect(result.bucket).toBe('notSolved');
     expect(result.bucket === 'notSolved' && result.reason).toBeTruthy();
   });
+
+  it('reports a distinct reason for duplicate given digits without attempting to solve', () => {
+    const grid = Array.from({ length: 9 }, () => Array<number>(9).fill(0));
+    grid[0]![0] = 7;
+    grid[0]![5] = 7; // duplicate 7 in row 0 — structurally invalid, must not reach the solver
+    const result = assessClassicSolvability(grid);
+    expect(result.bucket).toBe('notSolved');
+    expect(result.bucket === 'notSolved' && result.reason).toBe('duplicate given digits');
+  });
 });
