@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { BoardState, KillerBoardState } from './boardState.js';
 import { BigAppleBoardState } from './bigAppleBoardState.js';
-import { mrvBacktrack } from './backtracker.js';
+import { mrvBacktrack, mrvBacktrackProvenInfeasible } from './backtracker.js';
 import { KNOWN_SOLUTION, makeTrivialSpec, makeBoxCageSpec, makeRowCageSpec } from './fixtures.js';
 import { validateSudokuSolution } from '../session/assertions.js';
 
@@ -93,5 +93,21 @@ describe('mrvBacktrack', () => {
     const result = mrvBacktrack(bs);
     expect(result).not.toBeNull();
     expect(validateSudokuSolution(result!)).toBeNull();
+  });
+});
+
+describe('mrvBacktrackProvenInfeasible', () => {
+  it('returns false when a solution exists', () => {
+    const bs = new KillerBoardState(makeTrivialSpec());
+    // The trivial spec's own given solution is untouched -- always solvable.
+    expect(mrvBacktrackProvenInfeasible(bs)).toBe(false);
+  });
+
+  it('returns true when no completion is possible', () => {
+    const bs = new KillerBoardState(makeTrivialSpec());
+    // Same contradiction pattern as the existing "returns null when a cell
+    // has no candidates" test above: wipe all candidates from one cell.
+    bs.candidates[0]![0]! = new Set();
+    expect(mrvBacktrackProvenInfeasible(bs)).toBe(true);
   });
 });

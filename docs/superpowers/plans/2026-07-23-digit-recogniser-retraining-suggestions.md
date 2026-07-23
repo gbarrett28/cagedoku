@@ -367,7 +367,7 @@ git commit -m "fix: gate assessClassicSolvability on hasDuplicateDigits before a
 **Interfaces:**
 - Produces: `mrvBacktrackProvenInfeasible(board: BoardState): boolean` — `true` only when the search space was fully exhausted (not capped by `MAX_BACKTRACK_NODES`) and no solution was found. `false` if a solution exists OR the search was capped (inconclusive either way).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `web/src/engine/backtracker.test.ts`, reusing its existing `KillerBoardState`/`makeTrivialSpec`/`KNOWN_SOLUTION` imports (already at the top of the file) and adding `mrvBacktrackProvenInfeasible` to the existing `import { mrvBacktrack } from './backtracker.js';` line:
 
@@ -389,12 +389,12 @@ describe('mrvBacktrackProvenInfeasible', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/engine/backtracker.test.ts -t "mrvBacktrackProvenInfeasible"`
 Expected: FAIL — `mrvBacktrackProvenInfeasible` is not exported yet.
 
-- [ ] **Step 3: Add the function**
+- [x] **Step 3: Add the function**
 
 In `web/src/engine/backtracker.ts`, add after the existing `mrvBacktrack` function (which ends at line 76):
 
@@ -426,17 +426,17 @@ export function mrvBacktrackProvenInfeasible(board: BoardState): boolean {
 
 `search` and `MAX_BACKTRACK_NODES` are already module-scope in this file (used by `mrvBacktrack` above) — no new import needed.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/engine/backtracker.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Run the full suite for regressions**
+- [x] **Step 5: Run the full suite for regressions**
 
 Run: `npx vitest run`
 Expected: PASS, same behavior for every existing `mrvBacktrack` caller (untouched).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/src/engine/backtracker.ts web/src/engine/backtracker.test.ts

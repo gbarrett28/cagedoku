@@ -76,6 +76,31 @@ export function mrvBacktrack(board: BoardState): number[][] | null {
   return solution;
 }
 
+
+/**
+ * Proves whether a board has *no* valid completion at all — never proves a
+ * specific completion is correct or unique. Runs the same MRV search as
+ * `mrvBacktrack`, but only trusts a null result as a genuine infeasibility
+ * proof when the search finished without hitting `MAX_BACKTRACK_NODES` —
+ * a capped search giving up is not evidence either way.
+ */
+export function mrvBacktrackProvenInfeasible(board: BoardState): boolean {
+  const constraints = board.cageConstraints();
+  const cageOf: number[][] = constraints?.cageOf ?? Array.from({length: 9}, () => new Array<number>(9).fill(0));
+  const cageTotal: ReadonlyMap<number, number> = constraints?.cageTotal ?? new Map();
+  const cageCells: ReadonlyMap<number, readonly Cell[]> = constraints?.cageCells ?? new Map();
+  const extraPeers: readonly (readonly Cell[])[][] = Array.from({length: 9}, (_, r) =>
+    Array.from({length: 9}, (__, c) => board.extraPeers(r, c)));
+
+  const cands: Set<number>[][] = Array.from({length: 9}, (_, r) =>
+    Array.from({length: 9}, (__, c) => new Set(board.cands(r, c))));
+
+  const counter = { n: 0 };
+  const solution = search(cands, cageOf, cageTotal, cageCells, extraPeers, counter);
+  const capped = counter.n > MAX_BACKTRACK_NODES;
+  return solution === null && !capped;
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
