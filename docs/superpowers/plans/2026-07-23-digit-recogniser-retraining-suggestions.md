@@ -1028,7 +1028,7 @@ git commit -m "feat: persist retraining suggestions during corpus evaluation"
 - Consumes: `corpus.db`'s `retraining_suggestions` table (Task 7).
 - Produces: a CLI script — no new library interfaces (this is a thin operator tool).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `web/scripts/review-retraining-suggestions.test.ts`, using the same temp-file `tmpDb()` + `afterEach` cleanup pattern already established in `web/scripts/corpus-db.test.ts` (a fresh local copy here, not a cross-test-file import):
 
@@ -1086,12 +1086,12 @@ describe('review-retraining-suggestions', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run scripts/review-retraining-suggestions.test.ts`
 Expected: FAIL — module doesn't exist yet.
 
-- [ ] **Step 3: Implement the script**
+- [x] **Step 3: Implement the script**
 
 Create `web/scripts/review-retraining-suggestions.ts`:
 
@@ -1187,17 +1187,17 @@ if (import.meta.url === `file://${process.argv[1]}`) main();
 
 Check whether `pngjs` is already a dependency (`grep pngjs web/package.json`); if not, add it: `npm install --save-dev pngjs @types/pngjs` (from `web/`) before this step compiles.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/review-retraining-suggestions.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Run the full suite for regressions**
+- [x] **Step 5: Run the full suite for regressions**
 
 Run: `npx vitest run`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/scripts/review-retraining-suggestions.ts web/scripts/review-retraining-suggestions.test.ts web/package.json web/package-lock.json
