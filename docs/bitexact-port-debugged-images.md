@@ -29,8 +29,8 @@ evaluated for a given hash, so a stale hash silently no-ops.
 | `classic_guardian/hard/killer_sudoku_441.jpg` | ignored | Python's own reference (`solve()`) also fails to fully solve this one — not comparable, per the design spec's exclusion rule | — |
 | `observer/killer_sudoku_163.jpg` | fixed | `topInkRowProfile` used "first nonzero pixel per column" where Python's `split_num` uses `np.argmax` ("row of the strongest pixel per column"). `warpedBlk` isn't strictly binary — `INTER_LINEAR` perspective-warp antialiasing puts a 0-255 continuum at glyph edges — so a faint antialiased fringe pixel could be nonzero one row above a column's true saturated ink, silently desyncing the peak-detection profile from Python's for specific digit shapes. Confirmed via a byte-for-byte dump of the raw `warpedBlk` region: identical pixels on both sides, yet different computed profiles — isolating the bug to this function, not any upstream geometry | `cb89cea` |
 | `observer/killer_sudoku_130.jpg` | fixed | Same root cause as `observer/killer_sudoku_163.jpg` above | `cb89cea` |
-| `classic_guardian/expert/killer_sudoku_274.jpg` | known limitation | Both puzzles below are **genuinely valid, solvable newspaper puzzles** — confirmed by visually reading the actual printed digit from the warped source photo and re-verifying with an independent brute-force solver — not invalid puzzles. Cell (row=1,col=0) is printed as `2`; both TS and Python misread it as `7`, and the crop each feeds the classifier is byte-for-byte identical (confirmed via direct pixel diff) with the same misclassification — a shared digit-recognizer accuracy limitation (this classifier confuses `2`↔`7` in this font/print style), not a port-fidelity bug. TS faithfully reproduces Python's exact behavior here, including the mistake — this *is* what a correct bit-exact port looks like when the thing being ported has its own bug | — |
-| `classic_guardian/easy/killer_sudoku_465.jpg` | known limitation | Same shared `2↔7` classifier confusion as `expert/274` above, at cell (row=0,col=6): printed digit is `2`, both engines read `7`, crop confirmed byte-identical. Also has a *second*, TS-only-correct divergence at (row=3,col=2): Python misreads the printed `2` as `7` (a real Python-side error TS does not repeat), while TS reads it correctly. Neither divergence needs a TS code fix; the (3,2) case shows TS already agrees with the source image where Python doesn't | — |
+| `classic_guardian/expert/killer_sudoku_274.jpg` | known limitation | Both puzzles below are **genuinely valid, solvable newspaper puzzles** — confirmed by visually reading the actual printed digit from the warped source photo and re-verifying with an independent brute-force solver — not invalid puzzles. Cell (row=1,col=0) is printed as `2`; both TS and Python misread it as `7`, on a crop confirmed **byte-for-byte identical** between the two (direct pixel diff, 0 differing pixels) — a true, confirmed shared digit-recognizer accuracy limitation (this classifier confuses `2`↔`7` in this font/print style), not a port-fidelity bug. TS faithfully reproduces Python's exact behavior here, mistake included — this *is* what a correct bit-exact port looks like when the thing being ported has its own bug | — |
+| `classic_guardian/easy/killer_sudoku_465.jpg` | known limitation | Superficially looks like the same `2↔7` classifier confusion as `expert/274`, but is a **different root cause** — verify crop-identity per cell rather than assuming it from one already-confirmed case. This image's raw grayscale is *not* bit-identical between TS and Python (≈2% of pixels differ by 1 — the documented JPEG-decoder noise, present on some corpus images and absent on others e.g. `observer/163`). That noise survives the shared hard-threshold `blk` computation and produces genuinely different (not identical) crops at both of this image's given-digit disagreement cells: (row=0,col=6) — 658/4096 pixels differ, both engines still misread the printed `2` as `7`; (row=3,col=2) — 631/4096 pixels differ, and here the differing crops land on *opposite* sides of the classifier's decision boundary: TS correctly reads `2`, Python incorrectly reads `7`. Neither is a TS or Python code bug — both trace to the same pre-existing, undocumented-as-a-behavioral-risk JPEG-decode noise, which can occasionally flip a near-boundary classification either direction, not just block the bitcheck stage-comparator as originally documented | — |
 
 ## Notes
 
@@ -68,13 +68,19 @@ evaluated for a given hash, so a stale hash silently no-ops.
 - `bitcheck_diff.py`'s automated stage-by-stage comparator requires an exact
   match at "Stage 1: grayscale image" before it will check any later stage.
   In practice the raw grayscale differs by ±1-2 per pixel between Python's
-  `cv2.imread` JPEG decode and the browser's canvas JPEG decode on essentially
-  every real photo — this is decoder-implementation noise, not a pipeline bug,
-  and it will make `bitcheck_diff.py` report "DIVERGES at Stage 1" for nearly
-  every real corpus image regardless of whether later stages actually match.
-  To check a specific later stage (cage_totals, given_digits, regions, …),
-  compare those JSON fields directly instead of relying on the stage-ordered
-  tool to reach them.
+  `cv2.imread` JPEG decode and the browser's canvas JPEG decode on **some**
+  real photos (confirmed absent on others, e.g. `observer/163`/`130` — check
+  per-image, don't assume) — this is decoder-implementation noise, not a
+  pipeline bug, and it will make `bitcheck_diff.py` report "DIVERGES at Stage
+  1" regardless of whether later stages actually match. To check a specific
+  later stage (cage_totals, given_digits, regions, …), compare those JSON
+  fields directly instead of relying on the stage-ordered tool to reach them.
+  This noise is not purely cosmetic: it survives the shared hard-threshold
+  `blk` computation and can produce genuinely non-bit-identical digit crops
+  (`easy/killer_sudoku_465.jpg` above), occasionally flipping a
+  near-decision-boundary classification either direction. Don't infer
+  crop-identity for one cell from a confirmed result on a different cell, even
+  in the same image — check each one directly.
 - The dumped `puzzleType`/`puzzle_type` field is **not** directly comparable:
   Python's is the raw image-pipeline classification (`classic`/`killer` only,
   from `InpImage`). TS's `bitcheck-dump.ts` reports `PuzzleState.kind()`, a
