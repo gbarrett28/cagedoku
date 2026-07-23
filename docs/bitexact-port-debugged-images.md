@@ -10,7 +10,7 @@ that motivated it.
 ```bash
 cd web
 npx vite-node scripts/evaluate-corpus.ts \
-  --filter "path IN ('C:\Users\geoff\PycharmProjects\killer_sudoku\guardian\killer_sudoku_0.jpg', 'C:\Users\geoff\PycharmProjects\killer_sudoku\observer\killer_sudoku_255.jpg', 'C:\Users\geoff\PycharmProjects\killer_sudoku\classic_observer\killer_sudoku_0.jpg', 'C:\Users\geoff\PycharmProjects\killer_sudoku\guardian\killer_sudoku_220.jpg', 'C:\Users\geoff\PycharmProjects\killer_sudoku\classic_guardian\medium\killer_sudoku_105.jpg')" \
+  --filter "path IN ('C:\Users\geoff\PycharmProjects\killer_sudoku\guardian\killer_sudoku_0.jpg', 'C:\Users\geoff\PycharmProjects\killer_sudoku\observer\killer_sudoku_255.jpg', 'C:\Users\geoff\PycharmProjects\killer_sudoku\classic_observer\killer_sudoku_0.jpg', 'C:\Users\geoff\PycharmProjects\killer_sudoku\guardian\killer_sudoku_220.jpg', 'C:\Users\geoff\PycharmProjects\killer_sudoku\classic_guardian\medium\killer_sudoku_105.jpg', 'C:\Users\geoff\PycharmProjects\killer_sudoku\observer\killer_sudoku_163.jpg', 'C:\Users\geoff\PycharmProjects\killer_sudoku\observer\killer_sudoku_130.jpg')" \
   --git-hash "regression-check-$(date +%s)"
 ```
 
@@ -27,8 +27,8 @@ evaluated for a given hash, so a stale hash silently no-ops.
 | `guardian/killer_sudoku_220.jpg` | fixed | Same root cause as below — a missing cage-total contour traced to `warpedBlkMat` diverging from Python's crop | `08151fe` |
 | `classic_guardian/medium/killer_sudoku_105.jpg` | fixed | `parsePuzzleImage` discarded `locateGrid`'s binary threshold mat (`blk`) and computed a fresh `adaptiveThreshold` on the warped grayscale for `warpedBlkMat`; Python's `InpImage` instead warps and reuses `locate_grid`'s own `blk` directly. The algorithmic mismatch produced different crop pixels feeding the digit classifier | `08151fe` |
 | `classic_guardian/hard/killer_sudoku_441.jpg` | ignored | Python's own reference (`solve()`) also fails to fully solve this one — not comparable, per the design spec's exclusion rule | — |
-| `observer/killer_sudoku_163.jpg` | investigating | `cageTotals` misread at (row=7,col=2): Python reads 27, TS reads 3 (clamped to 10). Raw `gray` is byte-identical between TS and Python for this image, ruling out JPEG-decode noise. `border_x`/`border_y`/`puzzle_type` all MATCH. Root-caused to `splitNum` failing to split the "27" contour into two digit thumbnails (TS's `cellThumbs["7,2"]` has 1 thumb; every other 2-digit total in the same image correctly has 2) — a different bug from the `warpedBlkMat` one above, since it reproduces even with bit-identical grayscale input. Not yet traced further (peak-detection threshold sensitivity vs. `cv.warpPerspective` WASM/native interpolation difference both still open) | — |
-| `observer/killer_sudoku_130.jpg` | investigating | Same symptom and same open root cause as `observer/killer_sudoku_163.jpg` above, at cell (row=2,col=3): Python reads 27, TS reads 3 (clamped to 10) | — |
+| `observer/killer_sudoku_163.jpg` | fixed | `topInkRowProfile` used "first nonzero pixel per column" where Python's `split_num` uses `np.argmax` ("row of the strongest pixel per column"). `warpedBlk` isn't strictly binary — `INTER_LINEAR` perspective-warp antialiasing puts a 0-255 continuum at glyph edges — so a faint antialiased fringe pixel could be nonzero one row above a column's true saturated ink, silently desyncing the peak-detection profile from Python's for specific digit shapes. Confirmed via a byte-for-byte dump of the raw `warpedBlk` region: identical pixels on both sides, yet different computed profiles — isolating the bug to this function, not any upstream geometry | `cb89cea` |
+| `observer/killer_sudoku_130.jpg` | fixed | Same root cause as `observer/killer_sudoku_163.jpg` above | `cb89cea` |
 
 ## Notes
 
