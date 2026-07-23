@@ -87,7 +87,7 @@ python -m pytest tests/ -v
 Expected: all tests PASS (existing tests for `killer_sudoku/training/` etc. plus the
 two new files from Step 2).
 
-- [ ] **Step 4: Run the bronze gate**
+- [x] **Step 4: Run the bronze gate**
 
 ```bash
 bash scripts/run-bronze-gate.sh
