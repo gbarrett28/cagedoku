@@ -37,12 +37,20 @@ interface TrainingFile {
 
 let rec: NumRecogniser;
 let samples: TrainingSample[];
+let KNOWN_FAILURE_SAMPLE_HASHES: ReadonlySet<string>;
 
 beforeAll(() => {
   const pub = join(process.cwd(), 'public');
   const bin = readFileSync(join(pub, 'num_recogniser.bin'));
   const manifest = JSON.parse(readFileSync(join(pub, 'num_recogniser.json'), 'utf-8'));
   rec = loadNumRecogniser(bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength), manifest);
+
+  const hashesFile = rec instanceof HogRecogniser
+    ? 'known-model-failure-hashes-hog.json'
+    : 'known-model-failure-hashes-pca_rbf.json';
+  KNOWN_FAILURE_SAMPLE_HASHES = new Set(
+    JSON.parse(readFileSync(join(process.cwd(), hashesFile), 'utf-8')) as string[],
+  );
 
   const trainFile: TrainingFile = JSON.parse(
     readFileSync(join(process.cwd(), 'browser_train.json'), 'utf-8'),
@@ -122,10 +130,6 @@ function unexpectedFailures(subset: TrainingSample[]): string[] {
 // this one is "whatever the currently-shipped model happens to fail on" and
 // must be regenerated whenever the shipped model changes. Conflating the two
 // previously meant updating one silently changed the other's meaning.
-const KNOWN_FAILURE_SAMPLE_HASHES: ReadonlySet<string> = new Set(
-  JSON.parse(readFileSync(join(process.cwd(), 'known-model-failure-hashes.json'), 'utf-8')) as string[],
-);
-
 describe('digit recogniser — TypeScript PCA+RBF inference on training data', () => {
   it('loads model without error', () => {
     expect(rec).toBeDefined();
