@@ -290,6 +290,21 @@ describe('digit recogniser — TypeScript PCA+RBF inference on training data', (
   });
 });
 
+describe('Recognition.runnerUp', () => {
+  it('is present and distinct from the winning label whenever the classifier saw more than one class', () => {
+    const imgs = samples.slice(0, 30).map(s => new Uint8Array(s.pixels));
+    const results = recognise(rec, imgs);
+    let sawRunnerUp = false;
+    for (const r of results) {
+      if (r.runnerUp === undefined) continue;
+      sawRunnerUp = true;
+      expect(r.runnerUp.label).not.toBe(r.label);
+      expect(Number.isFinite(r.runnerUp.score)).toBe(true);
+    }
+    expect(sawRunnerUp).toBe(true);
+  });
+});
+
 // Note: guardian_train_sq.json / observer_train_sq.json are deliberately not
 // tested here. /guardian/ and /observer/ are entirely gitignored (the source
 // .jpg files cannot be committed), so any test depending on them only ever

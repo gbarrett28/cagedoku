@@ -104,6 +104,12 @@ export type Classifier = LinearClassifier | RBFClassifier;
 export interface Recognition {
   label: number;
   confident: boolean;
+  /** Second-most-likely label and its raw score, present whenever the
+   *  classifier considered more than one candidate class. `score` is only
+   *  meaningful as a within-prediction ranking — its scale differs between
+   *  the template-matching fast path (TM_CCOEFF_NORMED, roughly -1..1) and
+   *  the RBF fallback path (an OvO vote count, integer 0..nClasses-1). */
+  runnerUp?: { label: number; score: number };
 }
 
 /**
@@ -141,8 +147,18 @@ function ovoVote(
     for (let c = 1; c < nClasses; c++) {
       if (votes[s * nClasses + c]! > votes[s * nClasses + best]!) best = c;
     }
+    let best2 = -1;
+    for (let c = 0; c < nClasses; c++) {
+      if (c === best) continue;
+      if (best2 === -1 || votes[s * nClasses + c]! > votes[s * nClasses + best2]!) best2 = c;
+    }
     // Normalise by (nClasses-1): max votes any class can receive in OVO, not total classifiers.
-    result.push({ label: classes[best]!, confident: votes[s * nClasses + best]! / (nClasses - 1) >= threshold });
+    const confident = votes[s * nClasses + best]! / (nClasses - 1) >= threshold;
+    result.push({
+      label: classes[best]!,
+      confident,
+      ...(best2 !== -1 ? { runnerUp: { label: classes[best2]!, score: votes[s * nClasses + best2]! } } : {}),
+    });
   }
   return result;
 }
@@ -367,12 +383,23 @@ function classify(rec: NumRecogniser, imgs: Uint8Array[]): Recognition[] {
         const img = imgs[i]!;
         let bestScore = -2.0;
         let bestDigit = 0;
+        let bestScore2 = -2.0;
+        let bestDigit2 = -1;
         for (const [digit, tmpl] of pca.templates) {
           const score = templateMatchNormed(img, tmpl);
-          if (score > bestScore) { bestScore = score; bestDigit = digit; }
+          if (score > bestScore) {
+            bestScore2 = bestScore; bestDigit2 = bestDigit;
+            bestScore = score; bestDigit = digit;
+          } else if (score > bestScore2) {
+            bestScore2 = score; bestDigit2 = digit;
+          }
         }
         if (bestScore >= pca.templateThreshold) {
-          results[i] = { label: bestDigit, confident: true };
+          results[i] = {
+            label: bestDigit,
+            confident: true,
+            ...(bestDigit2 !== -1 ? { runnerUp: { label: bestDigit2, score: bestScore2 } } : {}),
+          };
         } else {
           fallbackIndices.push(i);
           fallbackImgs.push(img);
