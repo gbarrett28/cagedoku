@@ -9,6 +9,17 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-serena.py\""
+          }
+        ]
+      }
     ]
   },
   "enabledPlugins": {
