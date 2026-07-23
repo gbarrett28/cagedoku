@@ -886,11 +886,12 @@ export function readClassicDigits(
   rec: NumRecogniser,
   subres: number,
   classicConf: number[][],
-): { digits: number[][]; thumbs: Map<string, Uint8Array[]> } {
+): { digits: number[][]; thumbs: Map<string, Uint8Array[]>; recognitions: Map<string, Recognition> } {
   const half = subres >> 1;
   const margin = subres >> 2;
   const digits: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
   const thumbs = new Map<string, Uint8Array[]>();
+  const recognitions = new Map<string, Recognition>();
 
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
@@ -936,9 +937,10 @@ export function readClassicDigits(
       if (d > 0) {
         digits[r]![c] = d;
         thumbs.set(`${r},${c}`, [thumb]);
+        recognitions.set(`${r},${c}`, rec0!);
       }
     }
   }
 
-  return { digits, thumbs };
+  return { digits, thumbs, recognitions };
 }

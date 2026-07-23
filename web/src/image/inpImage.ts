@@ -88,6 +88,8 @@ export interface ParseResult {
   detectedBorderX?: boolean[][] | undefined;
   detectedBorderY?: boolean[][] | undefined;
   detectedCageTotals?: number[][] | undefined;
+  /** Recognition (incl. runner-up) for each classic given-digit cell, keyed "row,col". */
+  classicRecognitions?: ReadonlyMap<string, import('./numberRecognition.js').Recognition> | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -236,7 +238,8 @@ export async function parsePuzzleImage(
 
   // --- Classic path ---
   if (puzzleType === 'classic') {
-    const { digits: givenDigits, thumbs: classicThumbs } = readClassicDigits(cv, warpedBlkMat, rec, subres, classicConf);
+    const { digits: givenDigits, thumbs: classicThumbs, recognitions: classicRecognitions } =
+      readClassicDigits(cv, warpedBlkMat, rec, subres, classicConf);
 
     warpedGryMat.delete(); warpedBlkMat.delete();
 
@@ -254,7 +257,7 @@ export async function parsePuzzleImage(
     } catch (err) {
       specError = String(err);
     }
-    return { spec, specError, fallbackUsed: false, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: classicThumbs, mergedThumbs: new Map(), ...(includeTree ? {
+    return { spec, specError, fallbackUsed: false, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: classicThumbs, mergedThumbs: new Map(), classicRecognitions, ...(includeTree ? {
       gray: grayForDump,
       graySize: graySizeForDump,
       gridCorners: gridCornersForDump,
@@ -360,7 +363,8 @@ export async function parsePuzzleImage(
   // Read classic digits before deleting mats — classicConf is all-zero for true Killer
   // puzzles (cheap no-op), but captures given digits if OCR misdetected the type so that
   // the user can switch to Classic via the type dropdown and still get a correct solution.
-  const { digits: givenDigits } = readClassicDigits(cv, warpedBlkMat, rec, subres, classicConf);
+  const { digits: givenDigits, recognitions: classicRecognitions } =
+    readClassicDigits(cv, warpedBlkMat, rec, subres, classicConf);
 
   warpedGryMat.delete();
   warpedBlkMat.delete();
@@ -375,6 +379,7 @@ export async function parsePuzzleImage(
       warpedImageData: warpedImgData,
       cellThumbs: new Map(),
       mergedThumbs: new Map(),
+      classicRecognitions,
       ...(includeTree ? {
         gray: grayForDump,
         graySize: graySizeForDump,
@@ -417,7 +422,7 @@ export async function parsePuzzleImage(
   }
 
   return {
-    spec, specError, fallbackUsed, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs, mergedThumbs,
+    spec, specError, fallbackUsed, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs, mergedThumbs, classicRecognitions,
     ...(includeTree ? {
       gray: grayForDump,
       graySize: graySizeForDump,

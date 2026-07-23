@@ -150,6 +150,8 @@ export interface UploadResult {
   detectedCageTotals?: number[][] | undefined;
   /** spec.regions when spec construction succeeded, else null. Bitcheck harness only. */
   regions?: number[][] | null | undefined;
+  /** Recognition (incl. runner-up) for each classic given-digit cell, keyed "row,col". Present whenever ParseResult provides it. */
+  classicRecognitions?: ReadonlyMap<string, import('../image/numberRecognition.js').Recognition> | undefined;
 }
 
 /**
@@ -230,6 +232,7 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
     detectedBorderY: result.detectedBorderY,
     detectedCageTotals: result.detectedCageTotals,
     regions: result.spec?.regions ?? null,
+    classicRecognitions: result.classicRecognitions,
   };
 }
 

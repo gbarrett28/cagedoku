@@ -161,7 +161,7 @@ git commit -m "feat: expose classifier runner-up prediction in Recognition"
 
 **Note on test coverage for this task:** `readClassicDigits` requires a live OpenCV.js WASM module (`cv.Mat`, `cv.findContours`, etc.) to run its contour-finding path. No existing test in this repo unit-tests `readClassicDigits`, `buildCageTotals`, or any other OpenCV-dependent function directly — `numberRecognition.test.ts` specifically avoids this by testing `recognise()` alone (it operates on already-cropped `Uint8Array` thumbnails, no `cv.Mat` needed). Setting up a WASM-backed unit-test environment is out of scope here (YAGNI — no other function in this codebase has one). This task is therefore verified two ways: (a) `npx tsc --noEmit`, which catches every call site that needs updating for the new return/field shapes, since TypeScript will error on any mismatched destructure or missing field; (b) a real end-to-end smoke test via the bitcheck harness in Step 6 below, the same tool this session used throughout to verify pipeline behavior against real corpus photos.
 
-- [ ] **Step 1: Change `readClassicDigits` to keep the full `Recognition`**
+- [x] **Step 1: Change `readClassicDigits` to keep the full `Recognition`**
 
 In `web/src/image/numberRecognition.ts`, replace lines 855-916:
 
@@ -232,7 +232,7 @@ export function readClassicDigits(
 }
 ```
 
-- [ ] **Step 2: Thread `recognitions` through `inpImage.ts`**
+- [x] **Step 2: Thread `recognitions` through `inpImage.ts`**
 
 In `web/src/image/inpImage.ts`, add to the `ParseResult` interface (near the other "Bitcheck harness only" optional fields, e.g. after `regions?:`):
 
@@ -259,7 +259,7 @@ At line 362, change the destructure similarly:
 
 ...and add `classicRecognitions,` to both `return { ... }` objects later in the killer path (the early-`spec===null` return and the final return), matching how `givenDigits` is already threaded through both.
 
-- [ ] **Step 3: Thread `classicRecognitions` through `session/actions.ts`'s `UploadResult`**
+- [x] **Step 3: Thread `classicRecognitions` through `session/actions.ts`'s `UploadResult`**
 
 In `web/src/session/actions.ts`, add to the `UploadResult` interface (after `regions?:` at line 151):
 
@@ -270,16 +270,16 @@ In `web/src/session/actions.ts`, add to the `UploadResult` interface (after `reg
 
 Find the construction of `UploadResult` from `ParseResult` in `uploadPuzzle` (the function that calls `parsePuzzleImage` and builds the returned `UploadResult`) and add `classicRecognitions: result.classicRecognitions,` alongside the existing `regions: result.regions ?? null,`-style assignments.
 
-- [ ] **Step 4: Type-check and run the full test suite to verify no regressions**
+- [x] **Step 4: Type-check and run the full test suite to verify no regressions**
 
 Run: `npx tsc --noEmit && npx vitest run`
 Expected: both pass; same test count as before Task 1 plus the new test from Task 1.
 
-- [ ] **Step 5: Real end-to-end smoke test via the bitcheck harness**
+- [x] **Step 5: Real end-to-end smoke test via the bitcheck harness**
 
 Build and run the app against a real classic-puzzle corpus image, following this session's established bitcheck workflow: `npm run build`, start `npx vite preview --port 4173`, then `npx vite-node scripts/bitcheck-dump.ts <path to a real classic .jpg> --out /tmp/check.json`. Confirm the dumped output's `cellThumbs` are unchanged from before this task (Task 2 only adds a parallel `recognitions` map, never changes `digits`/`thumbs`) and that no console error/warning appears about `classicRecognitions` being malformed. This is the same manual verification style used throughout this session's earlier investigation (no new tooling needed).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/src/image/numberRecognition.ts web/src/image/numberRecognition.test.ts web/src/image/inpImage.ts web/src/session/actions.ts
