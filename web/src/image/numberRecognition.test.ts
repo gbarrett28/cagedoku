@@ -19,7 +19,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { loadNumRecogniser, recognise, PcaRbfRecogniser, HogRecogniser } from './numberRecognition.js';
+import { loadNumRecogniser, PcaRbfRecogniser, HogRecogniser, activeRecogniser } from './numberRecognition.js';
 import type { NumRecogniser } from './numberRecognition.js';
 
 // ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@ function sha256(pixels: number[]): string {
 
 function runOnSamples(subset: TrainingSample[]): { correct: number; total: number; errors: string[] } {
   const imgs = subset.map(s => new Uint8Array(s.pixels));
-  const results = recognise(rec, imgs);
+  const results = rec.recognise(imgs);
   let correct = 0;
   const errors: string[] = [];
   for (let i = 0; i < subset.length; i++) {
@@ -76,7 +76,7 @@ function runOnSamples(subset: TrainingSample[]): { correct: number; total: numbe
 /** Failures whose content hash is not in KNOWN_FAILURE_SAMPLE_HASHES -- a regression. */
 function unexpectedFailures(subset: TrainingSample[]): string[] {
   const imgs = subset.map(s => new Uint8Array(s.pixels));
-  const results = recognise(rec, imgs);
+  const results = rec.recognise(imgs);
   const unexpected: string[] = [];
   for (let i = 0; i < subset.length; i++) {
     if (results[i]!.label !== subset[i]!.digit) {
@@ -172,7 +172,7 @@ describe('digit recogniser — TypeScript PCA+RBF inference on training data', (
 describe('Recognition.runnerUp', () => {
   it('is present and distinct from the winning label whenever the classifier saw more than one class', () => {
     const imgs = samples.slice(0, 30).map(s => new Uint8Array(s.pixels));
-    const results = recognise(rec, imgs);
+    const results = rec.recognise(imgs);
     let sawRunnerUp = false;
     for (const r of results) {
       if (r.runnerUp === undefined) continue;
@@ -222,5 +222,13 @@ describe('loadNumRecogniser class dispatch', () => {
     const hogRec = loadNumRecogniser(buf, manifest);
     expect(hogRec).toBeInstanceOf(HogRecogniser);
     expect(hogRec).not.toBeInstanceOf(PcaRbfRecogniser);
+  });
+
+  it('throws a clear error from activeRecogniser() before any recogniser is set', () => {
+    // This test file never calls setActiveRecogniser -- splitNum/readClassicDigits'
+    // real crop behaviour needs a genuine OpenCV.js Mat, which vitest doesn't load
+    // (see the plan's note on Playwright covering that instead); this only verifies
+    // the guard message itself.
+    expect(() => activeRecogniser()).toThrow('No recogniser loaded');
   });
 });

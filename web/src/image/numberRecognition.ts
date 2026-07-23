@@ -462,14 +462,20 @@ function templateMatchNormed(img: ArrayLike<number>, tmpl: ArrayLike<number>): n
   return denom > 0 ? num / denom : 0;
 }
 
-/** Classify digit image patches and return labels with confidence flags. */
-export function recognise(rec: NumRecogniser, imgs: Uint8Array[]): Recognition[] {
-  return rec.recognise(imgs);
-}
-
 // ---------------------------------------------------------------------------
 // Model loading from .bin + .json
 // ---------------------------------------------------------------------------
+
+let _active: NumRecogniser | null = null;
+
+/** Registers rec as the recogniser splitNum/readClassicDigits use internally. */
+export function setActiveRecogniser(rec: NumRecogniser): void { _active = rec; }
+
+/** @internal exported only for the singleton-guard unit test. */
+export function activeRecogniser(): NumRecogniser {
+  if (_active === null) throw new Error('No recogniser loaded — call setActiveRecogniser() first');
+  return _active;
+}
 
 /**
  * Load the NumRecogniser model from the exported .bin and .json files.
@@ -901,10 +907,10 @@ export function splitNum(
   }
 
   const halfRes = subres >> 1;
-  const thumbs = rects.map(([yt, yb, xl, xr]) => {
-    const src = [[xl, yt], [xr, yt], [xr, yb], [xl, yb]];
-    return getWarpFromRect(cv, src, warpedBlk, halfRes, halfRes);
-  });
+  const rec = activeRecogniser();
+  const thumbs = rects.map(([yt, yb, xl, xr]) =>
+    rec.warpForRecognition(cv, warpedBlk, [xl, yt, xr - xl, yb - yt], halfRes),
+  );
 
   return [thumbs, mergedThumb, x, y];
 }
@@ -930,10 +936,10 @@ export function splitNum(
 export function readClassicDigits(
   cv: Cv,
   warpedBlk: OpenCVMat,
-  rec: NumRecogniser,
   subres: number,
   classicConf: number[][],
 ): { digits: number[][]; thumbs: Map<string, Uint8Array[]>; recognitions: Map<string, Recognition> } {
+  const rec = activeRecogniser();
   const half = subres >> 1;
   const margin = subres >> 2;
   const digits: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
@@ -977,9 +983,8 @@ export function readClassicDigits(
 
       const ax = x0 + br.x;
       const ay = y0 + br.y;
-      const src = [[ax, ay], [ax + br.width, ay], [ax + br.width, ay + br.height], [ax, ay + br.height]];
-      const thumb = getWarpFromRect(cv, src, warpedBlk, half, half);
-      const [rec0] = recognise(rec, [thumb]);
+      const thumb = rec.warpForRecognition(cv, warpedBlk, [ax, ay, br.width, br.height], half);
+      const [rec0] = rec.recognise([thumb]);
       const d = rec0!.label;
       if (d > 0) {
         digits[r]![c] = d;
