@@ -33,7 +33,6 @@ import numpy.typing as npt
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.inp_image import InpImage
 from killer_sudoku.image.number_recognition import NumberSource
-from killer_sudoku.image.tesseract_recognition import TesseractNumber
 from killer_sudoku.image.validation import validate_cage_layout
 from killer_sudoku.solver.grid import Grid, ProcessingError
 from killer_sudoku.training.status import StatusStore
@@ -432,13 +431,6 @@ def main() -> None:
         default=None,
         help="Compare current eval_report.json to a baseline; prints diff table",
     )
-    parser.add_argument(
-        "--recogniser",
-        choices=["shipped", "tesseract"],
-        default="shipped",
-        help="Digit recogniser to use: 'shipped' (default, CayenneNumber) or "
-        "'tesseract' (TesseractNumber, for ground-truth validation runs)",
-    )
     args = parser.parse_args()
 
     config = ImagePipelineConfig(
@@ -490,10 +482,7 @@ def main() -> None:
             raise SystemExit(1)
         return
 
-    num_recogniser: NumberSource | None = None
-    if args.recogniser == "tesseract":
-        num_recogniser = TesseractNumber()
-    collect_status(config, num_recogniser=num_recogniser)
+    collect_status(config)
 
 
 if __name__ == "__main__":

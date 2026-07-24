@@ -42,7 +42,7 @@ class _Classifier(Protocol):
 class NumberSource(Protocol):
     """Protocol for anything that can label a batch of digit-image crops.
 
-    CayenneNumber (the shipped PCA+RBF recogniser) and TesseractNumber both
+    CayenneNumber (the shipped PCA+RBF recogniser) and any future recogniser
     satisfy this structurally, so evaluate.py and InpImage can swap between
     them without any inheritance relationship.
     """

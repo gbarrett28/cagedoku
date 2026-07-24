@@ -2,6 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Status: CLOSED — verdict NOT TRUSTWORTHY.** See `docs/tesseract-validation-notes.md`
+> for the full evidence (pilot solve-rate gap, plus a follow-up isolating a real
+> montage-merging bug from Tesseract's raw ~55% single-glyph accuracy on this
+> font). `TesseractNumber` and its tests were removed after this verdict — the
+> `NumberSource` protocol and `collect_status`'s injectable-recogniser parameter
+> (Tasks 1 and 3) were kept as generic, reusable infrastructure. This plan
+> document is left as a historical record of what was tried and why.
+
 **Goal:** Determine whether Tesseract OCR is a trustworthy *independent* ground-truth
 labeller for our digit corpus, by substituting it for the shipped `CayenneNumber`
 recogniser throughout the existing image pipeline and checking whether the full
