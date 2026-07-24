@@ -37,27 +37,27 @@
     "rbf_support_vectors": {
       "dtype": "float64",
       "shape": [
-        927,
+        1549,
         8
       ],
       "offset": 360456,
-      "byteLength": 59328
+      "byteLength": 99136
     },
     "rbf_dual_coef": {
       "dtype": "float64",
       "shape": [
         9,
-        927
+        1549
       ],
-      "offset": 419784,
-      "byteLength": 66744
+      "offset": 459592,
+      "byteLength": 111528
     },
     "rbf_intercept": {
       "dtype": "float64",
       "shape": [
         45
       ],
-      "offset": 486528,
+      "offset": 571120,
       "byteLength": 360
     },
     "rbf_n_support": {
@@ -65,7 +65,7 @@
       "shape": [
         10
       ],
-      "offset": 486888,
+      "offset": 571480,
       "byteLength": 40
     },
     "rbf_gamma": {
@@ -73,7 +73,7 @@
       "shape": [
         1
       ],
-      "offset": 486928,
+      "offset": 571520,
       "byteLength": 8
     },
     "classes": {
@@ -81,7 +81,7 @@
       "shape": [
         10
       ],
-      "offset": 486936,
+      "offset": 571528,
       "byteLength": 40
     },
     "template_threshold": {
@@ -89,7 +89,7 @@
       "shape": [
         1
       ],
-      "offset": 486976,
+      "offset": 571568,
       "byteLength": 8
     },
     "confidence_threshold": {
@@ -97,7 +97,7 @@
       "shape": [
         1
       ],
-      "offset": 486984,
+      "offset": 571576,
       "byteLength": 8
     },
     "template_0": {
@@ -106,7 +106,7 @@
         64,
         64
       ],
-      "offset": 486992,
+      "offset": 571584,
       "byteLength": 16384
     },
     "template_1": {
@@ -115,7 +115,7 @@
         64,
         64
       ],
-      "offset": 503376,
+      "offset": 587968,
       "byteLength": 16384
     },
     "template_2": {
@@ -124,7 +124,7 @@
         64,
         64
       ],
-      "offset": 519760,
+      "offset": 604352,
       "byteLength": 16384
     },
     "template_3": {
@@ -133,7 +133,7 @@
         64,
         64
       ],
-      "offset": 536144,
+      "offset": 620736,
       "byteLength": 16384
     },
     "template_4": {
@@ -142,7 +142,7 @@
         64,
         64
       ],
-      "offset": 552528,
+      "offset": 637120,
       "byteLength": 16384
     },
     "template_5": {
@@ -151,7 +151,7 @@
         64,
         64
       ],
-      "offset": 568912,
+      "offset": 653504,
       "byteLength": 16384
     },
     "template_6": {
@@ -160,7 +160,7 @@
         64,
         64
       ],
-      "offset": 585296,
+      "offset": 669888,
       "byteLength": 16384
     },
     "template_7": {
@@ -169,7 +169,7 @@
         64,
         64
       ],
-      "offset": 601680,
+      "offset": 686272,
       "byteLength": 16384
     },
     "template_8": {
@@ -178,7 +178,7 @@
         64,
         64
       ],
-      "offset": 618064,
+      "offset": 702656,
       "byteLength": 16384
     },
     "template_9": {
@@ -187,7 +187,7 @@
         64,
         64
       ],
-      "offset": 634448,
+      "offset": 719040,
       "byteLength": 16384
     }
   }
