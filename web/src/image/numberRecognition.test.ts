@@ -7,12 +7,11 @@
  * path so any PCA/RBF float-precision divergence surfaces as test failures.
  *
  * The model was reverted from HOG+OVO-SVM back to Python's original PCA+
- * template+RBF-SVM architecture (see docs/superpowers/specs/2026-07-21-
- * python-bitexact-port-design.md) to give the bit-exact port a comparable,
- * debuggable reference baseline. browser_train.json's crops were captured
- * under the old HOG+letterbox pipeline, so a fixed set of samples are
- * architecturally incompatible with the new PCA feature space — see
- * KNOWN_FAILURE_SAMPLE_HASHES below.
+ * template+RBF-SVM architecture (see `docs/architecture.md` § Web Recogniser
+ * Training for the NumRecogniser class hierarchy) as the shipped default.
+ * browser_train.json's crops were captured under the old HOG+letterbox
+ * pipeline, so a fixed set of samples are architecturally incompatible with
+ * the new PCA feature space — see KNOWN_FAILURE_SAMPLE_HASHES below.
  */
 
 import { createHash } from 'node:crypto';

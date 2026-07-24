@@ -1,7 +1,21 @@
 # Bit-exact port: debugged corpus images
 
-Tracks specific puzzle images found to fail via `evaluate-corpus.ts` during the
-Python bit-exact port effort (`feature/python-bitexact-port`), so every fix can
+**Status: effort abandoned (2026-07-24).** The Python bit-exact port
+(`feature/python-bitexact-port`, spec formerly at
+`docs/superpowers/specs/2026-07-21-python-bitexact-port-design.md`) treated
+the Python reference implementation as ground truth to bit-match the TS
+pipeline against. That premise didn't hold: the Python reference was found to
+be missing validation checks that would have caused it to fail on certain
+inputs, so its apparent 99.9% corpus clean rate wasn't a trustworthy target —
+some of what it silently accepted was wrong, not just unverified. The
+`bitcheck_*` stage-by-stage comparison tooling the spec introduced has been
+deleted along with it; the re-check command below (`evaluate-corpus.ts`)
+is unaffected and still works. The table below is kept as a historical
+record: every fix it names already landed on master and remains valid
+regardless of the port's fate.
+
+Tracked specific puzzle images found to fail via `evaluate-corpus.ts` during the
+Python bit-exact port effort (`feature/python-bitexact-port`), so every fix could
 be regression-checked against everything found so far, not just the one image
 that motivated it.
 

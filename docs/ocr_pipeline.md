@@ -290,11 +290,17 @@ as a pre-scan.
 **Classifier:** LinearSVC OvO, 45 binary classifiers (digits 0–9). Confidence =
 vote fraction; flagged uncertain below 0.7.
 
-> Temporarily on `feature/python-bitexact-port`, the bundled model is the Python
-> reference's PCA + template-match + RBF-SVM classifier instead (see
-> `docs/architecture.md` § Web Recogniser Training). This section describes the
-> HOG + LinearSVC architecture that `train_recogniser.py` still produces and that
-> ships once the bit-exact port investigation concludes.
+> The currently shipped model is `PcaRbfRecogniser` (PCA + template-match +
+> RBF-SVM, ported from the Python reference — see `docs/architecture.md` §
+> Web Recogniser Training). This section describes `HogRecogniser`, the
+> HOG + LinearSVC architecture retained as the other branch of the
+> `NumRecogniser` class hierarchy, not the active default. The Python
+> bit-exact port effort that produced the PCA+RBF port was abandoned — the
+> Python reference implementation turned out to be missing validation checks
+> that would have caused it to fail on certain inputs, so its apparent 99.9%
+> corpus clean rate wasn't a trustworthy target to bit-match against. See
+> `docs/bitexact-port-debugged-images.md` for what the effort found before
+> being closed out.
 
 The non-digit binary classifier (Stage 3b, not yet implemented) is distinct from the
 digit recogniser. It operates on contour metrics (fill ratio, aspect ratio, area,

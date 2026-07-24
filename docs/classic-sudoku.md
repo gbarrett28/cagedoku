@@ -67,10 +67,10 @@ For each cell `(r, c)` where `classicDigitConf[r][c] > 0`, extracts a
 `margin = subres / 6 | 0`, matching the detection region used by `scanCells`)
 starting at `[margin, margin]` within the cell of the warped binary image.
 It finds the largest contour within that crop, warps the contour's bounding rect
-to a 64×64 thumbnail via `getWarpFromRect`, and passes it to `recognise()` (the
-HOG + LinearSVC path — same recogniser used for cage totals; see `docs/architecture.md`
-§ Web Recogniser Training for the temporary PCA + RBF-SVM swap on
-`feature/python-bitexact-port`).
+to a 64×64 thumbnail via `getWarpFromRect`, and passes it to `recognise()` (same
+recogniser used for cage totals — currently `PcaRbfRecogniser`; see
+`docs/architecture.md` § Web Recogniser Training for the `NumRecogniser` class
+hierarchy).
 
 Using the same `margin`/`patchSize` as `scanCells` prevents tall digits from being
 clipped: a digit whose top edge is above `subres/4` (the old hardcoded offset) would
