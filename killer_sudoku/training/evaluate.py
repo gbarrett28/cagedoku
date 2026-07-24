@@ -32,7 +32,7 @@ import numpy.typing as npt
 
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.inp_image import InpImage
-from killer_sudoku.image.number_recognition import CayenneNumber
+from killer_sudoku.image.number_recognition import NumberSource
 from killer_sudoku.image.validation import validate_cage_layout
 from killer_sudoku.solver.grid import Grid, ProcessingError
 from killer_sudoku.training.status import StatusStore
@@ -161,7 +161,7 @@ def compare_reports(baseline_path: Path, current_path: Path) -> bool:
 def _process_one_image(
     f: Path,
     config: ImagePipelineConfig,
-    num_recogniser: CayenneNumber,
+    num_recogniser: NumberSource,
 ) -> tuple[str, str, float]:
     """Process one puzzle image and return (filename, status_string, elapsed_s).
 

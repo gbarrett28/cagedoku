@@ -30,6 +30,7 @@ from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.grid_location import get_gry_img, locate_grid
 from killer_sudoku.image.number_recognition import (
     CayenneNumber,
+    NumberSource,
     contour_hier,
     get_num_contours,
     load_number_recogniser_stream,
@@ -89,7 +90,7 @@ class InpImage:
         self,
         filepath: Path,
         config: ImagePipelineConfig,
-        num_recogniser: CayenneNumber,
+        num_recogniser: NumberSource,
     ) -> None:
         """Parse a puzzle image file and populate self.info with extracted data.
 
@@ -325,7 +326,7 @@ class InpImage:
         m: npt.NDArray[np.float64],
         config: ImagePipelineConfig,
         warped_blk: npt.NDArray[np.uint8],
-        num_recogniser: CayenneNumber,
+        num_recogniser: NumberSource,
     ) -> tuple[npt.NDArray[np.bool_], npt.NDArray[np.bool_], int]:
         """Classify inter-cell borders using the anchored-clustering pipeline.
 
@@ -498,7 +499,7 @@ class InpImage:
     @staticmethod
     def _build_cage_totals(
         warped_blk: npt.NDArray[np.uint8],
-        num_recogniser: CayenneNumber,
+        num_recogniser: NumberSource,
         subres: int,
         brdrs: npt.NDArray[np.bool_],
     ) -> npt.NDArray[np.intp]:

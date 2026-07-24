@@ -39,6 +39,19 @@ class _Classifier(Protocol):
         ...
 
 
+class NumberSource(Protocol):
+    """Protocol for anything that can label a batch of digit-image crops.
+
+    CayenneNumber (the shipped PCA+RBF recogniser) and TesseractNumber both
+    satisfy this structurally, so evaluate.py and InpImage can swap between
+    them without any inheritance relationship.
+    """
+
+    def get_sums(self, nums: list[npt.NDArray[np.uint8]]) -> npt.NDArray[np.intp]:
+        """Classify a list of digit-image crops, returning one label per crop."""
+        ...
+
+
 @dataclasses.dataclass(frozen=True)
 class RBFClassifier:
     """Pure-numpy OvO RBF SVM classifier extracted from a fitted sklearn SVC.
@@ -672,7 +685,7 @@ def load_number_recogniser(model_path: Path) -> CayenneNumber:
 
 def read_classic_digits(
     warped_blk: npt.NDArray[np.uint8],
-    num_recogniser: CayenneNumber,
+    num_recogniser: NumberSource,
     subres: int,
     classic_conf: npt.NDArray[np.float64],
 ) -> npt.NDArray[np.intp]:
