@@ -977,7 +977,7 @@ function (implemented in Step 3 below) does the `AgreedSample` → raw-crop
 conversion once, in `main()` (Step 5), before either list reaches
 `train_and_evaluate`.
 
-- [ ] **Step 1: Write the failing test with a small synthetic dataset**
+- [x] **Step 1: Write the failing test with a small synthetic dataset**
 
 ```python
 # tests/test_train_combinations.py
@@ -1010,12 +1010,12 @@ def test_train_and_evaluate_runs_all_four_combinations() -> None:
         assert "same_dist_accuracy" in combo_results
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_train_combinations.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # killer_sudoku/training/train_combinations.py
@@ -1095,12 +1095,12 @@ def train_and_evaluate(
     return results
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_train_combinations.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Assemble the real pipeline end-to-end and write the report**
+- [x] **Step 5: Assemble the real pipeline end-to-end and write the report**
 
 ```python
 # Append to killer_sudoku/training/train_combinations.py
@@ -1144,7 +1144,7 @@ against a small scratch copy (a handful of images per corpus, matching the
 Tesseract plan's Task 4 pattern) to sanity-check the whole pipeline runs
 without errors before committing to the full run.
 
-- [ ] **Step 6: Review the report and record a verdict**
+- [x] **Step 6: Review the report and record a verdict**
 
 Read `docs/pca-hog-combination-results.md`. Append a short "Verdict" section
 by hand once the numbers are in: which combination has the best
@@ -1153,7 +1153,7 @@ be the same combination — that tradeoff is exactly what this experiment was
 built to surface), and a recommendation for what to wire into the shipped app
 next (a separate follow-up plan, per this plan's Global Constraints).
 
-- [ ] **Step 7: mypy/ruff/full suite, then commit**
+- [x] **Step 7: mypy/ruff/full suite, then commit**
 
 ```bash
 python -m ruff check killer_sudoku tests
