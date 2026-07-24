@@ -81,6 +81,25 @@ test('undo button is initially disabled in playing mode', async ({ page }) => {
   await expect(page.locator('#undo-btn')).toBeDisabled();
 });
 
+test('upload help disclosure starts collapsed and does not shift the primary upload buttons', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('coach_tutorial_suppressed', 'true'));
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+  const chooseBtn = page.locator('#choose-btn');
+  const before = await chooseBtn.boundingBox();
+  expect(before).not.toBeNull();
+
+  await expect(page.locator('.upload-help-body')).toBeHidden();
+
+  await page.locator('#upload-help summary').click();
+  await expect(page.locator('.upload-help-body')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'The Guardian' })).toBeVisible();
+
+  const after = await chooseBtn.boundingBox();
+  expect(after).not.toBeNull();
+  expect(after!.y).toBeCloseTo(before!.y, 0);
+});
+
 test('clicking cell then pressing digit enables undo', async ({ page }) => {
   // Uses the box-cage spec: no cells are auto-placed, so digit entry creates a user turn.
   await loadBoxCageAndConfirm(page);

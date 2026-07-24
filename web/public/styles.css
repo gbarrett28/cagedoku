@@ -330,6 +330,40 @@ button:hover:not(:disabled) {
   color: var(--text-muted);
 }
 
+#upload-help {
+  margin-top: 0.5rem;
+}
+
+#upload-help summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.upload-help-body {
+  margin-top: 0.5rem;
+}
+
+.upload-help-body h3 {
+  font-size: 0.85rem;
+  margin: 0.75rem 0 0.25rem;
+}
+
+.upload-help-body h3:first-child {
+  margin-top: 0;
+}
+
+.upload-help-list {
+  margin: 0 0 0 1.1rem;
+  padding: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.upload-help-list li {
+  margin: 0.15rem 0;
+}
+
 #upload-panel.drag-over {
   outline: 2px dashed var(--accent);
   background: color-mix(in srgb, var(--accent) 6%, var(--surface));

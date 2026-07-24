@@ -61,6 +61,34 @@
     </div>
     <p class="upload-hint">or drag &amp; drop / paste (⌘V&thinsp;/&thinsp;Ctrl+V)</p>
     <p class="upload-privacy">Images are processed on your device &mdash; nothing is uploaded. <a href="https://github.com/gbarrett28/cagedoku/blob/master/PRIVACY.md" target="_blank" rel="noopener">Privacy policy</a></p>
+    <details id="upload-help">
+      <summary>Need a puzzle, or having trouble uploading?</summary>
+      <div class="upload-help-body">
+        <h3>Popular puzzle sites</h3>
+        <ul class="upload-help-list">
+          <li>
+            <a href="https://www.theguardian.com/lifeandstyle/series/sudoku" target="_blank" rel="noopener">The Guardian</a>
+            / <a href="https://observer.co.uk/puzzles" target="_blank" rel="noopener">The Observer</a>
+            &mdash; best match, this app's puzzle reader was trained on these
+          </li>
+          <li><a href="https://sudoku.com/killer/" target="_blank" rel="noopener">sudoku.com</a> &mdash; killer + classic, adjustable difficulty</li>
+          <li><a href="https://www.killersudokuonline.com/" target="_blank" rel="noopener">killersudokuonline.com</a> &mdash; killer only, 4 difficulty levels</li>
+          <li><a href="https://www.websudoku.com/" target="_blank" rel="noopener">websudoku.com</a> &mdash; classic only, large archive</li>
+        </ul>
+        <h3>Getting it into the app</h3>
+        <ul class="upload-help-list">
+          <li>Download the puzzle image or PDF, then use &ldquo;Choose image&hellip;&rdquo; (PDFs are read directly &mdash; no photo needed)</li>
+          <li>Copy an image (e.g. right-click &rarr; Copy image) and paste it with Ctrl+V / Cmd+V anywhere on this screen</li>
+          <li>Drag and drop an image file onto this screen</li>
+          <li id="upload-help-tip-not-installed" hidden>
+            Install the app for one-tap sharing straight from Photos.
+            <button id="upload-help-install-btn" class="btn-secondary" type="button" hidden>Install</button>
+            <span id="upload-help-install-text" hidden>Add to Home Screen from your browser&rsquo;s Share menu.</span>
+          </li>
+          <li id="upload-help-tip-installed-android" hidden>Share the image to COACH directly from Photos or any app&rsquo;s Share menu.</li>
+        </ul>
+      </div>
+    </details>
     <div id="install-banner" hidden>
       <div class="install-banner-body">
         <strong class="install-banner-title">Install for the best experience</strong>
