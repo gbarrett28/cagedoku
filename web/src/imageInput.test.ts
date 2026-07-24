@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   imageFileFromClipboard, imageFileFromDrop, resolveLastHandle,
-  consumeShareInbox, fileFromLaunchParams,
+  consumeShareInbox, fileFromLaunchParams, detectUploadEnvironment,
 } from './imageInput.js';
 import type { FileSystemHandleWithPermission } from './imageInput.js';
 
@@ -165,5 +165,49 @@ describe('fileFromLaunchParams', () => {
       { getFile: () => Promise.reject(new Error('permission denied')) },
     ]);
     expect(result).toBeNull();
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+
+describe('detectUploadEnvironment', () => {
+  function fakeWindow(standaloneMatches: boolean): Window {
+    return { matchMedia: () => ({ matches: standaloneMatches }) } as unknown as Window;
+  }
+  function fakeNavigator(userAgent: string, standalone?: boolean): Navigator {
+    return { userAgent, standalone } as unknown as Navigator;
+  }
+
+  it('returns not-installed when display-mode is not standalone and navigator.standalone is unset', () => {
+    const env = detectUploadEnvironment(
+      fakeWindow(false),
+      fakeNavigator('Mozilla/5.0 (Windows NT 10.0; Win64; x64)'),
+    );
+    expect(env).toBe('not-installed');
+  });
+
+  it('returns installed-android when display-mode is standalone and the UA contains Android', () => {
+    const env = detectUploadEnvironment(
+      fakeWindow(true),
+      fakeNavigator('Mozilla/5.0 (Linux; Android 14; Pixel 8)'),
+    );
+    expect(env).toBe('installed-android');
+  });
+
+  it('returns installed-other when display-mode is standalone and the UA does not contain Android', () => {
+    const env = detectUploadEnvironment(
+      fakeWindow(true),
+      fakeNavigator('Mozilla/5.0 (Windows NT 10.0; Win64; x64)'),
+    );
+    expect(env).toBe('installed-other');
+  });
+
+  it('treats navigator.standalone === true as installed (legacy iOS Safari)', () => {
+    const env = detectUploadEnvironment(
+      fakeWindow(false),
+      fakeNavigator('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)', true),
+    );
+    expect(env).toBe('installed-other');
   });
 });

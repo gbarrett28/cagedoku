@@ -21,6 +21,22 @@ export function imageFileFromDrop(e: DragEvent): File | null {
   return (file?.type.startsWith('image/') ? file : null) ?? null;
 }
 
+
+export type UploadEnvironment = 'not-installed' | 'installed-android' | 'installed-other';
+
+/**
+ * Detects install state and platform to pick the one relevant "better way to
+ * upload" tip. Takes win/nav as parameters (rather than reading window/navigator
+ * globally) so it stays a pure, directly-testable function.
+ */
+export function detectUploadEnvironment(win: Window, nav: Navigator): UploadEnvironment {
+  const installed =
+    win.matchMedia('(display-mode: standalone)').matches ||
+    (nav as Navigator & { standalone?: boolean }).standalone === true;
+  if (!installed) return 'not-installed';
+  return /Android/.test(nav.userAgent) ? 'installed-android' : 'installed-other';
+}
+
 // ---------------------------------------------------------------------------
 // IndexedDB persistence for FileSystemFileHandle
 // ---------------------------------------------------------------------------
