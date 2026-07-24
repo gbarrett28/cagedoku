@@ -73,8 +73,15 @@ class TesseractNumber:
         )
 
         labels = [-1] * len(nums)
+        # image_to_boxes returns an empty dict (no keys at all) rather than a
+        # dict of empty lists when nothing is detected in the whole canvas.
         for ch, left, bottom, right, top in zip(
-            data["char"], data["left"], data["bottom"], data["right"], data["top"], strict=True
+            data.get("char", []),
+            data.get("left", []),
+            data.get("bottom", []),
+            data.get("right", []),
+            data.get("top", []),
+            strict=True,
         ):
             if not ch.isdigit():
                 continue

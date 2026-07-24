@@ -38,3 +38,12 @@ def test_get_sums_empty_input() -> None:
     recogniser = TesseractNumber()
     labels = recogniser.get_sums([])
     assert labels.tolist() == []
+
+
+def test_get_sums_returns_minus_one_when_nothing_detected() -> None:
+    # A blank crop makes image_to_boxes return {} (no keys at all, not a dict
+    # of empty lists) — get_sums must not KeyError on that.
+    blank = np.zeros((64, 64), dtype=np.uint8)
+    recogniser = TesseractNumber()
+    labels = recogniser.get_sums([blank])
+    assert labels.tolist() == [-1]

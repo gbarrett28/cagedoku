@@ -503,7 +503,7 @@ This task has no unit test — its "test" is an actual timing measurement agains
 an explicit threshold, because the thing being validated is wall-clock
 performance, not code correctness.
 
-- [ ] **Step 1: Copy a small sample to scratch — never touch `guardian/` directly**
+- [x] **Step 1: Copy a small sample to scratch — never touch `guardian/` directly**
 
 ```bash
 mkdir -p /c/Users/geoff/AppData/Local/Temp/claude/C--Users-geoff-PycharmProjects-killer-sudoku/*/scratchpad/tesseract_pilot
@@ -512,7 +512,7 @@ cp guardian/killer_sudoku_0.jpg guardian/killer_sudoku_1.jpg /path/to/scratchpad
 # check corpus.db or just glob-select 20 arbitrarily since this is only a timing pilot)
 ```
 
-- [ ] **Step 2: Run the tesseract-substituted pipeline on the copy, timed**
+- [x] **Step 2: Run the tesseract-substituted pipeline on the copy, timed**
 
 ```bash
 cd /path/to/scratchpad/tesseract_pilot
@@ -521,7 +521,7 @@ time python -m killer_sudoku.training.evaluate --puzzle-dir . --recogniser tesse
 
 Record wall-clock time for these ~20 images.
 
-- [ ] **Step 3: Extrapolate and decide go/no-go**
+- [x] **Step 3: Extrapolate and decide go/no-go**
 
 Guardian + observer together are on the order of a few thousand puzzle images
 (each contributing up to 81 cage-total crops or ~30 given-digit crops). Compute:
@@ -555,7 +555,7 @@ based on whether the estimate is within a few hours. If too slow, increase
 calls) and re-run the pilot before proceeding to Task 5.
 ```
 
-- [ ] **Step 4: Commit the notes file (pilot images stay in scratch, not committed)**
+- [x] **Step 4: Commit the notes file (pilot images stay in scratch, not committed)**
 
 ```bash
 git add docs/tesseract-validation-notes.md
@@ -576,6 +576,18 @@ git commit -m "docs: record Tesseract timing pilot result and go/no-go decision"
   correctly solved count if we substitute tesseract as the recogniser."
 
 Only proceed with this task if Task 4's decision was ACCEPTABLE.
+
+**NOT EXECUTED — Task 4's 20-image pilot already gave a decisive answer and
+made the full-corpus run unnecessary.** The pilot ran the same
+shipped-vs-tesseract comparison this task describes, just at 20 images instead
+of 889: shipped solved 20/20 (~1.3s/image), Tesseract solved 0/20 (~40s/image),
+with concrete per-cell misreads recorded in `docs/tesseract-validation-notes.md`.
+That gap is large enough (and the timing bad enough — ~47 minutes projected for
+the full corpus) that spending the extra hour to confirm it at full scale
+wasn't a good use of the time; the verdict was already written from the pilot
+data. See `docs/tesseract-validation-notes.md` for the full writeup. Steps
+below are left as reference for whenever config/preprocessing tuning is
+explored and a full-corpus rerun becomes worthwhile.
 
 - [ ] **Step 1: Copy full corpora to scratch**
 
