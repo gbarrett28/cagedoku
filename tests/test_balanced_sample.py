@@ -11,6 +11,7 @@ def _fake_sample(label: int, idx: int) -> AgreedSample:
         corpus="guardian", puzzle_type="killer", row=0, col=0,
         rect=np.zeros((4, 2), dtype=np.float32), label=label,
         source_path=Path(f"guardian/fake_{idx}.jpg"),
+        crop=np.zeros((64, 64), dtype=np.uint8),
     )
 
 

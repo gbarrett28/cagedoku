@@ -16,3 +16,4 @@ def test_build_agreement_pool_only_includes_agreeing_clean_puzzles(tmp_path: Pat
         assert s.puzzle_type in {"killer", "classic"}
         assert 0 <= s.label <= 9
         assert s.rect.shape == (4, 2)
+        assert s.crop.size > 0

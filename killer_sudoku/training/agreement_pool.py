@@ -35,6 +35,11 @@ class AgreedSample:
     rect: npt.NDArray[np.float32]
     label: int
     source_path: Path
+    # Extracted directly from warped_blk at pool-build time -- rect's
+    # coordinates are in the warped grid's coordinate space, not the raw
+    # source image's, so this crop cannot be correctly re-derived later from
+    # source_path alone.
+    crop: npt.NDArray[np.uint8]
 
 
 def _make_hog_recogniser() -> HogNumber:
@@ -62,6 +67,11 @@ def build_agreement_pool(corpus_dir: Path, corpus_name: str) -> list[AgreedSampl
     pca = InpImage.make_num_recogniser()
     hog = _make_hog_recogniser()
 
+    def extract_crop(warped_blk: npt.NDArray[np.uint8], rect: npt.NDArray[np.float32]) -> npt.NDArray[np.uint8]:
+        x0, y0 = float(rect[:, 0].min()), float(rect[:, 1].min())
+        x1, y1 = float(rect[:, 0].max()), float(rect[:, 1].max())
+        return np.asarray(warped_blk[int(y0) : int(y1), int(x0) : int(x1)], dtype=np.uint8)
+
     samples: list[AgreedSample] = []
     for f in sorted(corpus_dir.glob("*.jpg")):
         inp_pca = InpImage(f, config, pca)
@@ -86,8 +96,11 @@ def build_agreement_pool(corpus_dir: Path, corpus_name: str) -> list[AgreedSampl
             rects = locate_classic_digit_rects(inp_pca.warped_blk, config.subres, given_pca > 0)
             for dr in rects:
                 label = int(given_pca[dr.row, dr.col])
+                crop = extract_crop(inp_pca.warped_blk, dr.rect)
+                if crop.size == 0:
+                    continue
                 samples.append(
-                    AgreedSample(corpus_name, "classic", dr.row, dr.col, dr.rect, label, f)
+                    AgreedSample(corpus_name, "classic", dr.row, dr.col, dr.rect, label, f, crop)
                 )
         else:
             totals_pca, totals_hog = inp_pca.info.cage_totals, inp_hog.info.cage_totals
@@ -109,7 +122,12 @@ def build_agreement_pool(corpus_dir: Path, corpus_name: str) -> list[AgreedSampl
                     continue
                 cell_rects.sort(key=lambda dr: float(dr.rect[:, 0].min()))
                 for dr, digit_char in zip(cell_rects, total_str, strict=True):
+                    crop = extract_crop(inp_pca.warped_blk, dr.rect)
+                    if crop.size == 0:
+                        continue
                     samples.append(
-                        AgreedSample(corpus_name, "killer", row, col, dr.rect, int(digit_char), f)
+                        AgreedSample(
+                            corpus_name, "killer", row, col, dr.rect, int(digit_char), f, crop
+                        )
                     )
     return samples

@@ -10,7 +10,6 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-import cv2
 import numpy as np
 import numpy.typing as npt
 
@@ -22,15 +21,6 @@ from killer_sudoku.training.balanced_sample import balanced_split
 from killer_sudoku.training.synthetic_holdout import generate_cross_font_holdout
 
 _WIN_SIZE = 64
-
-
-def extract_raw_crop(sample: AgreedSample) -> npt.NDArray[np.uint8]:
-    """Load sample.source_path and crop out the bounding region of sample.rect."""
-    img = cv2.imread(str(sample.source_path), cv2.IMREAD_GRAYSCALE)
-    assert img is not None, f"could not read {sample.source_path}"
-    x0, y0 = sample.rect[:, 0].min(), sample.rect[:, 1].min()
-    x1, y1 = sample.rect[:, 0].max(), sample.rect[:, 1].max()
-    return np.asarray(img[int(y0) : int(y1), int(x0) : int(x1)], dtype=np.uint8)
 
 
 def _warp_all(crops: list[npt.NDArray[np.uint8]], warp_fn: Any) -> npt.NDArray[np.uint8]:
@@ -130,8 +120,8 @@ def main() -> None:
             all_samples.extend(build_agreement_pool(scratch_dir, corpus_name))
 
         split = balanced_split(all_samples, per_digit=100, holdout_fraction=0.2, seed=0)
-        train = [(s.label, extract_raw_crop(s)) for s in split.train]
-        holdout = [(s.label, extract_raw_crop(s)) for s in split.holdout]
+        train = [(s.label, s.crop) for s in split.train]
+        holdout = [(s.label, s.crop) for s in split.holdout]
 
     cross_font = generate_cross_font_holdout()
 
