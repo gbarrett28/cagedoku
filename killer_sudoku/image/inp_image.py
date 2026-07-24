@@ -157,6 +157,10 @@ class InpImage:
             # Cached data is always killer (classic puzzles are not cached).
             self.puzzle_type: Literal["killer", "classic"] = "killer"
             self.given_digits: npt.NDArray[np.intp] | None = None
+            # The cached path never recomputes the binary threshold used to find
+            # digit contours (only the final cage_totals are cached) -- no crop
+            # rects can be recovered here, only the loaded labels.
+            self.warped_blk: npt.NDArray[np.uint8] | None = None
             return
 
         self.info = PicInfo()
@@ -227,6 +231,13 @@ class InpImage:
                 dtype=np.uint8,
             )
 
+        # Exposed so callers can locate the exact digit crops that produced
+        # this read (e.g. for building an independent training sample from
+        # agreeing recognisers) -- reassigned below if the adaptive-threshold
+        # fallback triggers, so this always reflects the binary image actually
+        # used for the final cage_totals/given_digits read.
+        self.warped_blk = warped_blk
+
         # Detect puzzle type before running (potentially expensive) border detection.
         _cage_conf, classic_conf = scan_cells(warped_gry, subres, config.cell_scan)
         self.puzzle_type = detect_puzzle_type(
@@ -295,6 +306,7 @@ class InpImage:
                     ),
                     dtype=np.uint8,
                 )
+                self.warped_blk = warped_blk
                 cage_totals = self._build_cage_totals(
                     warped_blk, num_recogniser, subres, self.info.brdrs
                 )

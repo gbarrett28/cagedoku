@@ -35,14 +35,16 @@ reimplementing:
   from `web/train_recogniser.py` (a Python script) is in scope; nothing under
   `web/src/` is touched. Wiring a winning combination into the shipped app is
   a separate follow-up plan once we know which one wins.
-- Never write into `guardian/`/`observer/` directly — the crop-locating and
-  agreement-checking tasks only *read* those directories (`InpImage(...,
-  rework=False)` uses cached `.jpk` where present; where it doesn't, it reads
-  and processes in memory without persisting `.jpk`/`status.pkl` changes back
-  unless `config.rework=True` is explicitly passed. Do not pass
-  `rework=True` against the live corpus directories in this plan — always
-  copy to scratch first if a fresh read is needed, matching the practice
-  established in the Tesseract validation gate).
+- Never write into `guardian/`/`observer/` directly. **Task 3 must run with
+  `config.rework=True`, always against a scratch copy, never the live
+  directories** — the cached `.jpk` path only stores final `cage_totals`, not
+  the digit crop rects needed to build new training samples, so cache-hit
+  reads are useless for this plan's purpose regardless of the correctness
+  question. `rework=True` also re-writes `.jpk`/`status.pkl` in the directory
+  it's pointed at, which is exactly why it must never point at `guardian/`/
+  `observer/` directly — copy to scratch first, matching the practice
+  established (and the mistake made and fixed) in the Tesseract validation
+  gate.
 - All new/modified `.py` files must pass `ruff check` and `mypy` per
   `pyproject.toml`.
 - `killer_sudoku` cage-total digits span classes 0-9; classic given digits
@@ -57,6 +59,17 @@ reimplementing:
   `letterboxWarp`/`HogRecogniser.warp_from_rect`), confirmed during this
   plan's design discussion — the open question was whether that was already
   true, not a missing step to add.
+- **`InpImage` now exposes `self.warped_blk`** (`npt.NDArray[np.uint8] | None`
+  — `None` only on the cache-hit path, which never recomputes it). This was a
+  small, additive production-code change made while starting Task 2: the
+  binary threshold used to find digit contours was computed as a local
+  variable and discarded, including through an adaptive-threshold fallback
+  that can silently swap which binary image was actually used — recomputing
+  it independently in a separate module risked misaligning with whichever
+  version `InpImage` actually used to produce the labels being attributed to
+  each rect. Exposing the real value used is safer than duplicating the
+  grid-locate/threshold/warp/rotation-correct sequence in parallel code.
+  Verified: `ruff`, `mypy`, and the full existing test suite all still pass.
 
 ---
 
@@ -367,6 +380,7 @@ afterward — without touching the production functions (per this repo's
 
 ```python
 # tests/test_digit_rects.py
+import shutil
 from pathlib import Path
 
 from killer_sudoku.image.config import ImagePipelineConfig
@@ -374,26 +388,23 @@ from killer_sudoku.image.inp_image import InpImage
 from killer_sudoku.training.digit_rects import locate_cage_total_rects
 
 
-def test_locate_cage_total_rects_matches_production_digit_count() -> None:
-    config = ImagePipelineConfig(puzzle_dir=Path("guardian"), rework=False)
-    inp = InpImage(Path("guardian/killer_sudoku_0.jpg"), config, InpImage.make_num_recogniser())
+def test_locate_cage_total_rects_matches_production_digit_count(tmp_path: Path) -> None:
+    # rework=True is required to get a non-None warped_blk (the cache-hit path
+    # never recomputes it) -- copy to tmp_path first, never point rework=True
+    # at the live guardian/ directory (it re-writes .jpk there).
+    shutil.copy(Path("guardian/killer_sudoku_0.jpg"), tmp_path / "killer_sudoku_0.jpg")
+    config = ImagePipelineConfig(puzzle_dir=tmp_path, rework=True)
+    inp = InpImage(tmp_path / "killer_sudoku_0.jpg", config, InpImage.make_num_recogniser())
     assert inp.spec_error is None
+    assert inp.warped_blk is not None
 
-    rects = locate_cage_total_rects(inp.warped_img, config.subres)
+    rects = locate_cage_total_rects(inp.warped_blk, config.subres)
     # Every non-zero cage total's digit count should have a matching rect count;
     # cross-check the total number of rects against the sum of digit-string
     # lengths implied by the production-read cage_totals grid.
     expected_digit_count = sum(len(str(t)) for t in inp.info.cage_totals.flatten() if t > 0)
     assert len(rects) == expected_digit_count
 ```
-
-(`inp.warped_img` — confirm this attribute name matches `InpImage.__init__`;
-it was seen as `self.warped_img` in that constructor during earlier work this
-session. If `locate_cage_total_rects` needs the *thresholded binary* image
-rather than the raw warped grayscale, use `warped_blk`-equivalent instead —
-check which one `_build_cage_totals` actually receives before finalizing this
-test, since production code reads `self.info.cage_totals` from a binary
-`warped_blk`, not `warped_img` directly.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -517,11 +528,10 @@ def locate_classic_digit_rects(
     return out
 ```
 
-- [ ] **Step 4: Run test to verify it passes, adjusting for the real `InpImage` attribute**
+- [ ] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_digit_rects.py -v`
-Expected: PASS once Step 1's `warped_img`-vs-`warped_blk` question is resolved
-against the actual `InpImage` source.
+Expected: PASS
 
 - [ ] **Step 5: mypy/ruff/full suite, then commit**
 
@@ -633,14 +643,22 @@ def _make_hog_recogniser() -> HogNumber:
 
 
 def build_agreement_pool(corpus_dir: Path, corpus_name: str) -> list[AgreedSample]:
-    config = ImagePipelineConfig(puzzle_dir=corpus_dir, rework=False)
+    """Build the agreement pool from corpus_dir.
+
+    corpus_dir MUST be a scratch copy, never guardian/ or observer/ directly
+    -- rework=True is required (the cache-hit path never recomputes
+    warped_blk, so cached reads can't yield crop rects at all), and
+    rework=True re-writes .jpk/status.pkl in whatever directory it's pointed
+    at.
+    """
+    config = ImagePipelineConfig(puzzle_dir=corpus_dir, rework=True)
     pca = InpImage.make_num_recogniser()
     hog = _make_hog_recogniser()
 
     samples: list[AgreedSample] = []
     for f in sorted(corpus_dir.glob("*.jpg")):
         inp_pca = InpImage(f, config, pca)
-        if inp_pca.spec_error is not None:
+        if inp_pca.spec_error is not None or inp_pca.warped_blk is None:
             continue
         inp_hog = InpImage(f, config, hog)
         if inp_hog.spec_error is not None:
@@ -654,7 +672,7 @@ def build_agreement_pool(corpus_dir: Path, corpus_name: str) -> list[AgreedSampl
             given_pca, given_hog = inp_pca.given_digits, inp_hog.given_digits
             if given_pca is None or given_hog is None or not np.array_equal(given_pca, given_hog):
                 continue
-            rects = locate_classic_digit_rects(inp_pca.warped_img, config.subres, given_pca > 0)
+            rects = locate_classic_digit_rects(inp_pca.warped_blk, config.subres, given_pca > 0)
             for dr in rects:
                 label = int(given_pca[dr.row, dr.col])
                 samples.append(AgreedSample(corpus_name, "classic", dr.row, dr.col, dr.rect, label, f))
@@ -662,7 +680,7 @@ def build_agreement_pool(corpus_dir: Path, corpus_name: str) -> list[AgreedSampl
             totals_pca, totals_hog = inp_pca.info.cage_totals, inp_hog.info.cage_totals
             if not np.array_equal(totals_pca, totals_hog):
                 continue
-            rects = locate_cage_total_rects(inp_pca.warped_img, config.subres)
+            rects = locate_cage_total_rects(inp_pca.warped_blk, config.subres)
             # Group rects by (row, col) -- a cage total can be multi-digit, so
             # a cell may have several rects. Pair them left-to-right against
             # the cage total's characters, same convention bootstrap_numerals
