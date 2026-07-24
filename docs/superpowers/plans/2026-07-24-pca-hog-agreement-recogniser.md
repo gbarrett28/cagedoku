@@ -737,7 +737,7 @@ git commit -m "feat: build PCA/HOG agreement + clean-solve digit sample pool"
 - Consumes: `AgreedSample` (Task 3).
 - Produces: `SplitDataset` dataclass (`train: list[AgreedSample], holdout: list[AgreedSample]`). `balanced_split(samples: list[AgreedSample], per_digit: int = 100, holdout_fraction: float = 0.2, seed: int = 0) -> SplitDataset`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_balanced_sample.py
@@ -776,12 +776,12 @@ def test_balanced_split_is_deterministic_given_seed() -> None:
     assert [s.source_path for s in a.train] == [s.source_path for s in b.train]
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_balanced_sample.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # killer_sudoku/training/balanced_sample.py
@@ -822,12 +822,12 @@ def balanced_split(
     return SplitDataset(train=train, holdout=holdout)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_balanced_sample.py -v`
 Expected: PASS
 
-- [ ] **Step 5: mypy/ruff/full suite, then commit**
+- [x] **Step 5: mypy/ruff/full suite, then commit**
 
 ```bash
 python -m ruff check killer_sudoku tests
