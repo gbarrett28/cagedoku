@@ -65,7 +65,7 @@ def create_app(config: CoachConfig | None = None) -> FastAPI:
 
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=[f"http://{config.host}:{config.port}"],
         allow_methods=["*"],
         allow_headers=["*"],
     )

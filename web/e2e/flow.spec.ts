@@ -309,6 +309,33 @@ test('killer playing: inspect-cage and virtual-cage buttons visible from start',
   await expect(page.locator('#virtual-cage-btn')).toBeVisible();
 });
 
+test('killer playing: opening cage inspector does not collapse the playing-mode layout', async ({ page }) => {
+  // Regression test for issue #171: renderCageInspector() used to set
+  // playing-actions.hidden = true directly, which breaks body:has(#playing-actions:not([hidden]))
+  // -- the selector driving the entire playing-mode flex/grid layout chain -- collapsing
+  // #canvas-col from its full-viewport size down to a cramped default-flow size.
+  await loadBoxCageAndConfirm(page);
+  const canvasCol = page.locator('#canvas-col');
+  const before = await canvasCol.boundingBox();
+  expect(before).not.toBeNull();
+
+  await page.locator('#inspect-cage-btn').click();
+  const canvas = page.locator('#grid-canvas');
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  const cellSize = box!.width / 9;
+  await canvas.click({ position: { x: cellSize * 0.5, y: cellSize * 0.5 } });
+  await expect(page.locator('#cage-inspector')).not.toBeEmpty();
+
+  const after = await canvasCol.boundingBox();
+  expect(after).not.toBeNull();
+  expect(after!.width).toBeCloseTo(before!.width, 0);
+  expect(after!.height).toBeCloseTo(before!.height, 0);
+  // Visually hidden via the CSS class, not the hidden attribute.
+  await expect(page.locator('#playing-actions')).toHaveJSProperty('hidden', false);
+  await expect(page.locator('#playing-actions')).not.toBeVisible();
+});
+
 test('mode-toggle pill visible in killer playing mode', async ({ page }) => {
   await loadBoxCageAndConfirm(page);
   await expect(page.locator('#mode-toggle')).toBeVisible();

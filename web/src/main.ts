@@ -980,7 +980,10 @@ function renderCageInspector(label: string): void {
     clearChildren(inspector);
     el<HTMLElement>('inspector-heading').textContent = `Cage ${label}`;
     el<HTMLElement>('inspector-col').hidden = false;
-    el<HTMLElement>('playing-actions').hidden = true;
+    // Do NOT set playing-actions.hidden here — body:has(#playing-actions:not([hidden]))
+    // drives the whole playing-mode layout chain (see styles.css). Visual hiding is
+    // done by the .inspector-open class instead (#side-panel.inspector-open #playing-actions
+    // { display: none }), matching how virtual-cage mode already does it.
     el<HTMLElement>('side-panel').classList.add('inspector-open');
     renderSolutionList(
       inspector,
