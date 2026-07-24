@@ -71,7 +71,7 @@ reimplementing:
 - Consumes: `RBFClassifier` from `killer_sudoku.image.number_recognition` (reused as-is for the `classifier_type == 'rbf'` case — it's already a generic OvO-RBF-SVM predictor over raw feature vectors, not PCA-specific).
 - Produces: `LinearOvOClassifier` class with `.predict(x: npt.NDArray[np.float64]) -> npt.NDArray[np.intp]` (mirrors TS `linearPredict`/`ovoVote`). `load_hog_classifier(bin_path: Path, json_path: Path) -> tuple[HOGParams, LinearOvOClassifier | RBFClassifier, float]` returning `(hog_params, classifier, confidence_threshold)`. `HogNumber` class satisfying `NumberSource` (`get_sums(nums: list[npt.NDArray[np.uint8]]) -> npt.NDArray[np.intp]`), constructed from a loaded classifier + a `warp_from_rect`-compatible geometry function.
 
-- [ ] **Step 1: Recover the model files from git history**
+- [x] **Step 1: Recover the model files from git history**
 
 ```bash
 git show 99cbb70:web/public/num_recogniser.bin > killer_sudoku/data/hog_recogniser_99cbb70.bin
@@ -85,7 +85,7 @@ per the commit message's "linear OVO boundary" and "LinearSVC" references):
 python -c "import json; print(json.load(open('killer_sudoku/data/hog_recogniser_99cbb70.json'))['classifier_type'])"
 ```
 
-- [ ] **Step 2: Write the failing test for the OvO linear classifier**
+- [x] **Step 2: Write the failing test for the OvO linear classifier**
 
 ```python
 # tests/test_hog_model_loader.py
@@ -121,12 +121,12 @@ def test_linear_ovo_classifier_two_class_separable() -> None:
 OvO vote by hand is fiddly — Step 4's real-data validation is the test that
 actually matters for correctness.)
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_hog_model_loader.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 4: Implement the loader and classifier**
+- [x] **Step 4: Implement the loader and classifier**
 
 ```python
 # killer_sudoku/training/hog_model_loader.py
@@ -266,12 +266,12 @@ class HogNumber:
         return self._classifier.predict(features)
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_hog_model_loader.py -v`
 Expected: PASS
 
-- [ ] **Step 6: Validate against the documented historical accuracy floor**
+- [x] **Step 6: Validate against the documented historical accuracy floor**
 
 This is the step that actually matters — confirming the recovered model,
 loaded through this new Python path, reproduces its own documented accuracy
@@ -329,7 +329,7 @@ lower (e.g. under 90%), stop and debug the loader/feature-extraction before
 proceeding to Task 2 — a faithfulness failure here invalidates everything
 downstream.
 
-- [ ] **Step 7: Run mypy, ruff, full fast suite**
+- [x] **Step 7: Run mypy, ruff, full fast suite**
 
 ```bash
 python -m ruff check killer_sudoku tests
@@ -337,7 +337,7 @@ python -m mypy . --ignore-missing-imports
 python -m pytest tests -q
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add killer_sudoku/data/hog_recogniser_99cbb70.bin killer_sudoku/data/hog_recogniser_99cbb70.json killer_sudoku/training/hog_model_loader.py tests/test_hog_model_loader.py
