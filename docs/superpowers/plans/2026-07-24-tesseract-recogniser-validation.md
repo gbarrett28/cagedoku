@@ -61,7 +61,7 @@ This task is a pure typing refactor (no behavior change): it lets later tasks pa
 a `TesseractNumber` anywhere a `CayenneNumber` currently goes, without touching
 `InpImage`'s internals (which already only ever call `.get_sums(...)`).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_number_source_protocol.py
@@ -89,12 +89,12 @@ def test_arbitrary_class_satisfies_number_source_structurally() -> None:
     assert result.tolist() == [0]
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_number_source_protocol.py -v`
 Expected: FAIL with `ImportError: cannot import name 'NumberSource'`
 
-- [ ] **Step 3: Add the Protocol and retype call sites**
+- [x] **Step 3: Add the Protocol and retype call sites**
 
 In `killer_sudoku/image/number_recognition.py`, immediately after the existing
 `_Classifier` Protocol (around line 38), add:
@@ -127,12 +127,12 @@ add `NumberSource` to its import from `number_recognition`. Leave
 `collect_status`'s local `num_recogniser = InpImage.make_num_recogniser()` as-is
 for now — Task 3 changes how it's constructed.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_number_source_protocol.py -v`
 Expected: PASS (2 passed)
 
-- [ ] **Step 5: Run mypy and the full fast test suite to confirm no regressions**
+- [x] **Step 5: Run mypy and the full fast test suite to confirm no regressions**
 
 Run: `mypy killer_sudoku`
 Expected: no new errors (structural Protocol typing, all existing concrete
@@ -141,7 +141,7 @@ Expected: no new errors (structural Protocol typing, all existing concrete
 Run: `python -m pytest tests -x -q`
 Expected: all existing tests still pass (no behavior changed, only type hints)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add killer_sudoku/image/number_recognition.py killer_sudoku/image/inp_image.py killer_sudoku/training/evaluate.py tests/test_number_source_protocol.py
