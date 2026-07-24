@@ -562,7 +562,7 @@ always breaks solvability outright; and (b) the two runs' `cage_totals`/
 `given_digits` arrays are identical element-wise — the "two independent
 models agree" half.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_agreement_pool.py
@@ -587,12 +587,12 @@ def test_build_agreement_pool_only_includes_agreeing_clean_puzzles(tmp_path: Pat
         assert s.rect.shape == (4, 2)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_agreement_pool.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # killer_sudoku/training/agreement_pool.py
@@ -629,7 +629,15 @@ class AgreedSample:
 
 
 def _make_hog_recogniser() -> HogNumber:
-    from web.train_recogniser import HogRecogniser  # sys.path already patched by hog_model_loader
+    from train_recogniser import HogRecogniser  # sys.path patched by hog_model_loader import above
+
+    # Implementation note: patch sys.path directly in this module too (don't
+    # rely on hog_model_loader's own patch having already run) -- ruff's
+    # import-sort auto-fix will happily reorder `from train_recogniser import
+    # ...` before `from killer_sudoku.training.hog_model_loader import ...`
+    # alphabetically, silently breaking the runtime ordering dependency. A
+    # bare `sys.path.insert(...)` statement between import blocks stops ruff
+    # from merging/reordering across it.
 
     hog_params, classifier, _threshold = load_hog_classifier(
         Path("killer_sudoku/data/hog_recogniser_99cbb70.bin"),
@@ -702,12 +710,12 @@ def build_agreement_pool(corpus_dir: Path, corpus_name: str) -> list[AgreedSampl
     return samples
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_agreement_pool.py -v`
 Expected: PASS
 
-- [ ] **Step 5: mypy/ruff/full suite, then commit**
+- [x] **Step 5: mypy/ruff/full suite, then commit**
 
 ```bash
 python -m ruff check killer_sudoku tests
