@@ -14,7 +14,7 @@ import numpy as np
 import numpy.typing as npt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "web"))
-from train_recogniser import HogRecogniser, PcaRbfRecogniser
+from train_recogniser import DEFAULT_DITHER, HogRecogniser, PcaRbfRecogniser, dither_batch
 
 from killer_sudoku.training.agreement_pool import AgreedSample, build_agreement_pool
 from killer_sudoku.training.balanced_sample import balanced_split
@@ -61,8 +61,8 @@ def train_and_evaluate(
     train: list[tuple[int, npt.NDArray[np.uint8]]],
     holdout: list[tuple[int, npt.NDArray[np.uint8]]],
     cross_font: list[tuple[int, npt.NDArray[np.uint8]]],
+    dither_variants: int = DEFAULT_DITHER,
 ) -> dict[str, dict[str, float]]:
-    train_labels = np.array([label for label, _ in train], dtype=np.int64)
     train_crops = [crop for _, crop in train]
     holdout_labels = np.array([label for label, _ in holdout], dtype=np.int64)
     holdout_crops = [crop for _, crop in holdout]
@@ -79,8 +79,19 @@ def train_and_evaluate(
     results: dict[str, dict[str, float]] = {}
     for name, (recogniser, warp_fn) in combinations.items():
         warped_train = _warp_all(train_crops, warp_fn)
-        features = recogniser.extract_features(warped_train)
-        model = recogniser.fit(features, train_labels, None)
+        # Dither training data only -- never the holdouts, which must stay
+        # unaugmented for the evaluation to mean anything. Matches the
+        # historical training pipeline's use of dither_batch to multiply a
+        # small set of real crops into a denser training distribution;
+        # skipping this was found to be a major contributor to poor
+        # same-distribution accuracy in the first (undithered) run.
+        rng = np.random.default_rng(0)
+        samples_with_weight = [(label, img, 1.0) for (label, _), img in zip(train, warped_train, strict=True)]
+        dithered_imgs, dithered_labels, _weights = dither_batch(samples_with_weight, dither_variants, rng)
+        dithered_labels_arr = np.array(dithered_labels, dtype=np.int64)
+
+        features = recogniser.extract_features(dithered_imgs)
+        model = recogniser.fit(features, dithered_labels_arr, None)
 
         results[name] = {
             "same_dist_accuracy": _accuracy(
