@@ -28,7 +28,7 @@ import {
 } from './cellScan.js';
 import type { GrayImage } from './borderClustering.js';
 import {
-  recognise, splitNum, contourHier, getNumContours, readClassicDigits,
+  splitNum, contourHier, getNumContours, readClassicDigits, activeRecogniser,
 } from './numberRecognition.js';
 import type { NumRecogniser, ContourInfo, BRect } from './numberRecognition.js';
 import { validateCageLayout, repairCageTotals } from './validation.js';
@@ -113,7 +113,6 @@ export interface ParseResult {
 export async function parsePuzzleImage(
   cv: Cv,
   file: File,
-  rec: NumRecogniser,
   config: ImagePipelineConfig = defaultImagePipelineConfig(),
   _splitRec?: NumRecogniser,
 ): Promise<ParseResult> {
@@ -239,7 +238,7 @@ export async function parsePuzzleImage(
   // --- Classic path ---
   if (puzzleType === 'classic') {
     const { digits: givenDigits, thumbs: classicThumbs, recognitions: classicRecognitions } =
-      readClassicDigits(cv, warpedBlkMat, rec, subres, classicConf);
+      readClassicDigits(cv, warpedBlkMat, subres, classicConf);
 
     warpedGryMat.delete(); warpedBlkMat.delete();
 
@@ -288,7 +287,7 @@ export async function parsePuzzleImage(
   try {
     const brdrs = buildBrdrs(initialBorderX, initialBorderY);
     lastCageTotalsResult = buildCageTotals(
-      cv, warpedBlkMat, rec, subres, brdrs,
+      cv, warpedBlkMat, subres, brdrs,
     );
     ({ cageTotals, cellThumbs, mergedThumbs } = lastCageTotalsResult);
   } catch (e) {
@@ -332,7 +331,7 @@ export async function parsePuzzleImage(
     try {
       const brdrs2 = buildBrdrs(bestBorderX, bestBorderY);
       lastCageTotalsResult = buildCageTotals(
-        cv, warpedBlkMat, rec, subres, brdrs2,
+        cv, warpedBlkMat, subres, brdrs2,
       );
       ({ cageTotals, cellThumbs, mergedThumbs } = lastCageTotalsResult);
 
@@ -347,7 +346,7 @@ export async function parsePuzzleImage(
         );
         try {
           lastCageTotalsResult = buildCageTotals(
-            cv, adaptiveBlk, rec, subres, brdrs2,
+            cv, adaptiveBlk, subres, brdrs2,
           );
           ({ cageTotals, cellThumbs, mergedThumbs } = lastCageTotalsResult);
           fallbackUsed = true;
@@ -364,7 +363,7 @@ export async function parsePuzzleImage(
   // puzzles (cheap no-op), but captures given digits if OCR misdetected the type so that
   // the user can switch to Classic via the type dropdown and still get a correct solution.
   const { digits: givenDigits, recognitions: classicRecognitions } =
-    readClassicDigits(cv, warpedBlkMat, rec, subres, classicConf);
+    readClassicDigits(cv, warpedBlkMat, subres, classicConf);
 
   warpedGryMat.delete();
   warpedBlkMat.delete();
@@ -463,7 +462,6 @@ export interface CageTotalsResult {
 export function buildCageTotals(
   cv: Cv,
   warpedBlk: OpenCVMat,
-  rec: NumRecogniser,
   subres: number,
   brdrs: Brdrs,
   includeTree?: boolean,
@@ -532,7 +530,7 @@ export function buildCageTotals(
     for (let col = 0; col < 9; col++) {
       const sums = numPixels[row]![col]!;
       if (sums !== null) {
-        const ntrs = recognise(rec, sums);
+        const ntrs = activeRecogniser().recognise(sums);
         if (ntrs.length > 4) {
           throw new ProcessingError(
             `Too many digits (${ntrs.length}) in cell (row=${row},col=${col})`,

@@ -19,7 +19,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { loadNumRecogniser, recognise } from './numberRecognition.js';
+import { loadNumRecogniser, PcaRbfRecogniser, HogRecogniser, activeRecogniser } from './numberRecognition.js';
 import type { NumRecogniser } from './numberRecognition.js';
 
 // ---------------------------------------------------------------------------
@@ -37,12 +37,20 @@ interface TrainingFile {
 
 let rec: NumRecogniser;
 let samples: TrainingSample[];
+let KNOWN_FAILURE_SAMPLE_HASHES: ReadonlySet<string>;
 
 beforeAll(() => {
   const pub = join(process.cwd(), 'public');
   const bin = readFileSync(join(pub, 'num_recogniser.bin'));
   const manifest = JSON.parse(readFileSync(join(pub, 'num_recogniser.json'), 'utf-8'));
   rec = loadNumRecogniser(bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength), manifest);
+
+  const hashesFile = rec instanceof HogRecogniser
+    ? 'known-model-failure-hashes-hog.json'
+    : 'known-model-failure-hashes-pca_rbf.json';
+  KNOWN_FAILURE_SAMPLE_HASHES = new Set(
+    JSON.parse(readFileSync(join(process.cwd(), hashesFile), 'utf-8')) as string[],
+  );
 
   const trainFile: TrainingFile = JSON.parse(
     readFileSync(join(process.cwd(), 'browser_train.json'), 'utf-8'),
@@ -60,7 +68,7 @@ function sha256(pixels: number[]): string {
 
 function runOnSamples(subset: TrainingSample[]): { correct: number; total: number; errors: string[] } {
   const imgs = subset.map(s => new Uint8Array(s.pixels));
-  const results = recognise(rec, imgs);
+  const results = rec.recognise(imgs);
   let correct = 0;
   const errors: string[] = [];
   for (let i = 0; i < subset.length; i++) {
@@ -76,7 +84,7 @@ function runOnSamples(subset: TrainingSample[]): { correct: number; total: numbe
 /** Failures whose content hash is not in KNOWN_FAILURE_SAMPLE_HASHES -- a regression. */
 function unexpectedFailures(subset: TrainingSample[]): string[] {
   const imgs = subset.map(s => new Uint8Array(s.pixels));
-  const results = recognise(rec, imgs);
+  const results = rec.recognise(imgs);
   const unexpected: string[] = [];
   for (let i = 0; i < subset.length; i++) {
     if (results[i]!.label !== subset[i]!.digit) {
@@ -122,15 +130,10 @@ function unexpectedFailures(subset: TrainingSample[]): string[] {
 // this one is "whatever the currently-shipped model happens to fail on" and
 // must be regenerated whenever the shipped model changes. Conflating the two
 // previously meant updating one silently changed the other's meaning.
-const KNOWN_FAILURE_SAMPLE_HASHES: ReadonlySet<string> = new Set(
-  JSON.parse(readFileSync(join(process.cwd(), 'known-model-failure-hashes.json'), 'utf-8')) as string[],
-);
-
 describe('digit recogniser — TypeScript PCA+RBF inference on training data', () => {
   it('loads model without error', () => {
     expect(rec).toBeDefined();
-    expect(rec.pca).toBeDefined();
-    expect(rec.classifier).toBeDefined();
+    expect(rec).toBeInstanceOf(PcaRbfRecogniser);
   });
 
   it('achieves at least total - knownFailures.size accuracy, with no unexpected failures', () => {
@@ -173,7 +176,7 @@ describe('digit recogniser — TypeScript PCA+RBF inference on training data', (
 describe('Recognition.runnerUp', () => {
   it('is present and distinct from the winning label whenever the classifier saw more than one class', () => {
     const imgs = samples.slice(0, 30).map(s => new Uint8Array(s.pixels));
-    const results = recognise(rec, imgs);
+    const results = rec.recognise(imgs);
     let sawRunnerUp = false;
     for (const r of results) {
       if (r.runnerUp === undefined) continue;
@@ -192,3 +195,44 @@ describe('Recognition.runnerUp', () => {
 // can never be a real CI/bronze-gate check. Those datasets are bulk training
 // input only; browser_train.json (committed, hand-verified) is the ground
 // truth this suite holds to 100% minus KNOWN_FAILURE_SAMPLE_HASHES above.
+
+describe('loadNumRecogniser class dispatch', () => {
+  it('returns a PcaRbfRecogniser instance for classifier_type "pca_rbf"', () => {
+    expect(rec).toBeInstanceOf(PcaRbfRecogniser);
+    expect(rec).not.toBeInstanceOf(HogRecogniser);
+  });
+
+  it('returns a HogRecogniser instance for classifier_type "linear"', () => {
+    const manifest = { classifier_type: 'linear', arrays: {
+      hog_win_size:     { dtype: 'int32',   shape: [1],  offset: 0,  byteLength: 4 },
+      hog_cell_size:    { dtype: 'int32',   shape: [1],  offset: 4,  byteLength: 4 },
+      hog_block_size:   { dtype: 'int32',   shape: [1],  offset: 8,  byteLength: 4 },
+      hog_block_stride: { dtype: 'int32',   shape: [1],  offset: 12, byteLength: 4 },
+      hog_nbins:        { dtype: 'int32',   shape: [1],  offset: 16, byteLength: 4 },
+      confidence_threshold: { dtype: 'float64', shape: [1], offset: 24, byteLength: 8 },
+      classes:          { dtype: 'int32',   shape: [2],  offset: 32, byteLength: 8 },
+      linear_coef:      { dtype: 'float64', shape: [1, 2], offset: 40, byteLength: 16 },
+      linear_intercept: { dtype: 'float64', shape: [1],  offset: 56, byteLength: 8 },
+    } };
+    const buf = new ArrayBuffer(64);
+    new DataView(buf).setInt32(0, 64, true);   // hog_win_size
+    new DataView(buf).setInt32(4, 8, true);    // hog_cell_size
+    new DataView(buf).setInt32(8, 16, true);   // hog_block_size
+    new DataView(buf).setInt32(12, 8, true);   // hog_block_stride
+    new DataView(buf).setInt32(16, 9, true);   // hog_nbins
+    new DataView(buf).setFloat64(24, 0.7, true); // confidence_threshold
+    new DataView(buf).setInt32(32, 1, true);   // classes[0]
+    new DataView(buf).setInt32(36, 2, true);   // classes[1]
+    const hogRec = loadNumRecogniser(buf, manifest);
+    expect(hogRec).toBeInstanceOf(HogRecogniser);
+    expect(hogRec).not.toBeInstanceOf(PcaRbfRecogniser);
+  });
+
+  it('throws a clear error from activeRecogniser() before any recogniser is set', () => {
+    // This test file never calls setActiveRecogniser -- splitNum/readClassicDigits'
+    // real crop behaviour needs a genuine OpenCV.js Mat, which vitest doesn't load
+    // (see the plan's note on Playwright covering that instead); this only verifies
+    // the guard message itself.
+    expect(() => activeRecogniser()).toThrow('No recogniser loaded');
+  });
+});

@@ -10,7 +10,7 @@
  */
 
 import type { CandidatesResponse, PuzzleState } from './types.js';
-import { loadNumRecogniser } from '../image/numberRecognition.js';
+import { loadNumRecogniser, setActiveRecogniser } from '../image/numberRecognition.js';
 import type { NumRecogniser } from '../image/numberRecognition.js';
 import type { OpenCVModule } from '../image/opencv.js';
 type Cv = OpenCVModule;
@@ -219,6 +219,7 @@ export function loadRec(
 
     const [binBuffer, manifest] = await Promise.all([binRes.arrayBuffer(), jsonRes.json()]);
     _rec = loadNumRecogniser(binBuffer, manifest as Parameters<typeof loadNumRecogniser>[1]);
+    setActiveRecogniser(_rec);
     return _rec;
   })();
 

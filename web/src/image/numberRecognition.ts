@@ -223,11 +223,110 @@ function rbfPredictWithConfidence(clf: RBFClassifier, x: Float64Array, nSamples:
 // NumRecogniser
 // ---------------------------------------------------------------------------
 
-export interface NumRecogniser {
-  hog?: HOGParams;
-  pca?: PCAParams;
-  classifier: Classifier;
-  confidenceThreshold: number;
+export abstract class NumRecogniser {
+  constructor(readonly confidenceThreshold: number) {}
+  abstract recognise(imgs: Uint8Array[]): Recognition[];
+  abstract warpForRecognition(cv: Cv, warpedBlk: OpenCVMat, br: BRect, targetSize: number): Uint8Array;
+}
+
+export class PcaRbfRecogniser extends NumRecogniser {
+  constructor(
+    private readonly pca: PCAParams,
+    private readonly classifier: RBFClassifier,
+    confidenceThreshold: number,
+  ) {
+    super(confidenceThreshold);
+  }
+
+  recognise(imgs: Uint8Array[]): Recognition[] {
+    const n = imgs.length;
+    const { pca, classifier, confidenceThreshold } = this;
+    const results: Recognition[] = new Array(n);
+    const fallbackIndices: number[] = [];
+    const fallbackImgs: Uint8Array[] = [];
+
+    // Template matching (fast path): compare each thumbnail to every stored
+    // per-digit mean template via TM_CCOEFF_NORMED; accept the best match
+    // directly if it clears templateThreshold, else fall through to PCA+RBF.
+    // Matches Python's CayenneNumber.get_sums exactly.
+    if (pca.templates.size > 0) {
+      for (let i = 0; i < n; i++) {
+        const img = imgs[i]!;
+        let bestScore = -2.0;
+        let bestDigit = 0;
+        let bestScore2 = -2.0;
+        let bestDigit2 = -1;
+        for (const [digit, tmpl] of pca.templates) {
+          const score = templateMatchNormed(img, tmpl);
+          if (score > bestScore) {
+            bestScore2 = bestScore; bestDigit2 = bestDigit;
+            bestScore = score; bestDigit = digit;
+          } else if (score > bestScore2) {
+            bestScore2 = score; bestDigit2 = digit;
+          }
+        }
+        if (bestScore >= pca.templateThreshold) {
+          results[i] = {
+            label: bestDigit,
+            confident: true,
+            ...(bestDigit2 !== -1 ? { runnerUp: { label: bestDigit2, score: bestScore2 } } : {}),
+          };
+        } else {
+          fallbackIndices.push(i);
+          fallbackImgs.push(img);
+        }
+      }
+    } else {
+      for (let i = 0; i < n; i++) { fallbackIndices.push(i); fallbackImgs.push(imgs[i]!); }
+    }
+
+    if (fallbackImgs.length > 0) {
+      const x = pcaExtract(fallbackImgs, pca);
+      const recs = rbfPredictWithConfidence(classifier, x, fallbackImgs.length, confidenceThreshold);
+      for (let k = 0; k < fallbackIndices.length; k++) {
+        results[fallbackIndices[k]!] = recs[k]!;
+      }
+    }
+
+    return results;
+  }
+
+  warpForRecognition(cv: Cv, warpedBlk: OpenCVMat, br: BRect, targetSize: number): Uint8Array {
+    const [x, y, w, h] = br;
+    const src = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+    return getWarpFromRect(cv, src, warpedBlk, targetSize, targetSize);
+  }
+}
+
+export class HogRecogniser extends NumRecogniser {
+  constructor(
+    private readonly hog: HOGParams,
+    private readonly classifier: Classifier,
+    confidenceThreshold: number,
+  ) {
+    super(confidenceThreshold);
+  }
+
+  recognise(imgs: Uint8Array[]): Recognition[] {
+    const n = imgs.length;
+    const { hog, classifier, confidenceThreshold } = this;
+    const hogFeat = hogExtract(imgs, hog);
+    const hole = extractHoleFeatures(imgs, hog.winSize);
+    const nHog = hogFeat.length / n;
+    const nHole = hole.length / n;
+    const x = new Float64Array(n * (nHog + nHole));
+    for (let i = 0; i < n; i++) {
+      x.set(hogFeat.subarray(i * nHog, (i + 1) * nHog), i * (nHog + nHole));
+      x.set(hole.subarray(i * nHole, (i + 1) * nHole), i * (nHog + nHole) + nHog);
+    }
+    if (classifier.kind === 'linear') return linearPredict(classifier, x, n, confidenceThreshold);
+    return rbfPredictWithConfidence(classifier, x, n, confidenceThreshold);
+  }
+
+  warpForRecognition(cv: Cv, warpedBlk: OpenCVMat, br: BRect, targetSize: number): Uint8Array {
+    const [x, y, w, h] = br;
+    return letterboxWarp(cv, x, y, w, h, warpedBlk, targetSize, targetSize);
+  }
 }
 
 /**
@@ -363,85 +462,20 @@ function templateMatchNormed(img: ArrayLike<number>, tmpl: ArrayLike<number>): n
   return denom > 0 ? num / denom : 0;
 }
 
-/** Classify digit images using HOG + OVO classifier. */
-function classify(rec: NumRecogniser, imgs: Uint8Array[]): Recognition[] {
-  const n = imgs.length;
-  const { classifier, confidenceThreshold } = rec;
-
-  if (rec.pca) {
-    const { pca } = rec;
-    const results: Recognition[] = new Array(n);
-    const fallbackIndices: number[] = [];
-    const fallbackImgs: Uint8Array[] = [];
-
-    // Template matching (fast path): compare each thumbnail to every stored
-    // per-digit mean template via TM_CCOEFF_NORMED; accept the best match
-    // directly if it clears templateThreshold, else fall through to PCA+RBF.
-    // Matches Python's CayenneNumber.get_sums exactly.
-    if (pca.templates.size > 0) {
-      for (let i = 0; i < n; i++) {
-        const img = imgs[i]!;
-        let bestScore = -2.0;
-        let bestDigit = 0;
-        let bestScore2 = -2.0;
-        let bestDigit2 = -1;
-        for (const [digit, tmpl] of pca.templates) {
-          const score = templateMatchNormed(img, tmpl);
-          if (score > bestScore) {
-            bestScore2 = bestScore; bestDigit2 = bestDigit;
-            bestScore = score; bestDigit = digit;
-          } else if (score > bestScore2) {
-            bestScore2 = score; bestDigit2 = digit;
-          }
-        }
-        if (bestScore >= pca.templateThreshold) {
-          results[i] = {
-            label: bestDigit,
-            confident: true,
-            ...(bestDigit2 !== -1 ? { runnerUp: { label: bestDigit2, score: bestScore2 } } : {}),
-          };
-        } else {
-          fallbackIndices.push(i);
-          fallbackImgs.push(img);
-        }
-      }
-    } else {
-      for (let i = 0; i < n; i++) { fallbackIndices.push(i); fallbackImgs.push(imgs[i]!); }
-    }
-
-    if (fallbackImgs.length > 0) {
-      const x = pcaExtract(fallbackImgs, pca);
-      const recs = rbfPredictWithConfidence(classifier as RBFClassifier, x, fallbackImgs.length, confidenceThreshold);
-      for (let k = 0; k < fallbackIndices.length; k++) {
-        results[fallbackIndices[k]!] = recs[k]!;
-      }
-    }
-
-    return results;
-  }
-
-  const hog = hogExtract(imgs, rec.hog!);
-  const hole = extractHoleFeatures(imgs, rec.hog!.winSize);
-  const nHog = hog.length / n;
-  const nHole = hole.length / n;
-  const x = new Float64Array(n * (nHog + nHole));
-  for (let i = 0; i < n; i++) {
-    x.set(hog.subarray(i * nHog, (i + 1) * nHog), i * (nHog + nHole));
-    x.set(hole.subarray(i * nHole, (i + 1) * nHole), i * (nHog + nHole) + nHog);
-  }
-  if (classifier.kind === 'linear') return linearPredict(classifier, x, n, confidenceThreshold);
-  return rbfPredictWithConfidence(classifier, x, n, confidenceThreshold);
-}
-
-
-/** Classify digit image patches and return labels with confidence flags. */
-export function recognise(rec: NumRecogniser, imgs: Uint8Array[]): Recognition[] {
-  return classify(rec, imgs);
-}
-
 // ---------------------------------------------------------------------------
 // Model loading from .bin + .json
 // ---------------------------------------------------------------------------
+
+let _active: NumRecogniser | null = null;
+
+/** Registers rec as the recogniser splitNum/readClassicDigits use internally. */
+export function setActiveRecogniser(rec: NumRecogniser): void { _active = rec; }
+
+/** @internal exported only for the singleton-guard unit test. */
+export function activeRecogniser(): NumRecogniser {
+  if (_active === null) throw new Error('No recogniser loaded — call setActiveRecogniser() first');
+  return _active;
+}
 
 /**
  * Load the NumRecogniser model from the exported .bin and .json files.
@@ -509,7 +543,7 @@ export function loadNumRecogniser(
       nSv,
       nFeatures,
     };
-    return { pca, classifier, confidenceThreshold: scalarF64('confidence_threshold') };
+    return new PcaRbfRecogniser(pca, classifier, scalarF64('confidence_threshold'));
   }
 
   const hog: HOGParams = {
@@ -548,7 +582,7 @@ export function loadNumRecogniser(
     };
   }
 
-  return { hog, classifier, confidenceThreshold: scalarF64('confidence_threshold') };
+  return new HogRecogniser(hog, classifier, scalarF64('confidence_threshold'));
 }
 
 // ---------------------------------------------------------------------------
@@ -734,6 +768,25 @@ export function getWarpFromRect(
   return data;
 }
 
+/**
+ * Aspect-preserving warp: fits the source rect into resH×resW with letterbox
+ * padding (centered, background-filled) rather than direct-stretch.
+ *
+ * Restored verbatim from git history (commit 701423a^, before it was replaced
+ * by renderContourMask and later getWarpFromRect) for HogRecogniser, which was
+ * trained on this crop geometry.
+ */
+function letterboxWarp(
+  cv: Cv, ax: number, ay: number, bw: number, bh: number,
+  gry: OpenCVMat, resH: number = 64, resW: number = 64,
+): Uint8Array {
+  const scale = Math.min((resW - 1) / bw, (resH - 1) / bh);
+  const destW = bw * scale, destH = bh * scale;
+  const offX = ((resW - 1) - destW) / 2, offY = ((resH - 1) - destH) / 2;
+  const src = [[ax, ay], [ax + bw, ay], [ax + bw, ay + bh], [ax, ay + bh]];
+  const dst = [[offX, offY], [offX + destW, offY], [offX + destW, offY + destH], [offX, offY + destH]];
+  return getWarpFromRect(cv, src, gry, resH, resW, dst);
+}
 
 /**
  * Local-maxima peak finder. Replaces `scipy.signal.find_peaks(x, height=...)`.
@@ -854,10 +907,10 @@ export function splitNum(
   }
 
   const halfRes = subres >> 1;
-  const thumbs = rects.map(([yt, yb, xl, xr]) => {
-    const src = [[xl, yt], [xr, yt], [xr, yb], [xl, yb]];
-    return getWarpFromRect(cv, src, warpedBlk, halfRes, halfRes);
-  });
+  const rec = activeRecogniser();
+  const thumbs = rects.map(([yt, yb, xl, xr]) =>
+    rec.warpForRecognition(cv, warpedBlk, [xl, yt, xr - xl, yb - yt], halfRes),
+  );
 
   return [thumbs, mergedThumb, x, y];
 }
@@ -883,10 +936,10 @@ export function splitNum(
 export function readClassicDigits(
   cv: Cv,
   warpedBlk: OpenCVMat,
-  rec: NumRecogniser,
   subres: number,
   classicConf: number[][],
 ): { digits: number[][]; thumbs: Map<string, Uint8Array[]>; recognitions: Map<string, Recognition> } {
+  const rec = activeRecogniser();
   const half = subres >> 1;
   const margin = subres >> 2;
   const digits: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
@@ -930,9 +983,8 @@ export function readClassicDigits(
 
       const ax = x0 + br.x;
       const ay = y0 + br.y;
-      const src = [[ax, ay], [ax + br.width, ay], [ax + br.width, ay + br.height], [ax, ay + br.height]];
-      const thumb = getWarpFromRect(cv, src, warpedBlk, half, half);
-      const [rec0] = recognise(rec, [thumb]);
+      const thumb = rec.warpForRecognition(cv, warpedBlk, [ax, ay, br.width, br.height], half);
+      const [rec0] = rec.recognise([thumb]);
       const d = rec0!.label;
       if (d > 0) {
         digits[r]![c] = d;

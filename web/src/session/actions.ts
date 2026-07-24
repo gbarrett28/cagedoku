@@ -202,7 +202,7 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
   const config = defaultImagePipelineConfig();
   let result: ParseResult;
   try {
-    result = await parsePuzzleImage(cv, file, rec, config, getSplitRec() ?? undefined);
+    result = await parsePuzzleImage(cv, file, config, getSplitRec() ?? undefined);
   } catch (e) {
     if (e instanceof ImageDecodeError || e instanceof GridNotFoundError) throw e;
     // Any other pipeline error → proceed to review with blank grid.

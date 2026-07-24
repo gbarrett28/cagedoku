@@ -15,7 +15,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { loadNumRecogniser, recognise } from '../src/image/numberRecognition.js';
+import { loadNumRecogniser } from '../src/image/numberRecognition.js';
 
 interface TrainingSample { digit: number; pixels: number[] }
 interface TrainingFile { samples: TrainingSample[] }
@@ -35,7 +35,7 @@ function main(): void {
 
   const { samples }: TrainingFile = JSON.parse(readFileSync(trainPath, 'utf-8'));
   const imgs = samples.map(s => new Uint8Array(s.pixels));
-  const results = recognise(rec, imgs);
+  const results = rec.recognise(imgs);
 
   const failureHashes: string[] = [];
   for (let i = 0; i < samples.length; i++) {
