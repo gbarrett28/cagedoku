@@ -46,8 +46,9 @@ class TesseractNumber:
 
         step = self.cell + self.pad
         rows = math.ceil(len(nums) / self.cols)
+        canvas_height = rows * step + self.pad
         canvas = np.full(
-            (rows * step + self.pad, self.cols * step + self.pad), 255, dtype=np.uint8
+            (canvas_height, self.cols * step + self.pad), 255, dtype=np.uint8
         )
         slots: list[tuple[int, int, int, int]] = []
         for idx, img in enumerate(nums):
@@ -61,23 +62,29 @@ class TesseractNumber:
             canvas[y0 : y0 + self.cell, x0 : x0 + self.cell] = 255 - resized
             slots.append((x0, y0, x0 + self.cell, y0 + self.cell))
 
-        data = pytesseract.image_to_data(
+        # image_to_boxes gives one box per detected *character* (not per word),
+        # which matters here: image_to_data groups adjacent digits with tight
+        # spacing into a single multi-character "word" token spanning several
+        # slots, silently losing per-slot attribution.
+        data = pytesseract.image_to_boxes(
             Image.fromarray(canvas),
-            config="--psm 11 -c tessedit_char_whitelist=0123456789",
+            config="--psm 6 -c tessedit_char_whitelist=0123456789",
             output_type=pytesseract.Output.DICT,
         )
 
         labels = [-1] * len(nums)
-        for raw_text, left, top, width, height in zip(
-            data["text"], data["left"], data["top"], data["width"], data["height"], strict=True
+        for ch, left, bottom, right, top in zip(
+            data["char"], data["left"], data["bottom"], data["right"], data["top"], strict=True
         ):
-            digit_text = raw_text.strip()
-            if not digit_text or not digit_text[0].isdigit():
+            if not ch.isdigit():
                 continue
-            cx, cy = left + width // 2, top + height // 2
+            # image_to_boxes uses a bottom-left origin (y increases upward);
+            # flip to the top-left origin used by `slots`.
+            cx = (left + right) // 2
+            cy = canvas_height - (top + bottom) // 2
             for idx, (x0, y0, x1, y1) in enumerate(slots):
                 if x0 <= cx < x1 and y0 <= cy < y1 and labels[idx] == -1:
-                    labels[idx] = int(digit_text[0])
+                    labels[idx] = int(ch)
                     break
 
         return np.array(labels, dtype=np.intp)

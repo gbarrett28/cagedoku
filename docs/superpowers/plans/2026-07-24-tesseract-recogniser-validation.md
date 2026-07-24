@@ -12,7 +12,7 @@ digits than with the current self-trained recogniser.
 `CayenneNumber` and a new `TesseractNumber` satisfy (`get_sums(list[image]) ->
 labels`), since every call site in `inp_image.py`/`evaluate.py` already only calls
 `.get_sums(...)` duck-typed. `TesseractNumber` batches many small digit crops into
-one montage image per call and does a single `pytesseract.image_to_data` pass per
+one montage image per call and does a single `pytesseract.image_to_boxes` pass per
 batch — per-crop subprocess calls were the historical performance problem (each
 `tesseract` invocation forks a process and reloads language data), so batching is
 the fix, not switching to a different binding. All runs against real corpus images
@@ -206,13 +206,16 @@ pytestmark = pytest.mark.skipif(
 
 
 def _render_digit(digit: int, size: int = 64) -> "np.ndarray":
-    img = Image.new("L", (size, size), color=255)
+    # Matches the real pipeline's crop convention (ink=white, background=black,
+    # per read_classic_digits' docstring) — TesseractNumber.get_sums inverts
+    # this to dark-ink-on-light-background internally before calling Tesseract.
+    img = Image.new("L", (size, size), color=0)
     draw = ImageDraw.Draw(img)
     font = ImageFont.load_default(size=48)
     bbox = draw.textbbox((0, 0), str(digit), font=font)
     x = (size - (bbox[2] - bbox[0])) // 2 - bbox[0]
     y = (size - (bbox[3] - bbox[1])) // 2 - bbox[1]
-    draw.text((x, y), str(digit), fill=0, font=font)
+    draw.text((x, y), str(digit), fill=255, font=font)
     return np.asarray(img, dtype=np.uint8)
 
 
@@ -243,8 +246,8 @@ Expected: FAIL with `ModuleNotFoundError: No module named 'killer_sudoku.image.t
 
 Calling `tesseract` once per digit crop is prohibitively slow (each invocation
 forks a subprocess and reloads language data). TesseractNumber instead tiles
-many crops into a single canvas and issues one `image_to_data` call per batch,
-then maps detected text boxes back to their originating crop by position.
+many crops into a single canvas and issues one `image_to_boxes` call per batch,
+then maps detected character boxes back to their originating crop by position.
 """
 
 import math
@@ -287,8 +290,9 @@ class TesseractNumber:
 
         step = self.cell + self.pad
         rows = math.ceil(len(nums) / self.cols)
+        canvas_height = rows * step + self.pad
         canvas = np.full(
-            (rows * step + self.pad, self.cols * step + self.pad), 255, dtype=np.uint8
+            (canvas_height, self.cols * step + self.pad), 255, dtype=np.uint8
         )
         slots: list[tuple[int, int, int, int]] = []
         for idx, img in enumerate(nums):
@@ -302,35 +306,52 @@ class TesseractNumber:
             canvas[y0 : y0 + self.cell, x0 : x0 + self.cell] = 255 - resized
             slots.append((x0, y0, x0 + self.cell, y0 + self.cell))
 
-        data = pytesseract.image_to_data(
+        # image_to_boxes gives one box per detected *character* (not per word),
+        # which matters here: image_to_data groups adjacent digits with tight
+        # spacing into a single multi-character "word" token spanning several
+        # slots, silently losing per-slot attribution (confirmed empirically —
+        # see the note below).
+        data = pytesseract.image_to_boxes(
             Image.fromarray(canvas),
-            config="--psm 11 -c tessedit_char_whitelist=0123456789",
+            config="--psm 6 -c tessedit_char_whitelist=0123456789",
             output_type=pytesseract.Output.DICT,
         )
 
         labels = [-1] * len(nums)
-        for text, left, top, width, height in zip(
-            data["text"], data["left"], data["top"], data["width"], data["height"], strict=True
+        for ch, left, bottom, right, top in zip(
+            data["char"], data["left"], data["bottom"], data["right"], data["top"], strict=True
         ):
-            text = text.strip()
-            if not text or not text[0].isdigit():
+            if not ch.isdigit():
                 continue
-            cx, cy = left + width // 2, top + height // 2
+            # image_to_boxes uses a bottom-left origin (y increases upward);
+            # flip to the top-left origin used by `slots`.
+            cx = (left + right) // 2
+            cy = canvas_height - (top + bottom) // 2
             for idx, (x0, y0, x1, y1) in enumerate(slots):
                 if x0 <= cx < x1 and y0 <= cy < y1 and labels[idx] == -1:
-                    labels[idx] = int(text[0])
+                    labels[idx] = int(ch)
                     break
 
         return np.array(labels, dtype=np.intp)
 ```
 
-Note the inversion (`255 - resized`) assumes input crops are ink-bright /
-background-dark (matching `warped_blk`'s thresholded convention where digit ink
-is the foreground fill value). Before trusting this in Task 4, dump one real
-montage canvas to the scratchpad (`Image.fromarray(canvas).save(...)`) and
-visually confirm the digits render as dark strokes on light background, not
-inverted — adjust the `255 -` inversion if the real crop polarity turns out to
-be the opposite of what this assumes.
+**Two real bugs were found and fixed while first executing this task, both
+worth knowing about before re-running or extending this code:**
+
+1. `image_to_data` (word-level) groups adjacent digits with tight spacing into
+   a single multi-character token — a real montage of digits `2 3 7 9` came
+   back as one `'2379'` token spanning all four slots, not four separate
+   detections, because Tesseract's word/line grouping isn't governed by a
+   simple pixel threshold. Switching to `image_to_boxes` (character-level)
+   fixed this cleanly — confirmed against a saved canvas PNG and raw
+   `pytesseract` output before changing the implementation.
+2. The inversion (`255 - resized`) assumes input crops are ink-bright /
+   background-dark, matching `read_classic_digits`' documented convention
+   (`warped_blk: Warped binary image (ink=white, background=black)`). A first
+   version of `_render_digit` rendered test digits in the *opposite* polarity
+   (already dark-on-light), so the inversion flipped them to light-on-dark and
+   Tesseract read nothing — fixed by rendering test digits in the same
+   ink=white/background=black convention the real pipeline actually produces.
 
 - [x] **Step 5: Run test to verify it passes**
 

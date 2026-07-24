@@ -13,13 +13,16 @@ pytestmark = pytest.mark.skipif(
 
 
 def _render_digit(digit: int, size: int = 64) -> npt.NDArray[np.uint8]:
-    img = Image.new("L", (size, size), color=255)
+    # Matches the real pipeline's crop convention (ink=white, background=black,
+    # per read_classic_digits' docstring) — TesseractNumber.get_sums inverts
+    # this to dark-ink-on-light-background internally before calling Tesseract.
+    img = Image.new("L", (size, size), color=0)
     draw = ImageDraw.Draw(img)
     font = ImageFont.load_default(size=48)
     bbox = draw.textbbox((0, 0), str(digit), font=font)
     x = (size - (bbox[2] - bbox[0])) // 2 - bbox[0]
     y = (size - (bbox[3] - bbox[1])) // 2 - bbox[1]
-    draw.text((x, y), str(digit), fill=0, font=font)
+    draw.text((x, y), str(digit), fill=255, font=font)
     return np.asarray(img, dtype=np.uint8)
 
 
