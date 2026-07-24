@@ -47,34 +47,72 @@ All 20 Tesseract-substituted runs failed with `AssertionError` (no valid
     and 7 entirely** (returned nothing where shipped read 15 and 17), and
     **misread row 6** (16 → 56).
 
+## Follow-up investigation: is the 0/20 result a bug or a real accuracy limit?
+
+The 0/20 result above was surprising enough (and the failure mode — whole
+digits going missing, not just misread — unusual enough) to warrant checking
+for an integration bug before accepting it. It was a good instinct: there
+*was* a real, confirmed bug, but fixing it doesn't change the conclusion.
+
+**Bug found and confirmed: montage merging.** `TesseractNumber` tiles multiple
+crops into one canvas per `get_sums` call, separated by 24px of blank padding.
+Real crops (unlike the clean, generously-margined synthetic digits used in
+Task 2's unit tests) fill their 64×64 frame edge-to-edge — one recorded crop
+had ink pixels literally on column 0. With only 24px between two such crops,
+Tesseract's layout analysis sometimes fuses them into a single character
+blob: one recorded 2-crop call returned exactly one detected character (`'8'`)
+with a bounding box of `left=24, right=173` — spanning *both* slots, not one.
+Tuning `pad` on that exact failing pair gave inconsistent results (24→fail,
+48→correct `[1,8]`, 64→fail, 96→fail, 128→detected but wrong digit `[6,8]`),
+so this isn't a one-constant fix — the montage-batching approach is fragile
+at this crop scale regardless of tuning.
+
+**Isolating the bug from raw accuracy:** re-ran with batching removed
+entirely — one crop per Tesseract call, `--psm 10` (single-character mode),
+so merging is structurally impossible. Compared against the shipped
+recogniser's own prediction for the same 150 individual crops (one full
+puzzle image, `guardian/killer_sudoku_0.jpg`):
+
+**Result: 83/150 (55.3%) agreement**, with a specific recurring confusion —
+shipped reads `1`, Tesseract reads `7` — appearing at least 7 times in the
+mismatch sample, not scattered randomly across digit pairs.
+
+**Conclusion: the verdict holds, but for a more precise reason.** The montage
+bug was real and worth fixing (and is fixed, committed separately — see the
+`image_to_boxes`/empty-dict-guard commits), but it was not the dominant cause
+of the gap. Even with batching removed altogether, Tesseract only agrees with
+the shipped recogniser on ~55% of individual glyphs, with a systematic
+digit-shape confusion pattern — the same *category* of failure already seen
+twice elsewhere in this codebase (HOG's 7↔1 confusion, the shipped PCA+RBF
+model's own 2↔7 confusion): a font-specific OCR weakness on this newspaper
+typeface, not a pipeline defect. Tesseract's built-in model is tuned for
+standard document fonts at document DPI; this is a different, unfamiliar
+typeface at small size with no surrounding word/sentence context to lean on.
+
+(Caveat: this 55.3% figure uses the shipped recogniser's own predictions as
+the reference, which has its own circularity concerns — see
+[[project_digit_recogniser_investigation]]. But the shipped model
+independently solves 463/465 real puzzles end-to-end, which would be very
+unlikely if it were subtly wrong on ~45% of individual digits; the recurring
+1→7 pattern specifically also lines up with confusions already documented
+elsewhere in this codebase. Taken together this is much more consistent with
+"Tesseract has a real accuracy gap on this font" than "the shipped model's
+predictions aren't a fair reference.")
+
 ## Verdict
 
-**NOT TRUSTWORTHY as currently integrated** — Tesseract's solve rate is
-dramatically *lower* than the shipped recogniser on this corpus (0/20 vs
-20/20), not higher as hypothesized. Root cause appears to be raw OCR accuracy
-on this specific crop type (tiny, tightly-cropped, perspective-warped
-multi-digit cage totals occupying a fraction of a cell) rather than an
-integration bug — the montage/polarity/coordinate issues found during Task 2
-were fixed and unit-tested before this pilot ran. Tesseract's statistical
-models are tuned for normal-DPI printed document text; these crops are a very
-different regime (a handful of magnified pixels, no surrounding context,
-inconsistent digit-string lengths).
+**NOT TRUSTWORTHY as a ground-truth relabelling source, for Tesseract's raw
+OCR accuracy on this font/crop-type — not primarily an integration defect.**
+The montage-merging bug was real and is now fixed in the codebase regardless,
+but the accuracy gap persists even with it fully removed from the picture.
 
-**Not yet ruled out:** whether Tesseract configuration tuning (different
-`--psm`/`--oem` modes, disabling any implicit language modeling, upscaling
-crops further before OCR, adjusting the binarization/threshold before handing
-crops to Tesseract) would close this gap. This pilot used one fixed
-configuration (`--psm 6`, digit whitelist, direct polarity inversion, no
-upscaling beyond the existing 64px cell size) and did not sweep alternatives —
-that's a reasonable next step if pursuing Tesseract further, but is a
-different, open-ended investigation from this validation gate's original
-scope (confirm-or-deny trustworthiness) and wasn't attempted here.
-
-**Recommendation:** given a 20/20 vs 0/20 gap on a representative sample, the
-full 889-image corpus run does not need to be executed to answer the original
-question — the pilot already answers it decisively. Do not proceed to relabel
-the corpus via Tesseract in its current configuration. If Tesseract remains
-worth pursuing, it should be as a separate, scoped investigation into
-config/preprocessing tuning specifically for tiny numeric crops, evaluated
-again against the same pilot-scale comparison before considering a full-corpus
-run.
+**Recommendation:** given a confirmed ~55% single-glyph agreement ceiling
+(not a bug artifact) plus the original 20/20-vs-0/20 solve-rate gap, the full
+889-image corpus run does not need to be executed — both the pilot-scale and
+per-glyph-isolated experiments already answer the question. Do not proceed to
+relabel the corpus via Tesseract. If Tesseract remains worth pursuing, the
+open question is no longer "is there an integration bug" (answered: partially
+yes, now fixed, but not the dominant factor) but "can `--psm`/`--oem` tuning,
+much larger upscaling, or a custom-trained Tesseract language model close a
+~45-point accuracy gap on this specific font" — a materially different,
+larger investigation than this validation gate was scoped for.
