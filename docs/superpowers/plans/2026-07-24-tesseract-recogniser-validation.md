@@ -168,7 +168,7 @@ overhead (tens of ms minimum) dominates when called once per tiny digit crop
 across tens of thousands of crops. Tiling N crops into one canvas and calling
 `image_to_data` once cuts the number of subprocess spawns by a factor of N.
 
-- [ ] **Step 1: Add the dependency**
+- [x] **Step 1: Add the dependency**
 
 In `pyproject.toml`, add `"pytesseract"` to the `dependencies` list (alongside
 `opencv-python-headless`, `numpy`, etc.). Then:
@@ -188,7 +188,7 @@ installer or `choco install tesseract`) before continuing — **do not proceed t
 Step 2 until this succeeds**, and confirm with the user before installing
 system-wide software.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 ```python
 # tests/test_tesseract_recognition.py
@@ -230,12 +230,12 @@ def test_get_sums_empty_input() -> None:
     assert labels.tolist() == []
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_tesseract_recognition.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'killer_sudoku.image.tesseract_recognition'`
 
-- [ ] **Step 4: Implement `TesseractNumber`**
+- [x] **Step 4: Implement `TesseractNumber`**
 
 ```python
 # killer_sudoku/image/tesseract_recognition.py
@@ -332,14 +332,14 @@ visually confirm the digits render as dark strokes on light background, not
 inverted — adjust the `255 -` inversion if the real crop polarity turns out to
 be the opposite of what this assumes.
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_tesseract_recognition.py -v`
 Expected: PASS if tesseract is installed; SKIPPED otherwise (both are acceptable
 outcomes for this step — SKIPPED just means Step 1's installation didn't happen
 yet on this machine).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add killer_sudoku/image/tesseract_recognition.py tests/test_tesseract_recognition.py pyproject.toml
@@ -358,17 +358,18 @@ git commit -m "feat: add batched-montage Tesseract digit recogniser"
 - Consumes: `TesseractNumber` (Task 2), `NumberSource` (Task 1).
 - Produces: `collect_status(config: ImagePipelineConfig, num_recogniser: NumberSource | None = None) -> StatusStore` — if `num_recogniser` is `None`, falls back to today's `InpImage.make_num_recogniser()` (no behavior change for existing callers).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_evaluate_recogniser_flag.py
+import shutil
 from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
 
-from killer_sudoku.training.evaluate import collect_status
 from killer_sudoku.image.config import ImagePipelineConfig
+from killer_sudoku.training.evaluate import collect_status
 
 
 class _AllOnesSource:
@@ -377,20 +378,33 @@ class _AllOnesSource:
 
 
 def test_collect_status_accepts_injected_recogniser(tmp_path: Path) -> None:
-    config = ImagePipelineConfig(puzzle_dir=Path("guardian"), rework=False)
+    # Copy a single fixture image into an isolated tmp_path — never point
+    # collect_status at the real guardian/observer directories directly,
+    # since it unconditionally overwrites status.pkl/eval_report.json there.
+    shutil.copy(Path("guardian/killer_sudoku_0.jpg"), tmp_path / "killer_sudoku_0.jpg")
+    config = ImagePipelineConfig(puzzle_dir=tmp_path, rework=False)
     status = collect_status(config, num_recogniser=_AllOnesSource())
-    assert len(status) > 0
+    assert len(list(status.items())) == 1
 ```
 
-`ImagePipelineConfig` is imported from `killer_sudoku.image.config` (confirmed
-from `evaluate.py`'s own import line).
+**This is a hard requirement, not a style preference:** `collect_status`
+unconditionally calls `status.save()` and `write_eval_report(...)` at the end,
+which overwrite `{puzzle_dir}/status.pkl` and `{puzzle_dir}/eval_report.json`
+in place. Pointing this test at the real `guardian/` directory — even
+read-only-looking — silently overwrote the real baseline `eval_report.json`
+with results from the fake `_AllOnesSource` recogniser the first time this
+plan was executed, and had to be repaired by re-running
+`python -m killer_sudoku.training.evaluate --puzzle-dir guardian` with the
+real (shipped) recogniser afterward. Always use a copied fixture under
+`tmp_path`, never the live corpus directory, for any test that calls
+`collect_status`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_evaluate_recogniser_flag.py -v`
 Expected: FAIL with `TypeError: collect_status() got an unexpected keyword argument 'num_recogniser'`
 
-- [ ] **Step 3: Add the parameter and CLI flag**
+- [x] **Step 3: Add the parameter and CLI flag**
 
 In `killer_sudoku/training/evaluate.py`, change `collect_status`'s signature:
 
@@ -435,18 +449,18 @@ Add `from killer_sudoku.image.tesseract_recognition import TesseractNumber` and
 `from killer_sudoku.image.number_recognition import NumberSource` to
 `evaluate.py`'s imports.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_evaluate_recogniser_flag.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Run the full fast test suite**
+- [x] **Step 5: Run the full fast test suite**
 
 Run: `python -m pytest tests -x -q`
 Expected: all pass, no regressions (default `num_recogniser=None` path is
 behaviorally identical to before)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add killer_sudoku/training/evaluate.py tests/test_evaluate_recogniser_flag.py
