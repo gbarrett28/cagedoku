@@ -77,6 +77,7 @@ import {
   imageFileFromClipboard, imageFileFromDrop,
   saveLastHandle, resolveLastHandle,
   consumeShareInbox, fileFromLaunchParams,
+  detectUploadEnvironment,
 } from './imageInput.js';
 import type { FileSystemHandleWithPermission } from './imageInput.js';
 import { INSTALL_DISMISSED_KEY, shouldShowInstallBanner } from './installPrompt.js';
@@ -2317,10 +2318,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     e.preventDefault();
     deferredInstallPrompt = e as BeforeInstallPromptEvent;
     showInstallBanner();
+    if (!el<HTMLElement>('upload-help-tip-not-installed').hidden) {
+      el<HTMLElement>('upload-help-install-text').hidden = true;
+      el<HTMLButtonElement>('upload-help-install-btn').hidden = false;
+    }
   });
   window.addEventListener('appinstalled', () => {
     hideInstallBanner();
     deferredInstallPrompt = null;
+    el<HTMLElement>('upload-help-tip-not-installed').hidden = true;
   });
   el<HTMLButtonElement>('install-btn').addEventListener('click', () => {
     if (!deferredInstallPrompt) return;
@@ -2331,6 +2337,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   el<HTMLButtonElement>('install-dismiss-btn').addEventListener('click', () => {
     localStorage.setItem(INSTALL_DISMISSED_KEY, '1');
     hideInstallBanner();
+  });
+
+  // Upload help: site links + import tips (issue #163). Baseline tips
+  // (download/paste/drag-drop) are static HTML, always visible; exactly one
+  // extra line is chosen here by detected install state.
+  const uploadEnv = detectUploadEnvironment(window, navigator);
+  if (uploadEnv === 'installed-android') {
+    el<HTMLElement>('upload-help-tip-installed-android').hidden = false;
+  } else if (uploadEnv === 'not-installed') {
+    el<HTMLElement>('upload-help-tip-not-installed').hidden = false;
+    el<HTMLElement>('upload-help-install-text').hidden = false;
+  }
+  el<HTMLButtonElement>('upload-help-install-btn').addEventListener('click', () => {
+    if (!deferredInstallPrompt) return;
+    void deferredInstallPrompt.prompt();
+    el<HTMLElement>('upload-help-tip-not-installed').hidden = true;
+    deferredInstallPrompt = null;
   });
   el<HTMLButtonElement>('bigapple-banner-dismiss-btn').addEventListener('click', () => {
     el<HTMLElement>('bigapple-banner').hidden = true;

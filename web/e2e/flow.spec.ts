@@ -100,6 +100,60 @@ test('upload help disclosure starts collapsed and does not shift the primary upl
   expect(after!.y).toBeCloseTo(before!.y, 0);
 });
 
+test('upload help shows the Android share tip when installed on Android', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('coach_tutorial_suppressed', 'true'));
+  await page.addInitScript(() => {
+    window.matchMedia = ((query: string) => ({
+      matches: query === '(display-mode: standalone)',
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+    Object.defineProperty(window.navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36',
+      configurable: true,
+    });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.locator('#upload-help summary').click();
+  await expect(page.locator('#upload-help-tip-installed-android')).toBeVisible();
+  await expect(page.locator('#upload-help-tip-not-installed')).toBeHidden();
+});
+
+test('upload help shows the install nudge with static text when not installed', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('coach_tutorial_suppressed', 'true'));
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.locator('#upload-help summary').click();
+  await expect(page.locator('#upload-help-tip-not-installed')).toBeVisible();
+  await expect(page.locator('#upload-help-install-text')).toBeVisible();
+  await expect(page.locator('#upload-help-install-btn')).toBeHidden();
+  await expect(page.locator('#upload-help-tip-installed-android')).toBeHidden();
+});
+
+test('upload help shows only baseline tips when installed on a non-Android platform', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('coach_tutorial_suppressed', 'true'));
+  await page.addInitScript(() => {
+    window.matchMedia = ((query: string) => ({
+      matches: query === '(display-mode: standalone)',
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.locator('#upload-help summary').click();
+  await expect(page.locator('#upload-help-tip-not-installed')).toBeHidden();
+  await expect(page.locator('#upload-help-tip-installed-android')).toBeHidden();
+});
+
 test('clicking cell then pressing digit enables undo', async ({ page }) => {
   // Uses the box-cage spec: no cells are auto-placed, so digit entry creates a user turn.
   await loadBoxCageAndConfirm(page);
