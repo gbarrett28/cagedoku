@@ -858,7 +858,7 @@ one geometry per call. This task needs digits 0-9 and *both* raw-crop output
 requirements that adapting the original in place isn't a clean fit, and it's
 production-adjacent training code not worth modifying for this one-off.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_synthetic_holdout.py
@@ -877,12 +877,12 @@ def test_generate_cross_font_holdout_covers_all_digits() -> None:
         assert crop.dtype.name == "uint8"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_synthetic_holdout.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # killer_sudoku/training/synthetic_holdout.py
@@ -937,12 +937,12 @@ def generate_cross_font_holdout(
     return samples
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_synthetic_holdout.py -v`
 Expected: PASS
 
-- [ ] **Step 5: mypy/ruff/full suite, then commit**
+- [x] **Step 5: mypy/ruff/full suite, then commit**
 
 ```bash
 python -m ruff check killer_sudoku tests
