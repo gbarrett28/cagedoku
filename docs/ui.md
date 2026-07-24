@@ -124,6 +124,26 @@ button is hidden on every new upload and on every review-screen entry.
 | Web Share Target | N/A | Chrome | Safari 16.4+ (installed PWA) |
 | File Handling API | Chrome, Edge (installed PWA) | N/A | N/A |
 
+**Upload help disclosure** (`#upload-help`, issue #163): a `<details>` element
+closed by default, directly below the upload actions, so it has zero footprint
+for returning users. Contains a static four-entry site list (Guardian/Observer,
+sudoku.com, killersudokuonline.com, websudoku.com) and import tips. Baseline
+tips (download+choose, clipboard paste, drag-and-drop) are always shown; no
+camera-photo guidance is given (untested, and a real attempt failed). Exactly
+one additional line is chosen at startup by `detectUploadEnvironment(window,
+navigator)` (`web/src/imageInput.ts`), which reads `matchMedia('(display-mode:
+standalone)')` / `navigator.standalone` for install state and a narrow
+`Android` user-agent check for platform, matching the support matrix above:
+- `not-installed` → an install nudge. If `deferredInstallPrompt` has fired
+  (see below), it's a real button reusing the exact same `.prompt()` call as
+  `install-btn`; otherwise static "Add to Home Screen" text. The
+  `beforeinstallprompt` handler swaps text → button live if the event fires
+  after the initial check.
+- `installed-android` → mentions the Web Share Target path directly, since
+  it's actually usable here.
+- `installed-other` (installed on iOS/desktop) → no extra line, since neither
+  Share Target nor the install nudge applies.
+
 **Behaviour**
 
 - After processing, an auto-confirm attempt is made (see Application Flow).
