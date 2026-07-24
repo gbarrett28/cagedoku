@@ -376,7 +376,7 @@ just the *locating* half so Task 4 can apply either warp geometry
 afterward — without touching the production functions (per this repo's
 "don't scope-creep production code for a one-off experiment" convention).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_digit_rects.py
@@ -406,12 +406,12 @@ def test_locate_cage_total_rects_matches_production_digit_count(tmp_path: Path) 
     assert len(rects) == expected_digit_count
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_digit_rects.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement, adapting `_build_cage_totals`'s locating half**
+- [x] **Step 3: Implement, adapting `_build_cage_totals`'s locating half**
 
 ```python
 # killer_sudoku/training/digit_rects.py
@@ -528,12 +528,12 @@ def locate_classic_digit_rects(
     return out
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_digit_rects.py -v`
 Expected: PASS
 
-- [ ] **Step 5: mypy/ruff/full suite, then commit**
+- [x] **Step 5: mypy/ruff/full suite, then commit**
 
 ```bash
 python -m ruff check killer_sudoku tests
