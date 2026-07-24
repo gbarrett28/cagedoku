@@ -201,14 +201,26 @@ The [Training Pipeline](image-pipeline.md#training-pipeline) section covers the 
 
 ### Web Recogniser Training
 
-The web app bundles a HOG + LinearSVC model in `web/public/num_recogniser.{json,bin}`,
-trained by the `train_recogniser.py` workflow below. **Temporarily on
-`feature/python-bitexact-port`**, the bundled model is instead the Python reference's
-original PCA + template-match + RBF-SVM classifier (`classifier_type: "pca_rbf"` in
-`num_recogniser.json`; see `numberRecognition.ts`'s `classify()` for both code paths) —
-swapped in as a directly-comparable baseline for the bit-exact port investigation. HOG
-is restored once that investigation concludes; `train_recogniser.py` itself is
-unaffected and still produces HOG + LinearSVC models.
+The digit recogniser is a `NumRecogniser` class hierarchy
+(`web/src/image/numberRecognition.ts`, mirrored in `web/train_recogniser.py`): an
+abstract base class plus two concrete implementations, `PcaRbfRecogniser` (PCA +
+template-match + RBF-SVM, currently shipped, `classifier_type: "pca_rbf"` in
+`num_recogniser.json`) and `HogRecogniser` (HOG features + LinearSVC/RBF-SVM, the
+historical architecture). Exactly one dispatch point per language decides which is
+active: TS reads `classifier_type` once in `loadNumRecogniser`; Python's active
+architecture is the `ACTIVE_RECOGNISER` module constant in `train_recogniser.py`. A
+single active-instance singleton (`setActiveRecogniser`/`activeRecogniser` in
+`numberRecognition.ts`, set once by `store.ts` after loading the model) means callers
+never thread a recogniser instance through the pipeline by hand.
+
+Cropping is part of the recogniser, not the caller: each subclass implements
+`warpForRecognition`/`warp_from_rect`, choosing direct-stretch (`PcaRbfRecogniser`) or
+aspect-preserving letterbox padding (`HogRecogniser`) — the two architectures were
+trained on different crop geometries, so this can't be a shared helper. Swapping which
+architecture ships is a one-line change (`num_recogniser.json`'s `classifier_type` for
+TS consumers built from whichever files are copied into `web/public/`; `ACTIVE_RECOGNISER`
+for retraining). Benchmarking the two against each other is not yet wired up as a
+repeatable workflow — see `docs/superpowers/specs/` history if reviving that effort.
 
 When a user corrects OCR errors and confirms a killer puzzle, the app automatically
 uploads the digit thumbnails (user-verified labels, 64×64 uint8) to a remote
