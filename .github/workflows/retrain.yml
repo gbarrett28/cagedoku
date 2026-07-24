@@ -52,12 +52,34 @@ jobs:
           mkdir -p /tmp/training
           python3 scripts/_r2_download.py cagedoku-training /tmp/training < /tmp/r2_keys.txt
 
-      - name: Retrain
+      - name: Merge samples into browser_train.json
         if: steps.list.outputs.count != '0'
         run: |
+          python3 - <<'EOF'
+          import json, glob, pathlib
+          base_path = pathlib.Path('web/browser_train.json')
+          base = json.loads(base_path.read_text()) if base_path.exists() else {'version': 1, 'samples': []}
+          for f in sorted(glob.glob('/tmp/training/sample_*.json')):
+              incoming = json.loads(pathlib.Path(f).read_text())
+              base['samples'].extend(incoming.get('samples', []))
+          base['sampleCount'] = len(base['samples'])
+          base_path.write_text(json.dumps(base, separators=(',', ':')))
+          EOF
+          git add web/browser_train.json
+          git diff --cached --quiet && echo "No sample changes." || \
+            git commit -m "chore: merge new browser samples into browser_train.json"
+
+      - name: Retrain
+        if: steps.list.outputs.count != '0'
+        # No positional training_json args here: --browser-file defaults to
+        # web/browser_train.json (just merged above, including this run's new
+        # samples), which is the only way to get --browser-weight applied to
+        # them. Passing it a second time positionally (as this used to) put it
+        # in the unweighted "bulk" bucket instead, so freshly-collected samples
+        # never actually got the up-weighting this flag exists to provide.
+        run: |
           python web/train_recogniser.py \
-            --browser-weight 1000 \
-            web/browser_train.json /tmp/training/sample_*.json
+            --browser-weight 1000
 
       - name: Evaluate accuracy
         if: steps.list.outputs.count != '0'
@@ -89,23 +111,6 @@ jobs:
           git add web/public/num_recogniser.json web/public/num_recogniser.bin
           git diff --cached --quiet && echo "No model changes." || \
             git commit -m "chore: retrain digit recogniser with new browser samples"
-
-      - name: Merge samples into browser_train.json
-        if: steps.list.outputs.count != '0'
-        run: |
-          python3 - <<'EOF'
-          import json, glob, pathlib
-          base_path = pathlib.Path('web/browser_train.json')
-          base = json.loads(base_path.read_text()) if base_path.exists() else {'version': 1, 'samples': []}
-          for f in sorted(glob.glob('/tmp/training/sample_*.json')):
-              incoming = json.loads(pathlib.Path(f).read_text())
-              base['samples'].extend(incoming.get('samples', []))
-          base['sampleCount'] = len(base['samples'])
-          base_path.write_text(json.dumps(base, separators=(',', ':')))
-          EOF
-          git add web/browser_train.json
-          git diff --cached --quiet && echo "No sample changes." || \
-            git commit -m "chore: merge new browser samples into browser_train.json"
 
       - name: Push commits
         if: steps.list.outputs.count != '0'
