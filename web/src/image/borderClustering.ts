@@ -11,10 +11,7 @@
  *   KMeans(k=2, n_init=10) → kmeans2() (~40 lines)
  *
  * Image convention: warpedGry is a standard row-major grayscale image where
- * pixel(row, col) = data[row * size + col]. Python's source treats the first
- * numpy axis as "x" (column) throughout its border-detection code — a
- * transposed convention, not equivalent to swapping row/col naively (see
- * sampleStrip's docstring for the isHorizontal mapping this requires).
+ * pixel(row, col) = data[row * size + col].
  */
 
 import type { BorderClusteringConfig } from './config.js';
@@ -263,19 +260,25 @@ function sampleStrip(
   const result = new Uint8Array(len).fill(255);
 
   if (isHorizontal) {
-    // Min over rows in [cStart, cEnd), result indexed by col offset from pStart.
-    for (let col = pStart; col < pEnd; col++) {
-      for (let row = cStart; row < cEnd; row++) {
-        const v = data[row * size + col]!;
-        if (v < result[col - pStart]!) result[col - pStart] = v;
-      }
-    }
-  } else {
-    // Min over columns in [cStart, cEnd), result indexed by row offset from pStart.
+    // Horizontal wall: perpendicular axis is row (gapIdx = rowGap, scanned
+    // across via pStart/pEnd), along axis is col (alongIdx = col, narrow
+    // averaging band via cStart/cEnd). Min over cols in [cStart, cEnd),
+    // result indexed by row offset from pStart.
     for (let row = pStart; row < pEnd; row++) {
       for (let col = cStart; col < cEnd; col++) {
         const v = data[row * size + col]!;
         if (v < result[row - pStart]!) result[row - pStart] = v;
+      }
+    }
+  } else {
+    // Vertical wall: perpendicular axis is col (gapIdx = colGap, scanned
+    // across via pStart/pEnd), along axis is row (alongIdx = row, narrow
+    // averaging band via cStart/cEnd). Min over rows in [cStart, cEnd),
+    // result indexed by col offset from pStart.
+    for (let col = pStart; col < pEnd; col++) {
+      for (let row = cStart; row < cEnd; row++) {
+        const v = data[row * size + col]!;
+        if (v < result[col - pStart]!) result[col - pStart] = v;
       }
     }
   }
