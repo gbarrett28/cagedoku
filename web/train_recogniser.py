@@ -323,7 +323,7 @@ class HogRecogniser(NumRecogniser):
         print(f"  Bin size: {len(blob):,} bytes", flush=True)
 
 
-ACTIVE_RECOGNISER: NumRecogniser = PcaRbfRecogniser()  # the one line that decides everything
+ACTIVE_RECOGNISER: NumRecogniser = HogRecogniser()  # the one line that decides everything
 
 
 # ---------------------------------------------------------------------------

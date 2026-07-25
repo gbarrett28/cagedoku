@@ -43,8 +43,7 @@ def _extract_cell_contours(
 
     Runs grid location, perspective warp, contour extraction, and digit
     splitting to produce a mapping of cell coordinates to contour thumbnail
-    lists.  Uses the same cell-indexing convention as InpImage (outer loop
-    variable is col, inner is row).
+    lists.
 
     Args:
         filepath: Path to the puzzle .jpg image file.
@@ -79,9 +78,8 @@ def _extract_cell_contours(
         dtype=np.uint8,
     )
 
-    # num_pixels is written at [x//subres, y//subres] (column-major) and read
-    # back as [row_var, col_var] in the output loop below; same convention as
-    # InpImage.__init__.
+    # num_pixels is row-major (indexed [row, col]), matching cage_totals'
+    # convention throughout the rest of the pipeline.
     num_pixels: npt.NDArray[np.object_] = np.empty((9, 9), dtype=object)
     contours_raw, hiers_raw = cv2.findContours(
         warped_blk, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
@@ -106,13 +104,13 @@ def _extract_cell_contours(
                 continue
             col = x // subres
             row = y // subres
-            if num_pixels[col, row] is None:
-                num_pixels[col, row] = []
-            num_pixels[col, row] += num_chiers
+            if num_pixels[row, col] is None:
+                num_pixels[row, col] = []
+            num_pixels[row, col] += num_chiers
 
     result: dict[tuple[int, int], list[npt.NDArray[np.uint8]]] = {}
-    for col in range(9):
-        for row in range(9):
+    for row in range(9):
+        for col in range(9):
             cell: list[npt.NDArray[np.uint8]] | None = num_pixels[row, col]
             if cell is not None:
                 result[(col, row)] = cell
@@ -162,7 +160,7 @@ def bootstrap_numerals(
     total's digit string.  Mismatches (contour count != digit count) are skipped.
 
     Labelling rule: if the number of contours in cell (col, row) exactly equals
-    the number of digits in cage_totals[col, row], the contours are paired
+    the number of digits in cage_totals[row, col], the contours are paired
     left-to-right with the digit characters.
 
     Args:
@@ -196,7 +194,8 @@ def bootstrap_numerals(
 
         for col in range(9):
             for row in range(9):
-                total = int(pic_info.cage_totals[col, row])
+                # cage_totals is row-major -- index as [row, col], not [col, row].
+                total = int(pic_info.cage_totals[row, col])
                 if total == 0:
                     continue
                 total_str = str(total)

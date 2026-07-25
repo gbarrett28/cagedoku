@@ -125,10 +125,17 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="pca_hog_scratch_") as scratch:
         # build_agreement_pool requires rework=True, which re-writes
         # .jpk/status.pkl in whatever directory it's pointed at -- never point
-        # it at guardian/observer directly, always a scratch copy.
+        # it at guardian/observer/classic_guardian/classic_observer directly,
+        # always a scratch copy.
+        #
+        # classic_guardian/easy only: its other difficulty subdirectories
+        # (medium/hard/expert/other) reuse the same filenames, which would
+        # collide when flattened into scratch_dir.
         for corpus_name, corpus_dir in [
             ("guardian", Path("guardian")),
             ("observer", Path("observer")),
+            ("classic_guardian", Path("classic_guardian/easy")),
+            ("classic_observer", Path("classic_observer")),
         ]:
             scratch_dir = Path(scratch) / corpus_name
             scratch_dir.mkdir()

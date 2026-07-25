@@ -117,7 +117,8 @@ def build_agreement_pool(corpus_dir: Path, corpus_name: str) -> list[AgreedSampl
             for dr in rects:
                 by_cell.setdefault((dr.row, dr.col), []).append(dr)
             for (row, col), cell_rects in by_cell.items():
-                total_str = str(int(totals_pca[col, row]))
+                # cage_totals is row-major -- index as [row, col], not [col, row].
+                total_str = str(int(totals_pca[row, col]))
                 if len(cell_rects) != len(total_str):
                     continue
                 cell_rects.sort(key=lambda dr: float(dr.rect[:, 0].min()))
