@@ -63,6 +63,7 @@ def train_and_evaluate(
     cross_font: list[tuple[int, npt.NDArray[np.uint8]]],
     dither_variants: int = DEFAULT_DITHER,
 ) -> dict[str, dict[str, float]]:
+    train_labels = np.array([label for label, _ in train], dtype=np.int64)
     train_crops = [crop for _, crop in train]
     holdout_labels = np.array([label for label, _ in holdout], dtype=np.int64)
     holdout_crops = [crop for _, crop in holdout]
@@ -93,7 +94,15 @@ def train_and_evaluate(
         features = recogniser.extract_features(dithered_imgs)
         model = recogniser.fit(features, dithered_labels_arr, None)
 
+        # Train-set self-accuracy (predicting the exact real, un-dithered
+        # crops the model was fit on) -- a low value here (much below ~90%)
+        # is a strong signal of label noise in the training set itself, not
+        # a generalization gap: a model that can't even fit its own training
+        # labels well isn't going to be fixed by more data or augmentation.
+        train_accuracy = _accuracy(train_crops, train_labels, warp_fn, recogniser, model)
+
         results[name] = {
+            "train_accuracy": train_accuracy,
             "same_dist_accuracy": _accuracy(
                 holdout_crops, holdout_labels, warp_fn, recogniser, model
             ),
@@ -143,10 +152,13 @@ def main() -> None:
         f"Training set: {len(train)} samples. Same-distribution holdout: {len(holdout)}. "
         f"Cross-font holdout: {len(cross_font)}.\n"
     )
-    lines.append("| Combination | Same-distribution accuracy | Cross-font accuracy |")
-    lines.append("|---|---|---|")
+    lines.append("| Combination | Train accuracy | Same-distribution accuracy | Cross-font accuracy |")
+    lines.append("|---|---|---|---|")
     for name, r in results.items():
-        lines.append(f"| {name} | {r['same_dist_accuracy']:.4f} | {r['cross_font_accuracy']:.4f} |")
+        lines.append(
+            f"| {name} | {r['train_accuracy']:.4f} | {r['same_dist_accuracy']:.4f} "
+            f"| {r['cross_font_accuracy']:.4f} |"
+        )
     Path("docs/pca-hog-combination-results.md").write_text(
         "\n".join(lines) + "\n", encoding="utf-8"
     )
