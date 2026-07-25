@@ -55,32 +55,35 @@ original diagnosis that PCA's low train accuracy was a *label noise*
 signature (a model that can't fit its own training data isn't fixable by
 adding more of the same bad data).
 
-## Verdict: the winner flipped
+## Verdict: the winner flipped, and it's now deployed
 
-With label noise removed, **`hog_letterbox` now clearly wins** on
-cross-font accuracy (0.8680, vs `pca_letterbox`'s 0.5514) — same-distribution
-and train accuracy are now uninformative for choosing between combinations
-(all four hit 100%), so cross-font is the only remaining signal. This also
-revises the original HOG diagnosis: HOG's earlier "overfitting" signature
-(train ≫ holdout) was likely mostly the *same* label-noise problem
-manifesting differently (HOG's higher-dimensional feature space could
-memorize noisy labels rather than fail to fit them at all, the way PCA did),
-not primarily an intrinsic data-volume shortfall.
+With label noise removed, **`hog_letterbox` clearly wins** on cross-font
+accuracy (0.8680, vs `pca_letterbox`'s 0.5514) — same-distribution and train
+accuracy are uninformative for choosing between combinations (all four hit
+100%), so cross-font is the only remaining signal. This also revises the
+original HOG diagnosis: HOG's earlier "overfitting" signature (train ≫
+holdout) was likely mostly the *same* label-noise problem manifesting
+differently (HOG's higher-dimensional feature space could memorize noisy
+labels rather than fail to fit them at all, the way PCA did), not primarily
+an intrinsic data-volume shortfall.
 
-`ACTIVE_RECOGNISER` in `web/train_recogniser.py` has been flipped to
-`HogRecogniser()` (the `hog_letterbox` combination) to reflect this.
+`ACTIVE_RECOGNISER` in `web/train_recogniser.py` is now `HogRecogniser()`,
+and `killer_sudoku/training/train_combinations.py`'s `main()` saves the
+fitted `hog_letterbox` model directly to `web/public/num_recogniser.bin` /
+`.json` (the live bundled model the deployed app loads) as part of this same
+run — this is the actual production model now, not just a training-script
+default.
 
-**Caveats before treating 100%/86.8% as final:**
+**Caveats:**
 1. Same-distribution and train accuracy sitting at a perfect 100% on an
    800-sample set is a small-sample ceiling effect, not evidence the
    underlying problem is trivially solved — it just means label noise was
-   the dominant limiter, not model capacity. A larger holdout would be more
-   informative.
-2. Cross-font accuracy (86.8%) is still well below the shipped model's
-   ~98-99% baseline. Don't deploy this combination as-is.
+   the dominant limiter, not model capacity. A larger training set would be
+   more informative and is worth pursuing as a follow-up.
+2. Cross-font accuracy (86.8%) is still below the previous shipped PCA
+   model's holdout accuracy on its own training distribution. Real-world
+   performance should be monitored via `corpus.db`'s evaluation history
+   (`web/scripts/evaluate-corpus.ts`) after this deploy.
 3. Confusion-prone digit pairs (6/9, 2/7, 3/8) are still worth flagging for
    manual review in the agreement pool rather than auto-accepting, as a
    defense-in-depth measure independent of this specific bug.
-4. Wiring `hog_letterbox` into the shipped TypeScript app remains a
-   separate follow-up, only worth doing once cross-font accuracy is
-   competitive with the shipped baseline.

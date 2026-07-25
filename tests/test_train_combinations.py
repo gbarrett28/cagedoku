@@ -19,9 +19,10 @@ def test_train_and_evaluate_runs_all_four_combinations() -> None:
     holdout = [(d, _make_crop(d)) for d in range(10)]
     cross_font: list[tuple[int, npt.NDArray[np.uint8]]] = []
 
-    results = train_and_evaluate(train, holdout, cross_font)
+    results, fitted_models = train_and_evaluate(train, holdout, cross_font)
     assert set(results.keys()) == {
         "pca_stretch", "pca_letterbox", "hog_stretch", "hog_letterbox",
     }
     for combo_results in results.values():
         assert "same_dist_accuracy" in combo_results
+    assert set(fitted_models.keys()) == set(results.keys())

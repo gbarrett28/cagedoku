@@ -14,7 +14,7 @@ import numpy as np
 import numpy.typing as npt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "web"))
-from train_recogniser import DEFAULT_DITHER, HogRecogniser, PcaRbfRecogniser, dither_batch
+from train_recogniser import DEFAULT_DITHER, HogRecogniser, NumRecogniser, PcaRbfRecogniser, dither_batch
 
 from killer_sudoku.training.agreement_pool import AgreedSample, build_agreement_pool
 from killer_sudoku.training.balanced_sample import balanced_split
@@ -62,7 +62,7 @@ def train_and_evaluate(
     holdout: list[tuple[int, npt.NDArray[np.uint8]]],
     cross_font: list[tuple[int, npt.NDArray[np.uint8]]],
     dither_variants: int = DEFAULT_DITHER,
-) -> dict[str, dict[str, float]]:
+) -> tuple[dict[str, dict[str, float]], dict[str, tuple[NumRecogniser, dict[str, Any]]]]:
     train_labels = np.array([label for label, _ in train], dtype=np.int64)
     train_crops = [crop for _, crop in train]
     holdout_labels = np.array([label for label, _ in holdout], dtype=np.int64)
@@ -78,6 +78,7 @@ def train_and_evaluate(
     }
 
     results: dict[str, dict[str, float]] = {}
+    fitted_models: dict[str, tuple[NumRecogniser, dict[str, Any]]] = {}
     for name, (recogniser, warp_fn) in combinations.items():
         warped_train = _warp_all(train_crops, warp_fn)
         # Dither training data only -- never the holdouts, which must stay
@@ -93,6 +94,7 @@ def train_and_evaluate(
 
         features = recogniser.extract_features(dithered_imgs)
         model = recogniser.fit(features, dithered_labels_arr, None)
+        fitted_models[name] = (recogniser, model)
 
         # Train-set self-accuracy (predicting the exact real, un-dithered
         # crops the model was fit on) -- a low value here (much below ~90%)
@@ -110,7 +112,7 @@ def train_and_evaluate(
                 cross_font_crops, cross_font_labels, warp_fn, recogniser, model
             ),
         }
-    return results
+    return results, fitted_models
 
 
 def main() -> None:
@@ -118,6 +120,17 @@ def main() -> None:
     parser.add_argument(
         "--limit", type=int, default=None,
         help="Only process the first N images per corpus (for a fast pilot run)",
+    )
+    parser.add_argument(
+        "--save-combination", default="hog_letterbox",
+        help="Which combination's fitted model to save to --save-dir "
+             "(default: hog_letterbox, the current winner). Pass an empty "
+             "string to skip saving.",
+    )
+    parser.add_argument(
+        "--save-dir", type=Path, default=Path("web/public"),
+        help="Output directory for the saved model's num_recogniser.bin/.json "
+             "(default: web/public, the live bundled model location).",
     )
     args = parser.parse_args()
 
@@ -152,7 +165,7 @@ def main() -> None:
 
     cross_font = generate_cross_font_holdout()
 
-    results = train_and_evaluate(train, holdout, cross_font)
+    results, fitted_models = train_and_evaluate(train, holdout, cross_font)
 
     lines = ["# PCA/HOG Combination Results\n"]
     lines.append(
@@ -169,6 +182,15 @@ def main() -> None:
     Path("docs/pca-hog-combination-results.md").write_text(
         "\n".join(lines) + "\n", encoding="utf-8"
     )
+
+    if args.save_combination:
+        recogniser, model = fitted_models[args.save_combination]
+        recogniser.save(model, args.save_dir)
+        print(
+            f"Saved {args.save_combination} model to "
+            f"{args.save_dir / 'num_recogniser.bin'} / "
+            f"{args.save_dir / 'num_recogniser.json'}"
+        )
 
 
 if __name__ == "__main__":

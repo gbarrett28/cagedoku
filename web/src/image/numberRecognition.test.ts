@@ -1,17 +1,18 @@
 /**
- * Digit recogniser accuracy tests — verifies the TypeScript PCA+template+RBF-SVM
- * inference path produces correct predictions on browser-exported training samples.
+ * Digit recogniser accuracy tests — verifies whichever architecture is
+ * currently shipped (PCA+template+RBF-SVM, or HOG+hole-features+RBF-SVM)
+ * produces correct predictions on browser-exported training samples.
  *
  * Reads num_recogniser.{bin,json} from web/public/ and training samples from
  * web/browser_train.json. Uses the actual loadNumRecogniser + recognise code
- * path so any PCA/RBF float-precision divergence surfaces as test failures.
+ * path so any float-precision divergence surfaces as test failures.
  *
- * The model was reverted from HOG+OVO-SVM back to Python's original PCA+
- * template+RBF-SVM architecture (see `docs/architecture.md` § Web Recogniser
- * Training for the NumRecogniser class hierarchy) as the shipped default.
- * browser_train.json's crops were captured under the old HOG+letterbox
- * pipeline, so a fixed set of samples are architecturally incompatible with
- * the new PCA feature space — see KNOWN_FAILURE_SAMPLE_HASHES below.
+ * The shipped architecture (see `docs/architecture.md` § Web Recogniser
+ * Training for the NumRecogniser class hierarchy) has flip-flopped between
+ * PCA+RBF and HOG+RBF more than once as training pipeline bugs were found
+ * and fixed. Each architecture keeps its own known-model-failure-hashes-*.json
+ * allowlist (see KNOWN_FAILURE_SAMPLE_HASHES below) since a sample failing
+ * under one architecture's crop geometry says nothing about the other's.
  */
 
 import { createHash } from 'node:crypto';
@@ -129,10 +130,12 @@ function unexpectedFailures(subset: TrainingSample[]): string[] {
 // this one is "whatever the currently-shipped model happens to fail on" and
 // must be regenerated whenever the shipped model changes. Conflating the two
 // previously meant updating one silently changed the other's meaning.
-describe('digit recogniser — TypeScript PCA+RBF inference on training data', () => {
+describe('digit recogniser — bundled model inference on training data', () => {
   it('loads model without error', () => {
     expect(rec).toBeDefined();
-    expect(rec).toBeInstanceOf(PcaRbfRecogniser);
+    expect(
+      rec instanceof PcaRbfRecogniser || rec instanceof HogRecogniser,
+    ).toBe(true);
   });
 
   it('achieves at least total - knownFailures.size accuracy, with no unexpected failures', () => {
@@ -148,7 +151,13 @@ describe('digit recogniser — TypeScript PCA+RBF inference on training data', (
     expect(unexpected, `Unexpected new failures (hash not in KNOWN_FAILURE_SAMPLE_HASHES):\n${unexpected.join('\n')}`)
       .toEqual([]);
 
-    const floor = total - KNOWN_FAILURE_SAMPLE_HASHES.size;
+    // total - KNOWN_FAILURE_SAMPLE_HASHES.size undercounts the floor when
+    // multiple samples share a hash (duplicate crop content in
+    // browser_train.json): each still counts as one real failure even
+    // though its hash only occupies one Set slot. Count samples actually
+    // covered by the known-failure set instead of the set's own size.
+    const knownCoveredCount = samples.filter(s => KNOWN_FAILURE_SAMPLE_HASHES.has(sha256(s.pixels))).length;
+    const floor = total - knownCoveredCount;
     expect(correct, `Expected at least ${floor}/${total} correct; failures:\n${errors.join('\n')}`)
       .toBeGreaterThanOrEqual(floor);
   });
@@ -197,8 +206,43 @@ describe('Recognition.runnerUp', () => {
 
 describe('loadNumRecogniser class dispatch', () => {
   it('returns a PcaRbfRecogniser instance for classifier_type "pca_rbf"', () => {
-    expect(rec).toBeInstanceOf(PcaRbfRecogniser);
-    expect(rec).not.toBeInstanceOf(HogRecogniser);
+    // Self-contained fixture (mirrors the "linear" test below) rather than
+    // relying on whichever architecture happens to be the live bundled
+    // model in public/ -- this test asserts dispatch behaviour, not which
+    // model is currently deployed.
+    const manifest = { classifier_type: 'pca_rbf', arrays: {
+      pca_win_size:         { dtype: 'int32',   shape: [1],    offset: 0,  byteLength: 4 },
+      pca_dims:             { dtype: 'int32',   shape: [1],    offset: 4,  byteLength: 4 },
+      rbf_gamma:            { dtype: 'float64', shape: [1],    offset: 8,  byteLength: 8 },
+      template_threshold:   { dtype: 'float64', shape: [1],    offset: 16, byteLength: 8 },
+      confidence_threshold: { dtype: 'float64', shape: [1],    offset: 24, byteLength: 8 },
+      classes:              { dtype: 'int32',   shape: [2],    offset: 32, byteLength: 8 },
+      pca_mean:             { dtype: 'float64', shape: [1],    offset: 40, byteLength: 8 },
+      pca_components:       { dtype: 'float64', shape: [1],    offset: 48, byteLength: 8 },
+      rbf_support_vectors:  { dtype: 'float64', shape: [1, 1], offset: 56, byteLength: 8 },
+      rbf_dual_coef:        { dtype: 'float64', shape: [1],    offset: 64, byteLength: 8 },
+      rbf_intercept:        { dtype: 'float64', shape: [1],    offset: 72, byteLength: 8 },
+      rbf_n_support:        { dtype: 'int32',   shape: [1],    offset: 80, byteLength: 4 },
+    } };
+    const buf = new ArrayBuffer(88);
+    const dv = new DataView(buf);
+    dv.setInt32(0, 64, true);    // pca_win_size
+    dv.setInt32(4, 1, true);     // pca_dims
+    dv.setFloat64(8, 1.0, true); // rbf_gamma
+    dv.setFloat64(16, 0.5, true); // template_threshold
+    dv.setFloat64(24, 0.7, true); // confidence_threshold
+    dv.setInt32(32, 1, true);    // classes[0]
+    dv.setInt32(36, 2, true);    // classes[1]
+    dv.setFloat64(40, 0.0, true); // pca_mean
+    dv.setFloat64(48, 1.0, true); // pca_components
+    dv.setFloat64(56, 0.5, true); // rbf_support_vectors
+    dv.setFloat64(64, 1.0, true); // rbf_dual_coef
+    dv.setFloat64(72, 0.0, true); // rbf_intercept
+    dv.setInt32(80, 1, true);    // rbf_n_support
+
+    const pcaRec = loadNumRecogniser(buf, manifest);
+    expect(pcaRec).toBeInstanceOf(PcaRbfRecogniser);
+    expect(pcaRec).not.toBeInstanceOf(HogRecogniser);
   });
 
   it('returns a HogRecogniser instance for classifier_type "linear"', () => {
