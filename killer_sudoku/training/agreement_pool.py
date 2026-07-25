@@ -6,10 +6,15 @@ docs/superpowers/plans/2026-07-24-pca-hog-agreement-recogniser.md for why
 this is a stronger ground-truth signal than either check alone.
 """
 
+import base64
 import dataclasses
+import shutil
 import sys
+import tempfile
 from pathlib import Path
+from typing import Any
 
+import cv2
 import numpy as np
 import numpy.typing as npt
 
@@ -132,3 +137,135 @@ def build_agreement_pool(corpus_dir: Path, corpus_name: str) -> list[AgreedSampl
                         )
                     )
     return samples
+
+
+# classic_guardian/easy only: its other difficulty subdirectories
+# (medium/hard/expert/other) reuse the same filenames, which would collide
+# when flattened into a single scratch dir.
+DEFAULT_CORPORA: list[tuple[str, Path]] = [
+    ("guardian", Path("guardian")),
+    ("observer", Path("observer")),
+    ("classic_guardian", Path("classic_guardian/easy")),
+    ("classic_observer", Path("classic_observer")),
+]
+
+
+def build_full_corpus_pool(
+    corpora: list[tuple[str, Path]] = DEFAULT_CORPORA,
+    limit: int | None = None,
+) -> list[AgreedSample]:
+    """Builds the agreement pool across every registered corpus.
+
+    Each corpus is copied into its own scratch directory first --
+    build_agreement_pool requires rework=True, which re-writes .jpk/status.pkl
+    wherever it's pointed, so it must never run directly against
+    guardian/observer/classic_guardian/classic_observer.
+    """
+    all_samples: list[AgreedSample] = []
+    with tempfile.TemporaryDirectory(prefix="agreement_pool_scratch_") as scratch:
+        for corpus_name, corpus_dir in corpora:
+            scratch_dir = Path(scratch) / corpus_name
+            scratch_dir.mkdir()
+            images = sorted(corpus_dir.glob("*.jpg"))
+            if limit is not None:
+                images = images[:limit]
+            for img in images:
+                shutil.copy(img, scratch_dir / img.name)
+            all_samples.extend(build_agreement_pool(scratch_dir, corpus_name))
+    return all_samples
+
+
+def sample_key(corpus: str, source_name: str, row: int, col: int) -> str:
+    """Stable identifier for a corpus digit crop, used as the manual-override key.
+
+    Built from (corpus, source image filename, cell row, cell col) rather than
+    a pixel hash so it survives a re-crop of the same cell (e.g. after a
+    border-detection tweak changes the rect slightly).
+    """
+    return f"{corpus}|{source_name}|{row}|{col}"
+
+
+def apply_manual_overrides(
+    samples: list[AgreedSample], overrides: dict[str, Any],
+) -> tuple[list[AgreedSample], list[str]]:
+    """Applies corrections collected via review_low_confidence.py's tick sheet.
+
+    Each override entry (keyed by sample_key(...)) carries: "label" (the
+    corrected digit, or "exclude" for a bad/non-digit crop), "expectedPrior"
+    (the label the pipeline assigned when the crop was reviewed), and
+    "cropPng" (the reviewed crop itself, base64 PNG).
+
+    Most reviewed crops come from puzzles the agreement gate excluded
+    entirely -- that disagreement (or a duplicate-digit solve failure) is
+    exactly why they needed reviewing -- so there is usually no existing
+    AgreedSample to relabel; the override instead introduces a brand new,
+    human-verified sample built from its own stored crop.
+
+    Where a matching sample DOES already exist, expectedPrior is checked
+    against its current label before relabelling: a mismatch means the
+    pipeline's identification of that cell has changed since the correction
+    was recorded (rects shifted, a different crop now occupies the same
+    (corpus, filename, row, col) key), so relabelling it would silently
+    corrupt the ground truth rather than fix it -- such overrides are left
+    unapplied and reported back instead of guessed at. A key claimed by more
+    than one existing sample (a multi-digit killer cage total puts every
+    character at the same row/col) is ambiguous for the same reason and is
+    likewise left unapplied.
+
+    Returns (augmented_samples, mismatched_keys).
+    """
+    by_key: dict[str, list[AgreedSample]] = {}
+    for s in samples:
+        by_key.setdefault(sample_key(s.corpus, s.source_path.name, s.row, s.col), []).append(s)
+
+    result: list[AgreedSample] = []
+    mismatched: list[str] = []
+    consumed_keys: set[str] = set()
+
+    for key, group in by_key.items():
+        if key not in overrides:
+            result.extend(group)
+            continue
+        consumed_keys.add(key)
+        override = overrides[key]
+        if len(group) != 1:
+            mismatched.append(key)
+            result.extend(group)
+            continue
+        existing = group[0]
+        expected_prior = override.get("expectedPrior")
+        if expected_prior is not None and int(expected_prior) != existing.label:
+            mismatched.append(key)
+            result.append(existing)
+            continue
+        if override["label"] != "exclude":
+            result.append(dataclasses.replace(existing, label=int(override["label"])))
+
+    for key, override in overrides.items():
+        if key in consumed_keys:
+            continue
+        new_sample = _sample_from_override(key, override)
+        if new_sample is not None:
+            result.append(new_sample)
+
+    return result, mismatched
+
+
+def _sample_from_override(key: str, override: dict[str, Any]) -> AgreedSample | None:
+    if override["label"] == "exclude":
+        return None
+    corpus, source_name, row_str, col_str = key.split("|")
+    png_bytes = base64.b64decode(override["cropPng"])
+    crop = cv2.imdecode(np.frombuffer(png_bytes, dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
+    if crop is None:
+        raise ValueError(f"override {key!r}: cropPng did not decode to a valid image")
+    return AgreedSample(
+        corpus=corpus,
+        puzzle_type=override.get("puzzleType", "classic"),
+        row=int(row_str),
+        col=int(col_str),
+        rect=np.zeros((4, 2), dtype=np.float32),
+        label=int(override["label"]),
+        source_path=Path(source_name),
+        crop=crop.astype(np.uint8),
+    )

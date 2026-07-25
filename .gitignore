@@ -67,3 +67,6 @@ classic_observer/
 
 # Focused stall fixtures — generated at deploy time, not committed
 web/stall-fixtures/*-f*.stall.json
+
+# review_low_confidence.py output — regenerated per run, not source
+killer_sudoku/training/review_output/

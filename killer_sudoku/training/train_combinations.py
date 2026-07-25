@@ -4,9 +4,7 @@ Evaluates all four on same-distribution and cross-font holdouts.
 """
 
 import argparse
-import shutil
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -14,9 +12,11 @@ import numpy as np
 import numpy.typing as npt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "web"))
+import json
+
 from train_recogniser import DEFAULT_DITHER, HogRecogniser, NumRecogniser, PcaRbfRecogniser, dither_batch
 
-from killer_sudoku.training.agreement_pool import AgreedSample, build_agreement_pool
+from killer_sudoku.training.agreement_pool import apply_manual_overrides, build_full_corpus_pool
 from killer_sudoku.training.balanced_sample import balanced_split
 from killer_sudoku.training.synthetic_holdout import generate_cross_font_holdout
 
@@ -134,34 +134,25 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    all_samples: list[AgreedSample] = []
-    with tempfile.TemporaryDirectory(prefix="pca_hog_scratch_") as scratch:
-        # build_agreement_pool requires rework=True, which re-writes
-        # .jpk/status.pkl in whatever directory it's pointed at -- never point
-        # it at guardian/observer/classic_guardian/classic_observer directly,
-        # always a scratch copy.
-        #
-        # classic_guardian/easy only: its other difficulty subdirectories
-        # (medium/hard/expert/other) reuse the same filenames, which would
-        # collide when flattened into scratch_dir.
-        for corpus_name, corpus_dir in [
-            ("guardian", Path("guardian")),
-            ("observer", Path("observer")),
-            ("classic_guardian", Path("classic_guardian/easy")),
-            ("classic_observer", Path("classic_observer")),
-        ]:
-            scratch_dir = Path(scratch) / corpus_name
-            scratch_dir.mkdir()
-            images = sorted(corpus_dir.glob("*.jpg"))
-            if args.limit is not None:
-                images = images[: args.limit]
-            for img in images:
-                shutil.copy(img, scratch_dir / img.name)
-            all_samples.extend(build_agreement_pool(scratch_dir, corpus_name))
+    all_samples = build_full_corpus_pool(limit=args.limit)
 
-        split = balanced_split(all_samples, per_digit=100, holdout_fraction=0.2, seed=0)
-        train = [(s.label, s.crop) for s in split.train]
-        holdout = [(s.label, s.crop) for s in split.holdout]
+    overrides_path = Path("killer_sudoku/training/manual_label_overrides.json")
+    if overrides_path.exists():
+        overrides = json.loads(overrides_path.read_text(encoding="utf-8"))
+        n_before = len(all_samples)
+        all_samples, mismatched = apply_manual_overrides(all_samples, overrides)
+        print(
+            f"Applied {len(overrides) - len(mismatched)}/{len(overrides)} manual overrides "
+            f"({n_before} -> {len(all_samples)} samples)."
+        )
+        if mismatched:
+            print(f"WARNING: {len(mismatched)} override(s) skipped -- identity no longer matches:")
+            for key in mismatched:
+                print(f"  {key}")
+
+    split = balanced_split(all_samples, per_digit=100, holdout_fraction=0.2, seed=0)
+    train = [(s.label, s.crop) for s in split.train]
+    holdout = [(s.label, s.crop) for s in split.holdout]
 
     cross_font = generate_cross_font_holdout()
 
