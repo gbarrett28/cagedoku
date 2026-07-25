@@ -107,9 +107,9 @@ function imageWithDarkHBorders(size: number, subres: number, darkGaps: number[])
   const halfBand = (subres / 2) | 0;
   for (const g of darkGaps) {
     const boundary = (g + 1) * subres;
-    for (let col = boundary - halfBand; col < boundary + halfBand; col++) {
-      if (col < 0 || col >= size) continue;
-      for (let row = 0; row < size; row++) {
+    for (let row = boundary - halfBand; row < boundary + halfBand; row++) {
+      if (row < 0 || row >= size) continue;
+      for (let col = 0; col < size; col++) {
         data[row * size + col] = 30; // dark ink colour
       }
     }
