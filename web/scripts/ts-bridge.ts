@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import { hogExtract, loadNumRecogniser, DEFAULT_HOG_PARAMS } from '../src/image/numberRecognition.js';
 import { extractHoleFeatures } from '../src/image/holeFeatures.js';
+import { solve } from '../src/engine/index.js';
+import type { PuzzleSpec } from '../src/solver/puzzleSpec.js';
 
 const HOG_PARAMS = DEFAULT_HOG_PARAMS;
 
@@ -77,6 +79,20 @@ function runPredict(
   });
 }
 
+function runSolve(payload: PuzzleSpec & { givenDigits?: number[][] }): string {
+  const { board, usedBacktracking } = solve(payload, payload.givenDigits);
+  const out: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+  let solved = true;
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const cands = board.cands(r, c);
+      if (cands.size === 1) out[r]![c] = [...cands][0]!;
+      else solved = false;
+    }
+  }
+  return JSON.stringify({ solved, board: out, usedBacktracking });
+}
+
 function main(): void {
   const args = parseArgs(process.argv.slice(2));
   const payload = JSON.parse(readPayload(args.input));
@@ -88,8 +104,10 @@ function main(): void {
       throw new Error('--op predict requires --model-bin and --model-json');
     }
     result = runPredict(payload, args.modelBin, args.modelJson);
+  } else if (args.op === 'solve') {
+    result = runSolve(payload);
   } else {
-    throw new Error(`unknown --op '${args.op}' (expected extract-features | predict)`);
+    throw new Error(`unknown --op '${args.op}' (expected extract-features | predict | solve)`);
   }
   writeResult(args.output, result);
 }

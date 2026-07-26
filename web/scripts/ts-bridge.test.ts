@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
+import { makeTrivialSpec, KNOWN_SOLUTION } from '../src/engine/fixtures.js';
 
 const BRIDGE = path.resolve(__dirname, 'ts-bridge.ts');
 
@@ -40,5 +41,19 @@ describe('ts-bridge --op predict', () => {
     const parsed = JSON.parse(out) as { predictions: Array<{ label: number; confident: boolean }> };
     expect(parsed.predictions).toHaveLength(1);
     expect(typeof parsed.predictions[0]!.label).toBe('number');
+  });
+});
+
+describe('ts-bridge --op solve', () => {
+  it('solves a trivial (one cell per cage) spec using the real production solver', () => {
+    const spec = makeTrivialSpec();
+    const payload = JSON.stringify({
+      regions: spec.regions, cageTotals: spec.cageTotals,
+      borderX: spec.borderX, borderY: spec.borderY,
+    });
+    const out = runBridge(['--op', 'solve'], payload);
+    const parsed = JSON.parse(out) as { solved: boolean; board: number[][]; usedBacktracking: boolean };
+    expect(parsed.solved).toBe(true);
+    expect(parsed.board).toEqual(KNOWN_SOLUTION);
   });
 });

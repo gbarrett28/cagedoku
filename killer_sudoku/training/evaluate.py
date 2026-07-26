@@ -34,7 +34,8 @@ from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.inp_image import InpImage
 from killer_sudoku.image.number_recognition import NumberSource
 from killer_sudoku.image.validation import validate_cage_layout
-from killer_sudoku.solver.grid import Grid, ProcessingError
+from killer_sudoku.solver.grid import ProcessingError
+from killer_sudoku.training import ts_bridge
 from killer_sudoku.training.status import StatusStore
 
 _log = logging.getLogger(__name__)
@@ -184,10 +185,8 @@ def _process_one_image(
     try:
         inp = InpImage(f, config, num_recogniser)
         assert inp.spec is not None, inp.spec_error
-        grd = Grid()
-        grd.set_up(inp.spec)
-        alts_sum, _solns_sum = grd.engine_solve()
-        status = "SOLVED" if alts_sum == 81 else "UNSOLVED"
+        result = ts_bridge.solve(inp.spec)
+        status = "SOLVED" if result["solved"] else "UNSOLVED"
         return f.name, status, time.perf_counter() - t0
     except ProcessingError as e:
         return f.name, f"ProcessingError: {e.msg}", time.perf_counter() - t0
@@ -355,7 +354,6 @@ def test_border_fun(
 
         try:
             inp = InpImage(f, config, num_recogniser)
-            grd = Grid()
 
             if is_border_fn is None:
                 assert inp.spec is not None, inp.spec_error
@@ -380,10 +378,9 @@ def test_border_fun(
                 border_y = np.asarray(brdrs[:8, :, 2], dtype=bool)
                 spec = validate_cage_layout(inp.info.cage_totals, border_x, border_y)
 
-            grd.set_up(spec)
-            alts_sum, _solns_sum = grd.solve()
-            if alts_sum != 81:
-                _log.info("... unsolved (alts_sum=%d)", alts_sum)
+            result = ts_bridge.solve(spec)
+            if not result["solved"]:
+                _log.info("... unsolved")
                 status[f] = "UNSOLVED"
                 unsolved += 1
             else:

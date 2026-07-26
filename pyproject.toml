@@ -22,7 +22,6 @@ scraper = ["requests", "beautifulsoup4"]
 dev = ["ruff", "mypy", "pytest", "pytest-cov", "playwright>=1.40", "pytest-playwright>=0.4", "numba"]
 
 [project.scripts]
-cagedoku = "killer_sudoku.main:main"
 ks-train-numbers = "killer_sudoku.training.train_number_recogniser:main"
 ks-scrape = "killer_sudoku.training.scrape_puzzles:main"
 ks-evaluate = "killer_sudoku.training.evaluate:main"
@@ -104,15 +103,10 @@ dummy-variable-rgx = "^_.*$"
 "killer_sudoku/training/*.py" = ["T20"]
 # Corpus evaluator CLI: print() for progress output.
 "killer_sudoku/scripts/*.py" = ["T20"]
-# Restored historical packages (api/, output/, solver/ with engine and rules)
-# from commit 1221297 — imported only for the Python evaluator pipeline on
-# feature/python-baseline; not actively maintained in this checkout.
-# RUF001/002/003: legacy unicode chars (×, –, ⋃) in old docstrings/comments.
+# Remaining killer_sudoku/solver/ files (grid.py, puzzle_spec.py, equation-based
+# engine/api/output packages retired) predate style rules added since they were
+# written. RUF001/002: legacy unicode chars (×, –, ⋃) in old docstrings/comments.
 # ERA001: explanatory structure comments misidentified by eradicate.
-# T201: print() is CLI output in api/app.py serve().
-# Remaining: style rules added after these files were originally written.
-"killer_sudoku/api/**/*.py" = ["T201", "RUF001", "RUF002", "RUF003", "ERA001", "PLR1714", "D205", "D415", "RUF005"]
-"killer_sudoku/output/**/*.py" = ["RUF002"]
 "killer_sudoku/solver/**/*.py" = ["RUF001", "RUF002", "ERA001", "SIM102", "SIM105", "D205", "RUF005"]
 # Restored image pipeline files — RUF001/002/003: legacy unicode in docstrings;
 # ERA001: explanatory structure notes in comments.
