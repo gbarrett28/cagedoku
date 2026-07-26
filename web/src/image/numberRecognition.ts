@@ -339,7 +339,7 @@ export class HogRecogniser extends NumRecogniser {
  * @param imgs - flat uint8 pixel data for each image, each of length winSize²
  * @returns Float64Array of shape [n × nFeat] where nFeat = nBlocks² × cpb² × nbins
  */
-function hogExtract(imgs: Uint8Array[], params: HOGParams): Float64Array {
+export function hogExtract(imgs: Uint8Array[], params: HOGParams): Float64Array {
   const { winSize, cellSize, blockSize, blockStride, nbins } = params;
   const nCells = winSize / cellSize;
   const cpb = blockSize / cellSize;                                   // cells per block side
