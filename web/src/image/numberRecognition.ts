@@ -45,6 +45,17 @@ export interface HOGParams {
 }
 
 /**
+ * HOG params used for feature extraction independent of any specific loaded
+ * model (e.g. training-data caching) — matches train_recogniser.py's
+ * HOG_WIN_SIZE/HOG_CELL_SIZE/HOG_BLOCK_SIZE/HOG_BLOCK_STRIDE/HOG_NBINS.
+ * A deployed HogRecogniser's own params (read from its manifest) may differ
+ * and always take precedence for actual recognition.
+ */
+export const DEFAULT_HOG_PARAMS: HOGParams = {
+  winSize: 64, cellSize: 8, blockSize: 16, blockStride: 8, nbins: 9,
+};
+
+/**
  * PCA + template-matching + RBF-SVM classifier parameters.
  *
  * Mirrors Python's `CayenneNumber` (killer_sudoku/image/number_recognition.py):

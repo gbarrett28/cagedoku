@@ -152,6 +152,8 @@ export interface UploadResult {
   regions?: number[][] | null | undefined;
   /** Recognition (incl. runner-up) for each classic given-digit cell, keyed "row,col". Present whenever ParseResult provides it. */
   classicRecognitions?: ReadonlyMap<string, import('../image/numberRecognition.js').Recognition> | undefined;
+  /** Recognition[] (one per digit crop) for each cage-total cell, keyed "row,col". Present whenever ParseResult provides it. */
+  cageTotalRecognitions?: ReadonlyMap<string, import('../image/numberRecognition.js').Recognition[]> | undefined;
 }
 
 /**
@@ -233,6 +235,7 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
     detectedCageTotals: result.detectedCageTotals,
     regions: result.spec?.regions ?? null,
     classicRecognitions: result.classicRecognitions,
+    cageTotalRecognitions: result.cageTotalRecognitions,
   };
 }
 

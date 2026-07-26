@@ -96,6 +96,16 @@ interface UploadOutcomeJson {
     readonly hogFeatures?: number[];
     readonly holeFeatures?: number[];
   }>;
+  readonly cageTotalReads?: ReadonlyArray<{
+    readonly row: number;
+    readonly col: number;
+    readonly digitIndex: number;
+    readonly predictedLabel: number;
+    readonly confident: boolean;
+    readonly crop: number[]; // JSON-serialised Uint8Array
+    readonly hogFeatures?: number[];
+    readonly holeFeatures?: number[];
+  }>;
 }
 
 interface BucketCounts {
@@ -369,6 +379,23 @@ async function runWorker(
         predictedLabel: r.predictedLabel,
         confident: r.confident,
         clashesWith: r.clashesWith,
+        cropPixels: r.crop,
+        hogFeatures: r.hogFeatures ?? [],
+        holeFeatures: r.holeFeatures ?? [],
+      });
+    }
+
+    for (const r of outcome?.cageTotalReads ?? []) {
+      insertCellRead(db, {
+        puzzleHash: claim.puzzle_hash,
+        gitHash,
+        cellType: 'cage_total_digit',
+        row: r.row,
+        col: r.col,
+        digitIndex: r.digitIndex,
+        predictedLabel: r.predictedLabel,
+        confident: r.confident,
+        clashesWith: [],
         cropPixels: r.crop,
         hogFeatures: r.hogFeatures ?? [],
         holeFeatures: r.holeFeatures ?? [],

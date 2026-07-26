@@ -35,6 +35,16 @@ export interface GivenDigitRead {
   crop: Uint8Array;
 }
 
+export interface CageTotalRead {
+  row: number;
+  col: number;
+  /** Position of this digit's crop within a multi-digit total (0 for the first digit). */
+  digitIndex: number;
+  predictedLabel: number;
+  confident: boolean;
+  crop: Uint8Array;
+}
+
 export function findRetrainingSuggestions(
   givenDigits: readonly (readonly number[])[],
   cellThumbs: ReadonlyMap<string, Uint8Array[]>,
@@ -127,6 +137,41 @@ export function buildGivenDigitReads(
       confident: recognition.confident,
       clashesWith,
       crop,
+    });
+  }
+
+  return reads;
+}
+
+/**
+ * Ground-truth crop+label for every cage-total digit cell, one entry per
+ * digit crop (multi-digit totals like "16" have two entries, indexed by
+ * digitIndex). Mirrors buildGivenDigitReads but keyed off arrays of
+ * Recognition/crops per cell rather than a single one, since cage totals
+ * have OCR-independent digits.
+ */
+export function buildCageTotalReads(
+  cellThumbs: ReadonlyMap<string, Uint8Array[]>,
+  cellRecognitions: ReadonlyMap<string, Recognition[]>,
+): CageTotalRead[] {
+  const reads: CageTotalRead[] = [];
+
+  for (const [key, recognitions] of cellRecognitions) {
+    const crops = cellThumbs.get(key);
+    if (crops === undefined) continue;
+    const [rowStr, colStr] = key.split(',');
+
+    recognitions.forEach((recognition, digitIndex) => {
+      const crop = crops[digitIndex];
+      if (crop === undefined) return;
+      reads.push({
+        row: Number(rowStr),
+        col: Number(colStr),
+        digitIndex,
+        predictedLabel: recognition.label,
+        confident: recognition.confident,
+        crop,
+      });
     });
   }
 

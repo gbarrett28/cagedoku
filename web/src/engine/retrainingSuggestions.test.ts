@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findRetrainingSuggestions, buildGivenDigitReads } from './retrainingSuggestions.js';
+import { findRetrainingSuggestions, buildGivenDigitReads, buildCageTotalReads } from './retrainingSuggestions.js';
 import { KNOWN_SOLUTION, makeClassicPartialGivenDigits } from './fixtures.js';
 import type { Recognition } from '../image/numberRecognition.js';
 
@@ -125,5 +125,47 @@ describe('buildGivenDigitReads', () => {
   it('returns nothing for an all-blank grid with no recognitions', () => {
     const givenDigits = Array.from({ length: 9 }, () => Array(9).fill(0));
     expect(buildGivenDigitReads(givenDigits, new Map(), new Map())).toEqual([]);
+  });
+});
+
+describe('buildCageTotalReads', () => {
+  it('reports one read per digit crop, indexed by position within the cell', () => {
+    const cellThumbs = new Map<string, Uint8Array[]>([
+      ['0,0', [thumb(1), thumb(2)]], // two-digit total, e.g. "16"
+      ['2,3', [thumb(3)]], // single-digit total
+    ]);
+    const cellRecognitions = new Map<string, Recognition[]>([
+      ['0,0', [
+        { label: 1, confident: true },
+        { label: 6, confident: true },
+      ]],
+      ['2,3', [{ label: 9, confident: false }]],
+    ]);
+
+    const reads = buildCageTotalReads(cellThumbs, cellRecognitions);
+    expect(reads).toHaveLength(3);
+    expect(reads.find(r => r.row === 0 && r.col === 0 && r.digitIndex === 0)).toMatchObject({
+      predictedLabel: 1, confident: true,
+    });
+    expect(reads.find(r => r.row === 0 && r.col === 0 && r.digitIndex === 1)).toMatchObject({
+      predictedLabel: 6, confident: true,
+    });
+    expect(reads.find(r => r.row === 2 && r.col === 3 && r.digitIndex === 0)).toMatchObject({
+      predictedLabel: 9, confident: false,
+    });
+  });
+
+  it('skips a digit with no matching crop', () => {
+    const cellThumbs = new Map<string, Uint8Array[]>([['0,0', [thumb(1)]]]);
+    const cellRecognitions = new Map<string, Recognition[]>([
+      ['0,0', [{ label: 1, confident: true }, { label: 6, confident: true }]],
+    ]);
+    const reads = buildCageTotalReads(cellThumbs, cellRecognitions);
+    expect(reads).toHaveLength(1);
+    expect(reads[0]).toMatchObject({ row: 0, col: 0, digitIndex: 0, predictedLabel: 1 });
+  });
+
+  it('returns nothing when there are no cage-total recognitions', () => {
+    expect(buildCageTotalReads(new Map(), new Map())).toEqual([]);
   });
 });

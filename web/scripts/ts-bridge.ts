@@ -1,11 +1,8 @@
 import fs from 'node:fs';
-import { hogExtract, loadNumRecogniser } from '../src/image/numberRecognition.js';
-import type { HOGParams } from '../src/image/numberRecognition.js';
+import { hogExtract, loadNumRecogniser, DEFAULT_HOG_PARAMS } from '../src/image/numberRecognition.js';
 import { extractHoleFeatures } from '../src/image/holeFeatures.js';
 
-const HOG_PARAMS: HOGParams = {
-  winSize: 64, cellSize: 8, blockSize: 16, blockStride: 8, nbins: 9,
-};
+const HOG_PARAMS = DEFAULT_HOG_PARAMS;
 
 interface Args {
   op: string;
