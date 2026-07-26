@@ -43,11 +43,21 @@ async function loadAndConfirm(page: Page): Promise<void> {
   await expect(page.locator('#playing-actions')).toBeVisible({ timeout: 5_000 });
 }
 
-/** Load box-cage puzzle then confirm to reach playing mode. All cells stay empty. */
+/**
+ * Load box-cage puzzle then confirm to reach playing mode. All cells stay empty.
+ *
+ * boxCage has zero given digits and only 9-cell box-sum constraints, so rules
+ * alone can't place anything -- the solver always falls back to MRV
+ * backtracking over a fully empty grid (stalledCount 81/81). That search is
+ * occasionally multi-second under load (observed up to ~6.4s), well past a
+ * "should be instant" timeout, which made this a flaky failure rather than a
+ * real one -- see issue #175. 20s leaves comfortable margin without masking
+ * a genuine hang (which would still time out, just later).
+ */
 async function loadBoxCageAndConfirm(page: Page): Promise<void> {
   await loadBoxCagePuzzle(page);
   await page.locator('#confirm-btn').click();
-  await expect(page.locator('#playing-actions')).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('#playing-actions')).toBeVisible({ timeout: 20_000 });
 }
 
 // ---------------------------------------------------------------------------
@@ -781,8 +791,10 @@ test('tutorial callouts do not re-trigger when cage inspector eliminates a solut
   }
 
   // Confirm to enter playing mode (queues the playing-mode callouts).
+  // boxCage's solve is occasionally multi-second (see loadBoxCageAndConfirm's
+  // comment / issue #175) -- 20s margin, same as the shared helper.
   await page.locator('#confirm-btn').click();
-  await expect(page.locator('#playing-actions')).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('#playing-actions')).toBeVisible({ timeout: 20_000 });
 
   // Drain every playing-mode callout.
   while (await page.locator('#callout').isVisible()) {

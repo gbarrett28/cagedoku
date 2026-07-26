@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "web"))
 from train_recogniser import HogRecogniser
 
 from killer_sudoku.training.review_low_confidence import (
+    find_duplicate_cells,
     least_confident,
     ovo_predictions,
     score_candidates,
@@ -55,6 +56,47 @@ def test_ovo_predictions_margin_breaks_ties_among_equal_confidence() -> None:
     assert confidence.tolist() == [1.0, 1.0]
     assert second.tolist() == [2, 2]
     assert margin[0] < margin[1]
+
+
+def test_find_duplicate_cells_empty_for_a_conflict_free_grid() -> None:
+    grid = np.zeros((9, 9), dtype=np.int64)
+    grid[0, 0] = 5
+    grid[4, 4] = 5  # different row, col, and box -- no conflict
+    assert find_duplicate_cells(grid) == {}
+
+
+def test_find_duplicate_cells_flags_a_row_conflict() -> None:
+    grid = np.zeros((9, 9), dtype=np.int64)
+    grid[0, 0] = 5
+    grid[0, 3] = 5
+    conflicts = find_duplicate_cells(grid)
+    assert set(conflicts.keys()) == {(0, 0), (0, 3)}
+    assert conflicts[(0, 0)] == ["row 1 digit 5"]
+    assert conflicts[(0, 3)] == ["row 1 digit 5"]
+
+
+def test_find_duplicate_cells_flags_a_column_conflict() -> None:
+    grid = np.zeros((9, 9), dtype=np.int64)
+    grid[0, 0] = 5
+    grid[3, 0] = 5
+    conflicts = find_duplicate_cells(grid)
+    assert set(conflicts.keys()) == {(0, 0), (3, 0)}
+    assert conflicts[(0, 0)] == ["col 1 digit 5"]
+
+
+def test_find_duplicate_cells_flags_a_box_conflict() -> None:
+    grid = np.zeros((9, 9), dtype=np.int64)
+    grid[0, 0] = 5
+    grid[1, 1] = 5  # same 3x3 box, different row and column
+    conflicts = find_duplicate_cells(grid)
+    assert set(conflicts.keys()) == {(0, 0), (1, 1)}
+    assert conflicts[(0, 0)] == ["box (1,1) digit 5"]
+
+
+def test_find_duplicate_cells_ignores_blank_cells() -> None:
+    # Every cell is 0 (blank) -- 0 must never be treated as a shared digit.
+    grid = np.zeros((9, 9), dtype=np.int64)
+    assert find_duplicate_cells(grid) == {}
 
 
 def _make_crop(digit: int) -> npt.NDArray[np.uint8]:

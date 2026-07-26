@@ -36,7 +36,6 @@ from train_recogniser import HogRecogniser
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.inp_image import InpImage
 from killer_sudoku.training.agreement_pool import (
-    _make_hog_recogniser,
     apply_manual_overrides,
     build_full_corpus_pool,
     resolve_corpus_name,
@@ -44,6 +43,7 @@ from killer_sudoku.training.agreement_pool import (
 )
 from killer_sudoku.training.balanced_sample import balanced_split
 from killer_sudoku.training.digit_rects import locate_classic_digit_rects
+from killer_sudoku.training.hog_model_loader import HogNumber, load_hog_classifier
 from killer_sudoku.training.train_combinations import train_and_evaluate
 
 _WIN_SIZE = 64
@@ -74,6 +74,9 @@ class ScoredCandidate:
     # this is reused both for tick-sheet display and, verbatim, as a new
     # AgreedSample.crop if the candidate ends up in the overrides file.
     crop_png_b64: str
+    # Non-empty only in duplicates mode: which row/col/box + shared digit
+    # this cell conflicts on, e.g. ["row 3 digit 7"]. Empty in confidence mode.
+    conflict_descs: tuple[str, ...] = ()
 
 
 def flagged_puzzle_paths(
@@ -102,10 +105,37 @@ def flagged_puzzle_paths(
     return [(corpus, content_hash, Path(path)) for corpus, content_hash, path in rows]
 
 
-def crops_from_flagged_puzzles(
+def _make_current_hog_recogniser() -> HogNumber:
+    """Loads the CURRENTLY deployed model (web/public/num_recogniser.bin/json).
+
+    This is deliberately NOT agreement_pool._make_hog_recogniser, which
+    loads a frozen historical checkpoint (killer_sudoku/data/
+    hog_recogniser_99cbb70.bin) for a different, legitimate purpose
+    (agreement-pool building needs a second, independent opinion from PCA,
+    not the live model). Here we need the actual deployed model's own
+    reading of each cell: that reading is what determines whether a puzzle
+    fails with "duplicate given digits" in evaluate-corpus.ts in the first
+    place, so finding duplicate conflicts against any other model's opinion
+    would flag conflicts that don't reflect what's actually deployed.
+    """
+    hog_params, classifier, _threshold = load_hog_classifier(
+        Path("web/public/num_recogniser.bin"),
+        Path("web/public/num_recogniser.json"),
+    )
+    warp = HogRecogniser().warp_from_rect
+    return HogNumber(
+        hog_params, classifier,
+        lambda img: warp(0, 0, img.shape[1], img.shape[0], img, hog_params.win_size),
+    )
+
+
+def _classic_puzzles_from_flagged(
     flagged: list[tuple[str, str, Path]],
-) -> list[ReviewCandidate]:
-    """Extracts every classic given-digit crop from each flagged puzzle image.
+) -> list[tuple[str, Path, InpImage]]:
+    """Runs the pipeline once per flagged puzzle, keeping every classic puzzle that parsed cleanly.
+
+    Shared setup for both crops_from_flagged_puzzles and
+    crops_from_duplicate_conflicts.
 
     Copies images into a scratch dir first -- named by content_hash rather than
     original filename -- InpImage(..., rework=True) rewrites .jpk/status.pkl
@@ -113,18 +143,18 @@ def crops_from_flagged_puzzles(
     directories; content-hash naming also sidesteps any cross-directory
     filename collisions among the flagged set.
 
-    The corpus label on each resulting ReviewCandidate is resolved from the
-    source path via agreement_pool.resolve_corpus_name, NOT taken from the
-    `corpus` element of `flagged` (that comes from corpus.db, which only
-    ever records "guardian"/"observer" and can't tell a classic_guardian
-    puzzle from a real guardian one living in a same-named file). A puzzle
-    outside every registered corpus directory (e.g.
-    classic_guardian/expert/, which DEFAULT_CORPORA deliberately excludes to
-    avoid filename collisions with classic_guardian/easy/) can't be turned
-    into a trainable sample at all -- it's skipped, not an error.
+    The corpus label is resolved from the source path via
+    agreement_pool.resolve_corpus_name, NOT taken from the `corpus` element
+    of `flagged` (that comes from corpus.db, which only ever records
+    "guardian"/"observer" and can't tell a classic_guardian puzzle from a
+    real guardian one living in a same-named file). A puzzle outside every
+    registered corpus directory (e.g. classic_guardian/expert/, which
+    DEFAULT_CORPORA deliberately excludes to avoid collisions with
+    classic_guardian/easy/) can't be turned into a trainable sample at all --
+    it's skipped, not an error.
     """
-    hog = _make_hog_recogniser()
-    candidates: list[ReviewCandidate] = []
+    hog = _make_current_hog_recogniser()
+    results: list[tuple[str, Path, InpImage]] = []
     skipped_unregistered = 0
     with tempfile.TemporaryDirectory(prefix="flagged_puzzle_scratch_") as scratch:
         scratch_dir = Path(scratch)
@@ -142,30 +172,125 @@ def crops_from_flagged_puzzles(
                 continue
             if inp.puzzle_type != "classic" or inp.given_digits is None:
                 continue
-            rects = locate_classic_digit_rects(
-                inp.warped_blk, config.subres, inp.given_digits > 0
-            )
-            for dr in rects:
-                x0, y0 = float(dr.rect[:, 0].min()), float(dr.rect[:, 1].min())
-                x1, y1 = float(dr.rect[:, 0].max()), float(dr.rect[:, 1].max())
-                crop = np.asarray(
-                    inp.warped_blk[int(y0) : int(y1), int(x0) : int(x1)], dtype=np.uint8
-                )
-                if crop.size == 0:
-                    continue
-                candidates.append(
-                    ReviewCandidate(
-                        corpus=resolved_corpus,
-                        source_name=src.name,
-                        row=dr.row,
-                        col=dr.col,
-                        crop=crop,
-                        current_label=int(inp.given_digits[dr.row, dr.col]),
-                    )
-                )
+            results.append((resolved_corpus, src, inp))
     if skipped_unregistered:
         print(f"Skipped {skipped_unregistered} flagged puzzle(s) outside every registered corpus directory.")
+    return results
+
+
+def _crop_at_rect(warped_blk: npt.NDArray[np.uint8], rect: npt.NDArray[np.float32]) -> npt.NDArray[np.uint8]:
+    x0, y0 = float(rect[:, 0].min()), float(rect[:, 1].min())
+    x1, y1 = float(rect[:, 0].max()), float(rect[:, 1].max())
+    return np.asarray(warped_blk[int(y0) : int(y1), int(x0) : int(x1)], dtype=np.uint8)
+
+
+def crops_from_flagged_puzzles(
+    flagged: list[tuple[str, str, Path]],
+) -> list[ReviewCandidate]:
+    """Extracts every classic given-digit crop from each flagged puzzle image."""
+    subres = ImagePipelineConfig().subres
+    candidates: list[ReviewCandidate] = []
+    for corpus, src, inp in _classic_puzzles_from_flagged(flagged):
+        assert inp.warped_blk is not None and inp.given_digits is not None
+        rects = locate_classic_digit_rects(inp.warped_blk, subres, inp.given_digits > 0)
+        for dr in rects:
+            crop = _crop_at_rect(inp.warped_blk, dr.rect)
+            if crop.size == 0:
+                continue
+            candidates.append(
+                ReviewCandidate(
+                    corpus=corpus,
+                    source_name=src.name,
+                    row=dr.row,
+                    col=dr.col,
+                    crop=crop,
+                    current_label=int(inp.given_digits[dr.row, dr.col]),
+                )
+            )
     return candidates
+
+
+def find_duplicate_cells(grid: npt.NDArray[np.integer]) -> dict[tuple[int, int], list[str]]:
+    """Mirrors web/src/session/assertions.ts's findDuplicateCells exactly.
+
+    A classic puzzle that failed with "duplicate given digits" has at least
+    one pair of given cells sharing a digit within the same row, column, or
+    3x3 box -- a genuine sudoku-rule violation, which can only mean at least
+    one of the pair was misread. Unlike confidence-ranked crops (which two
+    review rounds showed always matched the model's own prediction, since
+    they're just stylistically awkward, not actually wrong), these cells are
+    guaranteed relevant: we already know something in each returned group is
+    incorrect, just not which one.
+
+    Returns cell -> list of conflict descriptions ("row 3 digit 7", etc.) it
+    participates in, so conflicting cells can be grouped for review.
+    """
+    conflicts: dict[tuple[int, int], list[str]] = {}
+
+    def check(cells: list[tuple[int, int]], unit_label: str) -> None:
+        seen: dict[int, tuple[int, int]] = {}
+        for r, c in cells:
+            d = int(grid[r, c])
+            if d == 0:
+                continue
+            if d in seen:
+                prev = seen[d]
+                desc = f"{unit_label} digit {d}"
+                conflicts.setdefault(prev, []).append(desc)
+                conflicts.setdefault((r, c), []).append(desc)
+            else:
+                seen[d] = (r, c)
+
+    for i in range(9):
+        check([(i, j) for j in range(9)], f"row {i + 1}")
+        check([(j, i) for j in range(9)], f"col {i + 1}")
+    for br in range(3):
+        for bc in range(3):
+            check([(br * 3 + k // 3, bc * 3 + k % 3) for k in range(9)], f"box ({br + 1},{bc + 1})")
+
+    return conflicts
+
+
+def crops_from_duplicate_conflicts(
+    flagged: list[tuple[str, str, Path]],
+) -> list[tuple[ReviewCandidate, list[str]]]:
+    """Extracts only the given-digit crops involved in a duplicate-digit conflict.
+
+    Scoped to cells we already know are relevant, rather than every given
+    digit ranked by model confidence.
+
+    Returns (candidate, conflict_descriptions) pairs, ordered puzzle by
+    puzzle with each conflict group's cells adjacent, so a reviewer can
+    directly compare the crops that were read as the same digit.
+    """
+    subres = ImagePipelineConfig().subres
+    out: list[tuple[ReviewCandidate, list[str]]] = []
+    for corpus, src, inp in _classic_puzzles_from_flagged(flagged):
+        assert inp.warped_blk is not None and inp.given_digits is not None
+        conflicts = find_duplicate_cells(inp.given_digits)
+        if not conflicts:
+            continue
+        rects = {
+            (dr.row, dr.col): dr.rect
+            for dr in locate_classic_digit_rects(inp.warped_blk, subres, inp.given_digits > 0)
+        }
+        for (row, col), descs in sorted(conflicts.items(), key=lambda item: item[1]):
+            rect = rects.get((row, col))
+            if rect is None:
+                continue
+            crop = _crop_at_rect(inp.warped_blk, rect)
+            if crop.size == 0:
+                continue
+            candidate = ReviewCandidate(
+                corpus=corpus,
+                source_name=src.name,
+                row=row,
+                col=col,
+                crop=crop,
+                current_label=int(inp.given_digits[row, col]),
+            )
+            out.append((candidate, descs))
+    return out
 
 
 def ovo_predictions(
@@ -218,10 +343,17 @@ def score_candidates(
     candidates: list[tuple[str, int, npt.NDArray[np.uint8]]],
     recogniser: HogRecogniser,
     model: dict[str, Any],
+    conflict_descs: list[tuple[str, ...]] | None = None,
 ) -> list[ScoredCandidate]:
-    """Scores (id, current_label, crop) triples against a fitted hog_letterbox model."""
+    """Scores (id, current_label, crop) triples against a fitted hog_letterbox model.
+
+    conflict_descs, if given, must be the same length as candidates and is
+    threaded through onto each resulting ScoredCandidate unchanged.
+    """
     if not candidates:
         return []
+    if conflict_descs is not None and len(conflict_descs) != len(candidates):
+        raise ValueError("conflict_descs must be the same length as candidates")
     warp_fn = recogniser.warp_from_rect
     warped = np.stack(
         [warp_fn(0, 0, c.shape[1], c.shape[0], c, _WIN_SIZE) for _, _, c in candidates]
@@ -252,6 +384,7 @@ def score_candidates(
             # version the model was scored on (that would double-warp it
             # relative to every other sample in the pool).
             crop_png_b64=_encode_png_b64(candidates[i][2]),
+            conflict_descs=tuple(conflict_descs[i]) if conflict_descs is not None else (),
         )
         for i in range(len(candidates))
     ]
@@ -300,6 +433,7 @@ def render_tick_sheet(items: list[ScoredCandidate]) -> str:
                 "predSecondLabel": it.pred_second_label,
                 "confidence": round(it.confidence, 4),
                 "margin": round(it.margin, 4),
+                "conflictDescs": list(it.conflict_descs),
                 "image": "data:image/png;base64," + it.crop_png_b64,
             }
             for it in items
@@ -321,6 +455,7 @@ def write_candidates_file(items: list[ScoredCandidate], out_path: Path) -> None:
             "expectedPrior": it.current_label,
             "cropPng": it.crop_png_b64,
             "puzzleType": "classic",
+            **({"conflictDescs": list(it.conflict_descs)} if it.conflict_descs else {}),
         }
         for it in items
     }
@@ -342,6 +477,7 @@ _TEMPLATE = """<!doctype html>
   .card.done { border-color: #2e7d32; background: #f1f8f1; }
   .card img { width: 100%; height: auto; image-rendering: pixelated; border: 1px solid #eee; }
   .meta { font-size: 12px; color: #666; margin: 4px 0; }
+  .meta.conflict { color: #c0392b; font-weight: 600; }
   .row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
   button.opt { border: 1px solid #999; background: #f5f5f5; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 13px; }
   button.opt.primary { flex: 1; font-weight: 600; }
@@ -392,6 +528,7 @@ function cardHtml(item, idx) {
     '<div class="card' + (chosen !== undefined ? ' done' : '') + '" id="card-' + idx + '">' +
       '<img src="' + item.image + '" alt="digit crop">' +
       '<div class="meta">current: ' + item.currentLabel + ' &middot; conf: ' + item.confidence + ' &middot; margin: ' + item.margin + '</div>' +
+      (item.conflictDescs && item.conflictDescs.length ? '<div class="meta conflict">' + item.conflictDescs.join('; ') + '</div>' : '') +
       '<div class="row">' +
         optBtn(item.predLabel, 'Confirm ' + item.predLabel, 'primary') +
         optBtn(item.predSecondLabel, 'Confirm ' + item.predSecondLabel, 'primary') +
@@ -442,6 +579,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--count", type=int, default=100)
     parser.add_argument(
+        "--mode", choices=["duplicates", "confidence"], default="duplicates",
+        help="'duplicates' (default): only cells involved in a duplicate-given-digit "
+             "conflict -- guaranteed relevant, since one of each pair is known wrong. "
+             "'confidence': every given digit ranked by the model's own least-confident "
+             "predictions -- two review rounds found this never surfaces an actual "
+             "misread (it just finds stylistically awkward but correctly-read crops).",
+    )
+    parser.add_argument(
         "--git-hash", default=None,
         help="evaluations.git_hash (in corpus.db) to pull flagged puzzles from "
              "(default: current HEAD, matching evaluate-corpus.ts's own default)",
@@ -467,17 +612,29 @@ def main() -> None:
         print("Nothing to review.")
         return
 
-    candidates = crops_from_flagged_puzzles(flagged)
-    print(f"{len(candidates)} given-digit crops extracted from flagged puzzles.")
-
-    scored = score_candidates(
-        [
-            (sample_key(c.corpus, c.source_name, c.row, c.col), c.current_label, c.crop)
-            for c in candidates
-        ],
-        recogniser, model,
-    )
-    selected = least_confident(scored, args.count)
+    if args.mode == "duplicates":
+        pairs = crops_from_duplicate_conflicts(flagged)
+        print(f"{len(pairs)} given-digit crops involved in a duplicate-digit conflict.")
+        scored = score_candidates(
+            [
+                (sample_key(c.corpus, c.source_name, c.row, c.col), c.current_label, c.crop)
+                for c, _descs in pairs
+            ],
+            recogniser, model,
+            conflict_descs=[tuple(descs) for _c, descs in pairs],
+        )
+        selected = scored[: args.count]  # already grouped by puzzle/conflict; no re-sorting
+    else:
+        candidates = crops_from_flagged_puzzles(flagged)
+        print(f"{len(candidates)} given-digit crops extracted from flagged puzzles.")
+        scored = score_candidates(
+            [
+                (sample_key(c.corpus, c.source_name, c.row, c.col), c.current_label, c.crop)
+                for c in candidates
+            ],
+            recogniser, model,
+        )
+        selected = least_confident(scored, args.count)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     out_path = args.out_dir / "tick_sheet.html"
