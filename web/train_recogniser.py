@@ -73,7 +73,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import math
 import time
 from abc import ABC, abstractmethod
 from collections import Counter
@@ -81,10 +80,12 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from numba import get_num_threads, njit, prange, set_num_threads
+from numba import njit, prange
 from numpy.typing import NDArray
 from sklearn.decomposition import PCA
 from sklearn.svm import SVC
+
+from killer_sudoku.training import ts_bridge
 
 # ---------------------------------------------------------------------------
 # Constants -- must match killer_sudoku/image/config.py's NumberRecognitionConfig
@@ -123,10 +124,6 @@ HOG_CELL_SIZE    = 8
 HOG_BLOCK_SIZE   = 16
 HOG_BLOCK_STRIDE = 8
 HOG_NBINS        = 9
-# ((64-16)/8+1)^2 * (16/8)^2 * 9 = 7^2 * 4 * 9
-HOG_FEAT         = 1764
-MIN_HOLE_AREA = 3
-N_HOLE_FEATURES = 5  # one-hot hole-count bucket (0/1/2+) + top-2 hole area ratios
 
 _STALE_HASHES_PATH = Path(__file__).parent / "known-stale-training-hashes.json"
 
@@ -262,7 +259,8 @@ class HogRecogniser(NumRecogniser):
         return ((thumb > 127).astype(np.uint8) * 255)
 
     def extract_features(self, imgs: NDArray[np.uint8]) -> NDArray[np.float64]:
-        return np.hstack([extract_hog(imgs), extract_hole_features(imgs)])
+        hog, hole = ts_bridge.extract_features(list(imgs))
+        return np.hstack([hog, hole])
 
     def fit(
         self, X: NDArray[np.float64], y: NDArray[np.int64],
@@ -334,250 +332,6 @@ ACTIVE_RECOGNISER: NumRecogniser = HogRecogniser()  # the one line that decides 
 # web/scripts/compare-recognisers.py, which import extract_hog/
 # extract_hole_features from this module.
 # ---------------------------------------------------------------------------
-
-@njit(parallel=True, fastmath=True, cache=True)
-def _extract_hog_numba(stacked: NDArray[np.uint8], result: NDArray[np.float64]) -> None:
-    """Fused per-pixel HOG kernel: gradients, bin assignment, cell histograms, block normalisation.
-
-    One compiled pass per image with no large (n, 64, 64) intermediate arrays.
-    Matches the TypeScript hogExtract implementation in numberRecognition.ts:
-    centered differences (clamped at borders), unsigned gradients via
-    atan2(|Gy|, Gx) mod 180, nearest-bin voting, L2 block normalisation.
-    """
-    n = stacked.shape[0]
-    n_cells = HOG_WIN_SIZE // HOG_CELL_SIZE
-    cpb = HOG_BLOCK_SIZE // HOG_CELL_SIZE
-    n_blocks = (HOG_WIN_SIZE - HOG_BLOCK_SIZE) // HOG_BLOCK_STRIDE + 1
-    bin_width_rad = np.pi / HOG_NBINS
-    block_feat = cpb * cpb * HOG_NBINS
-    eps2 = 1e-12  # (1e-6)^2 -- matches the original L2-normalisation epsilon
-
-    for i in prange(n):
-        cell_hist = np.zeros((n_cells, n_cells, HOG_NBINS))
-        for y in range(HOG_WIN_SIZE):
-            # Centered difference, clamped at the border -- matches the
-            # original Gx[:,:,0]=f[1]-f[0] / Gx[:,:,-1]=f[-1]-f[-2] slicing.
-            y0 = y - 1 if y > 0 else 0
-            y1 = y + 1 if y < HOG_WIN_SIZE - 1 else HOG_WIN_SIZE - 1
-            cy = y // HOG_CELL_SIZE
-            for x in range(HOG_WIN_SIZE):
-                x0 = x - 1 if x > 0 else 0
-                x1 = x + 1 if x < HOG_WIN_SIZE - 1 else HOG_WIN_SIZE - 1
-                gx = float(stacked[i, y, x1]) - float(stacked[i, y, x0])
-                gy = float(stacked[i, y1, x]) - float(stacked[i, y0, x])
-                mag = math.sqrt(gx * gx + gy * gy)
-                # atan2(|gy|, gx) is always in [0, pi]; dividing by pi/HOG_NBINS
-                # and wrapping mod HOG_NBINS reproduces the original
-                # degrees-mod-180 bin assignment exactly.
-                angle = math.atan2(abs(gy), gx)
-                b = int(angle / bin_width_rad) % HOG_NBINS
-                cx = x // HOG_CELL_SIZE
-                cell_hist[cy, cx, b] += mag
-
-        for by in range(n_blocks):
-            for bx in range(n_blocks):
-                base = (by * n_blocks + bx) * block_feat
-                s = 0.0
-                idx = 0
-                for dy in range(cpb):
-                    for dx in range(cpb):
-                        for bn in range(HOG_NBINS):
-                            v = cell_hist[by + dy, bx + dx, bn]
-                            result[i, base + idx] = v
-                            s += v * v
-                            idx += 1
-                norm = math.sqrt(s + eps2)
-                for k in range(block_feat):
-                    result[i, base + k] /= norm
-
-
-def extract_hog(
-    imgs: NDArray[np.uint8], n_jobs: int = -1, out: NDArray[np.float64] | None = None
-) -> NDArray[np.float64]:
-    """Extract HOG feature vectors matching the TypeScript hogExtract implementation.
-
-    imgs is a pre-stacked (n, 64, 64) uint8 array, dispatched directly to
-    _extract_hog_numba. n_jobs=-1 (default) uses all CPU cores; otherwise caps
-    the thread count for this call only, restored afterward.
-
-    out, if given, must be a (n, HOG_FEAT) array (or column-slice view of a
-    larger array) to write results into directly instead of allocating a
-    fresh array.
-    """
-    t0 = time.time()
-    n = len(imgs)
-    if n == 0:
-        return out if out is not None else np.zeros((0, HOG_FEAT), dtype=np.float64)
-
-    prior_threads = get_num_threads()
-    if n_jobs != -1:
-        set_num_threads(max(1, n_jobs))
-    try:
-        result = out if out is not None else np.empty((n, HOG_FEAT), dtype=np.float64)
-        print(f"  Extracting HOG for {n} images (numba, threads={get_num_threads()})...", flush=True)
-        _extract_hog_numba(imgs, result)
-    finally:
-        if n_jobs != -1:
-            set_num_threads(prior_threads)
-    print(f"  [+{time.time() - t0:.0f}s] HOG extraction done", flush=True)
-    return result
-
-
-@njit(parallel=True, cache=True)
-def _extract_hole_numba(stacked: NDArray[np.uint8], min_hole_area: int, result: NDArray[np.float64]) -> None:
-    """Fused per-image hole-count kernel: outside flood-fill, hole labelling, top-2 area tracking.
-
-    Mirrors extractHoleFeatures in web/src/image/holeFeatures.ts (BFS outside
-    flood-fill, then connected-component hole labelling, 4-connectivity
-    throughout). The BFS queue is an explicit preallocated (h*w,) int32 array
-    with head/tail indices (numba cannot compile collections.deque).
-    """
-    n, h, w = stacked.shape
-    max_q = h * w
-
-    for i in prange(n):
-        img = stacked[i]
-        visited = np.zeros((h, w), dtype=np.bool_)
-        ink_count = 0
-        for yy in range(h):
-            for xx in range(w):
-                if img[yy, xx] != 0:
-                    ink_count += 1
-
-        qy = np.empty(max_q, dtype=np.int32)
-        qx = np.empty(max_q, dtype=np.int32)
-        head = 0
-        tail = 0
-
-        # Step 1: flood-fill "outside" from every border background pixel.
-        for x in range(w):
-            for y in (0, h - 1):
-                if img[y, x] == 0 and not visited[y, x]:
-                    visited[y, x] = True
-                    qy[tail] = y
-                    qx[tail] = x
-                    tail += 1
-        for y in range(h):
-            for x in (0, w - 1):
-                if img[y, x] == 0 and not visited[y, x]:
-                    visited[y, x] = True
-                    qy[tail] = y
-                    qx[tail] = x
-                    tail += 1
-
-        while head < tail:
-            y = qy[head]
-            x = qx[head]
-            head += 1
-            if y > 0 and img[y - 1, x] == 0 and not visited[y - 1, x]:
-                visited[y - 1, x] = True
-                qy[tail] = y - 1
-                qx[tail] = x
-                tail += 1
-            if y < h - 1 and img[y + 1, x] == 0 and not visited[y + 1, x]:
-                visited[y + 1, x] = True
-                qy[tail] = y + 1
-                qx[tail] = x
-                tail += 1
-            if x > 0 and img[y, x - 1] == 0 and not visited[y, x - 1]:
-                visited[y, x - 1] = True
-                qy[tail] = y
-                qx[tail] = x - 1
-                tail += 1
-            if x < w - 1 and img[y, x + 1] == 0 and not visited[y, x + 1]:
-                visited[y, x + 1] = True
-                qy[tail] = y
-                qx[tail] = x + 1
-                tail += 1
-
-        # Step 2: label remaining unvisited background pixels as hole regions,
-        # tracking only the two largest surviving areas.
-        n_holes = 0
-        largest1 = 0
-        largest2 = 0
-        for sy in range(h):
-            for sx in range(w):
-                if visited[sy, sx] or img[sy, sx] != 0:
-                    continue
-                area = 0
-                head = 0
-                tail = 0
-                visited[sy, sx] = True
-                qy[tail] = sy
-                qx[tail] = sx
-                tail += 1
-                while head < tail:
-                    y = qy[head]
-                    x = qx[head]
-                    head += 1
-                    area += 1
-                    if y > 0 and img[y - 1, x] == 0 and not visited[y - 1, x]:
-                        visited[y - 1, x] = True
-                        qy[tail] = y - 1
-                        qx[tail] = x
-                        tail += 1
-                    if y < h - 1 and img[y + 1, x] == 0 and not visited[y + 1, x]:
-                        visited[y + 1, x] = True
-                        qy[tail] = y + 1
-                        qx[tail] = x
-                        tail += 1
-                    if x > 0 and img[y, x - 1] == 0 and not visited[y, x - 1]:
-                        visited[y, x - 1] = True
-                        qy[tail] = y
-                        qx[tail] = x - 1
-                        tail += 1
-                    if x < w - 1 and img[y, x + 1] == 0 and not visited[y, x + 1]:
-                        visited[y, x + 1] = True
-                        qy[tail] = y
-                        qx[tail] = x + 1
-                        tail += 1
-                if area >= min_hole_area:
-                    n_holes += 1
-                    if area > largest1:
-                        largest2 = largest1
-                        largest1 = area
-                    elif area > largest2:
-                        largest2 = area
-
-        bucket = n_holes if n_holes < 2 else 2
-        result[i, bucket] = 1.0
-        denom = ink_count if ink_count > 0 else 1
-        result[i, 3] = largest1 / denom
-        result[i, 4] = largest2 / denom
-
-
-def extract_hole_features(
-    imgs: NDArray[np.uint8], n_jobs: int = -1, out: NDArray[np.float64] | None = None
-) -> NDArray[np.float64]:
-    """Extract hole-count topology features matching extractHoleFeatures in holeFeatures.ts.
-
-    imgs is a pre-stacked (n, 64, 64) uint8 array, dispatched directly to
-    _extract_hole_numba. n_jobs=-1 (default) uses all CPU cores; otherwise
-    caps the thread count for this call only, restored afterward.
-
-    out, if given, must be a (n, N_HOLE_FEATURES) array (or column-slice view
-    of a larger array), already zero-filled: the kernel only sets the one-hot
-    bucket column it selects (result[i, 0:3]) and leaves the other two as an
-    implicit zero, plus columns 3/4 are left at zero when there are no holes.
-    """
-    t0 = time.time()
-    n = len(imgs)
-    if n == 0:
-        return out if out is not None else np.zeros((0, N_HOLE_FEATURES), dtype=np.float64)
-
-    prior_threads = get_num_threads()
-    if n_jobs != -1:
-        set_num_threads(max(1, n_jobs))
-    try:
-        result = out if out is not None else np.zeros((n, N_HOLE_FEATURES), dtype=np.float64)
-        print(f"  Extracting hole features for {n} images (numba, threads={get_num_threads()})...", flush=True)
-        _extract_hole_numba(imgs, MIN_HOLE_AREA, result)
-    finally:
-        if n_jobs != -1:
-            set_num_threads(prior_threads)
-    print(f"  [+{time.time() - t0:.0f}s] Hole feature extraction done", flush=True)
-    return result
-
 
 # ---------------------------------------------------------------------------
 # I/O -- loading

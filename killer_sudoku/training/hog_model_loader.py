@@ -9,17 +9,14 @@ killer_sudoku.image.number_recognition already covers the RBF case generically).
 
 import dataclasses
 import json
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "web"))
-from train_recogniser import extract_hog, extract_hole_features
-
 from killer_sudoku.image.number_recognition import RBFClassifier
+from killer_sudoku.training import ts_bridge
 
 
 @dataclasses.dataclass(frozen=True)
@@ -136,8 +133,7 @@ class HogNumber:
     def get_sums(self, nums: list[npt.NDArray[np.uint8]]) -> npt.NDArray[np.intp]:
         if not nums:
             return np.array([], dtype=np.intp)
-        warped = np.stack([self._warp_fn(img) for img in nums])
-        hog_feat = extract_hog(warped)
-        hole_feat = extract_hole_features(warped)
+        warped = [self._warp_fn(img) for img in nums]
+        hog_feat, hole_feat = ts_bridge.extract_features(warped)
         features = np.hstack([hog_feat, hole_feat])
         return self._classifier.predict(features)

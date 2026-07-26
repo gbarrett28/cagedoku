@@ -29,8 +29,9 @@ from train_recogniser import (
     HOG_NBINS,
     HOG_WIN_SIZE,
     THUMBNAIL_SIZE,
-    extract_hog,
 )
+
+from killer_sudoku.training import ts_bridge
 
 # ---------------------------------------------------------------------------
 # Data loading
@@ -175,7 +176,7 @@ def main() -> None:
           + (f" + {len(real)} real" if real else ""))
 
     print("Extracting HOG features…")
-    X = extract_hog(np.stack(all_imgs))
+    X, _hole = ts_bridge.extract_features(all_imgs)
     y = np.array(all_labels, dtype=np.int32)
     w = np.array(all_weights, dtype=np.float64)
     print(f"  X: {X.shape}")
