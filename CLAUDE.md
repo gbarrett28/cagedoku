@@ -71,8 +71,10 @@ deductions. All processing runs client-side.
 | Solver | `web/src/solver/` | Cage equations, PuzzleSpec |
 | E2E tests | `web/e2e/` | Playwright tests |
 | Unit tests | `web/src/**/*.test.ts` | Vitest tests co-located with source |
-| Digit recogniser training | `killer_sudoku/training/` | Offline Python scripts only |
-| Retraining helper | `web/train_recogniser.py` | Converts browser-exported samples to model |
+| Digit recogniser training | `killer_sudoku/training/` | Offline Python scripts; call `ts_bridge.py` for feature extraction/classification instead of reimplementing |
+| Retraining helper | `web/train_recogniser.py` | Converts browser-exported samples to model; HOG/hole feature extraction routes through `ts_bridge.extract_features()` |
+| TS↔Python bridge | `web/scripts/ts-bridge.ts`, `killer_sudoku/training/ts_bridge.py` | CLI wrapper exposing `hogExtract`/`extractHoleFeatures`/`loadNumRecogniser` to Python via subprocess — see `docs/superpowers/specs/2026-07-26-ts-single-source-of-truth-design.md` |
+| Corpus cache | `web/scripts/corpus-db.ts` (`cell_reads`, `evaluations` tables) | Per-cell crop/feature/prediction cache populated by `evaluate-corpus.ts`, keyed by `(puzzle_hash, git_hash)` |
 
 ## Key Reference Documents
 

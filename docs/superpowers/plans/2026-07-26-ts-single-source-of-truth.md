@@ -1018,8 +1018,72 @@ the 7-vs-3 confusion, against the now-migrated pipeline, and confirm bucket
 counts match what the pre-migration pipeline produced — this is the
 regression check that the migration didn't silently change behavior.
 
-- [ ] **Update `CLAUDE.md`'s Codebase Map**
+- [x] **Update `CLAUDE.md`'s Codebase Map**
 
 `killer_sudoku/training/` — Python scripts only — update the description now
 that grid location, crop extraction, and classification route through
 `ts_bridge.py`; add a row for `web/scripts/ts-bridge.ts`.
+
+---
+
+## Execution Outcome (2026-07-26)
+
+Tasks 1-8 shipped as planned, with two real deviations discovered during
+execution rather than at plan-writing time:
+
+- **Task 5** did not create `web/scripts/populate-cell-cache.ts`.
+  `web/scripts/evaluate-corpus.ts` already walks every un-evaluated puzzle
+  in the `puzzles` table (not just previously-flagged ones) — the plan's
+  premise that a separate full-corpus walker was needed was stale. Task 5
+  instead extended `evaluate-corpus.ts`/`main.ts` directly: cage-total-digit
+  reads, `hogFeatures`/`holeFeatures` on both read types, all inserted into
+  the existing `cell_reads` cache.
+
+- **Tasks 9-11 did not happen as originally scoped.** Enumerating every
+  `InpImage` caller (Task 9's required Step 1) revealed the plan's premise
+  — "cache miss is a hard error, InpImage reads from cache instead of
+  running the pipeline" — is incompatible with real constraints found only
+  by reading the actual call graph:
+  - `agreement_pool.py` runs `InpImage` twice per puzzle with *two different*
+    recognisers (PCA vs HOG) specifically to cross-check independent
+    readings of the same crops — a single cached reading per puzzle can't
+    serve that.
+  - `killer_sudoku/training/evaluate.py` is genuinely live: it's called
+    from `.github/workflows/retrain.yml`'s scheduled (every 8h) CI
+    regression check, processing puzzles that were never pre-evaluated.
+  - The PCA recogniser (`InpImage.make_num_recogniser()`, loading
+    `killer_sudoku/data/num_recogniser.npz`) has **no TS-compatible
+    `.bin`/`.json` export at all** — unlike the HOG checkpoint, which is
+    why Task 7's `ts_bridge.predict()` migration worked for it. There is
+    no way to route PCA classification through `ts_bridge` without a
+    separate model-conversion effort never scoped here. This blocks
+    Task 11 outright (`RBFClassifier`/`hog_model_loader.py` is the only
+    implementation of that checkpoint format) and, transitively, Task 10
+    (`digit_rects.py` still has live callers: `agreement_pool.py`,
+    `evaluate.py`).
+
+  Decided with the user (see session transcript) to treat Tasks 1-8 as the
+  complete, coherent unit of work and close 9-11 as documented non-goals,
+  rather than force a design that breaks live CI or the agreement-pool
+  cross-check. Two smaller, real improvements were done instead:
+  - Deleted confirmed-dead code with no live callers: `killer_sudoku/api/`
+    (legacy FastAPI server), `killer_sudoku/scripts/evaluate_corpus.py`,
+    `killer_sudoku/training/collect_numerals.py`/`collect_classic_numerals.py`,
+    and their tests — verified via `find_referencing_symbols`, workflow
+    greps, and `pyproject.toml` entry points before deleting. Moved
+    `AutoMutation` (the one real cross-dependency, from
+    `killer_sudoku/solver/engine/solver_engine.py`) into
+    `killer_sudoku/solver/engine/types.py` as a plain dataclass.
+  - `agreement_pool.py`'s killer-path now runs `InpImage` once per puzzle
+    instead of twice, calling `InpImage._build_cage_totals` directly against
+    the already-computed `warped_blk`/`brdrs` for the HOG "second opinion"
+    instead of re-deriving identical geometry. Real, measured speedup
+    (~77s → ~40s on `test_build_agreement_pool_only_includes_agreeing_clean_puzzles`).
+
+Final Verification's other two checkboxes (full-repo grep for retired-module
+imports; re-run the 86-puzzle corpus regression) were adjusted accordingly:
+the grep check was run against the modules actually deleted (clean, only a
+docstring reference remains), and the 86-puzzle corpus re-evaluation was
+skipped as moot — it existed to verify Task 9's *planned* InpImage/cache
+migration didn't silently change pipeline behavior, and that migration did
+not happen.

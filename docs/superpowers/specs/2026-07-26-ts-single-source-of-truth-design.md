@@ -1,5 +1,17 @@
 # TS as Single Source of Truth for Image/Digit-Recognition Logic — Design
 
+> **Post-execution note (2026-07-26):** the Migration Mapping table below
+> reflects the *intended* design. In practice, grid location/`InpImage`,
+> `digit_rects.py`, and the PCA-based `RBFClassifier`/`hog_model_loader.py`
+> were **not** retired — real constraints found only by reading the actual
+> call graph (a live scheduled-CI caller, a dual-recogniser cross-check that
+> needs two independent readings of the same crops, and a frozen PCA
+> checkpoint with no TS-compatible export) made that unsafe. See
+> `docs/superpowers/plans/2026-07-26-ts-single-source-of-truth.md`'s
+> "Execution Outcome" section for the full account. Feature extraction and
+> classification (HOG+hole extraction, RBF-SVM/linear-OVO inference) **did**
+> fully migrate to `ts_bridge.py` everywhere reachable.
+
 ## Problem
 
 Multiple pieces of the image and digit-recognition pipeline are independently

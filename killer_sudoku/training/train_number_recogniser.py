@@ -1,8 +1,9 @@
-"""Step 2 of the digit training pipeline: train PCA + SVM digit recogniser.
+"""Train PCA + SVM digit recogniser from a numerals.pkl/bootstrap_numerals.pkl file.
 
-Reads the labelled digit images produced by collect_numerals, fits a PCA
-dimensionality reduction followed by a Support Vector Classifier, and saves the
-trained CayenneNumber model via joblib.
+Reads labelled digit images (grouped and pickled as numerals.pkl or
+bootstrap_numerals.pkl), fits a PCA dimensionality reduction followed by a
+Support Vector Classifier, and saves the trained CayenneNumber model via
+joblib.
 
 The training strategy:
   1. Group digit images by their label (0-9).
@@ -72,12 +73,7 @@ def train_number_recogniser(
     filename = "bootstrap_numerals.pkl" if bootstrap else "numerals.pkl"
     numerals_path = config.puzzle_dir_required / filename
     if not numerals_path.exists():
-        script = "collect_numerals --bootstrap" if bootstrap else "collect_numerals"
-        raise FileNotFoundError(
-            f"{filename} not found at {numerals_path}. "
-            f"Run first: python -m killer_sudoku.training.{script} "
-            "--puzzle-dir <dir>"
-        )
+        raise FileNotFoundError(f"{filename} not found at {numerals_path}.")
 
     with numerals_path.open("rb") as fh:
         val_nums: list[tuple[int, npt.NDArray[np.uint8]]] = pickle.load(fh)  # trusted own-generated data
