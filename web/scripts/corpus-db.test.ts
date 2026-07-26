@@ -21,12 +21,12 @@ function tmpDb(): ReturnType<typeof openDb> {
 }
 
 describe('openDb', () => {
-  it('creates all four tables', () => {
+  it('creates all five tables', () => {
     const db = tmpDb();
     const names = (
       db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as { name: string }[]
     ).map(r => r.name).filter(n => !n.startsWith('sqlite_'));
-    expect(names).toEqual(['corpora', 'evaluations', 'puzzles', 'retraining_suggestions']);
+    expect(names).toEqual(['corpora', 'evaluations', 'given_digit_reads', 'puzzles', 'retraining_suggestions']);
     db.close();
   });
 

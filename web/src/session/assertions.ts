@@ -114,6 +114,48 @@ export function findDuplicateCells(grid: readonly (readonly number[])[]): Set<st
   return errorCells;
 }
 
+/**
+ * Like findDuplicateCells, but reports which specific cells each conflicting
+ * cell clashes with, not just that it's involved in some clash. A cell can
+ * accumulate partners from more than one unit (e.g. a row-mate and a
+ * box-mate sharing the same digit) — the value set holds all of them.
+ */
+export function findDuplicateClashPartners(grid: readonly (readonly number[])[]): Map<string, Set<string>> {
+  const partners = new Map<string, Set<string>>();
+  const addPartners = (keys: string[]) => {
+    for (const a of keys) {
+      for (const b of keys) {
+        if (a === b) continue;
+        const set = partners.get(a) ?? new Set<string>();
+        set.add(b);
+        partners.set(a, set);
+      }
+    }
+  };
+  const check = (cells: [number, number][]) => {
+    const byDigit = new Map<number, string[]>();
+    for (const [r, c] of cells) {
+      const d = grid[r]![c]!;
+      if (d === 0) continue;
+      const key = `${r},${c}`;
+      const list = byDigit.get(d);
+      if (list) list.push(key); else byDigit.set(d, [key]);
+    }
+    for (const keys of byDigit.values()) {
+      if (keys.length > 1) addPartners(keys);
+    }
+  };
+  for (let i = 0; i < 9; i++) {
+    check(Array.from({ length: 9 }, (_, j): [number, number] => [i, j]));
+    check(Array.from({ length: 9 }, (_, j): [number, number] => [j, i]));
+  }
+  for (let br = 0; br < 3; br++)
+    for (let bc = 0; bc < 3; bc++)
+      check(Array.from({ length: 9 }, (_, k): [number, number] =>
+        [br * 3 + Math.floor(k / 3), bc * 3 + (k % 3)]));
+  return partners;
+}
+
 /** Returns true when every cage's actual digit sum matches its declared total.
  *  Cells with region id < 0 or total === 0 are ignored. */
 export function isCageSumCorrect(

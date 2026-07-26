@@ -30,7 +30,8 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 import {
-  DEFAULT_DB_PATH, claimEvaluation, completeEvaluation, insertRetrainingSuggestion, openDb, type CtEvalExtras,
+  DEFAULT_DB_PATH, claimEvaluation, completeEvaluation, insertRetrainingSuggestion, insertGivenDigitRead,
+  openDb, type CtEvalExtras,
 } from './corpus-db.js';
 import { waitForPipelineReady } from '../e2e/helpers.js';
 
@@ -83,6 +84,14 @@ interface UploadOutcomeJson {
     readonly predictedLabel: number;
     readonly suggestedLabel: number;
     readonly confidenceTier: 'proven_unique' | 'feasible_only';
+    readonly crop: number[]; // JSON-serialised Uint8Array
+  }>;
+  readonly givenDigitReads?: ReadonlyArray<{
+    readonly row: number;
+    readonly col: number;
+    readonly predictedLabel: number;
+    readonly confident: boolean;
+    readonly clashesWith: ReadonlyArray<{ readonly row: number; readonly col: number }>;
     readonly crop: number[]; // JSON-serialised Uint8Array
   }>;
 }
@@ -344,6 +353,19 @@ async function runWorker(
         suggestedLabel: s.suggestedLabel,
         confidenceTier: s.confidenceTier,
         cropPixels: s.crop,
+      });
+    }
+
+    for (const r of outcome?.givenDigitReads ?? []) {
+      insertGivenDigitRead(db, {
+        puzzleHash: claim.puzzle_hash,
+        gitHash,
+        row: r.row,
+        col: r.col,
+        predictedLabel: r.predictedLabel,
+        confident: r.confident,
+        clashesWith: r.clashesWith,
+        cropPixels: r.crop,
       });
     }
 

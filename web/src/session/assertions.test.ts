@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateSudokuSolution, AssertionViolation, hasDuplicateDigits, findDuplicateCells, isCageSumCorrect } from './assertions.js';
+import { validateSudokuSolution, AssertionViolation, hasDuplicateDigits, findDuplicateCells, findDuplicateClashPartners, isCageSumCorrect } from './assertions.js';
 
 // A minimal valid 9×9 sudoku solution for testing
 const VALID_SOLUTION: number[][] = [
@@ -175,6 +175,45 @@ describe('findDuplicateCells', () => {
     const grid = empty.map(r => [...r]);
     grid[0]![0] = 1;
     expect(findDuplicateCells(grid)).toEqual(new Set());
+  });
+});
+
+describe('findDuplicateClashPartners', () => {
+  const empty: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+
+  it('returns an empty map when there are no duplicates', () => {
+    expect(findDuplicateClashPartners(VALID_SOLUTION)).toEqual(new Map());
+  });
+
+  it('names the exact partner for a two-cell row clash', () => {
+    const grid = empty.map(r => [...r]);
+    grid[2]![0] = 5;
+    grid[2]![7] = 5;
+    const result = findDuplicateClashPartners(grid);
+    expect(result.get('2,0')).toEqual(new Set(['2,7']));
+    expect(result.get('2,7')).toEqual(new Set(['2,0']));
+  });
+
+  it('names both other cells for each cell when a digit appears three times in a row', () => {
+    const grid = empty.map(r => [...r]);
+    grid[0]![0] = 5;
+    grid[0]![4] = 5;
+    grid[0]![8] = 5;
+    const result = findDuplicateClashPartners(grid);
+    expect(result.get('0,0')).toEqual(new Set(['0,4', '0,8']));
+    expect(result.get('0,4')).toEqual(new Set(['0,0', '0,8']));
+    expect(result.get('0,8')).toEqual(new Set(['0,0', '0,4']));
+  });
+
+  it('accumulates partners from more than one unit for the same cell', () => {
+    // (0,0) and (0,1) share digit 7 in row 0; (0,0) and (1,1) share digit 7
+    // in the top-left box. (0,0) should list both as partners.
+    const grid = empty.map(r => [...r]);
+    grid[0]![0] = 7;
+    grid[0]![1] = 7;
+    grid[1]![1] = 7;
+    const result = findDuplicateClashPartners(grid);
+    expect(result.get('0,0')).toEqual(new Set(['0,1', '1,1']));
   });
 });
 

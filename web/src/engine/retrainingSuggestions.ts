@@ -11,7 +11,7 @@
  * one. Every candidate is gated on hasDuplicateDigits before any solve is
  * attempted, and again after substitution before accepting a result.
  */
-import { hasDuplicateDigits, findDuplicateCells } from '../session/assertions.js';
+import { hasDuplicateDigits, findDuplicateCells, findDuplicateClashPartners } from '../session/assertions.js';
 import { solveClassicByRulesOnly } from './index.js';
 import { mrvBacktrackProvenInfeasible } from './backtracker.js';
 import type { Recognition } from '../image/numberRecognition.js';
@@ -22,6 +22,16 @@ export interface RetrainingSuggestion {
   predictedLabel: number;
   suggestedLabel: number;
   confidenceTier: 'proven_unique' | 'feasible_only';
+  crop: Uint8Array;
+}
+
+export interface GivenDigitRead {
+  row: number;
+  col: number;
+  predictedLabel: number;
+  confident: boolean;
+  /** Other given-digit cells this one shares a digit with in some row/col/box. Empty if none. */
+  clashesWith: { row: number; col: number }[];
   crop: Uint8Array;
 }
 
@@ -83,4 +93,42 @@ export function findRetrainingSuggestions(
   }
 
   return suggestions;
+}
+
+/**
+ * Every given-digit cell's read, independent of whether it's part of a
+ * clash — unlike findRetrainingSuggestions, which only reports resolvable
+ * duplicate-clash substitutions. Used by evaluate-corpus.ts to persist
+ * ground-truth crops+labels for later offline analysis (e.g. comparing
+ * against a separately-derived read of the same puzzle).
+ */
+export function buildGivenDigitReads(
+  givenDigits: readonly (readonly number[])[],
+  cellThumbs: ReadonlyMap<string, Uint8Array[]>,
+  recognitions: ReadonlyMap<string, Recognition>,
+): GivenDigitRead[] {
+  const clashPartners = findDuplicateClashPartners(givenDigits);
+  const reads: GivenDigitRead[] = [];
+
+  for (const [key, recognition] of recognitions) {
+    const crop = cellThumbs.get(key)?.[0];
+    if (crop === undefined) continue;
+    const [rowStr, colStr] = key.split(',');
+    const partners = clashPartners.get(key);
+    const clashesWith = partners === undefined ? [] : Array.from(partners, partnerKey => {
+      const [pRowStr, pColStr] = partnerKey.split(',');
+      return { row: Number(pRowStr), col: Number(pColStr) };
+    });
+
+    reads.push({
+      row: Number(rowStr),
+      col: Number(colStr),
+      predictedLabel: recognition.label,
+      confident: recognition.confident,
+      clashesWith,
+      crop,
+    });
+  }
+
+  return reads;
 }

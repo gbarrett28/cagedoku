@@ -61,7 +61,7 @@ import type {
 import { buildEngine } from './session/engine.js';
 import type { BoardState, ClassicSolveAssessment } from './engine/index.js';
 import { detectBigApple, assessClassicSolvability } from './engine/index.js';
-import { findRetrainingSuggestions } from './engine/retrainingSuggestions.js';
+import { findRetrainingSuggestions, buildGivenDigitReads } from './engine/retrainingSuggestions.js';
 import type { Cell } from './engine/types.js';
 import { GridNotFoundError } from './image/inpImage.js';
 import { UserFacingError } from './session/errors.js';
@@ -112,6 +112,11 @@ type ReportOutcomeFn = (o: {
   retrainingSuggestions?: ReadonlyArray<{
     row: number; col: number; predictedLabel: number; suggestedLabel: number;
     confidenceTier: 'proven_unique' | 'feasible_only'; crop: number[];
+  }> | undefined;
+  /** Ground-truth crop+label+clash-partners for every given-digit cell of a non-clean classic puzzle. */
+  givenDigitReads?: ReadonlyArray<{
+    row: number; col: number; predictedLabel: number; confident: boolean;
+    clashesWith: { row: number; col: number }[]; crop: number[];
   }> | undefined;
 }) => void;
 
@@ -1489,12 +1494,21 @@ async function handleProcess(file?: File): Promise<void> {
         ? findRetrainingSuggestions(state.givenDigits, uploadResult.cellThumbs, uploadResult.classicRecognitions)
           .map(s => ({ ...s, crop: Array.from(s.crop) }))
         : [];
+      // Ground-truth crop+label+duplicate-status for every given-digit cell —
+      // gated the same as retrainingSuggestions (only non-clean puzzles have
+      // anything worth investigating here) to avoid inflating corpus.db with
+      // per-cell crops for the majority of puzzles that read cleanly.
+      const givenDigitReads = bucket !== 'clean' && uploadResult.classicRecognitions !== undefined
+        ? buildGivenDigitReads(state.givenDigits, uploadResult.cellThumbs, uploadResult.classicRecognitions)
+          .map(r => ({ ...r, crop: Array.from(r.crop) }))
+        : [];
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket, reason, puzzleType: PuzzleState.kind(state), detectedBigApple, specHash,
         ...debugStagePayload(uploadResult),
         ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
         ...metricsPayload(),
         retrainingSuggestions,
+        givenDigitReads,
       });
       confirmDisabled = assessment.bucket === 'notSolved';
     } else {

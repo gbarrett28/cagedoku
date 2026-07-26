@@ -72,6 +72,18 @@ export function openDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
       status            TEXT NOT NULL DEFAULT 'pending', -- pending | approved | rejected
       created_at        TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS given_digit_reads (
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      puzzle_hash           TEXT NOT NULL REFERENCES puzzles(content_hash),
+      git_hash              TEXT NOT NULL,
+      row                   INTEGER NOT NULL,
+      col                   INTEGER NOT NULL,
+      predicted_label       INTEGER NOT NULL,
+      confident             INTEGER NOT NULL, -- 0/1
+      clashes_with          TEXT NOT NULL, -- JSON array of {row,col}, [] if none
+      crop_pixels           TEXT NOT NULL, -- JSON array, flattened 64x64
+      created_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
   // Migrations for columns added after initial schema
   const puzzleCols = (db.prepare('PRAGMA table_info(puzzles)').all() as { name: string }[]).map(r => r.name);
@@ -147,6 +159,18 @@ export interface RetrainingSuggestionRow {
   cropPixels: number[];
 }
 
+export interface GivenDigitReadRow {
+  puzzleHash: string;
+  gitHash: string;
+  row: number;
+  col: number;
+  predictedLabel: number;
+  confident: boolean;
+  /** Other given-digit cells this one shares a digit with. Empty if none. */
+  clashesWith: ReadonlyArray<{ row: number; col: number }>;
+  cropPixels: number[];
+}
+
 export function insertRetrainingSuggestion(db: Database.Database, s: RetrainingSuggestionRow): void {
   db.prepare(`
     INSERT INTO retraining_suggestions
@@ -156,6 +180,19 @@ export function insertRetrainingSuggestion(db: Database.Database, s: RetrainingS
     s.puzzleHash, s.gitHash, s.row, s.col,
     s.predictedLabel, s.suggestedLabel, s.confidenceTier,
     JSON.stringify(s.cropPixels),
+  );
+}
+
+export function insertGivenDigitRead(db: Database.Database, r: GivenDigitReadRow): void {
+  db.prepare(`
+    INSERT INTO given_digit_reads
+      (puzzle_hash, git_hash, row, col, predicted_label, confident, clashes_with, crop_pixels)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    r.puzzleHash, r.gitHash, r.row, r.col,
+    r.predictedLabel, r.confident ? 1 : 0,
+    JSON.stringify(r.clashesWith),
+    JSON.stringify(r.cropPixels),
   );
 }
 
