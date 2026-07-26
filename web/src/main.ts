@@ -61,7 +61,9 @@ import type {
 import { buildEngine } from './session/engine.js';
 import type { BoardState, ClassicSolveAssessment } from './engine/index.js';
 import { detectBigApple, assessClassicSolvability } from './engine/index.js';
-import { findRetrainingSuggestions } from './engine/retrainingSuggestions.js';
+import { findRetrainingSuggestions, buildGivenDigitReads, buildCageTotalReads } from './engine/retrainingSuggestions.js';
+import { hogExtract, DEFAULT_HOG_PARAMS } from './image/numberRecognition.js';
+import { extractHoleFeatures } from './image/holeFeatures.js';
 import type { Cell } from './engine/types.js';
 import { GridNotFoundError } from './image/inpImage.js';
 import { UserFacingError } from './session/errors.js';
@@ -113,7 +115,31 @@ type ReportOutcomeFn = (o: {
     row: number; col: number; predictedLabel: number; suggestedLabel: number;
     confidenceTier: 'proven_unique' | 'feasible_only'; crop: number[];
   }> | undefined;
+  /** Ground-truth crop+label+clash-partners for every given-digit cell of a non-clean classic puzzle. */
+  givenDigitReads?: ReadonlyArray<{
+    row: number; col: number; predictedLabel: number; confident: boolean;
+    clashesWith: { row: number; col: number }[]; crop: number[];
+    hogFeatures: number[]; holeFeatures: number[];
+  }> | undefined;
+  /** Ground-truth crop+label for every cage-total digit cell of a non-clean killer puzzle. */
+  cageTotalReads?: ReadonlyArray<{
+    row: number; col: number; digitIndex: number; predictedLabel: number; confident: boolean;
+    crop: number[]; hogFeatures: number[]; holeFeatures: number[];
+  }> | undefined;
 }) => void;
+
+/** Per-crop HOG + hole feature vectors, batched, for cell_reads caching. */
+function computeCropFeatures(crops: Uint8Array[]): { hog: number[]; hole: number[] }[] {
+  if (crops.length === 0) return [];
+  const hogFeat = hogExtract(crops, DEFAULT_HOG_PARAMS);
+  const holeFeat = extractHoleFeatures(crops, DEFAULT_HOG_PARAMS.winSize);
+  const nHog = hogFeat.length / crops.length;
+  const nHole = holeFeat.length / crops.length;
+  return crops.map((_, i) => ({
+    hog: Array.from(hogFeat.subarray(i * nHog, (i + 1) * nHog)),
+    hole: Array.from(holeFeat.subarray(i * nHole, (i + 1) * nHole)),
+  }));
+}
 
 function timingPayload(
   parseElapsedMs: number, solveElapsedMs: number,
@@ -1377,6 +1403,21 @@ async function handleProcess(file?: File): Promise<void> {
     // the cage layout is valid, and the solver finds a complete solution.
     // Classic puzzles always go to the review screen so the user can verify digits.
     if (PuzzleState.isKiller(state)) {
+      // Ground-truth crop+label for every cage-total digit — computed lazily
+      // (only for the notSolved branches below) so the majority of puzzles
+      // that auto-confirm cleanly don't inflate corpus.db with per-cell crops,
+      // mirroring givenDigitReads' gating on the classic side.
+      const buildCageTotalReadsPayload = (): ReadonlyArray<{
+        row: number; col: number; digitIndex: number; predictedLabel: number; confident: boolean;
+        crop: number[]; hogFeatures: number[]; holeFeatures: number[];
+      }> =>
+        uploadResult.cageTotalRecognitions !== undefined
+          ? buildCageTotalReads(uploadResult.cellThumbs, uploadResult.cageTotalRecognitions)
+            .map(r => {
+              const { hog, hole } = computeCropFeatures([r.crop])[0]!;
+              return { ...r, crop: Array.from(r.crop), hogFeatures: hog, holeFeatures: hole };
+            })
+          : [];
       const layoutResult = applyDraftLayout(draftBorderX, draftBorderY, state.specData.cageTotals);
       if (warning === null && layoutResult.errorCells.size === 0 && layoutResult.warnings.length === 0) {
         // Yield to the browser so the loading indicator renders before the solve blocks.
@@ -1438,6 +1479,7 @@ async function handleProcess(file?: File): Promise<void> {
           detectedBigApple, specHash, ...debugStagePayload(uploadResult),
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
+          cageTotalReads: buildCageTotalReadsPayload(),
         });
         reviewErrorCells = layoutResult.errorCells;
         redrawGrid();
@@ -1449,6 +1491,7 @@ async function handleProcess(file?: File): Promise<void> {
           detectedBigApple, specHash, ...debugStagePayload(uploadResult),
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
+          cageTotalReads: buildCageTotalReadsPayload(),
         });
         setStatus(layoutResult.warnings.join('; ') + ' — please correct the totals before confirming', true);
       } else if (warning !== null) {
@@ -1461,6 +1504,7 @@ async function handleProcess(file?: File): Promise<void> {
           detectedBigApple, specHash, ...debugStagePayload(uploadResult),
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
+          cageTotalReads: buildCageTotalReadsPayload(),
         });
         setStatus(warning, true);
       } else {
@@ -1470,6 +1514,7 @@ async function handleProcess(file?: File): Promise<void> {
           detectedBigApple, specHash, ...debugStagePayload(uploadResult),
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
+          cageTotalReads: buildCageTotalReadsPayload(),
         });
         setStatus('Solver could not determine all cells — please check the cage layout and totals', true);
       }
@@ -1489,12 +1534,24 @@ async function handleProcess(file?: File): Promise<void> {
         ? findRetrainingSuggestions(state.givenDigits, uploadResult.cellThumbs, uploadResult.classicRecognitions)
           .map(s => ({ ...s, crop: Array.from(s.crop) }))
         : [];
+      // Ground-truth crop+label+duplicate-status for every given-digit cell —
+      // gated the same as retrainingSuggestions (only non-clean puzzles have
+      // anything worth investigating here) to avoid inflating corpus.db with
+      // per-cell crops for the majority of puzzles that read cleanly.
+      const givenDigitReads = bucket !== 'clean' && uploadResult.classicRecognitions !== undefined
+        ? buildGivenDigitReads(state.givenDigits, uploadResult.cellThumbs, uploadResult.classicRecognitions)
+          .map(r => {
+            const { hog, hole } = computeCropFeatures([r.crop])[0]!;
+            return { ...r, crop: Array.from(r.crop), hogFeatures: hog, holeFeatures: hole };
+          })
+        : [];
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket, reason, puzzleType: PuzzleState.kind(state), detectedBigApple, specHash,
         ...debugStagePayload(uploadResult),
         ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
         ...metricsPayload(),
         retrainingSuggestions,
+        givenDigitReads,
       });
       confirmDisabled = assessment.bucket === 'notSolved';
     } else {

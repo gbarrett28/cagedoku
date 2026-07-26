@@ -18,11 +18,9 @@ import argparse
 import base64
 import dataclasses
 import json
-import shutil
 import sqlite3
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -33,8 +31,6 @@ import numpy.typing as npt
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "web"))
 from train_recogniser import HogRecogniser
 
-from killer_sudoku.image.config import ImagePipelineConfig
-from killer_sudoku.image.inp_image import InpImage
 from killer_sudoku.training.agreement_pool import (
     apply_manual_overrides,
     build_full_corpus_pool,
@@ -42,8 +38,6 @@ from killer_sudoku.training.agreement_pool import (
     sample_key,
 )
 from killer_sudoku.training.balanced_sample import balanced_split
-from killer_sudoku.training.digit_rects import locate_classic_digit_rects
-from killer_sudoku.training.hog_model_loader import HogNumber, load_hog_classifier
 from killer_sudoku.training.train_combinations import train_and_evaluate
 
 _WIN_SIZE = 64
@@ -105,43 +99,19 @@ def flagged_puzzle_paths(
     return [(corpus, content_hash, Path(path)) for corpus, content_hash, path in rows]
 
 
-def _make_current_hog_recogniser() -> HogNumber:
-    """Loads the CURRENTLY deployed model (web/public/num_recogniser.bin/json).
-
-    This is deliberately NOT agreement_pool._make_hog_recogniser, which
-    loads a frozen historical checkpoint (killer_sudoku/data/
-    hog_recogniser_99cbb70.bin) for a different, legitimate purpose
-    (agreement-pool building needs a second, independent opinion from PCA,
-    not the live model). Here we need the actual deployed model's own
-    reading of each cell: that reading is what determines whether a puzzle
-    fails with "duplicate given digits" in evaluate-corpus.ts in the first
-    place, so finding duplicate conflicts against any other model's opinion
-    would flag conflicts that don't reflect what's actually deployed.
-    """
-    hog_params, classifier, _threshold = load_hog_classifier(
-        Path("web/public/num_recogniser.bin"),
-        Path("web/public/num_recogniser.json"),
-    )
-    warp = HogRecogniser().warp_from_rect
-    return HogNumber(
-        hog_params, classifier,
-        lambda img: warp(0, 0, img.shape[1], img.shape[0], img, hog_params.win_size),
-    )
-
-
-def _classic_puzzles_from_flagged(
-    flagged: list[tuple[str, str, Path]],
-) -> list[tuple[str, Path, InpImage]]:
-    """Runs the pipeline once per flagged puzzle, keeping every classic puzzle that parsed cleanly.
+def _given_digit_reads_for_flagged(
+    flagged: list[tuple[str, str, Path]], git_hash: str, db_path: Path = DEFAULT_DB_PATH,
+) -> list[tuple[str, Path, list[sqlite3.Row]]]:
+    """Reads cached given-digit cell_reads rows for each flagged puzzle.
 
     Shared setup for both crops_from_flagged_puzzles and
-    crops_from_duplicate_conflicts.
-
-    Copies images into a scratch dir first -- named by content_hash rather than
-    original filename -- InpImage(..., rework=True) rewrites .jpk/status.pkl
-    wherever it's pointed, and these paths point directly at the live corpus
-    directories; content-hash naming also sidesteps any cross-directory
-    filename collisions among the flagged set.
+    crops_from_duplicate_conflicts. Replaces re-running InpImage + a Python
+    HOG recogniser per puzzle: evaluate-corpus.ts already produced and
+    cached this exact crop+label+clash data under this git_hash (see
+    docs/superpowers/specs/2026-07-26-ts-single-source-of-truth-design.md).
+    A puzzle with no cached given-digit rows for this git_hash is skipped --
+    a cache miss here means evaluate-corpus.ts hasn't been (re)run since,
+    not something to paper over with a pipeline fallback.
 
     The corpus label is resolved from the source path via
     agreement_pool.resolve_corpus_name, NOT taken from the `corpus` element
@@ -153,143 +123,91 @@ def _classic_puzzles_from_flagged(
     classic_guardian/easy/) can't be turned into a trainable sample at all --
     it's skipped, not an error.
     """
-    hog = _make_current_hog_recogniser()
-    results: list[tuple[str, Path, InpImage]] = []
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    results: list[tuple[str, Path, list[sqlite3.Row]]] = []
     skipped_unregistered = 0
-    with tempfile.TemporaryDirectory(prefix="flagged_puzzle_scratch_") as scratch:
-        scratch_dir = Path(scratch)
-        config = ImagePipelineConfig(puzzle_dir=scratch_dir, rework=True)
+    try:
         for _corpus, content_hash, src in flagged:
             try:
                 resolved_corpus = resolve_corpus_name(src)
             except ValueError:
                 skipped_unregistered += 1
                 continue
-            dest = scratch_dir / f"{content_hash[:16]}.jpg"
-            shutil.copy(src, dest)
-            inp = InpImage(dest, config, hog)
-            if inp.spec_error is not None or inp.warped_blk is None:
+            rows = conn.execute(
+                """
+                SELECT row, col, predicted_label, clashes_with, crop_pixels
+                FROM cell_reads
+                WHERE puzzle_hash = ? AND git_hash = ? AND cell_type = 'given_digit'
+                """,
+                (content_hash, git_hash),
+            ).fetchall()
+            if not rows:
                 continue
-            if inp.puzzle_type != "classic" or inp.given_digits is None:
-                continue
-            results.append((resolved_corpus, src, inp))
+            results.append((resolved_corpus, src, rows))
+    finally:
+        conn.close()
     if skipped_unregistered:
         print(f"Skipped {skipped_unregistered} flagged puzzle(s) outside every registered corpus directory.")
     return results
 
 
-def _crop_at_rect(warped_blk: npt.NDArray[np.uint8], rect: npt.NDArray[np.float32]) -> npt.NDArray[np.uint8]:
-    x0, y0 = float(rect[:, 0].min()), float(rect[:, 1].min())
-    x1, y1 = float(rect[:, 0].max()), float(rect[:, 1].max())
-    return np.asarray(warped_blk[int(y0) : int(y1), int(x0) : int(x1)], dtype=np.uint8)
+def _crop_from_row(row: sqlite3.Row) -> npt.NDArray[np.uint8]:
+    return np.array(json.loads(row["crop_pixels"]), dtype=np.uint8).reshape(_WIN_SIZE, _WIN_SIZE)
 
 
 def crops_from_flagged_puzzles(
-    flagged: list[tuple[str, str, Path]],
+    flagged: list[tuple[str, str, Path]], git_hash: str, db_path: Path = DEFAULT_DB_PATH,
 ) -> list[ReviewCandidate]:
-    """Extracts every classic given-digit crop from each flagged puzzle image."""
-    subres = ImagePipelineConfig().subres
+    """Extracts every classic given-digit crop from each flagged puzzle's cached cell_reads."""
     candidates: list[ReviewCandidate] = []
-    for corpus, src, inp in _classic_puzzles_from_flagged(flagged):
-        assert inp.warped_blk is not None and inp.given_digits is not None
-        rects = locate_classic_digit_rects(inp.warped_blk, subres, inp.given_digits > 0)
-        for dr in rects:
-            crop = _crop_at_rect(inp.warped_blk, dr.rect)
-            if crop.size == 0:
-                continue
+    for corpus, src, rows in _given_digit_reads_for_flagged(flagged, git_hash, db_path):
+        for r in rows:
             candidates.append(
                 ReviewCandidate(
                     corpus=corpus,
                     source_name=src.name,
-                    row=dr.row,
-                    col=dr.col,
-                    crop=crop,
-                    current_label=int(inp.given_digits[dr.row, dr.col]),
+                    row=r["row"],
+                    col=r["col"],
+                    crop=_crop_from_row(r),
+                    current_label=r["predicted_label"],
                 )
             )
     return candidates
 
 
-def find_duplicate_cells(grid: npt.NDArray[np.integer]) -> dict[tuple[int, int], list[str]]:
-    """Mirrors web/src/session/assertions.ts's findDuplicateCells exactly.
-
-    A classic puzzle that failed with "duplicate given digits" has at least
-    one pair of given cells sharing a digit within the same row, column, or
-    3x3 box -- a genuine sudoku-rule violation, which can only mean at least
-    one of the pair was misread. Unlike confidence-ranked crops (which two
-    review rounds showed always matched the model's own prediction, since
-    they're just stylistically awkward, not actually wrong), these cells are
-    guaranteed relevant: we already know something in each returned group is
-    incorrect, just not which one.
-
-    Returns cell -> list of conflict descriptions ("row 3 digit 7", etc.) it
-    participates in, so conflicting cells can be grouped for review.
-    """
-    conflicts: dict[tuple[int, int], list[str]] = {}
-
-    def check(cells: list[tuple[int, int]], unit_label: str) -> None:
-        seen: dict[int, tuple[int, int]] = {}
-        for r, c in cells:
-            d = int(grid[r, c])
-            if d == 0:
-                continue
-            if d in seen:
-                prev = seen[d]
-                desc = f"{unit_label} digit {d}"
-                conflicts.setdefault(prev, []).append(desc)
-                conflicts.setdefault((r, c), []).append(desc)
-            else:
-                seen[d] = (r, c)
-
-    for i in range(9):
-        check([(i, j) for j in range(9)], f"row {i + 1}")
-        check([(j, i) for j in range(9)], f"col {i + 1}")
-    for br in range(3):
-        for bc in range(3):
-            check([(br * 3 + k // 3, bc * 3 + k % 3) for k in range(9)], f"box ({br + 1},{bc + 1})")
-
-    return conflicts
-
-
 def crops_from_duplicate_conflicts(
-    flagged: list[tuple[str, str, Path]],
+    flagged: list[tuple[str, str, Path]], git_hash: str, db_path: Path = DEFAULT_DB_PATH,
 ) -> list[tuple[ReviewCandidate, list[str]]]:
-    """Extracts only the given-digit crops involved in a duplicate-digit conflict.
+    """Extracts only the given-digit crops already flagged as duplicate-digit conflicts.
 
     Scoped to cells we already know are relevant, rather than every given
-    digit ranked by model confidence.
+    digit ranked by model confidence. clashesWith was computed by the real
+    browser pipeline (assertions.ts's findDuplicateClashPartners) at
+    evaluation time and cached verbatim in cell_reads -- no need to re-derive
+    conflicts in Python.
 
-    Returns (candidate, conflict_descriptions) pairs, ordered puzzle by
-    puzzle with each conflict group's cells adjacent, so a reviewer can
-    directly compare the crops that were read as the same digit.
+    Returns (candidate, conflict_descriptions) pairs, sorted so each conflict
+    group's cells are adjacent, letting a reviewer directly compare the crops
+    that were read as the same digit.
     """
-    subres = ImagePipelineConfig().subres
     out: list[tuple[ReviewCandidate, list[str]]] = []
-    for corpus, src, inp in _classic_puzzles_from_flagged(flagged):
-        assert inp.warped_blk is not None and inp.given_digits is not None
-        conflicts = find_duplicate_cells(inp.given_digits)
-        if not conflicts:
-            continue
-        rects = {
-            (dr.row, dr.col): dr.rect
-            for dr in locate_classic_digit_rects(inp.warped_blk, subres, inp.given_digits > 0)
-        }
-        for (row, col), descs in sorted(conflicts.items(), key=lambda item: item[1]):
-            rect = rects.get((row, col))
-            if rect is None:
-                continue
-            crop = _crop_at_rect(inp.warped_blk, rect)
-            if crop.size == 0:
+    for corpus, src, rows in _given_digit_reads_for_flagged(flagged, git_hash, db_path):
+        for r in rows:
+            clashes = json.loads(r["clashes_with"])
+            if not clashes:
                 continue
             candidate = ReviewCandidate(
                 corpus=corpus,
                 source_name=src.name,
-                row=row,
-                col=col,
-                crop=crop,
-                current_label=int(inp.given_digits[row, col]),
+                row=r["row"],
+                col=r["col"],
+                crop=_crop_from_row(r),
+                current_label=r["predicted_label"],
             )
+            descs = [f"clashes with r{c['row'] + 1}c{c['col'] + 1}" for c in clashes]
             out.append((candidate, descs))
+    out.sort(key=lambda pair: tuple(sorted(pair[1])))
     return out
 
 
@@ -613,7 +531,7 @@ def main() -> None:
         return
 
     if args.mode == "duplicates":
-        pairs = crops_from_duplicate_conflicts(flagged)
+        pairs = crops_from_duplicate_conflicts(flagged, git_hash, args.db_path)
         print(f"{len(pairs)} given-digit crops involved in a duplicate-digit conflict.")
         scored = score_candidates(
             [
@@ -625,7 +543,7 @@ def main() -> None:
         )
         selected = scored[: args.count]  # already grouped by puzzle/conflict; no re-sorting
     else:
-        candidates = crops_from_flagged_puzzles(flagged)
+        candidates = crops_from_flagged_puzzles(flagged, git_hash, args.db_path)
         print(f"{len(candidates)} given-digit crops extracted from flagged puzzles.")
         scored = score_candidates(
             [

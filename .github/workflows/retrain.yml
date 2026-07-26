@@ -34,9 +34,9 @@ jobs:
       - name: Install Python dependencies
         # Installing the project itself (via pyproject.toml's [project.dependencies])
         # covers everything killer_sudoku.training.evaluate needs to import
-        # (opencv-python-headless, python-constraint, joblib, pydantic via fastapi,
-        # etc.) -- boto3 (R2) and numba (train_recogniser.py's dither kernel) are
-        # not project dependencies, so they're listed explicitly.
+        # (opencv-python-headless, python-constraint, joblib, etc.) -- boto3 (R2)
+        # and numba (train_recogniser.py's dither kernel) are not project
+        # dependencies, so they're listed explicitly.
         # Pin coverage<7.8: numba 0.66.0 uses coverage.types.Tracer which was
         # removed in coverage 7.8; pin to keep the import working.
         run: pip install -e . boto3 numba "coverage<7.8"

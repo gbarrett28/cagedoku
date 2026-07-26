@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 from enum import Enum
+from typing import Literal
 
 # (row, col), both 0-based
 Cell = tuple[int, int]
@@ -76,6 +77,25 @@ class Placement:
 
     cell: Cell
     digit: int
+
+
+@dataclasses.dataclass(frozen=True)
+class AutoMutation:
+    """One candidate or solution change produced by an always-apply rule.
+
+    Moved here from the now-retired killer_sudoku.api.schemas.AutoMutation
+    (a pydantic BaseModel) -- this was its only consumer outside the dead
+    FastAPI layer, so it's now a plain frozen dataclass matching this
+    module's convention.
+    """
+
+    rule_name: str
+    type: Literal["candidate_removed", "solution_eliminated", "placement", "virtual_cage_added"]
+    row: int | None = None
+    col: int | None = None
+    digit: int | None = None
+    cage_idx: int | None = None
+    solution: list[int] | None = None
 
 
 @dataclasses.dataclass(frozen=True)

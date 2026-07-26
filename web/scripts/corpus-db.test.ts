@@ -4,8 +4,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   addGroundTruth, claimEvaluation, completeEvaluation, getCorpora, getPuzzle,
-  insertPuzzle, insertRetrainingSuggestion, openDb, upsertCorpus,
-  type CtEvalExtras, type RetrainingSuggestionRow,
+  insertCellRead, insertPuzzle, insertRetrainingSuggestion, openDb, upsertCorpus,
+  type CellReadRow, type CtEvalExtras, type RetrainingSuggestionRow,
 } from './corpus-db.js';
 
 let dbPath = '';
@@ -21,12 +21,12 @@ function tmpDb(): ReturnType<typeof openDb> {
 }
 
 describe('openDb', () => {
-  it('creates all four tables', () => {
+  it('creates all five tables', () => {
     const db = tmpDb();
     const names = (
       db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as { name: string }[]
     ).map(r => r.name).filter(n => !n.startsWith('sqlite_'));
-    expect(names).toEqual(['corpora', 'evaluations', 'puzzles', 'retraining_suggestions']);
+    expect(names).toEqual(['cell_reads', 'corpora', 'evaluations', 'puzzles', 'retraining_suggestions']);
     db.close();
   });
 
@@ -229,6 +229,53 @@ describe('retraining_suggestions table', () => {
     insertRetrainingSuggestion(db, row);
     const count = (db.prepare('SELECT COUNT(*) AS n FROM retraining_suggestions').get() as { n: number }).n;
     expect(count).toBe(2); // by design: every run's findings are recorded, review script dedupes by judgement
+    db.close();
+  });
+});
+
+
+describe('cell_reads (generalized from given_digit_reads)', () => {
+  it('inserts and reads back a cage-total-digit row', () => {
+    const db = tmpDb();
+    insertPuzzle(db, 'p1', '/x.jpg', 'guardian', 'killer');
+    const row: CellReadRow = {
+      puzzleHash: 'p1', gitHash: 'h1', cellType: 'cage_total_digit',
+      row: 0, col: 0, digitIndex: 1, predictedLabel: 6, confident: true,
+      clashesWith: [], cropPixels: [0, 1], hogFeatures: [0.1], holeFeatures: [0.2],
+    };
+    insertCellRead(db, row);
+    const saved = db.prepare('SELECT * FROM cell_reads WHERE puzzle_hash = ?').get('p1') as {
+      cell_type: string; digit_index: number; hog_features: string; hole_features: string;
+    };
+    expect(saved.cell_type).toBe('cage_total_digit');
+    expect(saved.digit_index).toBe(1);
+    expect(JSON.parse(saved.hog_features)).toEqual([0.1]);
+    expect(JSON.parse(saved.hole_features)).toEqual([0.2]);
+    db.close();
+  });
+
+  it('defaults digit_index to 0 for a given-digit row', () => {
+    const db = tmpDb();
+    insertPuzzle(db, 'p2', '/y.jpg', 'guardian', 'classic');
+    insertCellRead(db, {
+      puzzleHash: 'p2', gitHash: 'h1', cellType: 'given_digit',
+      row: 3, col: 4, digitIndex: 0, predictedLabel: 7, confident: false,
+      clashesWith: [{ row: 3, col: 8 }], cropPixels: [], hogFeatures: [], holeFeatures: [],
+    });
+    const saved = db.prepare('SELECT * FROM cell_reads WHERE puzzle_hash = ?').get('p2') as {
+      digit_index: number; clashes_with: string;
+    };
+    expect(saved.digit_index).toBe(0);
+    expect(JSON.parse(saved.clashes_with)).toEqual([{ row: 3, col: 8 }]);
+    db.close();
+  });
+});
+
+describe('evaluations border/cage-total structure columns', () => {
+  it('adds border_x, border_y, cage_totals columns', () => {
+    const db = tmpDb();
+    const cols = (db.prepare('PRAGMA table_info(evaluations)').all() as { name: string }[]).map(c => c.name);
+    expect(cols).toEqual(expect.arrayContaining(['border_x', 'border_y', 'cage_totals']));
     db.close();
   });
 });

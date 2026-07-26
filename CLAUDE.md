@@ -71,8 +71,10 @@ deductions. All processing runs client-side.
 | Solver | `web/src/solver/` | Cage equations, PuzzleSpec |
 | E2E tests | `web/e2e/` | Playwright tests |
 | Unit tests | `web/src/**/*.test.ts` | Vitest tests co-located with source |
-| Digit recogniser training | `killer_sudoku/training/` | Offline Python scripts only |
-| Retraining helper | `web/train_recogniser.py` | Converts browser-exported samples to model |
+| Digit recogniser training | `killer_sudoku/training/` | Offline Python scripts; call `ts_bridge.py` for feature extraction/classification instead of reimplementing |
+| Retraining helper | `web/train_recogniser.py` | Converts browser-exported samples to model; HOG/hole feature extraction routes through `ts_bridge.extract_features()` |
+| TS↔Python bridge | `web/scripts/ts-bridge.ts`, `killer_sudoku/training/ts_bridge.py` | CLI wrapper exposing `hogExtract`/`extractHoleFeatures`/`loadNumRecogniser` to Python via subprocess — see `docs/superpowers/specs/2026-07-26-ts-single-source-of-truth-design.md` |
+| Corpus cache | `web/scripts/corpus-db.ts` (`cell_reads`, `evaluations` tables) | Per-cell crop/feature/prediction cache populated by `evaluate-corpus.ts`, keyed by `(puzzle_hash, git_hash)` |
 
 ## Key Reference Documents
 
@@ -110,6 +112,46 @@ expose 0-based indices in UI text, error messages, or hint explanations.
 intentionally col-first because their two dimensions represent orthogonal geometric
 quantities (a column index paired with a row-gap index, or vice versa). Do not change
 these without updating the comment in `web/src/image/validation.ts` that explains why.
+
+---
+
+# Single Source of Truth: TypeScript Owns Production Logic
+
+**If code is needed in the production app, it must be written in TypeScript, and
+that same code — not a reimplementation — must be called from everywhere else
+that needs it.**
+
+Python may orchestrate (corpus walks, `scikit-learn` model fitting, dataset
+curation) but must never reimplement logic that also runs in the browser. Two
+independently-hand-written versions of the same algorithm will drift, silently,
+and the drift will not be caught by either side's own tests — each side only
+tests itself against itself.
+
+This was learned the hard way, twice, in the same investigation:
+`killer_sudoku/image/grid_location.py` and `web/src/image/inpImage.ts`
+independently implemented grid location and given-digit crop extraction; they
+diverged, and a Python-side analysis using the Python pipeline reported zero
+conflicts on puzzles the real app was actually failing on. Separately,
+`killer_sudoku/image/number_recognition.py`'s `RBFClassifier` and
+`web/src/image/numberRecognition.ts`'s `ovoVote`/`rbfPredictWithConfidence`
+are two hand-written OvO-RBF-SVM implementations reading the same exported
+model weights, with no test anywhere verifying they agree.
+
+**Concrete rule:**
+- Anything that's a pure function of (image/crop → number/geometry) — grid
+  location, crop/bounding-box extraction, HOG/hole-feature extraction,
+  RBF-SVM inference — lives in TS only. Python calls it; it never reimplements it.
+- Python's own responsibility narrows to what's genuinely Python-only:
+  orchestrating the corpus walk, `scikit-learn`'s `SVC.fit()`, dithering
+  augmentation, gluing pieces together.
+- Two calling mechanisms, chosen by runtime need: OpenCV.js/WASM-dependent
+  code (grid location) needs an actual browser — drive it via Playwright, the
+  same pattern `web/scripts/evaluate-corpus.ts` already uses. Pure array-math
+  code with no OpenCV dependency (HOG, hole features, RBF-SVM predict) can run
+  under a lightweight Node/`tsx` subprocess instead.
+- If you're about to write a Python function whose job is "reproduce what the
+  TS pipeline would do to this input" — stop. That function is either wrong
+  today or will be wrong tomorrow. Call the TS code instead.
 
 ---
 

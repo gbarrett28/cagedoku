@@ -45,6 +45,17 @@ export interface HOGParams {
 }
 
 /**
+ * HOG params used for feature extraction independent of any specific loaded
+ * model (e.g. training-data caching) — matches train_recogniser.py's
+ * HOG_WIN_SIZE/HOG_CELL_SIZE/HOG_BLOCK_SIZE/HOG_BLOCK_STRIDE/HOG_NBINS.
+ * A deployed HogRecogniser's own params (read from its manifest) may differ
+ * and always take precedence for actual recognition.
+ */
+export const DEFAULT_HOG_PARAMS: HOGParams = {
+  winSize: 64, cellSize: 8, blockSize: 16, blockStride: 8, nbins: 9,
+};
+
+/**
  * PCA + template-matching + RBF-SVM classifier parameters.
  *
  * Mirrors Python's `CayenneNumber` (killer_sudoku/image/number_recognition.py):
@@ -339,7 +350,7 @@ export class HogRecogniser extends NumRecogniser {
  * @param imgs - flat uint8 pixel data for each image, each of length winSize²
  * @returns Float64Array of shape [n × nFeat] where nFeat = nBlocks² × cpb² × nbins
  */
-function hogExtract(imgs: Uint8Array[], params: HOGParams): Float64Array {
+export function hogExtract(imgs: Uint8Array[], params: HOGParams): Float64Array {
   const { winSize, cellSize, blockSize, blockStride, nbins } = params;
   const nCells = winSize / cellSize;
   const cpb = blockSize / cellSize;                                   // cells per block side

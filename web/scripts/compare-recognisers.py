@@ -15,15 +15,12 @@ Each --model-* argument is a path prefix; the script appends .json and .bin.
 
 import argparse
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-# Import feature extractors from the training script.
-sys.path.insert(0, str(Path(__file__).parent.parent))
-import train_recogniser as tr
+from killer_sudoku.training import ts_bridge
 
 
 def load_model(prefix: str) -> dict[str, Any]:
@@ -90,8 +87,7 @@ def main() -> None:
     print(f"  {n} samples loaded")
 
     print("Extracting HOG features…")
-    hog = tr.extract_hog(imgs, n_jobs=-1)
-    hole = tr.extract_hole_features(imgs)
+    hog, hole = ts_bridge.extract_features(list(imgs))
     features = np.hstack([hog, hole])
 
     print("Running predictions…")

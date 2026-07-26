@@ -30,7 +30,8 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 import {
-  DEFAULT_DB_PATH, claimEvaluation, completeEvaluation, insertRetrainingSuggestion, openDb, type CtEvalExtras,
+  DEFAULT_DB_PATH, claimEvaluation, completeEvaluation, insertRetrainingSuggestion, insertCellRead,
+  openDb, type CtEvalExtras,
 } from './corpus-db.js';
 import { waitForPipelineReady } from '../e2e/helpers.js';
 
@@ -84,6 +85,26 @@ interface UploadOutcomeJson {
     readonly suggestedLabel: number;
     readonly confidenceTier: 'proven_unique' | 'feasible_only';
     readonly crop: number[]; // JSON-serialised Uint8Array
+  }>;
+  readonly givenDigitReads?: ReadonlyArray<{
+    readonly row: number;
+    readonly col: number;
+    readonly predictedLabel: number;
+    readonly confident: boolean;
+    readonly clashesWith: ReadonlyArray<{ readonly row: number; readonly col: number }>;
+    readonly crop: number[]; // JSON-serialised Uint8Array
+    readonly hogFeatures?: number[];
+    readonly holeFeatures?: number[];
+  }>;
+  readonly cageTotalReads?: ReadonlyArray<{
+    readonly row: number;
+    readonly col: number;
+    readonly digitIndex: number;
+    readonly predictedLabel: number;
+    readonly confident: boolean;
+    readonly crop: number[]; // JSON-serialised Uint8Array
+    readonly hogFeatures?: number[];
+    readonly holeFeatures?: number[];
   }>;
 }
 
@@ -344,6 +365,40 @@ async function runWorker(
         suggestedLabel: s.suggestedLabel,
         confidenceTier: s.confidenceTier,
         cropPixels: s.crop,
+      });
+    }
+
+    for (const r of outcome?.givenDigitReads ?? []) {
+      insertCellRead(db, {
+        puzzleHash: claim.puzzle_hash,
+        gitHash,
+        cellType: 'given_digit',
+        row: r.row,
+        col: r.col,
+        digitIndex: 0,
+        predictedLabel: r.predictedLabel,
+        confident: r.confident,
+        clashesWith: r.clashesWith,
+        cropPixels: r.crop,
+        hogFeatures: r.hogFeatures ?? [],
+        holeFeatures: r.holeFeatures ?? [],
+      });
+    }
+
+    for (const r of outcome?.cageTotalReads ?? []) {
+      insertCellRead(db, {
+        puzzleHash: claim.puzzle_hash,
+        gitHash,
+        cellType: 'cage_total_digit',
+        row: r.row,
+        col: r.col,
+        digitIndex: r.digitIndex,
+        predictedLabel: r.predictedLabel,
+        confident: r.confident,
+        clashesWith: [],
+        cropPixels: r.crop,
+        hogFeatures: r.hogFeatures ?? [],
+        holeFeatures: r.holeFeatures ?? [],
       });
     }
 
