@@ -20,7 +20,12 @@ agree:
   model weights, with no test anywhere comparing their output directly.
 - **Also independently implemented, same risk category**: killer-puzzle
   border/cage-total detection (`InpImage._identify_borders`,
-  `_build_cage_totals` vs TS's contour-tree-based border detection).
+  `_build_cage_totals` vs TS's production border-strip clustering,
+  `borderClustering.ts`'s `clusterBorders`/`stripFeatures`/`anchorKey`). TS
+  also has an experimental contour-tree-based border detector, but it is not
+  in the production code path — `includeTree`/`contourTree` is an opt-in
+  diagnostic capture, never used for the actual border decision — so it is
+  not part of this migration's scope.
 
 Beyond duplicated effort, this is a live correctness risk: if Python's
 training-time feature extraction has ever silently drifted from TS's
