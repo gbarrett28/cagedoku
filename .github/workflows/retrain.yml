@@ -17,6 +17,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Configure git identity
+        # Must run before any step that commits -- "Merge samples into
+        # browser_train.json" below commits too, and previously ran before
+        # identity was configured (that config lived only in the later
+        # "Commit updated model" step), failing with "empty ident name".
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -106,8 +115,6 @@ jobs:
       - name: Commit updated model
         if: steps.list.outputs.count != '0'
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add web/public/num_recogniser.json web/public/num_recogniser.bin
           git diff --cached --quiet && echo "No model changes." || \
             git commit -m "chore: retrain digit recogniser with new browser samples"
