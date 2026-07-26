@@ -72,16 +72,20 @@ export function openDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
       status            TEXT NOT NULL DEFAULT 'pending', -- pending | approved | rejected
       created_at        TEXT NOT NULL DEFAULT (datetime('now'))
     );
-    CREATE TABLE IF NOT EXISTS given_digit_reads (
+    CREATE TABLE IF NOT EXISTS cell_reads (
       id                    INTEGER PRIMARY KEY AUTOINCREMENT,
       puzzle_hash           TEXT NOT NULL REFERENCES puzzles(content_hash),
       git_hash              TEXT NOT NULL,
+      cell_type             TEXT NOT NULL, -- 'given_digit' | 'cage_total_digit'
       row                   INTEGER NOT NULL,
       col                   INTEGER NOT NULL,
+      digit_index           INTEGER NOT NULL DEFAULT 0, -- 0/1 for a two-digit cage total
       predicted_label       INTEGER NOT NULL,
       confident             INTEGER NOT NULL, -- 0/1
       clashes_with          TEXT NOT NULL, -- JSON array of {row,col}, [] if none
       crop_pixels           TEXT NOT NULL, -- JSON array, flattened 64x64
+      hog_features          TEXT NOT NULL, -- JSON array, 1764 floats
+      hole_features         TEXT NOT NULL, -- JSON array, 5 floats
       created_at            TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
@@ -125,6 +129,11 @@ export function openDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
       db.exec(`ALTER TABLE evaluations ADD COLUMN ${col} ${type}`);
     }
   }
+  for (const [col, type] of [['border_x', 'TEXT'], ['border_y', 'TEXT'], ['cage_totals', 'TEXT']] as const) {
+    if (!evalCols.includes(col)) {
+      db.exec(`ALTER TABLE evaluations ADD COLUMN ${col} ${type}`);
+    }
+  }
   return db;
 }
 
@@ -159,16 +168,21 @@ export interface RetrainingSuggestionRow {
   cropPixels: number[];
 }
 
-export interface GivenDigitReadRow {
+export interface CellReadRow {
   puzzleHash: string;
   gitHash: string;
+  cellType: 'given_digit' | 'cage_total_digit';
   row: number;
   col: number;
+  /** 0 for given digits and single-digit totals; 0/1 for a two-digit cage total like "16". */
+  digitIndex: number;
   predictedLabel: number;
   confident: boolean;
-  /** Other given-digit cells this one shares a digit with. Empty if none. */
+  /** Other given-digit cells this one shares a digit with. Always empty for cage_total_digit rows. */
   clashesWith: ReadonlyArray<{ row: number; col: number }>;
   cropPixels: number[];
+  hogFeatures: number[];
+  holeFeatures: number[];
 }
 
 export function insertRetrainingSuggestion(db: Database.Database, s: RetrainingSuggestionRow): void {
@@ -183,16 +197,17 @@ export function insertRetrainingSuggestion(db: Database.Database, s: RetrainingS
   );
 }
 
-export function insertGivenDigitRead(db: Database.Database, r: GivenDigitReadRow): void {
+export function insertCellRead(db: Database.Database, r: CellReadRow): void {
   db.prepare(`
-    INSERT INTO given_digit_reads
-      (puzzle_hash, git_hash, row, col, predicted_label, confident, clashes_with, crop_pixels)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO cell_reads
+      (puzzle_hash, git_hash, cell_type, row, col, digit_index, predicted_label,
+       confident, clashes_with, crop_pixels, hog_features, hole_features)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    r.puzzleHash, r.gitHash, r.row, r.col,
+    r.puzzleHash, r.gitHash, r.cellType, r.row, r.col, r.digitIndex,
     r.predictedLabel, r.confident ? 1 : 0,
-    JSON.stringify(r.clashesWith),
-    JSON.stringify(r.cropPixels),
+    JSON.stringify(r.clashesWith), JSON.stringify(r.cropPixels),
+    JSON.stringify(r.hogFeatures), JSON.stringify(r.holeFeatures),
   );
 }
 

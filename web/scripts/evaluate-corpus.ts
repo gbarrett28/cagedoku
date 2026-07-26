@@ -30,7 +30,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 import {
-  DEFAULT_DB_PATH, claimEvaluation, completeEvaluation, insertRetrainingSuggestion, insertGivenDigitRead,
+  DEFAULT_DB_PATH, claimEvaluation, completeEvaluation, insertRetrainingSuggestion, insertCellRead,
   openDb, type CtEvalExtras,
 } from './corpus-db.js';
 import { waitForPipelineReady } from '../e2e/helpers.js';
@@ -93,6 +93,8 @@ interface UploadOutcomeJson {
     readonly confident: boolean;
     readonly clashesWith: ReadonlyArray<{ readonly row: number; readonly col: number }>;
     readonly crop: number[]; // JSON-serialised Uint8Array
+    readonly hogFeatures?: number[];
+    readonly holeFeatures?: number[];
   }>;
 }
 
@@ -357,15 +359,19 @@ async function runWorker(
     }
 
     for (const r of outcome?.givenDigitReads ?? []) {
-      insertGivenDigitRead(db, {
+      insertCellRead(db, {
         puzzleHash: claim.puzzle_hash,
         gitHash,
+        cellType: 'given_digit',
         row: r.row,
         col: r.col,
+        digitIndex: 0,
         predictedLabel: r.predictedLabel,
         confident: r.confident,
         clashesWith: r.clashesWith,
         cropPixels: r.crop,
+        hogFeatures: r.hogFeatures ?? [],
+        holeFeatures: r.holeFeatures ?? [],
       });
     }
 
