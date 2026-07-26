@@ -16,11 +16,11 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from killer_sudoku.api.schemas import AutoMutation
 from killer_sudoku.solver.engine.board_state import BoardState
 from killer_sudoku.solver.engine.hint import HintResult
 from killer_sudoku.solver.engine.rule import RuleContext, RuleStats, SolverRule
 from killer_sudoku.solver.engine.types import (
+    AutoMutation,
     Cell,
     Elimination,
     Placement,
