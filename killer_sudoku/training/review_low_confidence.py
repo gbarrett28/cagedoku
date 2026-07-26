@@ -38,6 +38,7 @@ from killer_sudoku.training.agreement_pool import (
     _make_hog_recogniser,
     apply_manual_overrides,
     build_full_corpus_pool,
+    resolve_corpus_name,
     sample_key,
 )
 from killer_sudoku.training.balanced_sample import balanced_split
@@ -110,13 +111,29 @@ def crops_from_flagged_puzzles(
     wherever it's pointed, and these paths point directly at the live corpus
     directories; content-hash naming also sidesteps any cross-directory
     filename collisions among the flagged set.
+
+    The corpus label on each resulting ReviewCandidate is resolved from the
+    source path via agreement_pool.resolve_corpus_name, NOT taken from the
+    `corpus` element of `flagged` (that comes from corpus.db, which only
+    ever records "guardian"/"observer" and can't tell a classic_guardian
+    puzzle from a real guardian one living in a same-named file). A puzzle
+    outside every registered corpus directory (e.g.
+    classic_guardian/expert/, which DEFAULT_CORPORA deliberately excludes to
+    avoid filename collisions with classic_guardian/easy/) can't be turned
+    into a trainable sample at all -- it's skipped, not an error.
     """
     hog = _make_hog_recogniser()
     candidates: list[ReviewCandidate] = []
+    skipped_unregistered = 0
     with tempfile.TemporaryDirectory(prefix="flagged_puzzle_scratch_") as scratch:
         scratch_dir = Path(scratch)
         config = ImagePipelineConfig(puzzle_dir=scratch_dir, rework=True)
-        for corpus, content_hash, src in flagged:
+        for _corpus, content_hash, src in flagged:
+            try:
+                resolved_corpus = resolve_corpus_name(src)
+            except ValueError:
+                skipped_unregistered += 1
+                continue
             dest = scratch_dir / f"{content_hash[:16]}.jpg"
             shutil.copy(src, dest)
             inp = InpImage(dest, config, hog)
@@ -137,7 +154,7 @@ def crops_from_flagged_puzzles(
                     continue
                 candidates.append(
                     ReviewCandidate(
-                        corpus=corpus,
+                        corpus=resolved_corpus,
                         source_name=src.name,
                         row=dr.row,
                         col=dr.col,
@@ -145,6 +162,8 @@ def crops_from_flagged_puzzles(
                         current_label=int(inp.given_digits[dr.row, dr.col]),
                     )
                 )
+    if skipped_unregistered:
+        print(f"Skipped {skipped_unregistered} flagged puzzle(s) outside every registered corpus directory.")
     return candidates
 
 

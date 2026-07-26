@@ -5,11 +5,13 @@ from pathlib import Path
 import cv2
 import numpy as np
 import numpy.typing as npt
+import pytest
 
 from killer_sudoku.training.agreement_pool import (
     AgreedSample,
     apply_manual_overrides,
     build_agreement_pool,
+    resolve_corpus_name,
     sample_key,
 )
 
@@ -138,3 +140,26 @@ def test_apply_manual_overrides_flags_ambiguous_key_shared_by_multiple_samples()
 
     assert mismatched == [key]
     assert {s.label for s in result} == {1, 6}
+
+
+def test_resolve_corpus_name_disambiguates_same_named_directories() -> None:
+    # guardian/ and classic_guardian/easy/ use the same filenames -- the
+    # correct corpus for a path must come from which directory it's
+    # actually under, not from any external (e.g. corpus.db) label.
+    corpora = [
+        ("guardian", Path("guardian")),
+        ("classic_guardian", Path("classic_guardian/easy")),
+    ]
+
+    assert resolve_corpus_name(Path("guardian/killer_sudoku_140.jpg"), corpora) == "guardian"
+    assert (
+        resolve_corpus_name(Path("classic_guardian/easy/killer_sudoku_140.jpg"), corpora)
+        == "classic_guardian"
+    )
+
+
+def test_resolve_corpus_name_raises_for_unregistered_directory() -> None:
+    corpora = [("classic_guardian", Path("classic_guardian/easy"))]
+
+    with pytest.raises(ValueError, match="not under any registered corpus"):
+        resolve_corpus_name(Path("classic_guardian/expert/killer_sudoku_123.jpg"), corpora)

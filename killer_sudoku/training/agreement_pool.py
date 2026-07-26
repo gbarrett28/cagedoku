@@ -175,6 +175,25 @@ def build_full_corpus_pool(
     return all_samples
 
 
+def resolve_corpus_name(path: Path, corpora: list[tuple[str, Path]] = DEFAULT_CORPORA) -> str:
+    """Maps a source image path to its DEFAULT_CORPORA name by directory.
+
+    corpus.db's own `corpus` column is NOT reliable for this: it only ever
+    records "guardian"/"observer", collapsing the classic/killer split that
+    DEFAULT_CORPORA actually uses (classic_guardian's images are physically
+    stored under classic_guardian/easy/, a directory with the SAME filenames
+    as guardian/ -- e.g. both have a killer_sudoku_140.jpg). Tagging a
+    reconstructed sample with the DB's corpus value instead of this
+    resolved one risks sample_key colliding with an unrelated real sample
+    from the other directory.
+    """
+    resolved = path.resolve().parent
+    for name, corpus_dir in corpora:
+        if resolved == corpus_dir.resolve():
+            return name
+    raise ValueError(f"{path} is not under any registered corpus directory")
+
+
 def sample_key(corpus: str, source_name: str, row: int, col: int) -> str:
     """Stable identifier for a corpus digit crop, used as the manual-override key.
 
