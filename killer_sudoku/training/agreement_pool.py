@@ -24,6 +24,7 @@ from train_recogniser import HogRecogniser
 
 from killer_sudoku.image.config import ImagePipelineConfig
 from killer_sudoku.image.inp_image import InpImage
+from killer_sudoku.solver.grid import ProcessingError
 from killer_sudoku.training.digit_rects import (
     DigitRect,
     locate_cage_total_rects,
@@ -92,6 +93,16 @@ def build_agreement_pool(corpus_dir: Path, corpus_name: str) -> list[AgreedSampl
     warped_blk, so cached reads can't yield crop rects at all), and
     rework=True re-writes .jpk/status.pkl in whatever directory it's pointed
     at.
+
+    Killer puzzles get the HOG "second opinion" without a second InpImage
+    run: grid location and border detection are recogniser-independent, and
+    the killer path's border search is the expensive part InpImage's own
+    __init__ docstring warns about -- so re-running the whole pipeline just
+    to reclassify already-located crops with a different model would double
+    that cost for nothing. _build_cage_totals is called directly against
+    inp_pca's own warped_blk/brdrs instead. Classic puzzles skip this
+    (their borders are deterministic row cages, not an expensive search),
+    so a second InpImage run there is unchanged and left as-is.
     """
     config = ImagePipelineConfig(puzzle_dir=corpus_dir, rework=True)
     pca = InpImage.make_num_recogniser()
@@ -107,15 +118,13 @@ def build_agreement_pool(corpus_dir: Path, corpus_name: str) -> list[AgreedSampl
         inp_pca = InpImage(f, config, pca)
         if inp_pca.spec_error is not None or inp_pca.warped_blk is None:
             continue
-        inp_hog = InpImage(f, config, hog)
-        if inp_hog.spec_error is not None:
-            continue
 
         puzzle_type = inp_pca.puzzle_type
-        if puzzle_type != inp_hog.puzzle_type:
-            continue
 
         if puzzle_type == "classic":
+            inp_hog = InpImage(f, config, hog)
+            if inp_hog.spec_error is not None or inp_hog.puzzle_type != puzzle_type:
+                continue
             given_pca, given_hog = inp_pca.given_digits, inp_hog.given_digits
             if (
                 given_pca is None
@@ -133,16 +142,21 @@ def build_agreement_pool(corpus_dir: Path, corpus_name: str) -> list[AgreedSampl
                     AgreedSample(corpus_name, "classic", dr.row, dr.col, dr.rect, label, f, crop)
                 )
         else:
-            totals_pca, totals_hog = inp_pca.info.cage_totals, inp_hog.info.cage_totals
+            try:
+                totals_hog = InpImage._build_cage_totals(
+                    inp_pca.warped_blk, hog, config.subres, inp_pca.info.brdrs,
+                )
+            except ProcessingError:
+                continue
+            totals_pca = inp_pca.info.cage_totals
             if not np.array_equal(totals_pca, totals_hog):
                 continue
             rects = locate_cage_total_rects(inp_pca.warped_blk, config.subres)
             # Group rects by (row, col) -- a cage total can be multi-digit, so
             # a cell may have several rects. Pair them left-to-right against
-            # the cage total's characters, same convention bootstrap_numerals
-            # already uses (collect_numerals.py): skip the whole cell (not
-            # just one character) if the rect count doesn't match the digit
-            # count, rather than guessing a partial pairing.
+            # the cage total's characters: skip the whole cell (not just one
+            # character) if the rect count doesn't match the digit count,
+            # rather than guessing a partial pairing.
             by_cell: dict[tuple[int, int], list[DigitRect]] = {}
             for dr in rects:
                 by_cell.setdefault((dr.row, dr.col), []).append(dr)
