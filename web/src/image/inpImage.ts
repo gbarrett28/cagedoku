@@ -30,7 +30,7 @@ import type { GrayImage } from './borderClustering.js';
 import {
   splitNum, contourHier, getNumContours, readClassicDigits, activeRecogniser,
 } from './numberRecognition.js';
-import type { NumRecogniser, ContourInfo, BRect } from './numberRecognition.js';
+import type { NumRecogniser, ContourInfo, BRect, Recognition } from './numberRecognition.js';
 import { validateCageLayout, buildLenientCageLayout } from './validation.js';
 import { buildBrdrs } from '../solver/puzzleSpec.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
@@ -90,6 +90,8 @@ export interface ParseResult {
   detectedCageTotals?: number[][] | undefined;
   /** Recognition (incl. runner-up) for each classic given-digit cell, keyed "row,col". */
   classicRecognitions?: ReadonlyMap<string, import('./numberRecognition.js').Recognition> | undefined;
+  /** Recognition for each cage-total digit crop, keyed "row,col", array order matching cellThumbs. Killer only. */
+  cageTotalRecognitions?: ReadonlyMap<string, import('./numberRecognition.js').Recognition[]> | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -282,6 +284,7 @@ export async function parsePuzzleImage(
   let cageTotals: number[][] | null = null;
   let cellThumbs = new Map<string, Uint8Array[]>();
   let mergedThumbs = new Map<string, Uint8Array>();
+  let cellRecognitions = new Map<string, Recognition[]>();
   let lastCageTotalsResult: CageTotalsResult | null = null;
   let fallbackUsed = false;
   try {
@@ -289,7 +292,7 @@ export async function parsePuzzleImage(
     lastCageTotalsResult = buildCageTotals(
       cv, warpedBlkMat, subres, brdrs,
     );
-    ({ cageTotals, cellThumbs, mergedThumbs } = lastCageTotalsResult);
+    ({ cageTotals, cellThumbs, mergedThumbs, cellRecognitions } = lastCageTotalsResult);
   } catch (e) {
     console.warn('[parsePuzzleImage] buildCageTotals failed, proceeding with initial border estimate', e);
   }
@@ -333,7 +336,7 @@ export async function parsePuzzleImage(
       lastCageTotalsResult = buildCageTotals(
         cv, warpedBlkMat, subres, brdrs2,
       );
-      ({ cageTotals, cellThumbs, mergedThumbs } = lastCageTotalsResult);
+      ({ cageTotals, cellThumbs, mergedThumbs, cellRecognitions } = lastCageTotalsResult);
 
       const totalSum = cageTotals.reduce((s, row) => s + row.reduce((a, b) => a + b, 0), 0);
       if (totalSum < 360 || totalSum > 450) {
@@ -348,7 +351,7 @@ export async function parsePuzzleImage(
           lastCageTotalsResult = buildCageTotals(
             cv, adaptiveBlk, subres, brdrs2,
           );
-          ({ cageTotals, cellThumbs, mergedThumbs } = lastCageTotalsResult);
+          ({ cageTotals, cellThumbs, mergedThumbs, cellRecognitions } = lastCageTotalsResult);
           fallbackUsed = true;
         } finally {
           adaptiveBlk.delete();
@@ -379,6 +382,7 @@ export async function parsePuzzleImage(
       cellThumbs: new Map(),
       mergedThumbs: new Map(),
       classicRecognitions,
+      cageTotalRecognitions: new Map(),
       ...(includeTree ? {
         gray: grayForDump,
         graySize: graySizeForDump,
@@ -414,7 +418,7 @@ export async function parsePuzzleImage(
   }
 
   return {
-    spec, specError, fallbackUsed, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs, mergedThumbs, classicRecognitions,
+    spec, specError, fallbackUsed, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs, mergedThumbs, classicRecognitions, cageTotalRecognitions: cellRecognitions,
     ...(includeTree ? {
       gray: grayForDump,
       graySize: graySizeForDump,
@@ -442,6 +446,8 @@ export interface CageTotalsResult {
   cellThumbs: Map<string, Uint8Array[]>;
   /** Pre-split merged thumbnail for each cell, keyed "row,col". Used for split-recogniser training. */
   mergedThumbs: Map<string, Uint8Array>;
+  /** Recognition for each cage-total digit crop, keyed "row,col", array order matching cellThumbs. */
+  cellRecognitions: Map<string, Recognition[]>;
   /** Present only when buildCageTotals is called with includeTree=true */
   contourTree?: ContourInfo[] | undefined;
   selectedNumbers?: BRect[] | undefined;
@@ -510,6 +516,7 @@ export function buildCageTotals(
 
   const cageTotals: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
   const cellThumbs = new Map<string, Uint8Array[]>();
+  const cellRecognitions = new Map<string, Recognition[]>();
   for (let row = 0; row < 9; row++) {
     for (let col = 0; col < 9; col++) {
       const sums = numPixels[row]![col]!;
@@ -527,11 +534,12 @@ export function buildCageTotals(
           if (label >= 0) cageTotals[row]![col] = 10 * cageTotals[row]![col]! + label;
         }
         cellThumbs.set(`${row},${col}`, sums);
+        cellRecognitions.set(`${row},${col}`, ntrs);
       }
     }
   }
   return {
-    cageTotals, cellThumbs, mergedThumbs: mergedPixels,
+    cageTotals, cellThumbs, mergedThumbs: mergedPixels, cellRecognitions,
     ...(includeTree ? { contourTree, selectedNumbers, outerGridBR } : {}),
   };
 }
