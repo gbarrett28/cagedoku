@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { validateCageLayout, repairCageTotals } from './validation.js';
+import { validateCageLayout, buildLenientCageLayout } from './validation.js';
 import { ProcessingError } from '../solver/errors.js';
 
 // ---------------------------------------------------------------------------
@@ -245,60 +245,66 @@ describe('validateCageLayout — row-major orientation (T2)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// repairCageTotals (diagnostic spec recovery)
+// buildLenientCageLayout (structural/range-error fallback — never throws)
 // ---------------------------------------------------------------------------
 
-describe('repairCageTotals', () => {
-  it('returns repaired array and empty warnings when all totals are valid', () => {
-    const { repaired, warnings } = repairCageTotals(
+describe('buildLenientCageLayout', () => {
+  it('returns no error cells and one region per cell when every total is valid', () => {
+    const { regions, errorCells } = buildLenientCageLayout(
       trivialCageTotals(),
       allWallsBorderX(),
       allWallsBorderY(),
     );
-    expect(warnings).toHaveLength(0);
-    // Every 1-cell cage with total=5 is valid — no clamping needed.
-    for (let r = 0; r < 9; r++)
-      for (let c = 0; c < 9; c++)
-        expect(repaired[r]![c]!).toBe(5);
+    expect(errorCells.size).toBe(0);
+    const seen = new Set(regions.flat());
+    expect(seen.size).toBe(81); // every cell its own region (all walls up)
   });
 
-  it('clamps an out-of-range total and emits a warning', () => {
-    // A 1-cell cage must have total in [1,9].  total=0 is invalid (it signals
-    // "no head" in validateCageLayout) so will not be clamped here.
-    // total=15 is out of range for a 1-cell cage — clamp to 9.
+  it('flags every cell of a cage whose total is out of range, leaving it unmodified', () => {
+    // A 1-cell cage must have total in [1,9]; 15 is infeasible.
     const totals = trivialCageTotals();
-    totals[4]![4] = 15;  // row=4, col=4: 15 > max 9 for size-1 cage
-    const { repaired, warnings } = repairCageTotals(
-      totals,
-      allWallsBorderX(),
-      allWallsBorderY(),
-    );
-    expect(repaired[4]![4]!).toBe(9);
-    expect(warnings.length).toBeGreaterThan(0);
-    expect(warnings[0]).toContain('15');
+    totals[4]![4] = 15;
+    const { errorCells } = buildLenientCageLayout(totals, allWallsBorderX(), allWallsBorderY());
+    expect(errorCells.has('4,4')).toBe(true);
+    // Unlike repairCageTotals, the infeasible total is never clamped/modified.
+    expect(totals[4]![4]!).toBe(15);
   });
 
-  it('clamps a 2-cell cage total that is too small', () => {
-    // Open wall between rows 0 and 1 in col 0 → 2-cell cage.
-    // Total=2 is below minimum 3 for a 2-cell cage — clamp to 3.
+  it('flags every cell of a cage with no total at all ("unassigned region")', () => {
+    // Open wall between rows 0 and 1 in col 0 → 2-cell cage, but neither
+    // cell has a total — this is exactly validateCageLayout's
+    // "unassigned region" failure, which buildLenientCageLayout must
+    // tolerate instead of throwing.
     const borderX = allWallsBorderX();
     borderX[0]![0] = false;
     const totals = trivialCageTotals();
-    totals[0]![0] = 2;   // row=0, col=0 — head of 2-cell cage, total too small
-    totals[1]![0] = 0;   // row=1, col=0 — merged cell
-    const { repaired, warnings } = repairCageTotals(totals, borderX, allWallsBorderY());
-    expect(repaired[0]![0]!).toBe(3);  // clamped to minimum
-    expect(warnings.length).toBe(1);
+    totals[0]![0] = 0;
+    totals[1]![0] = 0;
+    const { regions, errorCells } = buildLenientCageLayout(totals, borderX, allWallsBorderY());
+    expect(errorCells.has('0,0')).toBe(true);
+    expect(errorCells.has('1,0')).toBe(true);
+    // The two cells are still grouped into one region by connectivity.
+    expect(regions[0]![0]).toBe(regions[1]![0]);
   });
 
-  it('does not modify cells with total=0 (no-head cells)', () => {
-    // Cells with total=0 are non-head merged cells — repairCageTotals must not
-    // touch them (they are not cage heads).
+  it('flags every cell of a cage with two declared totals', () => {
+    // Open wall between rows 0 and 1 in col 0 → 2-cell cage with both
+    // cells carrying a (conflicting) total.
     const borderX = allWallsBorderX();
     borderX[0]![0] = false;
     const totals = trivialCageTotals();
-    totals[1]![0] = 0;   // row=1, col=0 is merged — total 0 must stay 0
-    const { repaired } = repairCageTotals(totals, borderX, allWallsBorderY());
-    expect(repaired[1]![0]!).toBe(0);
+    totals[0]![0] = 3;
+    totals[1]![0] = 4;
+    const { errorCells } = buildLenientCageLayout(totals, borderX, allWallsBorderY());
+    expect(errorCells.has('0,0')).toBe(true);
+    expect(errorCells.has('1,0')).toBe(true);
+  });
+
+  it('does not flag unrelated cages when one cage is invalid', () => {
+    const totals = trivialCageTotals();
+    totals[4]![4] = 15; // only this cell's cage is invalid
+    const { errorCells } = buildLenientCageLayout(totals, allWallsBorderX(), allWallsBorderY());
+    expect(errorCells.size).toBe(1);
+    expect(errorCells.has('0,0')).toBe(false);
   });
 });

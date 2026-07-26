@@ -316,9 +316,11 @@ locate pre-filled cells.
 ## Stage 6: Cage Layout Validation
 
 No change from `image-pipeline.md`. `validateCageLayout` checks connectivity, unique
-cage heads, and legal totals. `repairCageTotals` clamps out-of-range totals and retries.
-A structural error (non-connected cage, multiple heads) produces a `ProcessingError`
-surfaced to the user.
+cage heads, and legal totals. On any failure (unassigned region, two heads in one
+region, or an out-of-range total), `buildLenientCageLayout` groups cells by border
+connectivity only (never throws) and reports which cells belong to an invalid cage —
+totals are never clamped, so the review screen shows the actual detected value for
+the user to correct.
 
 ---
 

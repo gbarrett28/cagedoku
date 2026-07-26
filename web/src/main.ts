@@ -1376,9 +1376,9 @@ async function handleProcess(file?: File): Promise<void> {
     // Attempt auto-confirm (Killer only): skip the review screen when OCR is clean,
     // the cage layout is valid, and the solver finds a complete solution.
     // Classic puzzles always go to the review screen so the user can verify digits.
-    if (warning === null && PuzzleState.isKiller(state)) {
+    if (PuzzleState.isKiller(state)) {
       const layoutResult = applyDraftLayout(draftBorderX, draftBorderY, state.specData.cageTotals);
-      if (layoutResult.errorCells.size === 0 && layoutResult.warnings.length === 0) {
+      if (warning === null && layoutResult.errorCells.size === 0 && layoutResult.warnings.length === 0) {
         // Yield to the browser so the loading indicator renders before the solve blocks.
         await new Promise<void>(resolve => setTimeout(resolve, 0));
         const { board, usedBacktracking, stalledCandidates } = solveCurrentSpec();
@@ -1425,7 +1425,8 @@ async function handleProcess(file?: File): Promise<void> {
           return;
         }
       }
-      // Auto-confirm failed — show review screen with the specific error.
+      // Auto-confirm failed or was skipped (a pipeline warning was present) —
+      // show review screen with the specific error.
       // applyDraftLayout returns the original state unchanged when errorCells exist.
       const stateToShow = layoutResult.errorCells.size > 0 ? state : layoutResult.state;
       applyUploadResult(stateToShow, warpedImageUrl, null);
@@ -1450,6 +1451,18 @@ async function handleProcess(file?: File): Promise<void> {
           ...metricsPayload(),
         });
         setStatus(layoutResult.warnings.join('; ') + ' — please correct the totals before confirming', true);
+      } else if (warning !== null) {
+        // Cage layout itself is fine (applyDraftLayout found no errorCells)
+        // but the pipeline reported something unrelated to cage structure
+        // (e.g. a downstream solve inconsistency) — surface it as-is.
+        logAction('review_shown', 'pipeline warning');
+        (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
+          bucket: 'notSolved', reason: 'ocr warning', puzzleType: PuzzleState.kind(state),
+          detectedBigApple, specHash, ...debugStagePayload(uploadResult),
+          ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
+          ...metricsPayload(),
+        });
+        setStatus(warning, true);
       } else {
         logAction('review_shown', 'solver incomplete');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({

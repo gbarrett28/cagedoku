@@ -13,7 +13,7 @@ import { solSums, solDiffs } from '../solver/equation.js';
 import type { DiffSolution } from '../solver/equation.js';
 import { defaultRules } from '../engine/rules/index.js';
 
-import { cageSumRange, cellKey, keyToCell } from '../engine/types.js';
+import { cageSumRange } from '../engine/types.js';
 import type { Cell } from '../engine/types.js';
 import { parsePuzzleImage, ImageDecodeError, GridNotFoundError } from '../image/inpImage.js';
 import { AssertionViolation, validateSudokuSolution, isCageSumCorrect } from './assertions.js';
@@ -21,7 +21,7 @@ import { formatActionLog } from './actionLog.js';
 
 import type { ParseResult } from '../image/inpImage.js';
 import { defaultImagePipelineConfig } from '../image/config.js';
-import { validateCageLayout, hasMultipleCageTotals } from '../image/validation.js';
+import { validateCageLayout, hasMultipleCageTotals, buildLenientCageLayout } from '../image/validation.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import {
   buildEngine,
@@ -410,7 +410,15 @@ async function buildStateFromParseResult(
   // hasMultipleCageTotals detects two cage-head cells in the same region — a
   // specific OCR error where a digit was read from an adjacent cage. When it fires,
   // the solver is skipped and a more specific message is shown.
-  if (result.spec !== null) {
+  //
+  // Skipped entirely when result.specError is already set: that means
+  // parsePuzzleImage fell back to buildLenientCageLayout (a structural or
+  // range error validateCageLayout couldn't resolve), so spec is known to
+  // be incomplete/invalid already — running the solver on it would just
+  // waste time and produce a redundant, less specific message. The review
+  // screen's own applyDraftLayout re-check (in main.ts) finds and
+  // highlights the actual problem cage(s) instead.
+  if (result.spec !== null && result.specError === null) {
     const structuralError = hasMultipleCageTotals(spec);
     const validityError = structuralError ?? solveAndValidateSpec(spec);
     if (validityError !== null) {
@@ -469,78 +477,18 @@ export function applyDraftLayout(
   if (!PuzzleState.isKiller(state)) throw new Error('applyDraftLayout requires a killer puzzle state');
   if (state.goldenSolution !== null) throw new Error('Cannot edit layout after confirming');
 
-  // Union-find: keys are "row,col" (cellKey format)
-  const rmap = new Map<string, string>();
-  const members = new Map<string, Set<string>>();
-  for (let r = 0; r < 9; r++) {
-    for (let c = 0; c < 9; c++) {
-      const k = cellKey([r, c] as Cell);
-      rmap.set(k, k); members.set(k, new Set([k]));
-    }
-  }
-  const find = (k: string): string => rmap.get(k)!;
-  const union = (a: string, b: string) => {
-    const ra = find(a); const rb = find(b);
-    if (ra === rb) return;
-    const [keep, drop] = ra < rb ? [ra, rb] : [rb, ra];
-    for (const p of members.get(drop)!) rmap.set(p, keep);
-    const ks = members.get(keep)!;
-    for (const p of members.get(drop)!) ks.add(p);
-    members.delete(drop);
-  };
-  for (let c = 0; c < 9; c++)
-    for (let r = 0; r < 8; r++)
-      if (!borderX[c]![r]!) union(cellKey([r, c] as Cell), cellKey([r + 1, c] as Cell));
-  for (let cg = 0; cg < 8; cg++)
-    for (let r = 0; r < 9; r++)
-      if (!borderY[cg]![r]!) union(cellKey([r, cg] as Cell), cellKey([r, cg + 1] as Cell));
+  const bxMut = borderX.map(col => [...col]) as boolean[][];
+  const byMut = borderY.map(row => [...row]) as boolean[][];
+  const totalsMut = cellTotals.map(row => [...row]) as number[][];
 
-  // Validate each cage: exactly one non-zero total, within the valid range for its size.
-  const errorCells = new Set<string>();
-  const headTotals: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
-  const seen = new Set<string>();
-
-  for (let r = 0; r < 9; r++) {
-    for (let c = 0; c < 9; c++) {
-      const rep = find(cellKey([r, c] as Cell));
-      if (seen.has(rep)) continue;
-      seen.add(rep);
-
-      const cageCells = members.get(rep)!;
-      const n = cageCells.size;
-      const [lo, hi] = cageSumRange(n);
-
-      let nonZeroCount = 0;
-      let headR = -1; let headC = -1; let headTotal = 0;
-      for (const k of cageCells) {
-        const [kr, kc] = keyToCell(k);
-        const total = cellTotals[kr]![kc]!;
-        if (total !== 0) {
-          nonZeroCount++;
-          headR = kr; headC = kc; headTotal = total;
-        }
-      }
-
-      const structuralError = nonZeroCount !== 1;
-      const rangeError = nonZeroCount === 1 && (headTotal < lo || headTotal > hi);
-
-      if (structuralError || rangeError) {
-        for (const k of cageCells) errorCells.add(k);
-      } else {
-        headTotals[headR]![headC] = headTotal;
-      }
-    }
-  }
-
+  const { errorCells } = buildLenientCageLayout(totalsMut, bxMut, byMut);
   if (errorCells.size > 0) {
     return { state, errorCells, warnings: [] };
   }
 
-  const bxMut = borderX.map(col => [...col]) as boolean[][];
-  const byMut = borderY.map(row => [...row]) as boolean[][];
-  const spec = validateCageLayout(headTotals, bxMut, byMut);
+  const spec = validateCageLayout(totalsMut, bxMut, byMut);
 
-  const totalSum = headTotals.flat().reduce((a, b) => a + b, 0);
+  const totalSum = totalsMut.flat().reduce((a, b) => a + b, 0);
   const warnings = totalSum !== GRID_TOTAL_SUM
     ? [`Cage totals sum to ${totalSum} (expected ${GRID_TOTAL_SUM}) — please correct before confirming`]
     : [];

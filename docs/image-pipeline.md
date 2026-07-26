@@ -487,15 +487,13 @@ flowchart TD
     S15 --> BCT["buildCageTotals → cageTotals[9][9]\n· 0  at cell (r,c) = no digit contour detected\n· >0 at cell (r,c) = recognised cage total\nAll non-anchor cells are 0 by construction"]
 
     BCT --> VCL[validateCageLayout]
-    VCL --> CHK1{any cage head with\ntotal out of range\nlo..hi for cage size?}
-    CHK1 -- yes --> RCT[repairCageTotals:\nclamp out-of-range head totals to lo]
-    RCT --> VCL2[validateCageLayout retry]
-    VCL2 -- ProcessingError --> PE
-    CHK1 -- no --> CHK2{structural errors?\nunassigned cell or\ntwo heads in one region}
-    CHK2 -- yes --> PE[ProcessingError\nUser sees: image could not be parsed]
-    CHK2 -- no --> SPEC["PuzzleSpec\n· regions[r][c] — 1-based cage id\n· cageTotals[r][c] — positive at every\n  cage head, 0 elsewhere\nInvariant: no cage head has total = 0"]
+    VCL -- ok --> SPEC["PuzzleSpec\n· regions[r][c] — 1-based cage id\n· cageTotals[r][c] — positive at every\n  cage head, 0 elsewhere\nInvariant: no cage head has total = 0"]
+    VCL -- throws\n(unassigned region,\ntwo heads in one region,\nor total out of range) --> BLC["buildLenientCageLayout:\nregions grouped by border\nconnectivity only (never throws);\ncageTotals kept exactly as detected\n— an infeasible total is never clamped"]
+    BLC --> SPEC2["PuzzleSpec (lenient)\nSame shape as SPEC, but some\ncage(s) may have zero, two, or an\nout-of-range total"]
 
     SPEC --> REV[Review screen\nUser inspects & corrects OCR]
+    SPEC2 --> REV2["Review screen\napplyDraftLayout re-derives the same\nerror cells and highlights them red;\neverything else is shown as detected"]
+    REV2 --> REV
     REV --> CNF[User clicks Confirm & Solve]
 
     CNF --> VCR[validateCurrentReview]

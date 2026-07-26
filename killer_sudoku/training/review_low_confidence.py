@@ -20,6 +20,7 @@ import dataclasses
 import json
 import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -441,8 +442,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--count", type=int, default=100)
     parser.add_argument(
-        "--git-hash", default="hog-letterbox-deployed-b649063",
-        help="evaluations.git_hash (in corpus.db) to pull flagged puzzles from",
+        "--git-hash", default=None,
+        help="evaluations.git_hash (in corpus.db) to pull flagged puzzles from "
+             "(default: current HEAD, matching evaluate-corpus.ts's own default)",
     )
     parser.add_argument("--reason", default="duplicate given digits")
     parser.add_argument("--db-path", type=Path, default=DEFAULT_DB_PATH)
@@ -451,11 +453,15 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    git_hash = args.git_hash or subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True,
+    ).stdout.strip()
+
     print("Fitting the deployed hog_letterbox model...")
     recogniser, model = fit_deployed_hog_model()
 
-    print(f"Finding puzzles flagged '{args.reason}' under git-hash {args.git_hash}...")
-    flagged = flagged_puzzle_paths(args.git_hash, args.reason, args.db_path)
+    print(f"Finding puzzles flagged '{args.reason}' under git-hash {git_hash}...")
+    flagged = flagged_puzzle_paths(git_hash, args.reason, args.db_path)
     print(f"{len(flagged)} flagged puzzles found.")
     if not flagged:
         print("Nothing to review.")

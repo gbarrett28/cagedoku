@@ -31,7 +31,7 @@ import {
   splitNum, contourHier, getNumContours, readClassicDigits, activeRecogniser,
 } from './numberRecognition.js';
 import type { NumRecogniser, ContourInfo, BRect } from './numberRecognition.js';
-import { validateCageLayout, repairCageTotals } from './validation.js';
+import { validateCageLayout, buildLenientCageLayout } from './validation.js';
 import { buildBrdrs } from '../solver/puzzleSpec.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import { ProcessingError } from '../solver/errors.js';
@@ -389,34 +389,27 @@ export async function parsePuzzleImage(
     };
   }
 
-  // Try strict validation first, then fall back to clamping out-of-range totals so the
-  // review panel always appears and the user can correct misread values manually.
+  // Try strict validation first. On failure (structural or range), fall back
+  // to a lenient layout that keeps everything actually detected -- real
+  // borders, real totals, unclamped -- with only the problem cage(s)
+  // implicitly flagged (via spec.regions grouping them normally; the review
+  // screen's own applyDraftLayout re-check finds and highlights them),
+  // rather than discarding the detection or silently rewriting a misread
+  // total.
   let spec: PuzzleSpec | null = null;
   let specError: string | null = null;
-  let usedTotals = cageTotals;
   try {
-    spec = validateCageLayout(usedTotals, bestBorderX, bestBorderY);
+    spec = validateCageLayout(cageTotals, bestBorderX, bestBorderY);
   } catch (strictErr) {
-    if (isStructuralCageError(strictErr)) {
-      specError = String(strictErr);
-    } else {
-      // Range error — clamp totals to valid ranges and retry.
-      const { repaired, warnings } = repairCageTotals(usedTotals, bestBorderX, bestBorderY);
-      usedTotals = repaired;
-      try {
-        spec = validateCageLayout(usedTotals, bestBorderX, bestBorderY);
-        specError = `Some cage totals were out of range and have been reset — please correct: ${warnings.join('; ')}`;
-      } catch (repairErr) {
-        specError = String(repairErr);
-      }
-    }
+    const { regions } = buildLenientCageLayout(cageTotals, bestBorderX, bestBorderY);
+    spec = { regions, cageTotals, borderX: bestBorderX, borderY: bestBorderY };
+    specError = String(strictErr);
   }
 
-  if (spec !== null) {
-    const totalSum = usedTotals.reduce((s, col) => s + col.reduce((a, b) => a + b, 0), 0);
+  if (specError === null) {
+    const totalSum = cageTotals.reduce((s, col) => s + col.reduce((a, b) => a + b, 0), 0);
     if (totalSum < 360 || totalSum > 450) {
-      specError = (specError ? specError + '. ' : '') +
-        `Cage totals sum to ${totalSum} (expected 405) — some may be misread; please review.`;
+      specError = `Cage totals sum to ${totalSum} (expected 405) — some may be misread; please review.`;
     }
   }
 
@@ -428,17 +421,13 @@ export async function parsePuzzleImage(
       gridCorners: gridCornersForDump,
       detectedBorderX: bestBorderX,
       detectedBorderY: bestBorderY,
-      detectedCageTotals: usedTotals,
+      detectedCageTotals: cageTotals,
     } : {}),
   };
 }
 
 // ---------------------------------------------------------------------------
 /** Returns true for structural cage errors (region clash or unassigned cell) that cannot be repaired by clamping totals. */
-function isStructuralCageError(e: unknown): boolean {
-  return e instanceof ProcessingError;
-}
-
 // Internal helpers
 // ---------------------------------------------------------------------------
 

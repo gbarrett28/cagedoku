@@ -195,37 +195,54 @@ export function validateCageLayout(
 }
 
 /**
- * Clamp cage totals that are outside the achievable range for their cage size.
+ * Groups cells into cages purely by border connectivity, with no
+ * requirement that every cage have a valid (or any) total -- unlike
+ * validateCageLayout, this never throws. Cells belonging to a cage that
+ * doesn't have exactly one total in its valid range are reported in
+ * errorCells (unmodified -- an infeasible total is left as read, never
+ * clamped, so the review screen shows the actual misread number for the
+ * user to fix).
  *
- * Runs the same union-find as validateCageLayout to determine cage sizes, then
- * sets any head-cell total that is below lo or above hi to lo (the minimum).
- * Returns the repaired array and a list of human-readable warnings.
- *
- * Use this as a fallback when validateCageLayout throws an invalid_cage error:
- *   const { repaired, warnings } = repairCageTotals(totals, bx, by);
- *   spec = validateCageLayout(repaired, bx, by);
+ * Use this as a fallback when validateCageLayout throws: unlike discarding
+ * the detected layout, it lets the review screen show everything that WAS
+ * correctly detected, with only the problem cage(s) highlighted.
  */
-export function repairCageTotals(
+export function buildLenientCageLayout(
   cageTotals: number[][],
   borderX: boolean[][],
   borderY: boolean[][],
-): { repaired: number[][]; warnings: string[] } {
+): { regions: number[][]; errorCells: Set<string> } {
   const { find, members } = buildUnionFind(borderX, borderY);
 
-  const repaired = cageTotals.map(row => [...row]);
-  const warnings: string[] = [];
-  for (let row = 0; row < 9; row++) {
-    for (let col = 0; col < 9; col++) {
-      const total = repaired[row]![col]!;
-      if (total === 0) continue;
-      const n = members.get(find(cellKey([row, col])))!.size;
-      const [lo, hi] = cageSumRange(n);
-      if (total < lo || total > hi) {
-        const clamped = total < lo ? lo : hi;
-        repaired[row]![col] = clamped;
-        warnings.push(`row=${row + 1},col=${col + 1}: read ${total}, clamped to ${clamped} (${n}-cell cage range [${lo}, ${hi}])`);
+  const regions: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+  const regionIds = new Map<string, number>();
+  let nextRegionId = 0;
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const rep = find(cellKey([r, c]));
+      let id = regionIds.get(rep);
+      if (id === undefined) {
+        id = ++nextRegionId;
+        regionIds.set(rep, id);
       }
+      regions[r]![c] = id;
     }
   }
-  return { repaired, warnings };
+
+  const errorCells = new Set<string>();
+  for (const cageCells of members.values()) {
+    const n = cageCells.size;
+    const [lo, hi] = cageSumRange(n);
+    let nonZeroCount = 0;
+    let headTotal = 0;
+    for (const k of cageCells) {
+      const [r, c] = keyToCell(k);
+      const total = cageTotals[r]![c]!;
+      if (total !== 0) { nonZeroCount++; headTotal = total; }
+    }
+    const bad = nonZeroCount !== 1 || headTotal < lo || headTotal > hi;
+    if (bad) for (const k of cageCells) errorCells.add(k);
+  }
+
+  return { regions, errorCells };
 }
