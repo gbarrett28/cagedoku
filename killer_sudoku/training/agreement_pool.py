@@ -11,6 +11,7 @@ import dataclasses
 import shutil
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +29,7 @@ from killer_sudoku.training.digit_rects import (
     locate_cage_total_rects,
     locate_classic_digit_rects,
 )
-from killer_sudoku.training.hog_model_loader import HogNumber, load_hog_classifier
+from killer_sudoku.training.ts_bridge import predict
 
 
 @dataclasses.dataclass(frozen=True)
@@ -47,15 +48,39 @@ class AgreedSample:
     crop: npt.NDArray[np.uint8]
 
 
-def _make_hog_recogniser() -> HogNumber:
-    hog_params, classifier, _threshold = load_hog_classifier(
+class _TsBridgeNumberSource:
+    """NumberSource backed by ts_bridge.predict() against a frozen historical checkpoint.
+
+    Replaces HogNumber + LinearOvOClassifier/RBFClassifier.predict() -- both
+    reimplementations of numberRecognition.ts's production inference path --
+    with a call into the real TS implementation. Still performs the
+    letterbox warp itself (same step HogNumber.get_sums used to do): ts_bridge's
+    predict() expects already-64x64 crops, matching TS's own
+    recogniser.warpForRecognition() -> recognise() split.
+    """
+
+    def __init__(
+        self, model_bin: Path, model_json: Path,
+        warp_fn: Callable[[npt.NDArray[np.uint8]], npt.NDArray[np.uint8]],
+    ) -> None:
+        self._model_bin = model_bin
+        self._model_json = model_json
+        self._warp_fn = warp_fn
+
+    def get_sums(self, nums: list[npt.NDArray[np.uint8]]) -> npt.NDArray[np.intp]:
+        if not nums:
+            return np.array([], dtype=np.intp)
+        warped = [self._warp_fn(img) for img in nums]
+        predictions = predict(warped, self._model_bin, self._model_json)
+        return np.array([p["label"] for p in predictions], dtype=np.intp)
+
+
+def _make_hog_recogniser() -> _TsBridgeNumberSource:
+    warp = HogRecogniser().warp_from_rect
+    return _TsBridgeNumberSource(
         Path("killer_sudoku/data/hog_recogniser_99cbb70.bin"),
         Path("killer_sudoku/data/hog_recogniser_99cbb70.json"),
-    )
-    warp = HogRecogniser().warp_from_rect
-    return HogNumber(
-        hog_params, classifier,
-        lambda img: warp(0, 0, img.shape[1], img.shape[0], img, hog_params.win_size),
+        lambda img: warp(0, 0, img.shape[1], img.shape[0], img, 64),
     )
 
 
