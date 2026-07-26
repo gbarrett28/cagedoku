@@ -44,27 +44,27 @@
     "rbf_support_vectors": {
       "dtype": "float64",
       "shape": [
-        1431,
+        4357,
         1769
       ],
       "offset": 20,
-      "byteLength": 20251512
+      "byteLength": 61660264
     },
     "rbf_dual_coef": {
       "dtype": "float64",
       "shape": [
         9,
-        1431
+        4357
       ],
-      "offset": 20251532,
-      "byteLength": 103032
+      "offset": 61660284,
+      "byteLength": 313704
     },
     "rbf_intercept": {
       "dtype": "float64",
       "shape": [
         45
       ],
-      "offset": 20354564,
+      "offset": 61973988,
       "byteLength": 360
     },
     "rbf_n_support": {
@@ -72,7 +72,7 @@
       "shape": [
         10
       ],
-      "offset": 20354924,
+      "offset": 61974348,
       "byteLength": 40
     },
     "rbf_gamma": {
@@ -80,7 +80,7 @@
       "shape": [
         1
       ],
-      "offset": 20354964,
+      "offset": 61974388,
       "byteLength": 8
     },
     "classes": {
@@ -88,7 +88,7 @@
       "shape": [
         10
       ],
-      "offset": 20354972,
+      "offset": 61974396,
       "byteLength": 40
     },
     "confidence_threshold": {
@@ -96,7 +96,7 @@
       "shape": [
         1
       ],
-      "offset": 20355012,
+      "offset": 61974436,
       "byteLength": 8
     }
   }
