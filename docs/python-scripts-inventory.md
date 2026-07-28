@@ -12,20 +12,20 @@ dates are from edits made during that migration session, not evidence of real us
 
 | Path | Purpose | Last touched | Still reachable? |
 |---|---|---|---|
-| `killer_sudoku/image/*.py` (8 files: `border_clustering.py`, `border_detection.py`, `cell_scan.py`, `config.py`, `grid_location.py`, `inp_image.py`, `number_recognition.py`, `validation.py`) | Real image pipeline: grid location, border clustering/detection, cell scanning, digit recognition (`RBFClassifier`/`CayenneNumber`), `InpImage` orchestrator | 2026-07-24 | **Yes** — `evaluate.py` (live scheduled CI) and `agreement_pool.py` still call it |
-| `killer_sudoku/solver/grid.py`, `puzzle_spec.py` | `ProcessingError` (image-pipeline error, misplaced here historically) and `PuzzleSpec` (the validated cage-layout contract) | 2026-07-26 | **Yes** — still imported by `killer_sudoku/image/inp_image.py`, `validation.py`, `agreement_pool.py`, `evaluate.py` |
+| `killer_sudoku/image/*.py` (8 files: `border_clustering.py`, `border_detection.py`, `cell_scan.py`, `config.py`, `grid_location.py`, `inp_image.py`, `number_recognition.py`, `validation.py`) | Legacy image pipeline: grid location, border clustering/detection, cell scanning, digit recognition (`RBFClassifier`/`CayenneNumber`), `InpImage` orchestrator | 2026-07-24 | **Temporarily** — only the manual agreement/training family still calls it; scheduled evaluation no longer does |
+| `killer_sudoku/solver/grid.py`, `puzzle_spec.py` | `ProcessingError` (image-pipeline error, misplaced here historically) and `PuzzleSpec` (the validated cage-layout contract) | 2026-07-26 | **Temporarily** — imported only by the legacy Python image/agreement family |
 
-## Live — wired into scheduled automation (~7 files)
+## Live — wired into scheduled automation
 
 | Path | Purpose | Last touched |
 |---|---|---|
-| `killer_sudoku/training/evaluate.py` | Regression-checks retrain output vs. a baseline `eval_report.json` | 2026-07-24 |
 | `web/train_recogniser.py` | Fits the deployed HOG+RBF-SVM model | 2026-07-26 (routes feature extraction through `ts_bridge` now) |
 | `scripts/_r2_list.py` / `_r2_download.py` / `_r2_delete.py` | List/pull/clear pending training-sample uploads from Cloudflare R2 | 2026-07-04 |
-| `killer_sudoku/training/agreement_pool.py`, `digit_rects.py`, `hog_model_loader.py`, `ts_bridge.py` | Library modules the above call into (not scripts themselves) | 2026-07-26 |
+| `killer_sudoku/training/ts_bridge.py` | Calls TypeScript feature extraction for the trainer (not a user entry point) | 2026-07-26 |
 
-All five run every 8 hours via `.github/workflows/retrain.yml` — the most "used"
-Python in the repo, just never by a human directly.
+Scheduled Python is now limited to `web/train_recogniser.py` plus the three private
+R2 helpers. Model regression evaluation is TypeScript: the workflow builds the
+production app and runs `web/scripts/evaluate-corpus.ts` over committed fixtures.
 
 ## Actual temp/manual scripts (~23 files)
 
@@ -65,10 +65,11 @@ purpose and probably haven't run in a while; the rest are still plausible manual
 tools for retraining/debugging work, just with no way to confirm actual recent use
 beyond edit history.
 
-## Dead/broken entry point (found and removed)
+## Removed entry points
 
-`pyproject.toml`'s `[project.scripts]` registered `cagedoku = "killer_sudoku.main:main"`
-— `killer_sudoku/main.py` did not exist anywhere in the repo. Removed.
+The broken `cagedoku` entry point was removed earlier. The `ks-evaluate` entry point
+and its Python evaluator/status store were removed when scheduled evaluation moved
+to the production browser pipeline.
 
 ## The Python solver, fully retired (2026-07-26, after the correction above)
 
@@ -85,15 +86,10 @@ were **two** Python solving implementations: a legacy constraint/equation-based
   `validate_cage_layout`'s union-find loop directly, not its docstring — a real
   row/col bug caught by a deliberately transpose-sensitive test) to the
   row-major shape the TS side expects.
-- `killer_sudoku/training/evaluate.py`'s two solve call sites
-  (`_process_one_image`, `test_border_fun`) now call `ts_bridge.solve()`.
 - Deleted: `killer_sudoku/solver/engine/**` (~30 files), `equation.py`,
   `types.py` (`GridLike`, only used by `equation.py`), and `killer_sudoku/output/`
   (`SolImage`, only used by `Grid.__init__`). `Grid` itself is gone from
   `grid.py` — only `ProcessingError` remains there.
-- Verified end-to-end via `tests/test_evaluate_recogniser_flag.py`, which runs
-  a real corpus image through `collect_status` → `_process_one_image` →
-  `ts_bridge.solve()` → a real subprocess call into the TS solver, and passes.
 
 ## What did NOT get removed, and why
 

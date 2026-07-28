@@ -24,7 +24,6 @@ dev = ["ruff", "mypy", "pytest", "pytest-cov", "playwright>=1.40", "pytest-playw
 [project.scripts]
 ks-train-numbers = "killer_sudoku.training.train_number_recogniser:main"
 ks-scrape = "killer_sudoku.training.scrape_puzzles:main"
-ks-evaluate = "killer_sudoku.training.evaluate:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

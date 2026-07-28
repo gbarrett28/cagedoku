@@ -54,39 +54,18 @@ flowchart LR
 
 ---
 
-## Stage 1: Image Acquisition and Status Tracking
+## Stage 1: Image Acquisition
 
-Puzzle images are downloaded manually (or via `scrape_puzzles`) and stored as `.jpg`
-files.  A companion `status.pkl` file maps each image path to a string status label:
-`"SOLVED"`, `"CHEATED"` (CSP fallback used), `"ProcessingError"`, or
-`"AssertionError"`.  Only `"SOLVED"` puzzles are used as training data.
+The deployable pipeline acquires puzzle images in the browser and processes them
+with OpenCV.js. Offline corpus evaluation uses the same production bundle:
+`web/scripts/evaluate-corpus.ts` content-hashes images, drives a production Vite
+preview with Playwright, and stores outcomes and raw/derived crop evidence in
+`corpus.db`.
 
-`get_gry_img` reads a `.jpg`, upscales it with `cv2.pyrUp` until both dimensions
-exceed the target resolution (1152 px by default), then adds a 3-pixel black border.
-The border ensures Hough lines near the true image edge are picked up by the
-transform.  It returns both the grayscale and BGR versions.
-
-```mermaid
-flowchart LR
-    A[.jpg file] --> B[cv2.imread]
-    B --> C{height and width\n>= resolution?}
-    C -- no --> D[cv2.pyrUp\ndouble size]
-    D --> C
-    C -- yes --> E[add 3px\nblack border]
-    E --> F[grayscale gry\n+ colour img]
-
-    G[status.pkl] <--> H[StatusStore]
-    H --> I{puzzle\nSOLVED?}
-    I -- yes --> J[include in\ntraining data]
-    I -- no --> K[skip]
-```
-
-**Parameters**: `resolution = 9 * subres = 1152 px`.  Increasing `subres` gives more
-pixels per cell at the cost of memory and compute.
-
-[gb] Move pkl to something more robust — represent the path in an OS-independent way.
-
-[gb] Could use "CHEATED" puzzles for training as well.
+Scheduled retraining uses the committed `web/eval-fixtures/` smoke corpus and
+compares the candidate model's browser-produced report with
+`web/eval-baseline.json`. The retired Python `status.pkl` evaluator is not a
+production or training authority.
 
 ---
 
@@ -637,13 +616,10 @@ flowchart LR
     I --> J[guardian_train_sq.json /\nobserver_train_sq.json]
 ```
 
-This bulk data also serves as a **held-out comparison set**: because it is
-solver-gated (cached `cage_totals` only trusted when the independent rule-based
-killer solver could actually solve the grid using them — `TRAINING_STATUSES =
-{SOLVED, CHEAT}` in `killer_sudoku/training/status.py`) and no training recipe on
-`master` has ever seen it, comparing a candidate model's accuracy on
-`guardian_train_sq.json`/`observer_train_sq.json` against `origin/master`'s deployed
-model is a genuine, non-circular accuracy check, not just a training-data source.
+The cached bulk exports are historical labelled training inputs. Candidate-model
+regression gating is separate: it runs the production browser over
+`web/eval-fixtures/` and compares the resulting content-hash-keyed outcomes with
+`web/eval-baseline.json`.
 
 ### T2: Train Number Recogniser
 

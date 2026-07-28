@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "modelSha256": "2652c22a42163d6cdcfcc08b4d6502871d98a6783a6b98116ece9caece0d1f63",
+  "outcomes": [
+    {
+      "puzzleHash": "35afcdf291634887fc70b7840c751a638e5857f8d66ac3f82132d21d0b271ff3",
+      "path": "killer_sudoku_1.jpg",
+      "bucket": "clean",
+      "reason": "auto_confirmed",
+      "specHash": "b00ce91d8e4bd778e670bf9f67753e31251078bd9580b12af52c812ec00a73f0"
+    },
+    {
+      "puzzleHash": "2d7bde4d6a8cdd26c4dc5a6d973cc41c8307d548604e098f7320add7ea12ab9b",
+      "path": "killer_sudoku_10.jpg",
+      "bucket": "clean",
+      "reason": "auto_confirmed",
+      "specHash": "5f5e9a080a94c9bf9f5c2150ad88e317ac6a35e4fd24704489fe2285b1c06ab0"
+    },
+    {
+      "puzzleHash": "07621bafab0dae3ca73dad1eae64f406e380a249b02092fbe6a875b86f01bad0",
+      "path": "killer_sudoku_100.jpg",
+      "bucket": "clean",
+      "reason": "auto_confirmed",
+      "specHash": "5eab9a446686e44ee60fb3b19cac9320debdca713e1f38d03e7461a044e5e1c1"
+    },
+    {
+      "puzzleHash": "b55ae15ec0bb1f5238aa4284808af90db928c4de31df06548ef08881a20b2ad9",
+      "path": "killer_sudoku_150.jpg",
+      "bucket": "clean",
+      "reason": "auto_confirmed",
+      "specHash": "28f0a42f9743eef9099030e1a1f1daf9bfb27060a03bb929156a71b203904885"
+    },
+    {
+      "puzzleHash": "4c123c712bd24a95668a697b41061da30b9e1ba3e45efe8054ab6f8be9bd2295",
+      "path": "killer_sudoku_200.jpg",
+      "bucket": "clean",
+      "reason": "auto_confirmed",
+      "specHash": "fdbc125dfd34d64540cf2f78311c2a7aa899cd271d0857e265b353695649a751"
+    },
+    {
+      "puzzleHash": "f4bac76a1ed4ade158ebc5c395d591e9eb04027ab65e80d3760483b328c9eca5",
+      "path": "killer_sudoku_250.jpg",
+      "bucket": "clean",
+      "reason": "auto_confirmed",
+      "specHash": "86d4da0ca5042d499315646ec71f313a259ad483627c5325e3f06896d927b70b"
+    },
+    {
+      "puzzleHash": "ea4a49cbbf496718af2eab1f568728fa83caba7f2035bdd18114bc2814e911f9",
+      "path": "killer_sudoku_300.jpg",
+      "bucket": "clean",
+      "reason": "auto_confirmed",
+      "specHash": "ad80e63244f49e44fde1d24d0b8a3ea625003c9481a9c109a650b130429f1b21"
+    },
+    {
+      "puzzleHash": "5593e50b7cf5d779c5940ee23c6ba7d27b3b18ee3e1c7d87c8b53fa1f9fc9fd1",
+      "path": "killer_sudoku_400.jpg",
+      "bucket": "clean",
+      "reason": "auto_confirmed",
+      "specHash": "54f33237d665f361bd6dfe0a671285010ffc2a84a2ef6e60df9b53e3cd199710"
+    },
+    {
+      "puzzleHash": "cbe7be82f55f90313b401020891ee407f3e8b8446bef461ed474e9cd0d2da3e2",
+      "path": "killer_sudoku_464.jpg",
+      "bucket": "clean",
+      "reason": "auto_confirmed",
+      "specHash": "822dee2d209a2b937dd25dd2965a51069eaace982d5a333dca7cfd62c3854b2d"
+    },
+    {
+      "puzzleHash": "acf1a2d156ac56c6ab7140b1cd93b95fa4b0de3a94d13e01c758e0a9065279e4",
+      "path": "killer_sudoku_50.jpg",
+      "bucket": "clean",
+      "reason": "auto_confirmed",
+      "specHash": "5e715d5eef4d19f078ae8a501fd8b5a8bb74f99236b63ed3d9c47127e2e0fbe8"
+    }
+  ]
+}

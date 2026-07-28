@@ -29,7 +29,7 @@ For every sprint:
 - run `bash scripts/run-bronze-gate.sh` from the repository root as the final required gate;
 - commit only when the bronze gate and every additional gate listed for that sprint pass.
 
-Run `bash scripts/run-silver-gate.sh` as an additional gate in Sprints 1, 2, 3, 5, 8, 12, 13, 14, and 15 because those sprints affect startup, image flow, production evaluation, model loading, bridge parity, training, packaging, or CI.
+Feature-branch sprints require the bronze gate only. Run `bash scripts/run-silver-gate.sh` once in Sprint 16, after final documentation hygiene. Then push the feature branch and open a pull request; do not merge it to `master`.
 
 Before Sprint 1, commit the existing contour-tree work and create an isolated worktree with `superpowers:using-git-worktrees`. Read `docs/architecture.md` and `docs/image-pipeline.md` before changing the image/training pipeline.
 
@@ -215,12 +215,12 @@ bash scripts/run-bronze-gate.sh
 
 **Files:** `web/eval-baseline.json`, `.github/workflows/retrain.yml`, `pyproject.toml`, current docs; delete `killer_sudoku/training/evaluate.py`, `killer_sudoku/training/status.py`, and evaluator-specific tests.
 
-1. Generate `web/eval-baseline.json` with the shipped model and Guardian fixtures through the production preview and `evaluate-corpus.ts`.
-2. Replace the workflow's compare-only Python step with: build; start preview; wait for readiness; run the TS evaluator against the newly generated model; compare with the baseline; always stop the preview process.
-3. Delete Python evaluator/status code, tests, `ks-evaluate`, and dependencies/comments retained only for that path.
-4. Verify no current code refers to `training.evaluate`, `collect_status`, `StatusStore`, or `ks-evaluate`.
-5. Run the focused evaluation tests, bronze, and silver gates.
-6. Commit: `ci: evaluate retrained models through production browser`.
+- [x] Generate `web/eval-baseline.json` with the shipped model and Guardian fixtures through the production preview and `evaluate-corpus.ts`.
+- [x] Replace the workflow's compare-only Python step with: build; start preview; wait for readiness; run the TS evaluator against the newly generated model; compare with the baseline; always stop the preview process.
+- [x] Delete Python evaluator/status code, tests, `ks-evaluate`, and dependencies/comments retained only for that path.
+- [x] Verify no current code refers to `training.evaluate`, `collect_status`, `StatusStore`, or `ks-evaluate`.
+- [x] Run the focused evaluation tests and bronze gate.
+- [x] Commit: `ci: evaluate retrained models through production browser`.
 
 **Done when:** CI evaluates the candidate model through the deployable browser path, and no Python evaluator remains.
 
@@ -272,7 +272,7 @@ bash scripts/run-bronze-gate.sh
 4. Its CLI reads schema-v2 `recognitionPixels` for deployed-model auditing. It must never call them raw or rewarp them.
 5. Test committed model loading using two canonical samples.
 6. Delete comparison/conversion scripts once references prove they are obsolete.
-7. Run focused tests, build, bronze, and silver.
+7. Run focused tests, build, and bronze.
 8. Commit: `refactor: retain only production HOG RBF loading`.
 
 **Done when:** the browser supports one manifest type and externally written models can be validated through the real loader.
@@ -350,7 +350,7 @@ def warp_crops(crops, strategy: Literal['stretch', 'letterbox'], size: int = 64)
 4. Implement batched `warp-crops`; validate positive dimensions, pixel lengths, strategy, and exact square output.
 5. Python raises on bridge failure and has no local fallback.
 6. Keep existing `predict`/`solve` operations temporarily; their callers are removed, but narrowing is isolated in Sprint 14.
-7. Run TS/Python bridge tests, bronze, and silver.
+7. Run TS/Python bridge tests and bronze.
 8. Commit: `feat: expose production crop warping to training`.
 
 **Done when:** Python can select stretch or letterbox but the executed warp is byte-for-byte the production TypeScript implementation.
@@ -372,7 +372,7 @@ def warp_crops(crops, strategy: Literal['stretch', 'letterbox'], size: int = 64)
 5. Synthetic generation may create training-only raw glyph arrays, but it must call the same TS warp before features; it must not claim to reproduce browser bounding-box selection.
 6. Add tests for both strategies, mixed raw/legacy input, incompatible legacy exclusion, invalid dimensions, and hard bridge failures.
 7. Train to a temporary directory and validate the exact output with `validate-model.ts` using canonical audit samples.
-8. Run focused tests, bronze, and silver.
+8. Run focused tests and bronze.
 9. Commit: `feat: train raw crops with selectable TS warping`.
 
 **Done when:** changing the flag changes only the TS-derived warp, never cropping, and all raw corpus/review samples remain reusable.
@@ -390,7 +390,7 @@ def warp_crops(crops, strategy: Literal['stretch', 'letterbox'], size: int = 64)
 3. Add ingestion deduplication after all sources are merged and before weighting/dithering. Key raw samples by label, kind, width, height, and bytes; key canonical legacy samples additionally by declared strategy. First occurrence wins; different labels are not merged.
 4. Delete the standalone dedupe script/tests.
 5. Verify `--op predict` and `--op solve` fail as unknown operations.
-6. Run bridge/trainer tests, bronze, and silver.
+6. Run bridge/trainer tests and bronze.
 7. Commit: `refactor: narrow bridge to production warp and features`.
 
 **Done when:** the bridge exposes exactly the two production-math operations required by training.
@@ -414,7 +414,7 @@ def warp_crops(crops, strategy: Literal['stretch', 'letterbox'], size: int = 64)
    - only train, review, and apply-review are human Python entry points;
    - HOG/hole RBF is the sole shipped recogniser.
 5. Add a “Superseded by” link to the 2026-07-26 plan; do not rewrite historical evidence.
-6. Run editable-install/help checks, documentation greps, bronze, and silver.
+6. Run editable-install/help checks, documentation greps, and bronze.
 7. Commit: `chore: expose only recogniser training and CI Python`.
 
 **Done when:** packaging, CI, AGENTS/CLAUDE guidance, and current architecture docs all describe the same retained surface.
@@ -449,6 +449,7 @@ bash scripts/run-silver-gate.sh
 ```
 
 6. Commit only genuine stale-reference fixes: `chore: complete Python production-boundary cleanup`. Do not create an empty commit.
+7. Push the feature branch and open a pull request. Do not merge it to `master`.
 
 **Done when:** the design success criteria are demonstrated by current code, executable-surface greps, two strategy smoke runs, and both gates.
 

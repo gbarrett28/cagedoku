@@ -309,11 +309,12 @@ For purely synthetic training (no real data), omit both flags.
 
 #### Phase 2 — scheduled auto-retrain
 
-`.github/workflows/retrain.yml` runs weekly (03:00 UTC Sunday) and on
-`workflow_dispatch`. It downloads pending R2 uploads, retrains, compares accuracy
-against `web/public/eval_report.json`, commits the updated model on pass, and opens
-a failure Issue on regression. Requires `CLOUDFLARE_API_TOKEN` and
-`CLOUDFLARE_ACCOUNT_ID` repository secrets.
+`.github/workflows/retrain.yml` runs every eight hours and on
+`workflow_dispatch`. It downloads pending R2 uploads, retrains, builds the
+production web app, and evaluates the candidate model through that app against the
+committed `web/eval-fixtures/` corpus. The content-hash-keyed result is compared
+with `web/eval-baseline.json`; a regression prevents the model commit and opens a
+failure Issue.
 
 #### Infrastructure
 
