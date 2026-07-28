@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  addGroundTruth, claimEvaluation, completeEvaluation, getCorpora, getPuzzle,
+  addGroundTruth, claimEvaluation, completeEvaluation, getCorpora, getEvaluationOutcomeRows, getPuzzle,
   insertCellRead, insertPuzzle, insertRetrainingSuggestion, openDb, upsertCorpus,
   type CellReadRow, type CtEvalExtras, type RetrainingSuggestionRow,
 } from './corpus-db.js';
@@ -190,6 +190,25 @@ describe('claimEvaluation / completeEvaluation', () => {
     expect(row['fallback_used']).toBe(0);
     expect(row['parse_elapsed_ms']).toBe(800);
     expect(row['solve_elapsed_ms']).toBe(200);
+    db.close();
+  });
+
+  it('returns the latest evaluation row per puzzle in deterministic path order', () => {
+    const db = tmpDb();
+    insertPuzzle(db, 'z', '/z.jpg', 'test', 'killer');
+    insertPuzzle(db, 'a', '/a.jpg', 'test', 'killer');
+    db.exec(`
+      INSERT INTO evaluations (puzzle_hash, git_hash, status, bucket, reason, spec_hash)
+      VALUES ('z', 'g1', 'done', 'notSolved', 'old', NULL),
+             ('a', 'g1', 'done', 'clean', NULL, 'spec-a'),
+             ('z', 'g1', 'done', 'backtracked', 'latest', 'spec-z'),
+             ('a', 'other', 'done', 'notSolved', 'wrong run', NULL);
+    `);
+
+    expect(getEvaluationOutcomeRows(db, 'g1')).toEqual([
+      { puzzleHash: 'a', path: '/a.jpg', bucket: 'clean', reason: null, specHash: 'spec-a' },
+      { puzzleHash: 'z', path: '/z.jpg', bucket: 'backtracked', reason: 'latest', specHash: 'spec-z' },
+    ]);
     db.close();
   });
 });

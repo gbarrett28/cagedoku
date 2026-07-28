@@ -275,6 +275,45 @@ export function getPuzzle(db: Database.Database, contentHash: string): PuzzleRow
   );
 }
 
+
+export interface EvaluationOutcomeRow {
+  readonly puzzleHash: string;
+  readonly path: string;
+  readonly bucket: string | null;
+  readonly reason: string | null;
+  readonly specHash: string | null;
+}
+
+/** Return the latest persisted outcome per puzzle for one evaluation identity. */
+export function getEvaluationOutcomeRows(
+  db: Database.Database,
+  gitHash: string,
+): readonly EvaluationOutcomeRow[] {
+  const rows = db.prepare(`
+    SELECT p.content_hash AS puzzle_hash, p.path, e.bucket, e.reason, e.spec_hash
+    FROM puzzles p
+    JOIN evaluations e ON e.id = (
+      SELECT MAX(latest.id)
+      FROM evaluations latest
+      WHERE latest.puzzle_hash = p.content_hash AND latest.git_hash = ?
+    )
+    ORDER BY p.path, p.content_hash
+  `).all(gitHash) as Array<{
+    puzzle_hash: string;
+    path: string;
+    bucket: string | null;
+    reason: string | null;
+    spec_hash: string | null;
+  }>;
+  return rows.map(row => ({
+    puzzleHash: row.puzzle_hash,
+    path: row.path,
+    bucket: row.bucket,
+    reason: row.reason,
+    specHash: row.spec_hash,
+  }));
+}
+
 export function upsertCorpus(
   db: Database.Database,
   dirPath: string,

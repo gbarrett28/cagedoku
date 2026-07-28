@@ -16,6 +16,9 @@
  *   --base-url URL    App URL (default http://localhost:4173)
  *   --git-hash SHA    Git commit to tag results against (default: current HEAD)
  *   --db-path PATH    Path to corpus.db (default: ../../corpus.db)
+ *   --puzzle-dir PATH  Content-hash ingest image files from PATH before evaluation
+ *   --report-out PATH  Write deterministic version-1 evaluation JSON
+ *   --compare-report PATH  Fail if a baseline puzzle drops outcome rank
  *   --stop-on-fail [N]  Stop all workers once N puzzles (default 1) have
  *                        landed in notSolved/timeout/failed (i.e. didn't solve)
  *
@@ -33,11 +36,15 @@ import {
   openDb, type CtEvalExtras,
 } from './corpus-db.js';
 import { waitForPipelineReady } from '../e2e/helpers.js';
+import {
+  buildEvaluationReport, emitEvaluationReport, ingestPuzzleDirectory,
+} from './evaluation-report.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DEFAULT_WORKERS = 4;
 const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_MODEL_PATH = path.resolve(__dirname, '../public/num_recogniser.bin');
 
 interface Args {
   readonly workers: number;
@@ -47,6 +54,9 @@ interface Args {
   readonly dbPath: string;
   readonly filter: string | undefined;
   readonly stopOnFailCount: number | null;
+  readonly puzzleDir: string | undefined;
+  readonly reportOut: string | undefined;
+  readonly compareReport: string | undefined;
 }
 
 
@@ -126,6 +136,9 @@ function parseArgs(argv: readonly string[]): Args {
   let dbPath = DEFAULT_DB_PATH;
   let filter: string | undefined;
   let stopOnFailCount: number | null = null;
+  let puzzleDir: string | undefined;
+  let reportOut: string | undefined;
+  let compareReport: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--workers') workers = Number(argv[++i]);
     else if (argv[i] === '--limit') limit = Number(argv[++i]);
@@ -133,6 +146,9 @@ function parseArgs(argv: readonly string[]): Args {
     else if (argv[i] === '--git-hash') gitHash = argv[++i]!;
     else if (argv[i] === '--db-path') dbPath = argv[++i]!;
     else if (argv[i] === '--filter') filter = argv[++i];
+    else if (argv[i] === '--puzzle-dir') puzzleDir = argv[++i];
+    else if (argv[i] === '--report-out') reportOut = argv[++i];
+    else if (argv[i] === '--compare-report') compareReport = argv[++i];
     else if (argv[i] === '--stop-on-fail') {
       const next = argv[i + 1];
       if (next !== undefined && /^\d+$/.test(next)) {
@@ -143,7 +159,10 @@ function parseArgs(argv: readonly string[]): Args {
       }
     }
   }
-  return { workers, limit, baseUrl, gitHash, dbPath, filter, stopOnFailCount };
+  return {
+    workers, limit, baseUrl, gitHash, dbPath, filter, stopOnFailCount,
+    puzzleDir, reportOut, compareReport,
+  };
 }
 
 async function checkServerReachable(baseUrl: string): Promise<void> {
@@ -345,58 +364,83 @@ async function runWorker(
 }
 
 async function main(): Promise<void> {
-  const { workers, limit, baseUrl, gitHash, dbPath, filter, stopOnFailCount } = parseArgs(process.argv.slice(2));
+  const args = parseArgs(process.argv.slice(2));
+  const {
+    workers, limit, baseUrl, gitHash, dbPath, filter, stopOnFailCount,
+    puzzleDir, reportOut, compareReport,
+  } = args;
   await checkServerReachable(baseUrl);
 
   const db = openDb(dbPath);
-
-  const filterClause = filter ? `AND ${filter}` : '';
-  const totalInDb = (
-    db
-      .prepare(
-        `SELECT COUNT(*) as n FROM puzzles WHERE content_hash NOT IN (SELECT puzzle_hash FROM evaluations WHERE git_hash = ?) ${filterClause}`,
-      )
-      .get(gitHash) as { n: number }
-  ).n;
-  const total = limit !== null ? Math.min(limit, totalInDb) : totalInDb;
-
-  if (total === 0) {
-    console.log('[evaluate-corpus] No puzzles to evaluate (all already done for this git hash).');
-    db.close();
-    return;
-  }
-  const filterLabel = filter ? ` [${filter}]` : '';
-  console.log(
-    `[evaluate-corpus] ${total} puzzles queued${filterLabel}, ${workers} workers (git: ${gitHash.slice(0, 8)})`,
-  );
-
-  const counts: BucketCounts = { clean: 0, backtracked: 0, notSolved: 0, timeout: 0, failed: 0 };
-  const progress = { done: 0, total };
-
-  process.on('SIGINT', () => {
-    console.log('\n[evaluate-corpus] Shutting down — finishing in-flight evaluations...');
-    shuttingDown = true;
-  });
-
-  const browser = await chromium.launch();
-  activeBrowser = browser;
   try {
-    await Promise.all(
-      Array.from({ length: workers }, (_, i) =>
-        runWorker(browser, baseUrl, db, gitHash, i + 1, limit, filter, counts, progress, stopOnFailCount),
-      ),
+    if (puzzleDir !== undefined) {
+      const ingestion = ingestPuzzleDirectory(db, puzzleDir);
+      console.log(
+        `[evaluate-corpus] Ingested ${ingestion.added}/${ingestion.scanned} new puzzle image(s) from ${puzzleDir}`,
+      );
+    }
+
+    const filterClause = filter ? `AND ${filter}` : '';
+    const totalInDb = (
+      db
+        .prepare(
+          `SELECT COUNT(*) as n FROM puzzles WHERE content_hash NOT IN (SELECT puzzle_hash FROM evaluations WHERE git_hash = ?) ${filterClause}`,
+        )
+        .get(gitHash) as { n: number }
+    ).n;
+    const total = limit !== null ? Math.min(limit, totalInDb) : totalInDb;
+    const counts: BucketCounts = { clean: 0, backtracked: 0, notSolved: 0, timeout: 0, failed: 0 };
+    const progress = { done: 0, total };
+
+    if (total === 0) {
+      console.log('[evaluate-corpus] No puzzles to evaluate (all already done for this git hash).');
+    } else {
+      const filterLabel = filter ? ` [${filter}]` : '';
+      console.log(
+        `[evaluate-corpus] ${total} puzzles queued${filterLabel}, ${workers} workers (git: ${gitHash.slice(0, 8)})`,
+      );
+
+      process.on('SIGINT', () => {
+        console.log('\n[evaluate-corpus] Shutting down — finishing in-flight evaluations...');
+        shuttingDown = true;
+      });
+
+      const browser = await chromium.launch();
+      activeBrowser = browser;
+      try {
+        await Promise.all(
+          Array.from({ length: workers }, (_, i) =>
+            runWorker(browser, baseUrl, db, gitHash, i + 1, limit, filter, counts, progress, stopOnFailCount),
+          ),
+        );
+      } finally {
+        await browser.close();
+        activeBrowser = null;
+      }
+    }
+
+    const { clean, backtracked, notSolved, timeout, failed } = counts;
+    console.log('\n=== Final summary ===');
+    console.log(
+      `Total: ${progress.done} | clean: ${clean} | backtracked: ${backtracked} | notSolved: ${notSolved} | timeout: ${timeout} | failed: ${failed}`,
     );
+
+    if (reportOut !== undefined || compareReport !== undefined) {
+      const report = buildEvaluationReport(db, gitHash, DEFAULT_MODEL_PATH, puzzleDir);
+      const emitted = emitEvaluationReport(report, reportOut, compareReport);
+      if (reportOut !== undefined) {
+        console.log(`[evaluate-corpus] Wrote ${report.outcomes.length} outcome(s) to ${reportOut}`);
+      }
+      for (const regression of emitted.regressions) {
+        console.error(
+          `[evaluate-corpus] REGRESSION: ${regression.current.path}: ${regression.baseline.bucket} -> ${regression.current.bucket}`,
+        );
+      }
+      if (emitted.exitCode !== 0) process.exitCode = emitted.exitCode;
+    }
   } finally {
-    await browser.close();
-    activeBrowser = null;
     db.close();
   }
-
-  const { clean, backtracked, notSolved, timeout, failed } = counts;
-  console.log('\n=== Final summary ===');
-  console.log(
-    `Total: ${progress.done} | clean: ${clean} | backtracked: ${backtracked} | notSolved: ${notSolved} | timeout: ${timeout} | failed: ${failed}`,
-  );
 }
 
 process.on('SIGTERM', () => {

@@ -173,7 +173,7 @@ bash scripts/run-silver-gate.sh
 
 **Files:** create `web/scripts/evaluation-report.ts` and test; modify `web/scripts/evaluate-corpus.ts`, `web/scripts/corpus-db.ts`, and tests.
 
-1. TDD these pure interfaces:
+- [x] TDD these pure interfaces:
 
 ```ts
 type EvaluationBucket = 'clean' | 'backtracked' | 'notSolved';
@@ -191,10 +191,10 @@ interface EvaluationReport {
 }
 ```
 
-2. Implement `compareEvaluationReports`; rank `clean=2`, `backtracked=1`, `notSolved=0`. Fail only when an existing baseline puzzle drops rank. Sort outcomes/regressions by path.
-3. Add evaluator flags `--puzzle-dir`, `--report-out`, and `--compare-report`. Reuse the existing browser worker; do not copy it or introduce Python OCR.
-4. Test content-hash-idempotent directory ingestion, deterministic reports, model hashing, and regression exit status through a factored function.
-5. Run:
+- [x] Implement `compareEvaluationReports`; rank `clean=2`, `backtracked=1`, `notSolved=0`. Fail only when an existing baseline puzzle drops rank. Sort outcomes/regressions by path.
+- [x] Add evaluator flags `--puzzle-dir`, `--report-out`, and `--compare-report`. Reuse the existing browser worker; do not copy it or introduce Python OCR.
+- [x] Test content-hash-idempotent directory ingestion, deterministic reports, model hashing, and regression exit status through a factored function.
+- [x] Run:
 
 ```bash
 cd web
@@ -203,7 +203,7 @@ cd ..
 bash scripts/run-bronze-gate.sh
 ```
 
-6. Commit: `feat: report production browser corpus outcomes`.
+- [x] Commit: `feat: report production browser corpus outcomes`.
 
 **Done when:** the retained evaluator can produce and compare deterministic reports without any workflow change yet.
 
