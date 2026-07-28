@@ -1,3 +1,4 @@
+import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -34,6 +35,33 @@ describe('openDb', () => {
     const db = tmpDb();
     db.close();
     expect(() => { const db2 = openDb(dbPath); db2.close(); }).not.toThrow();
+  });
+});
+
+
+describe('cell_reads evidence migration', () => {
+  it('renames legacy crop_pixels and leaves raw-source fields null', () => {
+    dbPath = path.join(os.tmpdir(), `corpus-legacy-${Date.now()}-${Math.random()}.db`);
+    const legacyDb = new Database(dbPath);
+    legacyDb.exec('CREATE TABLE cell_reads (crop_pixels TEXT NOT NULL)');
+    legacyDb.prepare('INSERT INTO cell_reads (crop_pixels) VALUES (?)').run('[1,2,3]');
+    legacyDb.close();
+
+    const db = openDb(dbPath);
+    const columns = (db.prepare('PRAGMA table_info(cell_reads)').all() as { name: string }[])
+      .map(column => column.name);
+    const migrated = db.prepare(
+      'SELECT recognition_pixels, source_pixels, warp_strategy FROM cell_reads',
+    ).get() as { recognition_pixels: string; source_pixels: string | null; warp_strategy: string | null };
+
+    expect(columns).not.toContain('crop_pixels');
+    expect(columns).toContain('recognition_pixels');
+    expect(migrated).toEqual({
+      recognition_pixels: '[1,2,3]',
+      source_pixels: null,
+      warp_strategy: null,
+    });
+    db.close();
   });
 });
 
@@ -231,20 +259,32 @@ describe('retraining_suggestions table', () => {
 
 
 describe('cell_reads (generalized from given_digit_reads)', () => {
-  it('inserts and reads back a cage-total-digit row', () => {
+  it('round-trips a non-square raw crop in row-major byte order', () => {
     const db = tmpDb();
     insertPuzzle(db, 'p1', '/x.jpg', 'guardian', 'killer');
-    const row: CellReadRow = {
+    const row = {
       puzzleHash: 'p1', gitHash: 'h1', cellType: 'cage_total_digit',
       row: 0, col: 0, digitIndex: 1, predictedLabel: 6, confident: true,
-      clashesWith: [], cropPixels: [0, 1], hogFeatures: [0.1], holeFeatures: [0.2],
-    };
+      clashesWith: [], hogFeatures: [0.1], holeFeatures: [0.2],
+      sourceX: 17, sourceY: 23, sourceWidth: 3, sourceHeight: 2,
+      sourcePixels: [12, 13, 14, 22, 23, 24],
+      recognitionPixels: Array.from({ length: 4096 }, (_, index) => index % 256),
+      warpStrategy: 'letterbox',
+    } satisfies CellReadRow;
     insertCellRead(db, row);
     const saved = db.prepare('SELECT * FROM cell_reads WHERE puzzle_hash = ?').get('p1') as {
       cell_type: string; digit_index: number; hog_features: string; hole_features: string;
+      source_x: number; source_y: number; source_width: number; source_height: number;
+      source_pixels: string; recognition_pixels: string; warp_strategy: string;
     };
     expect(saved.cell_type).toBe('cage_total_digit');
     expect(saved.digit_index).toBe(1);
+    expect([saved.source_x, saved.source_y, saved.source_width, saved.source_height]).toEqual([17, 23, 3, 2]);
+    expect(JSON.parse(saved.source_pixels)).toEqual([12, 13, 14, 22, 23, 24]);
+    const recognitionPixels = JSON.parse(saved.recognition_pixels) as number[];
+    expect(recognitionPixels).toHaveLength(4096);
+    expect(recognitionPixels.slice(0, 4)).toEqual([0, 1, 2, 3]);
+    expect(saved.warp_strategy).toBe('letterbox');
     expect(JSON.parse(saved.hog_features)).toEqual([0.1]);
     expect(JSON.parse(saved.hole_features)).toEqual([0.2]);
     db.close();
@@ -256,13 +296,41 @@ describe('cell_reads (generalized from given_digit_reads)', () => {
     insertCellRead(db, {
       puzzleHash: 'p2', gitHash: 'h1', cellType: 'given_digit',
       row: 3, col: 4, digitIndex: 0, predictedLabel: 7, confident: false,
-      clashesWith: [{ row: 3, col: 8 }], cropPixels: [], hogFeatures: [], holeFeatures: [],
+      clashesWith: [{ row: 3, col: 8 }], hogFeatures: [], holeFeatures: [],
+      sourceX: 4, sourceY: 5, sourceWidth: 1, sourceHeight: 1,
+      sourcePixels: [255], recognitionPixels: new Array<number>(4096).fill(0),
+      warpStrategy: 'letterbox',
     });
     const saved = db.prepare('SELECT * FROM cell_reads WHERE puzzle_hash = ?').get('p2') as {
       digit_index: number; clashes_with: string;
     };
     expect(saved.digit_index).toBe(0);
     expect(JSON.parse(saved.clashes_with)).toEqual([{ row: 3, col: 8 }]);
+    db.close();
+  });
+});
+
+
+describe('insertCellRead evidence validation', () => {
+  it('rejects malformed raw or recognition evidence and unknown strategies', () => {
+    const db = tmpDb();
+    insertPuzzle(db, 'p-validation', '/validation.jpg', 'guardian', 'classic');
+    const valid = {
+      puzzleHash: 'p-validation', gitHash: 'h1', cellType: 'given_digit',
+      row: 0, col: 0, digitIndex: 0, predictedLabel: 4, confident: true,
+      clashesWith: [], hogFeatures: [], holeFeatures: [],
+      sourceX: 1, sourceY: 2, sourceWidth: 2, sourceHeight: 2,
+      sourcePixels: [1, 2, 3, 4], recognitionPixels: new Array<number>(4096).fill(0),
+      warpStrategy: 'stretch',
+    } satisfies CellReadRow;
+
+    expect(() => insertCellRead(db, { ...valid, sourceWidth: 0 })).toThrow(/dimensions must be positive/);
+    expect(() => insertCellRead(db, { ...valid, sourcePixels: [1, 2, 3] })).toThrow(/source pixel length/);
+    expect(() => insertCellRead(db, { ...valid, recognitionPixels: [1] })).toThrow(/recognition pixel length/);
+    expect(() => insertCellRead(db, {
+      ...valid,
+      warpStrategy: 'crop' as CellReadRow['warpStrategy'],
+    })).toThrow(/warp strategy is invalid/);
     db.close();
   });
 });

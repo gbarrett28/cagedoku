@@ -38,6 +38,7 @@ describe('parseAnyReport', () => {
   it('round-trips a training-export report', () => {
     const r = {
       reportType: 'training-export',
+      schemaVersion: 2,
       exportedAt: '2026-01-01T00:00:00.000Z',
       appVersion: '2026-01-01',
       puzzleType: 'killer',

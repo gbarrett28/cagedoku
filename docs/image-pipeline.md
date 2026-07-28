@@ -581,9 +581,13 @@ remain; T3 (Observer border detector) has been retired — see [Migration Plan](
 Two independent sources feed training data:
 
 **Browser-exported ground truth.** The web app collects training data in-browser.
-After the user reviews and corrects the OCR output, the app exports a JSON file
-containing labelled 64×64 binary thumbnails for each digit extracted from that
-session. Multiple export files are merged into `web/browser_train.json` over time.
+After the user reviews and corrects the OCR output, schema-v2 exports retain each
+labelled digit's raw, variable-sized bounding-box crop (`sourceRect`,
+`sourceWidth`, `sourceHeight`, `sourcePixels`) together with the deployed 64×64
+audit input (`recognitionPixels`) and its named `warpStrategy`. The raw pixels
+are copied from the warped grid before any stretch or letterbox operation, so
+training can later compare those strategies without changing the crop.
+Multiple export files are merged into `web/browser_train.json` over time.
 Because nothing previously deduplicated these merges, the file accumulated many exact
 byte-identical repeats of the same crop (up to 65% of its 8362 samples, in one
 clean-up pass); `web/dedupe_browser_train.py` drops exact duplicates (keeping first

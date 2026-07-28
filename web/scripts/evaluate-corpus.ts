@@ -69,7 +69,7 @@ interface UploadOutcomeJson {
     readonly predictedLabel: number;
     readonly suggestedLabel: number;
     readonly confidenceTier: 'proven_unique' | 'feasible_only';
-    readonly crop: number[]; // JSON-serialised Uint8Array
+    readonly crop: number[];
   }>;
   readonly givenDigitReads?: ReadonlyArray<{
     readonly row: number;
@@ -77,7 +77,13 @@ interface UploadOutcomeJson {
     readonly predictedLabel: number;
     readonly confident: boolean;
     readonly clashesWith: ReadonlyArray<{ readonly row: number; readonly col: number }>;
-    readonly crop: number[]; // JSON-serialised Uint8Array
+    readonly sourceX: number;
+    readonly sourceY: number;
+    readonly sourceWidth: number;
+    readonly sourceHeight: number;
+    readonly sourcePixels: number[];
+    readonly recognitionPixels: number[];
+    readonly warpStrategy: 'stretch' | 'letterbox';
     readonly hogFeatures?: number[];
     readonly holeFeatures?: number[];
   }>;
@@ -87,7 +93,13 @@ interface UploadOutcomeJson {
     readonly digitIndex: number;
     readonly predictedLabel: number;
     readonly confident: boolean;
-    readonly crop: number[]; // JSON-serialised Uint8Array
+    readonly sourceX: number;
+    readonly sourceY: number;
+    readonly sourceWidth: number;
+    readonly sourceHeight: number;
+    readonly sourcePixels: number[];
+    readonly recognitionPixels: number[];
+    readonly warpStrategy: 'stretch' | 'letterbox';
     readonly hogFeatures?: number[];
     readonly holeFeatures?: number[];
   }>;
@@ -274,7 +286,13 @@ async function runWorker(
         predictedLabel: r.predictedLabel,
         confident: r.confident,
         clashesWith: r.clashesWith,
-        cropPixels: r.crop,
+        sourceX: r.sourceX,
+        sourceY: r.sourceY,
+        sourceWidth: r.sourceWidth,
+        sourceHeight: r.sourceHeight,
+        sourcePixels: r.sourcePixels,
+        recognitionPixels: r.recognitionPixels,
+        warpStrategy: r.warpStrategy,
         hogFeatures: r.hogFeatures ?? [],
         holeFeatures: r.holeFeatures ?? [],
       });
@@ -291,7 +309,13 @@ async function runWorker(
         predictedLabel: r.predictedLabel,
         confident: r.confident,
         clashesWith: [],
-        cropPixels: r.crop,
+        sourceX: r.sourceX,
+        sourceY: r.sourceY,
+        sourceWidth: r.sourceWidth,
+        sourceHeight: r.sourceHeight,
+        sourcePixels: r.sourcePixels,
+        recognitionPixels: r.recognitionPixels,
+        warpStrategy: r.warpStrategy,
         hogFeatures: r.hogFeatures ?? [],
         holeFeatures: r.holeFeatures ?? [],
       });

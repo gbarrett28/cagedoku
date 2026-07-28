@@ -324,22 +324,23 @@ ACTIVE_RECOGNISER: NumRecogniser = HogRecogniser()  # the one line that decides 
 # ---------------------------------------------------------------------------
 
 def load_training_file(path: Path, exclude_hashes: frozenset[str] = frozenset()) -> list[tuple[int, NDArray[np.uint8]]]:
-    """Load (digit, 64x64 uint8) samples from one browser-exported JSON.
+    """Load deployed 64x64 samples from one browser-exported JSON.
 
-    The JSON is produced by web/src/image/trainingExport.ts and contains
-    one sample per extracted digit contour, labelled with the user-verified
-    cage total. Samples whose content hash is in exclude_hashes are skipped
-    (see module docstring on stale-sample filtering).
+    Schema-v2 exports retain both the raw bounding-box crop and the exact
+    recognition input.  This compatibility loader uses only the latter;
+    strategy-neutral training from the raw crop is introduced separately.
+    Legacy exports use the historical ``pixels`` field.
     """
     data = json.loads(path.read_text(encoding="utf-8"))
+    pixel_field = "recognitionPixels" if data.get("schemaVersion") == 2 else "pixels"
     samples: list[tuple[int, NDArray[np.uint8]]] = []
     skipped = 0
-    for s in data["samples"]:
-        pixels = s["pixels"]
+    for sample in data["samples"]:
+        pixels = sample[pixel_field]
         if exclude_hashes and _sample_hash(pixels) in exclude_hashes:
             skipped += 1
             continue
-        digit = int(s["digit"])
+        digit = int(sample["digit"])
         img = np.array(pixels, dtype=np.uint8).reshape(THUMBNAIL_SIZE, THUMBNAIL_SIZE)
         samples.append((digit, img))
     if skipped:

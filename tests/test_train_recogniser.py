@@ -20,6 +20,7 @@ from train_recogniser import (
     fit_model,
     generate_synthetic_samples,
     load_overrides_file,
+    load_training_file,
     save_model,
 )
 
@@ -80,8 +81,39 @@ def test_save_model_pca_rbf_keys() -> None:
     assert sv_shape[1] <= 9
 
 
-def test_active_recogniser_is_pca_rbf_by_default() -> None:
-    assert isinstance(ACTIVE_RECOGNISER, PcaRbfRecogniser)
+def test_active_recogniser_is_hog_by_default() -> None:
+    assert isinstance(ACTIVE_RECOGNISER, HogRecogniser)
+
+
+def test_load_training_file_reads_schema_v2_recognition_pixels(tmp_path: Path) -> None:
+    recognition_pixels = [index % 256 for index in range(THUMBNAIL_SIZE**2)]
+    export_path = tmp_path / "training-v2.json"
+    export_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 2,
+                "samples": [
+                    {
+                        "digit": 7,
+                        "sourceWidth": 3,
+                        "sourceHeight": 2,
+                        "sourcePixels": [12, 13, 14, 22, 23, 24],
+                        "recognitionPixels": recognition_pixels,
+                        "warpStrategy": "letterbox",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    samples = load_training_file(export_path)
+
+    assert len(samples) == 1
+    digit, image = samples[0]
+    assert digit == 7
+    assert image.shape == (THUMBNAIL_SIZE, THUMBNAIL_SIZE)
+    assert image.ravel().tolist() == recognition_pixels
 
 
 _EXPECTED_HOG_KEYS = {

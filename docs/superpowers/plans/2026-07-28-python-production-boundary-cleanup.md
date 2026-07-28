@@ -128,13 +128,13 @@ bash scripts/run-silver-gate.sh
 
 **Files:** `web/src/image/trainingExport.ts`, `web/src/session/actions.ts`, `web/src/main.ts`, `web/scripts/corpus-db.ts`, `web/scripts/evaluate-corpus.ts`, their tests, `docs/corpus-db.md`, `docs/image-pipeline.md`.
 
-1. Add DB round-trip tests for a non-square crop and byte ordering.
-2. Migrate `cell_reads`:
+- [x] Add DB round-trip tests for a non-square crop and byte ordering.
+- [x] Migrate `cell_reads`:
    - rename legacy `crop_pixels` to `recognition_pixels` when necessary;
    - add `source_x`, `source_y`, `source_width`, `source_height`, `source_pixels`, and `warp_strategy`;
    - leave source columns NULL for historical rows;
    - require all newly inserted rows to supply valid non-null source data.
-3. Update browser export to schema version 2:
+- [x] Update browser export to schema version 2:
 
 ```ts
 {
@@ -148,10 +148,10 @@ bash scripts/run-silver-gate.sh
 }
 ```
 
-4. Update `main.ts` and `evaluate-corpus.ts` so new evaluations persist exact raw source evidence plus the deployed derived evidence.
-5. Add validation: positive dimensions; `sourcePixels.length === sourceWidth * sourceHeight`; `recognitionPixels.length === 4096`; known strategy.
-6. Do not relabel historical 64×64 data as raw. A fresh `(puzzle_hash, git_hash)` evaluation is how a complete row is produced.
-7. Run:
+- [x] Update `main.ts` and `evaluate-corpus.ts` so new evaluations persist exact raw source evidence plus the deployed derived evidence.
+- [x] Add validation: positive dimensions; `sourcePixels.length === sourceWidth * sourceHeight`; `recognitionPixels.length === 4096`; known strategy.
+- [x] Do not relabel historical 64×64 data as raw. A fresh `(puzzle_hash, git_hash)` evaluation is how a complete row is produced.
+- [x] Run:
 
 ```bash
 cd web
@@ -161,7 +161,7 @@ bash scripts/run-bronze-gate.sh
 bash scripts/run-silver-gate.sh
 ```
 
-8. Commit: `feat: store raw and deployed digit crop evidence`.
+- [x] Commit: `feat: store raw and deployed digit crop evidence`.
 
 **Done when:** `corpus.db` can reproduce the deployed thumbnail and can later derive either warp strategy from the stored raw crop without recropping.
 

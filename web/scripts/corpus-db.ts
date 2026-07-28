@@ -83,7 +83,13 @@ export function openDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
       predicted_label       INTEGER NOT NULL,
       confident             INTEGER NOT NULL, -- 0/1
       clashes_with          TEXT NOT NULL, -- JSON array of {row,col}, [] if none
-      crop_pixels           TEXT NOT NULL, -- JSON array, flattened 64x64
+      source_x              INTEGER,
+      source_y              INTEGER,
+      source_width          INTEGER,
+      source_height         INTEGER,
+      source_pixels         TEXT, -- JSON array, exact bounding-box pixels from warped grid
+      recognition_pixels    TEXT NOT NULL, -- JSON array, flattened deployed 64x64 input
+      warp_strategy         TEXT, -- 'stretch' | 'letterbox'; NULL only for historical rows
       hog_features          TEXT NOT NULL, -- JSON array, 1764 floats
       hole_features         TEXT NOT NULL, -- JSON array, 5 floats
       created_at            TEXT NOT NULL DEFAULT (datetime('now'))
@@ -129,6 +135,24 @@ export function openDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
   for (const [col, type] of [['border_x', 'TEXT'], ['border_y', 'TEXT'], ['cage_totals', 'TEXT']] as const) {
     if (!evalCols.includes(col)) {
       db.exec(`ALTER TABLE evaluations ADD COLUMN ${col} ${type}`);
+    }
+  }
+
+  const cellReadCols = (db.prepare('PRAGMA table_info(cell_reads)').all() as { name: string }[]).map(r => r.name);
+  if (cellReadCols.includes('crop_pixels') && !cellReadCols.includes('recognition_pixels')) {
+    db.exec('ALTER TABLE cell_reads RENAME COLUMN crop_pixels TO recognition_pixels');
+  }
+  const sourceCols = [
+    ['source_x', 'INTEGER'],
+    ['source_y', 'INTEGER'],
+    ['source_width', 'INTEGER'],
+    ['source_height', 'INTEGER'],
+    ['source_pixels', 'TEXT'],
+    ['warp_strategy', 'TEXT'],
+  ] as const;
+  for (const [col, type] of sourceCols) {
+    if (!cellReadCols.includes(col)) {
+      db.exec(`ALTER TABLE cell_reads ADD COLUMN ${col} ${type}`);
     }
   }
   return db;
@@ -177,7 +201,13 @@ export interface CellReadRow {
   confident: boolean;
   /** Other given-digit cells this one shares a digit with. Always empty for cage_total_digit rows. */
   clashesWith: ReadonlyArray<{ row: number; col: number }>;
-  cropPixels: number[];
+  sourceX: number;
+  sourceY: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  sourcePixels: number[];
+  recognitionPixels: number[];
+  warpStrategy: 'stretch' | 'letterbox';
   hogFeatures: number[];
   holeFeatures: number[];
 }
@@ -195,15 +225,32 @@ export function insertRetrainingSuggestion(db: Database.Database, s: RetrainingS
 }
 
 export function insertCellRead(db: Database.Database, r: CellReadRow): void {
+  if (r.sourceWidth <= 0 || r.sourceHeight <= 0) {
+    throw new Error(`cell_reads source dimensions must be positive, got ${r.sourceWidth}x${r.sourceHeight}`);
+  }
+  if (r.sourcePixels.length !== r.sourceWidth * r.sourceHeight) {
+    throw new Error(
+      `cell_reads source pixel length ${r.sourcePixels.length} does not match ${r.sourceWidth}x${r.sourceHeight}`,
+    );
+  }
+  if (r.recognitionPixels.length !== 64 * 64) {
+    throw new Error(`cell_reads recognition pixel length must be 4096, got ${r.recognitionPixels.length}`);
+  }
+  if (r.warpStrategy !== 'stretch' && r.warpStrategy !== 'letterbox') {
+    throw new Error(`cell_reads warp strategy is invalid: ${String(r.warpStrategy)}`);
+  }
+
   db.prepare(`
     INSERT INTO cell_reads
       (puzzle_hash, git_hash, cell_type, row, col, digit_index, predicted_label,
-       confident, clashes_with, crop_pixels, hog_features, hole_features)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       confident, clashes_with, source_x, source_y, source_width, source_height,
+       source_pixels, recognition_pixels, warp_strategy, hog_features, hole_features)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     r.puzzleHash, r.gitHash, r.cellType, r.row, r.col, r.digitIndex,
-    r.predictedLabel, r.confident ? 1 : 0,
-    JSON.stringify(r.clashesWith), JSON.stringify(r.cropPixels),
+    r.predictedLabel, r.confident ? 1 : 0, JSON.stringify(r.clashesWith),
+    r.sourceX, r.sourceY, r.sourceWidth, r.sourceHeight,
+    JSON.stringify(r.sourcePixels), JSON.stringify(r.recognitionPixels), r.warpStrategy,
     JSON.stringify(r.hogFeatures), JSON.stringify(r.holeFeatures),
   );
 }

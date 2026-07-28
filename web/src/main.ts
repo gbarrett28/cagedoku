@@ -62,7 +62,8 @@ import { buildEngine } from './session/engine.js';
 import type { BoardState, ClassicSolveAssessment } from './engine/index.js';
 import { detectBigApple, assessClassicSolvability } from './engine/index.js';
 import { findRetrainingSuggestions, buildGivenDigitReads, buildCageTotalReads } from './engine/retrainingSuggestions.js';
-import { hogExtract, DEFAULT_HOG_PARAMS } from './image/numberRecognition.js';
+import { activeRecogniser, hogExtract, DEFAULT_HOG_PARAMS } from './image/numberRecognition.js';
+import type { RawDigitCrop, WarpStrategy } from './image/numberRecognition.js';
 import { extractHoleFeatures } from './image/holeFeatures.js';
 import type { Cell } from './engine/types.js';
 import { GridNotFoundError } from './image/inpImage.js';
@@ -106,13 +107,17 @@ type ReportOutcomeFn = (o: {
   /** Ground-truth crop+label+clash-partners for every given-digit cell of a non-clean classic puzzle. */
   givenDigitReads?: ReadonlyArray<{
     row: number; col: number; predictedLabel: number; confident: boolean;
-    clashesWith: { row: number; col: number }[]; crop: number[];
+    clashesWith: { row: number; col: number }[];
+    sourceX: number; sourceY: number; sourceWidth: number; sourceHeight: number;
+    sourcePixels: number[]; recognitionPixels: number[]; warpStrategy: 'stretch' | 'letterbox';
     hogFeatures: number[]; holeFeatures: number[];
   }> | undefined;
   /** Ground-truth crop+label for every cage-total digit cell of a non-clean killer puzzle. */
   cageTotalReads?: ReadonlyArray<{
     row: number; col: number; digitIndex: number; predictedLabel: number; confident: boolean;
-    crop: number[]; hogFeatures: number[]; holeFeatures: number[];
+    sourceX: number; sourceY: number; sourceWidth: number; sourceHeight: number;
+    sourcePixels: number[]; recognitionPixels: number[]; warpStrategy: 'stretch' | 'letterbox';
+    hogFeatures: number[]; holeFeatures: number[];
   }> | undefined;
 }) => void;
 
@@ -127,6 +132,23 @@ function computeCropFeatures(crops: Uint8Array[]): { hog: number[]; hole: number
     hog: Array.from(hogFeat.subarray(i * nHog, (i + 1) * nHog)),
     hole: Array.from(holeFeat.subarray(i * nHole, (i + 1) * nHole)),
   }));
+}
+
+
+function rawCropPayload(crop: RawDigitCrop): {
+  sourceX: number;
+  sourceY: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  sourcePixels: number[];
+} {
+  return {
+    sourceX: crop.x,
+    sourceY: crop.y,
+    sourceWidth: crop.width,
+    sourceHeight: crop.height,
+    sourcePixels: Array.from(crop.pixels),
+  };
 }
 
 function timingPayload(
@@ -218,7 +240,9 @@ function activeFixtureContext(): { name: string; unsolvedCells: number; totalCan
   };
 }
 let draftEdited = false;              // true once the user changes any total or border
-let pendingCellThumbs = new Map<string, Uint8Array[]>(); // OCR thumbnails, held until Confirm
+let pendingCellThumbs = new Map<string, Uint8Array[]>(); // deployed recognition thumbnails, held until Confirm
+let pendingCellSourceCrops = new Map<string, readonly RawDigitCrop[]>(); // raw warped-grid bounding boxes
+let pendingWarpStrategy: WarpStrategy | null = null; // strategy that produced pendingCellThumbs
 let totalEditCell: { row: number; col: number } | null = null;  // 0-based, active overlay
 let totalEditPrev = 0;
 let reviewErrorCells = new Set<string>(); // "row,col" keys — cages failing Confirm validation
@@ -1286,6 +1310,8 @@ function resetToUploadPanel(): void {
   reviewErrorCells = new Set();
   draftEdited = false;
   pendingCellThumbs = new Map();
+  pendingCellSourceCrops = new Map();
+  pendingWarpStrategy = null;
   el<HTMLElement>('upload-panel').hidden = false;
   el<HTMLElement>('review-panel').hidden = true;
   el<HTMLElement>('solution-panel').hidden = true;
@@ -1341,9 +1367,11 @@ async function handleProcess(file?: File): Promise<void> {
   try {
     const uploadResult = await uploadPuzzle(f);
     parseDoneMs = Date.now();
-    const { state, warpedImageUrl, warning, cellThumbs, detectedBigApple } = uploadResult;
+    const { state, warpedImageUrl, warning, cellThumbs, cellSourceCrops, detectedBigApple } = uploadResult;
     const specHash = await computeSpecHash(state);
     pendingCellThumbs = new Map(cellThumbs);
+    pendingCellSourceCrops = new Map(cellSourceCrops);
+    pendingWarpStrategy = activeRecogniser().warpStrategy;
 
     // Initialise draft borders from the OCR result (used in both paths below).
     const ocrSpec = PuzzleState.isKiller(state) ? dataToSpec(state.specData) : classicSyntheticSpec();
@@ -1370,13 +1398,27 @@ async function handleProcess(file?: File): Promise<void> {
       // mirroring givenDigitReads' gating on the classic side.
       const buildCageTotalReadsPayload = (): ReadonlyArray<{
         row: number; col: number; digitIndex: number; predictedLabel: number; confident: boolean;
-        crop: number[]; hogFeatures: number[]; holeFeatures: number[];
+        sourceX: number; sourceY: number; sourceWidth: number; sourceHeight: number;
+        sourcePixels: number[]; recognitionPixels: number[]; warpStrategy: 'stretch' | 'letterbox';
+        hogFeatures: number[]; holeFeatures: number[];
       }> =>
         uploadResult.cageTotalRecognitions !== undefined
           ? buildCageTotalReads(uploadResult.cellThumbs, uploadResult.cageTotalRecognitions)
             .map(r => {
+              const source = uploadResult.cellSourceCrops.get(`${r.row},${r.col}`)?.[r.digitIndex];
+              if (source === undefined) {
+                throw new Error(`Missing raw crop for cage-total digit ${r.row},${r.col},${r.digitIndex}`);
+              }
               const { hog, hole } = computeCropFeatures([r.crop])[0]!;
-              return { ...r, crop: Array.from(r.crop), hogFeatures: hog, holeFeatures: hole };
+              const { crop, ...read } = r;
+              return {
+                ...read,
+                ...rawCropPayload(source),
+                recognitionPixels: Array.from(crop),
+                warpStrategy: activeRecogniser().warpStrategy,
+                hogFeatures: hog,
+                holeFeatures: hole,
+              };
             })
           : [];
       const layoutResult = applyDraftLayout(draftBorderX, draftBorderY, state.specData.cageTotals);
@@ -1413,7 +1455,9 @@ async function handleProcess(file?: File): Promise<void> {
           if (autoViolation !== null) showAssertionModal(autoViolation);
           el<HTMLButtonElement>('edit-ocr-btn').hidden = false;
           pendingCellThumbs = new Map();
-                  setStatus('');
+          pendingCellSourceCrops = new Map();
+          pendingWarpStrategy = null;
+          setStatus('');
           if (usedBacktracking && stalledCandidates && state.originalImageUrl !== null) {
             const stallReport = { puzzleType: 'killer' as const, stalledCandidates };
             if (hasConsent()) {
@@ -1500,8 +1544,20 @@ async function handleProcess(file?: File): Promise<void> {
       const givenDigitReads = bucket !== 'clean' && uploadResult.classicRecognitions !== undefined
         ? buildGivenDigitReads(state.givenDigits, uploadResult.cellThumbs, uploadResult.classicRecognitions)
           .map(r => {
+            const source = uploadResult.cellSourceCrops.get(`${r.row},${r.col}`)?.[0];
+            if (source === undefined) {
+              throw new Error(`Missing raw crop for given digit ${r.row},${r.col}`);
+            }
             const { hog, hole } = computeCropFeatures([r.crop])[0]!;
-            return { ...r, crop: Array.from(r.crop), hogFeatures: hog, holeFeatures: hole };
+            const { crop, ...read } = r;
+            return {
+              ...read,
+              ...rawCropPayload(source),
+              recognitionPixels: Array.from(crop),
+              warpStrategy: activeRecogniser().warpStrategy,
+              hogFeatures: hog,
+              holeFeatures: hole,
+            };
           })
         : [];
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
@@ -1581,8 +1637,17 @@ function validateCurrentReview(): string | null {
   return null;
 }
 
+function pendingTrainingWarpStrategy(): WarpStrategy {
+  if (pendingWarpStrategy === null) {
+    throw new Error('Training evidence is missing its recognition warp strategy');
+  }
+  return pendingWarpStrategy;
+}
+
 function clearAndUploadTrainingData(data: TrainingExport | null): void {
   pendingCellThumbs = new Map();
+  pendingCellSourceCrops = new Map();
+  pendingWarpStrategy = null;
   if (data !== null && data.sampleCount > 0) {
     initiateUpload(data, d => showTrainingConsentModal(() => uploadTrainingData(d)));
   }
@@ -1667,16 +1732,20 @@ async function handleConfirm(): Promise<void> {
     if (draftEdited && PuzzleState.isKiller(state)) {
       clearAndUploadTrainingData(extractTrainingData(
         pendingCellThumbs,
+        pendingCellSourceCrops,
         state.specData.cageTotals,
         'killer',
         defaultImagePipelineConfig().numberRecognition.subres,
+        pendingTrainingWarpStrategy(),
       ));
     } else if (!PuzzleState.isKiller(state) && state.givenDigits !== null) {
       clearAndUploadTrainingData(extractTrainingData(
         pendingCellThumbs,
+        pendingCellSourceCrops,
         state.givenDigits,
         'classic',
         defaultImagePipelineConfig().numberRecognition.subres,
+        pendingTrainingWarpStrategy(),
       ));
     } else {
       clearAndUploadTrainingData(null);
@@ -2961,6 +3030,19 @@ document.addEventListener('DOMContentLoaded', async () => {
           arrays.map(a => new Uint8Array(a)),
         ]),
       );
+      pendingCellSourceCrops = new Map(
+        Object.entries(entries).map(([key, arrays]) => [
+          key,
+          arrays.map((pixels, digitIndex) => ({
+            x: digitIndex * 64,
+            y: 0,
+            width: 64,
+            height: 64,
+            pixels: new Uint8Array(pixels),
+          })),
+        ]),
+      );
+      pendingWarpStrategy = 'letterbox';
     };
 
     // Exposes window.__testShowConsentModal() so Playwright tests can exercise
@@ -2968,13 +3050,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     (window as unknown as Record<string, unknown>)['__testShowConsentModal'] = () => {
       const mockData: TrainingExport = {
         reportType: 'training-export',
+        schemaVersion: 2,
         exportedAt: new Date().toISOString(),
         appVersion: __BUILD_TIME__,
         puzzleType: 'killer',
         subres: 128,
         thumbnailSize: 64,
         sampleCount: 1,
-        samples: [{ digit: 3, pixels: Array<number>(4096).fill(128) }],
+        samples: [{
+          digit: 3,
+          sourceRect: [0, 0, 2, 3],
+          sourceWidth: 2,
+          sourceHeight: 3,
+          sourcePixels: [10, 20, 30, 40, 50, 60],
+          recognitionPixels: Array<number>(4096).fill(128),
+          warpStrategy: 'letterbox',
+        }],
       };
       showTrainingConsentModal(() => uploadTrainingData(mockData));
     };

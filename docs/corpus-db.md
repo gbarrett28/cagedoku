@@ -89,6 +89,30 @@ Set by `installCvMonitors()` in `store.ts`. NULL before that initialises.
 |--------|------|---------|
 | `fallback_used` | INTEGER | `1` if border-calibration fell back to the rough adaptive-threshold path; `0` for the normal path; NULL for classic puzzles |
 
+### `cell_reads`
+
+One row per digit read produced by the deployed TypeScript pipeline, for both
+classic givens and killer cage totals. New rows retain both the strategy-neutral
+bounding-box crop and the exact derived input presented to the recogniser.
+
+| Column | Type | Meaning |
+|--------|------|---------|
+| `puzzle_hash`, `git_hash` | TEXT | Puzzle and evaluation identity |
+| `cell_type` | TEXT | `given_digit` or `cage_total_digit` |
+| `row`, `col`, `digit_index` | INTEGER | 0-indexed cell and the digit within a one- or two-digit read |
+| `predicted_label`, `confident`, `clashes_with` | mixed | Deployed recognition result and validation evidence |
+| `source_x`, `source_y` | INTEGER | Bounding-box origin in the warped grid |
+| `source_width`, `source_height` | INTEGER | Variable-sized raw crop dimensions |
+| `source_pixels` | TEXT | Row-major JSON uint8 array of length `source_width * source_height`; no recognition warp has been applied |
+| `recognition_pixels` | TEXT | Row-major JSON uint8 array of length 4096; the exact deployed 64×64 recogniser input |
+| `warp_strategy` | TEXT | `stretch` or `letterbox`, describing how `recognition_pixels` was derived |
+| `hog_features`, `hole_features` | TEXT | JSON feature arrays produced from `recognition_pixels` |
+
+Opening an older database renames legacy `crop_pixels` to
+`recognition_pixels`. Its newly added source fields remain NULL: historical
+64×64 thumbnails are audit evidence, not raw crops, and must not be re-labelled
+or re-warped as though they were strategy-neutral.
+
 ### `retraining_suggestions`
 
 One row per proposed digit-recognizer correction, found via the classic
