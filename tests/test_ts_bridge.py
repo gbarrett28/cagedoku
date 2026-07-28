@@ -1,8 +1,10 @@
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
 from killer_sudoku.solver.puzzle_spec import PuzzleSpec
+from killer_sudoku.training import ts_bridge
 from killer_sudoku.training.ts_bridge import extract_features, predict, solve
 
 KNOWN_SOLUTION = [
@@ -45,6 +47,52 @@ def test_predict_surfaces_bridge_failure_as_an_error() -> None:
     except RuntimeError:
         raised = True
     assert raised, "predict() must raise, never silently fall back"
+
+
+def test_extract_features_chunks_large_inputs_across_multiple_bridge_calls(monkeypatch: Any) -> None:
+    # Node's fs.readFileSync has a hard ~536MB string-length ceiling -- a full
+    # training run's worth of crops (tens of thousands of 64x64 images) blows
+    # right through it in a single JSON payload. Regression test for that:
+    # force a tiny batch size and confirm large inputs get split into multiple
+    # bridge calls, with results concatenated back in the original order.
+    monkeypatch.setattr(ts_bridge, "_BATCH_SIZE", 2)
+    calls: list[int] = []
+
+    def fake_run_bridge(_op: str, payload: dict[str, Any], _extra_args: list[str] | None = None) -> dict[str, Any]:
+        n = len(payload["crops"])
+        calls.append(n)
+        return {
+            "hog": [[float(i)] for i in range(n)],
+            "hole": [[float(i) * 10] for i in range(n)],
+        }
+
+    monkeypatch.setattr(ts_bridge, "_run_bridge", fake_run_bridge)
+    crops = [np.full((64, 64), i, dtype=np.uint8) for i in range(5)]
+
+    hog, hole = extract_features(crops)
+
+    assert calls == [2, 2, 1]
+    assert hog[:, 0].tolist() == [0.0, 1.0, 0.0, 1.0, 0.0]
+    assert hole[:, 0].tolist() == [0.0, 10.0, 0.0, 10.0, 0.0]
+
+
+def test_predict_chunks_large_inputs_across_multiple_bridge_calls(monkeypatch: Any) -> None:
+    monkeypatch.setattr(ts_bridge, "_BATCH_SIZE", 2)
+    calls: list[int] = []
+
+    def fake_run_bridge(_op: str, payload: dict[str, Any], extra_args: list[str] | None = None) -> dict[str, Any]:
+        del extra_args
+        n = len(payload["crops"])
+        calls.append(n)
+        return {"predictions": [{"label": i, "confident": True, "runnerUp": None} for i in range(n)]}
+
+    monkeypatch.setattr(ts_bridge, "_run_bridge", fake_run_bridge)
+    crops = [np.full((64, 64), i, dtype=np.uint8) for i in range(5)]
+
+    results = predict(crops, Path("model.bin"), Path("model.json"))
+
+    assert calls == [2, 2, 1]
+    assert [r["label"] for r in results] == [0, 1, 0, 1, 0]
 
 
 def test_solve_matches_known_solution_for_a_trivial_one_cell_per_cage_spec() -> None:

@@ -27,7 +27,7 @@ dates are from edits made during that migration session, not evidence of real us
 All five run every 8 hours via `.github/workflows/retrain.yml` — the most "used"
 Python in the repo, just never by a human directly.
 
-## Actual temp/manual scripts (~24 files)
+## Actual temp/manual scripts (~23 files)
 
 ### A one-time-looking data-migration chain
 No CI wiring, narrow single-purpose, no evidence of recent real use:
@@ -55,12 +55,11 @@ No automation, clearly "run this once while investigating a specific image":
 
 - `killer_sudoku/training/debug_borders.py` (2026-06-28) — draws classified border decisions on a warped image
 - `killer_sudoku/training/debug_border_strips.py` (2026-06-28) — draws where border-sampling strips land
-- `web/scripts/analyse-contours.py` (2026-06-28) — turns `contour-dumps/*.json` into a feature CSV
 - `web/scripts/compare-recognisers.py` (2026-07-26) — diffs two model versions' predictions on harvested samples
 
 ## Bottom line
 
-Of ~70 substantive Python files, roughly **24 are genuine "temp/manual" scripts** —
+Of ~70 substantive Python files, roughly **23 are genuine "temp/manual" scripts** —
 about a third. Five of those (the migration chain) look like they've served their
 purpose and probably haven't run in a while; the rest are still plausible manual
 tools for retraining/debugging work, just with no way to confirm actual recent use

@@ -126,6 +126,7 @@ HOG_BLOCK_STRIDE = 8
 HOG_NBINS        = 9
 
 _STALE_HASHES_PATH = Path(__file__).parent / "known-stale-training-hashes.json"
+DEFAULT_OVERRIDES_PATH = Path("killer_sudoku/training/manual_label_overrides.json")
 
 
 def _load_stale_hashes() -> frozenset[str]:
@@ -358,6 +359,35 @@ def load_training_file(path: Path, exclude_hashes: frozenset[str] = frozenset())
         samples.append((digit, img))
     if skipped:
         print(f"  Excluded {skipped} known-stale-geometry sample(s) from {path.name}", flush=True)
+    return samples
+
+
+def load_overrides_file(path: Path) -> list[tuple[int, NDArray[np.uint8]]]:
+    """Load human-verified (digit, 64x64 uint8) samples from manual_label_overrides.json.
+
+    Each entry's cropPng is the RAW (unwarped, variable-size) crop -- see
+    review_low_confidence.py's score_candidates -- so it's passed through
+    ACTIVE_RECOGNISER.fit_to_thumbnail() the same way every other training
+    sample is, rather than assumed to already be THUMBNAIL_SIZE. Entries
+    with label == "exclude" (a bad/non-digit crop, not a corrected one) are
+    skipped. Missing path returns an empty list rather than raising, since
+    this file is optional (some checkouts won't have any reviewed samples yet).
+    """
+    if not path.exists():
+        return []
+    import base64
+    import io
+
+    from PIL import Image
+
+    overrides: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    samples: list[tuple[int, NDArray[np.uint8]]] = []
+    for entry in overrides.values():
+        if entry["label"] == "exclude":
+            continue
+        raw = np.array(Image.open(io.BytesIO(base64.b64decode(entry["cropPng"]))).convert("L"), dtype=np.uint8)
+        thumb = ACTIVE_RECOGNISER.fit_to_thumbnail(raw, THUMBNAIL_SIZE)
+        samples.append((int(entry["label"]), thumb))
     return samples
 
 
@@ -727,6 +757,16 @@ def main() -> None:
         help="Skip loading --browser-file entirely.",
     )
     parser.add_argument(
+        "--overrides-file", type=Path, default=DEFAULT_OVERRIDES_PATH,
+        help="Human-verified corrections from review_low_confidence.py's tick-sheet workflow "
+             f"(default: {DEFAULT_OVERRIDES_PATH}). Folded into the same ground-truth weight "
+             "bucket as --browser-file. Pass a nonexistent path or --no-overrides-file to skip.",
+    )
+    parser.add_argument(
+        "--no-overrides-file", action="store_true",
+        help="Skip loading --overrides-file entirely.",
+    )
+    parser.add_argument(
         "--out", type=Path, default=Path("web/public"),
         help="Output directory for model files (default: web/public)",
     )
@@ -792,6 +832,14 @@ def main() -> None:
         browser_samples = load_training_file(args.browser_file, exclude_hashes=stale_hashes)
         print(f"{_elapsed()} Loaded {len(browser_samples)} samples from {args.browser_file.name} "
               f"(ground truth, never capped)", flush=True)
+
+    if not args.no_overrides_file:
+        override_samples = load_overrides_file(args.overrides_file)
+        if override_samples:
+            print(f"{_elapsed()} Loaded {len(override_samples)} human-reviewed corrections from "
+                  f"{args.overrides_file.name} (ground truth, folded into browser weight bucket)",
+                  flush=True)
+            browser_samples = browser_samples + override_samples
 
     all_samples: list[tuple[int, NDArray[np.uint8]]] = browser_samples + bulk_samples
     n_browser = len(browser_samples)

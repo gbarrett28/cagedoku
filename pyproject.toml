@@ -94,9 +94,9 @@ dummy-variable-rgx = "^_.*$"
 # hook structured as a series of early-exit guard clauses naturally has
 # more return points than the default limit.
 ".claude/hooks/enforce-serena.py" = ["T20", "PLR0911"]
+".codex/hooks/enforce-serena.py" = ["T20", "PLR0911"]
 # Standalone scripts legitimately use print() for progress output
 "web/scripts/compare-recognisers.py" = ["T20"]
-"web/scripts/analyse-contours.py" = ["T20"]
 "web/scripts/convert_npz_to_ts.py" = ["T20"]
 "web/dedupe_browser_train.py" = ["T20"]
 # CLI training scripts: print() is the output mechanism

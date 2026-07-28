@@ -86,7 +86,6 @@ import { INSTALL_DISMISSED_KEY, shouldShowInstallBanner } from './installPrompt.
 import { saveSession, loadSession, clearPersistedSession } from './session/persistence.js';
 import { toCanvas as qrToCanvas } from 'qrcode';
 import { computeSpecHash } from './solver/specHash.js';
-import type { UploadResult } from './session/actions.js';
 
 // ---------------------------------------------------------------------------
 
@@ -95,17 +94,6 @@ type ReportOutcomeFn = (o: {
   detectedBigApple: boolean; specHash: string | null;
   fallbackUsed: boolean; specError: string | null;
   parseElapsedMs: number; solveElapsedMs: number;
-  /** Present only when window.__reportContourTree is set. Bitcheck harness only. */
-  borderX?: boolean[][] | null | undefined;
-  borderY?: boolean[][] | null | undefined;
-  cageTotals?: number[][] | null | undefined;
-  regions?: number[][] | null | undefined;
-  givenDigits?: number[][] | null | undefined;
-  /** cellThumbs keyed "row,col" -> array of thumbnail pixel arrays. Bitcheck harness only. */
-  cellThumbs?: Record<string, number[][]> | undefined;
-  gray?: number[][] | undefined;
-  graySize?: [number, number] | undefined;
-  gridCorners?: number[] | undefined;
   /** WASM leak monitors — present when installCvMonitors() has run */
   liveMats?: number | undefined;
   heapBytes?: number | undefined;
@@ -154,30 +142,6 @@ function metricsPayload(): { liveMats: number; heapBytes: number; allocBytes: nu
     liveMats: (win['__cvLiveMats'] as (() => number) | undefined)?.() ?? -1,
     heapBytes: (win['__cvHeapBytes'] as (() => number) | undefined)?.() ?? -1,
     allocBytes: (win['__cvAllocBytes'] as (() => number) | undefined)?.() ?? -1,
-  };
-}
-
-function debugStagePayload(upload: UploadResult | null): object {
-  const win = window as unknown as Record<string, unknown>;
-  if (!win['__reportContourTree'] || upload?.gray === undefined) return {};
-  return {
-    // detectedBorderX/Y/CageTotals reflect what the pipeline actually found,
-    // independent of whether spec construction (validateCageLayout) later
-    // succeeded — spec is null on validation failure, but the bit-check
-    // harness needs the real detection result, not a UI placeholder.
-    borderX: upload.detectedBorderX ?? null,
-    borderY: upload.detectedBorderY ?? null,
-    cageTotals: upload.detectedCageTotals ?? null,
-    // regions is null when spec construction failed (it's derived from the
-    // validated PuzzleSpec, unlike the raw detectedX fields above).
-    regions: upload.regions ?? null,
-    givenDigits: upload.givenDigits ?? null,
-    gray: upload.gray,
-    graySize: upload.graySize,
-    gridCorners: upload.gridCorners,
-    cellThumbs: Object.fromEntries(
-      [...upload.cellThumbs].map(([key, thumbs]) => [key, thumbs.map(t => Array.from(t))]),
-    ),
   };
 }
 
@@ -1442,7 +1406,6 @@ async function handleProcess(file?: File): Promise<void> {
             puzzleType: 'killer',
             detectedBigApple,
             specHash,
-            ...debugStagePayload(uploadResult),
             ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
             ...metricsPayload(),
           });
@@ -1476,7 +1439,7 @@ async function handleProcess(file?: File): Promise<void> {
         logAction('review_shown', 'layout errors');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'layout errors', puzzleType: PuzzleState.kind(state),
-          detectedBigApple, specHash, ...debugStagePayload(uploadResult),
+          detectedBigApple, specHash,
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
           cageTotalReads: buildCageTotalReadsPayload(),
@@ -1488,7 +1451,7 @@ async function handleProcess(file?: File): Promise<void> {
         logAction('review_shown', 'sum warning');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'sum warning', puzzleType: PuzzleState.kind(state),
-          detectedBigApple, specHash, ...debugStagePayload(uploadResult),
+          detectedBigApple, specHash,
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
           cageTotalReads: buildCageTotalReadsPayload(),
@@ -1501,7 +1464,7 @@ async function handleProcess(file?: File): Promise<void> {
         logAction('review_shown', 'pipeline warning');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'ocr warning', puzzleType: PuzzleState.kind(state),
-          detectedBigApple, specHash, ...debugStagePayload(uploadResult),
+          detectedBigApple, specHash,
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
           cageTotalReads: buildCageTotalReadsPayload(),
@@ -1511,7 +1474,7 @@ async function handleProcess(file?: File): Promise<void> {
         logAction('review_shown', 'solver incomplete');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'solver incomplete', puzzleType: PuzzleState.kind(state),
-          detectedBigApple, specHash, ...debugStagePayload(uploadResult),
+          detectedBigApple, specHash,
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
           cageTotalReads: buildCageTotalReadsPayload(),
@@ -1547,7 +1510,6 @@ async function handleProcess(file?: File): Promise<void> {
         : [];
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket, reason, puzzleType: PuzzleState.kind(state), detectedBigApple, specHash,
-        ...debugStagePayload(uploadResult),
         ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
         ...metricsPayload(),
         retrainingSuggestions,
@@ -1558,7 +1520,7 @@ async function handleProcess(file?: File): Promise<void> {
       logAction('review_shown', 'ocr warning');
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket: 'notSolved', reason: 'ocr warning', puzzleType: PuzzleState.kind(state),
-        detectedBigApple, specHash, ...debugStagePayload(uploadResult),
+        detectedBigApple, specHash,
         ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
         ...metricsPayload(),
       });
@@ -1576,7 +1538,6 @@ async function handleProcess(file?: File): Promise<void> {
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket: 'notSolved', reason: `GridNotFoundError: ${e.message}`,
         puzzleType: null, detectedBigApple: false, specHash: null,
-        ...debugStagePayload(null),
         ...timingPayload(Date.now() - parseStartMs, 0, false, null),
         ...metricsPayload(),
       });
@@ -1586,7 +1547,6 @@ async function handleProcess(file?: File): Promise<void> {
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket: 'notSolved', reason: `error: ${String(e)}`,
         puzzleType: null, detectedBigApple: false, specHash: null,
-        ...debugStagePayload(null),
         ...timingPayload(Date.now() - parseStartMs, 0, false, null),
         ...metricsPayload(),
       });
@@ -1910,7 +1870,6 @@ async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number)
     const specHash = await computeSpecHash(currentState);
     (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
       bucket, reason, puzzleType: PuzzleState.kind(currentState), detectedBigApple, specHash,
-      ...debugStagePayload(null),
       ...timingPayload(0, 0, false, null),
       ...metricsPayload(),
     });

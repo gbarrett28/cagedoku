@@ -98,8 +98,14 @@ export function openDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
   if (!evalCols.includes('spec_hash')) {
     db.exec('ALTER TABLE evaluations ADD COLUMN spec_hash TEXT');
   }
-  // Drop columns that no longer exist (populated by __detectPuzzleDebug which was removed)
-  for (const dead of ['cell_centroid_dist_sq', 'box_centroid_dist_sq'] as const) {
+  // Drop columns that no longer exist (populated by __detectPuzzleDebug and the
+  // retired contour-tree parallel-path experiment, which were removed)
+  const deadCols = [
+    'cell_centroid_dist_sq', 'box_centroid_dist_sq',
+    'ct_d1_count', 'ct_d2_count', 'ct_type', 'ct_orientation', 'quad_sum_orientation',
+    'ct_border_agreement', 'ct_border_fp', 'ct_border_fn', 'ct_digit_agreement',
+  ] as const;
+  for (const dead of deadCols) {
     if (evalCols.includes(dead)) {
       db.exec(`ALTER TABLE evaluations DROP COLUMN ${dead}`);
     }
@@ -109,15 +115,6 @@ export function openDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
     ['live_mats',            'INTEGER'],
     ['heap_bytes',           'INTEGER'],
     ['alloc_bytes',          'INTEGER'],
-    ['ct_d1_count',          'INTEGER'],
-    ['ct_d2_count',          'INTEGER'],
-    ['ct_type',              'TEXT'],
-    ['ct_orientation',       'REAL'],
-    ['quad_sum_orientation', 'REAL'],
-    ['ct_border_agreement',  'REAL'],
-    ['ct_border_fp',         'INTEGER'],
-    ['ct_border_fn',         'INTEGER'],
-    ['ct_digit_agreement',   'REAL'],
     ['detected_big_apple',   'INTEGER'],
     ['spec_error',           'TEXT'],
     ['fallback_used',        'INTEGER'],
@@ -275,16 +272,6 @@ export interface CtEvalExtras {
   readonly liveMats?: number | null;
   readonly heapBytes?: number | null;
   readonly allocBytes?: number | null;
-  // Contour-tree parallel-path diagnostics (Sprints 1–4; killer only for orientation/border/digit)
-  readonly ctD1Count?: number | null;
-  readonly ctD2Count?: number | null;
-  readonly ctType?: string | null;
-  readonly ctOrientation?: number | null;
-  readonly quadSumOrientation?: number | null;
-  readonly ctBorderAgreement?: number | null;
-  readonly ctBorderFp?: number | null;
-  readonly ctBorderFn?: number | null;
-  readonly ctDigitAgreement?: number | null;
   // Outcome flags
   readonly detectedBigApple?: boolean | null;
   readonly specError?: string | null;
@@ -311,10 +298,6 @@ export function completeEvaluation(
     SET status = ?, bucket = ?, reason = ?, detected_type = ?,
         elapsed_ms = ?, spec_hash = ?,
         live_mats = ?, heap_bytes = ?, alloc_bytes = ?,
-        ct_d1_count = ?, ct_d2_count = ?, ct_type = ?,
-        ct_orientation = ?, quad_sum_orientation = ?,
-        ct_border_agreement = ?, ct_border_fp = ?, ct_border_fn = ?,
-        ct_digit_agreement = ?,
         detected_big_apple = ?, spec_error = ?, fallback_used = ?,
         parse_elapsed_ms = ?, solve_elapsed_ms = ?,
         finished_at = datetime('now')
@@ -322,10 +305,6 @@ export function completeEvaluation(
   `).run(
     status, bucket, reason, detectedType, elapsedMs, specHash,
     e.liveMats ?? null, e.heapBytes ?? null, e.allocBytes ?? null,
-    e.ctD1Count ?? null, e.ctD2Count ?? null, e.ctType ?? null,
-    e.ctOrientation ?? null, e.quadSumOrientation ?? null,
-    e.ctBorderAgreement ?? null, e.ctBorderFp ?? null, e.ctBorderFn ?? null,
-    e.ctDigitAgreement ?? null,
     e.detectedBigApple == null ? null : (e.detectedBigApple ? 1 : 0),
     e.specError ?? null,
     e.fallbackUsed == null ? null : (e.fallbackUsed ? 1 : 0),

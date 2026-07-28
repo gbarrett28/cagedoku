@@ -141,15 +141,6 @@ export interface UploadResult {
   fallbackUsed: boolean;
   specError: string | null;
   givenDigits?: number[][] | null | undefined;
-  /** Populated only when window.__reportContourTree is truthy. Bitcheck harness only. */
-  gray?: number[][] | undefined;
-  graySize?: [number, number] | undefined;
-  gridCorners?: number[] | undefined;
-  detectedBorderX?: boolean[][] | undefined;
-  detectedBorderY?: boolean[][] | undefined;
-  detectedCageTotals?: number[][] | undefined;
-  /** spec.regions when spec construction succeeded, else null. Bitcheck harness only. */
-  regions?: number[][] | null | undefined;
   /** Recognition (incl. runner-up) for each classic given-digit cell, keyed "row,col". Present whenever ParseResult provides it. */
   classicRecognitions?: ReadonlyMap<string, import('../image/numberRecognition.js').Recognition> | undefined;
   /** Recognition[] (one per digit crop) for each cage-total cell, keyed "row,col". Present whenever ParseResult provides it. */
@@ -227,13 +218,6 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
     fallbackUsed: result.fallbackUsed,
     specError: result.specError,
     givenDigits: result.givenDigits,
-    gray: result.gray,
-    graySize: result.graySize,
-    gridCorners: result.gridCorners,
-    detectedBorderX: result.detectedBorderX,
-    detectedBorderY: result.detectedBorderY,
-    detectedCageTotals: result.detectedCageTotals,
-    regions: result.spec?.regions ?? null,
     classicRecognitions: result.classicRecognitions,
     cageTotalRecognitions: result.cageTotalRecognitions,
   };

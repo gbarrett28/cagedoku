@@ -809,70 +809,21 @@ misses.
 
 ---
 
-## Contour Feature Exploration Tooling
+## Contour tree
 
-Research scripts for extracting and analysing per-contour features from corpus
-puzzles, used to explore what geometric signals best distinguish grid-structure
-contours from number contours.
+`buildCageTotals` (Stage 5) walks the OpenCV `RETR_TREE` contour hierarchy once
+per upload via `contourHier()`, producing `ContourInfo[]` nodes of `[br, children]`
+(bounding rect + recursive children only — no point list, no area; both were
+found to be unused outside a since-removed diagnostic dump, and extracting a
+full point array for every contour, including the thousands of noise-speck
+contours `RETR_TREE` returns on a noisy mobile photo, was a real per-upload
+cost with no production consumer). `getNumContours` walks this tree looking for
+digit-sized bounding rects via `contourIsNumber`.
 
-### `window.__reportContourTree` flag
-
-When `window.__reportContourTree` is truthy, `parsePuzzleImage` passes
-`includeTree = true` to `buildCageTotals`. This causes `buildCageTotals` to capture:
-
-- `contourTree` — the full RETR_TREE hierarchy (`ContourInfo[]`) from
-  `contourHier()`
-- `selectedNumbers` — the `BRect[]` of contours returned by `getNumContours`
-- `outerGridBR` — the bounding rect of the outermost contour (`chiers[0]?.[1]`)
-
-These are threaded back through `CageTotalsResult` → `ParseResult` →
-`UploadResult`, and included in the `__reportOutcome` payload via a
-`contourPayload()` helper in `main.ts`. The helper returns `{}` when the flag is
-not set, so there is zero overhead in normal operation.
-
-**Labels** come exclusively from the pipeline's own outputs — no Python heuristics:
-
-| Label | Condition |
-|-------|-----------|
-| `grid` | bounding rect matches `outerGridBR` |
-| `number` | bounding rect appears in `selectedNumbers` |
-| `unlabelled` | everything else |
-
-### `web/scripts/dump-contour-trees.ts`
-
-Playwright script that queries `corpus.db` for up to 50 clean/backtracked puzzles
-per `(corpus × ground_truth)` combination where `detected_type` matches the ground
-truth label, then uploads each puzzle via the production preview server with
-`window.__reportContourTree = true` set via `addInitScript`. The `__reportOutcome`
-callback payload is written to `contour-dumps/<puzzle_hash>.json`.
-
-Each dump contains: `puzzle_hash`, `corpus`, `ground_truth`, `detected_type`,
-`bucket`, `subres` (128), `tree`, `selectedNumbers`, `outerGridBR`, `borderX`,
-`borderY`, `cageTotals`, `givenDigits`.
-
-Run from `web/` after `npm run build && npm run preview` (in another terminal):
-
-```bash
-npx vite-node --script scripts/dump-contour-trees.ts [--limit N] [--out-dir DIR]
-```
-
-### `web/scripts/analyse-contours.py`
-
-Python script that traverses `contour-dumps/*.json` depth-first and computes a
-flat per-contour feature row for every node in every tree. Output is
-`contour-dumps/features.csv`.
-
-Per-contour features: `depth`, `depth_below`, `num_peers`, `num_children`,
-`x/y/w/h`, `cx_norm`/`cy_norm`/`w_norm`/`h_norm`/`area_norm` (all divided by
-`subres`), `aspect_ratio` (`w/h`), `fill_ratio` (`area / w×h`),
-`area_rel_parent`, `hu1`–`hu7` (log-scaled Hu moments via `cv2.HuMoments`),
-`label`, and for `number`-labelled contours: `cell_row`, `cell_col`,
-`cage_total`, `given_digit`.
-
-Run from repo root:
-
-```bash
-python web/scripts/analyse-contours.py [--dump-dir DIR] [--out PATH]
-```
-
-`contour-dumps/` is gitignored and never committed.
+A prior experimental contour-tree-based border detector (compared against the
+existing border-clustering pipeline via `ct_*` corpus.db columns) and its
+supporting diagnostic-dump/analysis tooling were removed as dead code — the
+comparison was never wired up to run in this codebase (the `ct_*` columns were
+always NULL) and the diagnostic capture path was gated behind a flag
+(`window.__reportContourTree`) no code ever set outside a Playwright harness
+that had itself already been deleted.

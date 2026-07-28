@@ -126,11 +126,20 @@ describe('claimEvaluation / completeEvaluation', () => {
     db.close();
   });
 
-  it('drops the dead centroid columns on open', () => {
+  it('drops the dead centroid and contour-tree-experiment columns on open', () => {
     const db = tmpDb();
     const cols = (db.prepare('PRAGMA table_info(evaluations)').all() as { name: string }[]).map(r => r.name);
     expect(cols).not.toContain('cell_centroid_dist_sq');
     expect(cols).not.toContain('box_centroid_dist_sq');
+    expect(cols).not.toContain('ct_d1_count');
+    expect(cols).not.toContain('ct_d2_count');
+    expect(cols).not.toContain('ct_type');
+    expect(cols).not.toContain('ct_orientation');
+    expect(cols).not.toContain('quad_sum_orientation');
+    expect(cols).not.toContain('ct_border_agreement');
+    expect(cols).not.toContain('ct_border_fp');
+    expect(cols).not.toContain('ct_border_fn');
+    expect(cols).not.toContain('ct_digit_agreement');
     db.close();
   });
 
@@ -140,10 +149,6 @@ describe('claimEvaluation / completeEvaluation', () => {
     const claim = claimEvaluation(db, 'gitabc', 1)!;
     const extras: CtEvalExtras = {
       liveMats: 3, heapBytes: 1_000_000, allocBytes: 500_000,
-      ctD1Count: 81, ctD2Count: 120, ctType: 'killer',
-      ctOrientation: 0, quadSumOrientation: 0,
-      ctBorderAgreement: 0.97, ctBorderFp: 2, ctBorderFn: 1,
-      ctDigitAgreement: 0.95,
       detectedBigApple: false, specError: null, fallbackUsed: false,
       parseElapsedMs: 800, solveElapsedMs: 200,
     };
@@ -152,15 +157,6 @@ describe('claimEvaluation / completeEvaluation', () => {
     expect(row['live_mats']).toBe(3);
     expect(row['heap_bytes']).toBe(1_000_000);
     expect(row['alloc_bytes']).toBe(500_000);
-    expect(row['ct_d1_count']).toBe(81);
-    expect(row['ct_d2_count']).toBe(120);
-    expect(row['ct_type']).toBe('killer');
-    expect(row['ct_orientation']).toBeCloseTo(0);
-    expect(row['quad_sum_orientation']).toBeCloseTo(0);
-    expect(row['ct_border_agreement']).toBeCloseTo(0.97);
-    expect(row['ct_border_fp']).toBe(2);
-    expect(row['ct_border_fn']).toBe(1);
-    expect(row['ct_digit_agreement']).toBeCloseTo(0.95);
     expect(row['detected_big_apple']).toBe(0);
     expect(row['spec_error']).toBeNull();
     expect(row['fallback_used']).toBe(0);

@@ -24,7 +24,7 @@ type Cv = OpenCVModule;
 export type BRect = [number, number, number, number];
 
 /** Node in the OpenCV contour hierarchy tree. */
-export type ContourInfo = [contour: number[][], br: BRect, area: number, children: ContourInfo[]];
+export type ContourInfo = [br: BRect, children: ContourInfo[]];
 
 // ---------------------------------------------------------------------------
 // RBFClassifier: pure-TypeScript OvO RBF SVM
@@ -683,15 +683,9 @@ export function contourHier(
       const c = contours.get(i);
       const br = cv.boundingRect(c);
       const brTuple: BRect = [br.x, br.y, br.width, br.height];
-      const area = cv.contourArea(c);
       const children = contourHier(cv, contours, hierarchy, seen, child);
-      // Extract contour points as number[][].
-      const pts: number[][] = [];
-      for (let p = 0; p < c.rows; p++) {
-        pts.push([c.data32S[p * 2]!, c.data32S[p * 2 + 1]!]);
-      }
       c.delete();
-      ret.push([pts, brTuple, area, children]);
+      ret.push([brTuple, children]);
     }
     seen.add(i);
     i = next!;
@@ -733,9 +727,9 @@ export function contourHier(
  */
 export function getNumContours(chier: ContourInfo[], subres: number): ContourInfo[] {
   const ret: ContourInfo[] = [];
-  for (const [c, br, area, ds] of chier) {
+  for (const [br, ds] of chier) {
     if (contourIsNumber(br, subres)) {
-      ret.push([c, br, area, ds]);
+      ret.push([br, ds]);
     } else {
       ret.push(...getNumContours(ds, subres));
     }

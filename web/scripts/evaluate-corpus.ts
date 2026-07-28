@@ -25,7 +25,6 @@
  */
 import { chromium } from '@playwright/test';
 import type { Browser, Page } from '@playwright/test';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
@@ -47,7 +46,6 @@ interface Args {
   readonly gitHash: string;
   readonly dbPath: string;
   readonly filter: string | undefined;
-  readonly dumpContoursDir: string | null;
   readonly stopOnFailCount: number | null;
 }
 
@@ -62,19 +60,6 @@ interface UploadOutcomeJson {
   readonly specError: string | null;
   readonly parseElapsedMs: number;
   readonly solveElapsedMs: number;
-  // Optional: only present when running against the contour-tree feature branch
-  readonly contourTreeDiagnostics?: {
-    readonly d1Count: number;
-    readonly d2Count: number;
-    readonly contourTreeType: string;
-    readonly tlFractionType: string;
-    readonly contourTreeOrientation?: number;
-    readonly quadSumOrientation?: number;
-    readonly contourTreeBorderAgreement?: number;
-    readonly ctBorderFP?: number;
-    readonly ctBorderFN?: number;
-    readonly contourTreeDigitAgreement?: number;
-  };
   readonly liveMats?: number;
   readonly heapBytes?: number;
   readonly allocBytes?: number;
@@ -128,7 +113,6 @@ function parseArgs(argv: readonly string[]): Args {
     .trim();
   let dbPath = DEFAULT_DB_PATH;
   let filter: string | undefined;
-  let dumpContoursDir: string | null = null;
   let stopOnFailCount: number | null = null;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--workers') workers = Number(argv[++i]);
@@ -137,7 +121,6 @@ function parseArgs(argv: readonly string[]): Args {
     else if (argv[i] === '--git-hash') gitHash = argv[++i]!;
     else if (argv[i] === '--db-path') dbPath = argv[++i]!;
     else if (argv[i] === '--filter') filter = argv[++i];
-    else if (argv[i] === '--dump-contours') dumpContoursDir = argv[++i] ?? null;
     else if (argv[i] === '--stop-on-fail') {
       const next = argv[i + 1];
       if (next !== undefined && /^\d+$/.test(next)) {
@@ -148,7 +131,7 @@ function parseArgs(argv: readonly string[]): Args {
       }
     }
   }
-  return { workers, limit, baseUrl, gitHash, dbPath, filter, dumpContoursDir, stopOnFailCount };
+  return { workers, limit, baseUrl, gitHash, dbPath, filter, stopOnFailCount };
 }
 
 async function checkServerReachable(baseUrl: string): Promise<void> {
@@ -182,7 +165,6 @@ async function runWorker(
   workerId: number,
   limit: number | null,
   filter: string | undefined,
-  dumpContoursDir: string | null,
   counts: BucketCounts,
   progress: { done: number; total: number },
   stopOnFailCount: number | null,
@@ -217,7 +199,6 @@ async function runWorker(
     let detectedType: string | null = null;
     let specHash: string | null = null;
     let outcome: UploadOutcomeJson | undefined;
-    let contourTreeDiagnostics: UploadOutcomeJson['contourTreeDiagnostics'] | undefined;
     let liveMats: number | undefined;
     let heapBytes: number | undefined;
     let allocBytes: number | undefined;
@@ -242,84 +223,8 @@ async function runWorker(
       detectedType = outcome.puzzleType;
       specHash = outcome.specHash;
       counts[outcome.bucket]++;
-      ({ contourTreeDiagnostics, liveMats, heapBytes, allocBytes,
+      ({ liveMats, heapBytes, allocBytes,
          fallbackUsed, specError, parseElapsedMs, solveElapsedMs } = outcome);
-
-      if (dumpContoursDir !== null) {
-        const patches = await page.evaluate(() => {
-          // Runs in the browser. Accesses the contour tree exposed by inpImage.ts.
-          type ContourNode = [number[][], [number, number, number, number], number, ContourNode[]];
-          const tree = (window as any).__lastContourTree as ContourNode[] | undefined;
-          const subres = (window as any).__lastSubres as number | undefined;
-          if (!tree || !subres) return [];
-
-          function renderMask(pts: number[][], children: number[][][], size: number): number[] {
-            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            for (const [x, y] of pts) {
-              if (x! < minX) minX = x!;
-              if (y! < minY) minY = y!;
-              if (x! > maxX) maxX = x!;
-              if (y! > maxY) maxY = y!;
-            }
-            const bw = maxX - minX || 1;
-            const bh = maxY - minY || 1;
-            const scale = Math.min((size - 2) / bw, (size - 2) / bh);
-            const offX = ((size - 2) - bw * scale) / 2 + 1;
-            const offY = ((size - 2) - bh * scale) / 2 + 1;
-            function tx(p: number[]): [number, number] {
-              return [(p[0]! - minX) * scale + offX, (p[1]! - minY) * scale + offY];
-            }
-            const data = new Uint8Array(size * size);
-            function fill(poly: number[][], color: number): void {
-              const tpoly = poly.map(tx);
-              for (let row = 0; row < size; row++) {
-                const crossings: number[] = [];
-                for (let i = 0; i < tpoly.length; i++) {
-                  const [x1, y1] = tpoly[i]!;
-                  const [x2, y2] = tpoly[(i + 1) % tpoly.length]!;
-                  if ((y1! <= row && y2! > row) || (y2! <= row && y1! > row)) {
-                    crossings.push(x1! + ((row - y1!) / (y2! - y1!)) * (x2! - x1!));
-                  }
-                }
-                crossings.sort((a, b) => a - b);
-                for (let i = 0; i + 1 < crossings.length; i += 2) {
-                  const left = Math.max(0, Math.ceil(crossings[i]!));
-                  const right = Math.min(size - 1, Math.floor(crossings[i + 1]!));
-                  for (let col = left; col <= right; col++) {
-                    data[row * size + col] = color;
-                  }
-                }
-              }
-            }
-            fill(pts, 255);
-            for (const hole of children) fill(hole, 0);
-            return Array.from(data);
-          }
-
-          const minW = subres >> 4;
-          const minH = subres >> 3;
-          const maxW = (subres * 7) >> 3;
-          const maxH = (subres * 7) >> 3;
-          const results: { pixels: number[]; depth: number; fillRatio: number; w: number; h: number }[] = [];
-
-          function visit(nodes: ContourNode[], depth: number): void {
-            for (const [pts, br, area, children] of nodes) {
-              const [, , w, h] = br;
-              if (depth >= 2 && w >= minW && w <= maxW && h >= minH && h <= maxH) {
-                const childPts = children.map(c => c[0]);
-                const pixels = renderMask(pts, childPts, 64);
-                results.push({ pixels, depth, fillRatio: area / (w * h), w, h });
-              }
-              visit(children, depth + 1);
-            }
-          }
-          visit(tree, 0);
-          return results;
-        });
-
-        const outPath = path.join(dumpContoursDir, `${claim.puzzle_hash}.json`);
-        fs.writeFileSync(outPath, JSON.stringify({ path: puzzle.path, contours: patches }));
-      }
     } catch (e) {
       status = 'failed';
       const message = String(e);
@@ -333,20 +238,10 @@ async function runWorker(
       }
     }
 
-    const diag = contourTreeDiagnostics;
     const extras: CtEvalExtras = {
       liveMats:           liveMats           ?? null,
       heapBytes:          heapBytes          ?? null,
       allocBytes:         allocBytes         ?? null,
-      ctD1Count:          diag?.d1Count          ?? null,
-      ctD2Count:          diag?.d2Count          ?? null,
-      ctType:             diag?.contourTreeType   ?? null,
-      ctOrientation:      diag?.contourTreeOrientation   ?? null,
-      quadSumOrientation: diag?.quadSumOrientation ?? null,
-      ctBorderAgreement:  diag?.contourTreeBorderAgreement ?? null,
-      ctBorderFp:         diag?.ctBorderFP        ?? null,
-      ctBorderFn:         diag?.ctBorderFN        ?? null,
-      ctDigitAgreement:   diag?.contourTreeDigitAgreement ?? null,
       detectedBigApple:   outcome?.detectedBigApple ?? null,
       specError:          specError          ?? null,
       fallbackUsed:       fallbackUsed       ?? null,
@@ -426,8 +321,7 @@ async function runWorker(
 }
 
 async function main(): Promise<void> {
-  const { workers, limit, baseUrl, gitHash, dbPath, filter, dumpContoursDir, stopOnFailCount } = parseArgs(process.argv.slice(2));
-  if (dumpContoursDir !== null) fs.mkdirSync(dumpContoursDir, { recursive: true });
+  const { workers, limit, baseUrl, gitHash, dbPath, filter, stopOnFailCount } = parseArgs(process.argv.slice(2));
   await checkServerReachable(baseUrl);
 
   const db = openDb(dbPath);
@@ -465,7 +359,7 @@ async function main(): Promise<void> {
   try {
     await Promise.all(
       Array.from({ length: workers }, (_, i) =>
-        runWorker(browser, baseUrl, db, gitHash, i + 1, limit, filter, dumpContoursDir, counts, progress, stopOnFailCount),
+        runWorker(browser, baseUrl, db, gitHash, i + 1, limit, filter, counts, progress, stopOnFailCount),
       ),
     );
   } finally {

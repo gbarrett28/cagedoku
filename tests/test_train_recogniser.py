@@ -1,3 +1,5 @@
+import base64
+import io
 import json
 import sys
 import tempfile
@@ -5,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "web"))
 from train_recogniser import (
@@ -16,6 +19,7 @@ from train_recogniser import (
     build_dataset,
     fit_model,
     generate_synthetic_samples,
+    load_overrides_file,
     save_model,
 )
 
@@ -113,3 +117,42 @@ def test_fit_to_thumbnail_stretch_vs_letterbox_differ() -> None:
     pca_out = PcaRbfRecogniser().fit_to_thumbnail(crop, 64)
     hog_out = HogRecogniser().fit_to_thumbnail(crop, 64)
     assert not np.array_equal(pca_out, hog_out)
+
+
+def _make_override_png_b64(w: int, h: int) -> str:
+    img = np.zeros((h, w), dtype=np.uint8)
+    img[h // 4 : 3 * h // 4, w // 4 : 3 * w // 4] = 255
+    buf = io.BytesIO()
+    Image.fromarray(img).save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def test_load_overrides_file_decodes_crops_and_skips_excluded() -> None:
+    overrides = {
+        "classic_guardian|killer_sudoku_1.jpg|0|0": {
+            "label": 7,
+            "expectedPrior": 3,
+            "cropPng": _make_override_png_b64(49, 64),
+            "puzzleType": "classic",
+        },
+        "classic_guardian|killer_sudoku_1.jpg|1|1": {
+            "label": "exclude",
+            "expectedPrior": 5,
+            "cropPng": _make_override_png_b64(40, 60),
+            "puzzleType": "classic",
+        },
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "manual_label_overrides.json"
+        path.write_text(json.dumps(overrides), encoding="utf-8")
+        samples = load_overrides_file(path)
+
+    assert len(samples) == 1
+    label, img = samples[0]
+    assert label == 7
+    assert img.shape == (THUMBNAIL_SIZE, THUMBNAIL_SIZE)
+    assert img.dtype == np.uint8
+
+
+def test_load_overrides_file_missing_path_returns_empty() -> None:
+    assert load_overrides_file(Path("does/not/exist.json")) == []
