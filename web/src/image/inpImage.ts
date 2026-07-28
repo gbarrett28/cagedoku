@@ -30,7 +30,7 @@ import type { GrayImage } from './borderClustering.js';
 import {
   splitNum, contourHier, getNumContours, readClassicDigits, activeRecogniser,
 } from './numberRecognition.js';
-import type { NumRecogniser, Recognition } from './numberRecognition.js';
+import type { Recognition } from './numberRecognition.js';
 import { validateCageLayout, buildLenientCageLayout } from './validation.js';
 import { buildBrdrs } from '../solver/puzzleSpec.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
@@ -71,8 +71,6 @@ export interface ParseResult {
   warpedImageData: ImageData | null;
   /** Post-split thumbnails for the digit recogniser, keyed "row,col". */
   cellThumbs: ReadonlyMap<string, Uint8Array[]>;
-  /** Pre-split merged thumbnails for split-recogniser training, keyed "row,col". */
-  mergedThumbs: ReadonlyMap<string, Uint8Array>;
   /** Recognition (incl. runner-up) for each classic given-digit cell, keyed "row,col". */
   classicRecognitions?: ReadonlyMap<string, import('./numberRecognition.js').Recognition> | undefined;
   /** Recognition for each cage-total digit crop, keyed "row,col", array order matching cellThumbs. Killer only. */
@@ -91,7 +89,7 @@ export interface ParseResult {
  *
  * @param cv - OpenCV.js module (must be ready).
  * @param file - Image file from the browser file picker.
- * @param rec - Pre-loaded digit recogniser (from loadNumRecogniser).
+
  * @param config - Pipeline configuration (defaults used if omitted).
  * @param providedCorners - If supplied (original-image pixel space), skip grid
  *   detection and use these corners directly. Useful when the user has manually
@@ -101,7 +99,6 @@ export async function parsePuzzleImage(
   cv: Cv,
   file: File,
   config: ImagePipelineConfig = defaultImagePipelineConfig(),
-  _splitRec?: NumRecogniser,
 ): Promise<ParseResult> {
   const resolution = cfgResolution(config);
   const subres = cfgSubres(config);
@@ -236,7 +233,7 @@ export async function parsePuzzleImage(
     } catch (err) {
       specError = String(err);
     }
-    return { spec, specError, fallbackUsed: false, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: classicThumbs, mergedThumbs: new Map(), classicRecognitions };
+    return { spec, specError, fallbackUsed: false, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: classicThumbs, classicRecognitions };
   }
 
   // --- Killer path: Stage 4 anchored border clustering ---
@@ -254,7 +251,6 @@ export async function parsePuzzleImage(
 
   let cageTotals: number[][] | null = null;
   let cellThumbs = new Map<string, Uint8Array[]>();
-  let mergedThumbs = new Map<string, Uint8Array>();
   let cellRecognitions = new Map<string, Recognition[]>();
   let lastCageTotalsResult: CageTotalsResult | null = null;
   let fallbackUsed = false;
@@ -263,7 +259,7 @@ export async function parsePuzzleImage(
     lastCageTotalsResult = buildCageTotals(
       cv, warpedBlkMat, subres, brdrs,
     );
-    ({ cageTotals, cellThumbs, mergedThumbs, cellRecognitions } = lastCageTotalsResult);
+    ({ cageTotals, cellThumbs, cellRecognitions } = lastCageTotalsResult);
   } catch (e) {
     console.warn('[parsePuzzleImage] buildCageTotals failed, proceeding with initial border estimate', e);
   }
@@ -307,7 +303,7 @@ export async function parsePuzzleImage(
       lastCageTotalsResult = buildCageTotals(
         cv, warpedBlkMat, subres, brdrs2,
       );
-      ({ cageTotals, cellThumbs, mergedThumbs, cellRecognitions } = lastCageTotalsResult);
+      ({ cageTotals, cellThumbs, cellRecognitions } = lastCageTotalsResult);
 
       const totalSum = cageTotals.reduce((s, row) => s + row.reduce((a, b) => a + b, 0), 0);
       if (totalSum < 360 || totalSum > 450) {
@@ -322,7 +318,7 @@ export async function parsePuzzleImage(
           lastCageTotalsResult = buildCageTotals(
             cv, adaptiveBlk, subres, brdrs2,
           );
-          ({ cageTotals, cellThumbs, mergedThumbs, cellRecognitions } = lastCageTotalsResult);
+          ({ cageTotals, cellThumbs, cellRecognitions } = lastCageTotalsResult);
           fallbackUsed = true;
         } finally {
           adaptiveBlk.delete();
@@ -351,7 +347,6 @@ export async function parsePuzzleImage(
       givenDigits,
       warpedImageData: warpedImgData,
       cellThumbs: new Map(),
-      mergedThumbs: new Map(),
       classicRecognitions,
       cageTotalRecognitions: new Map(),
     };
@@ -382,7 +377,7 @@ export async function parsePuzzleImage(
   }
 
   return {
-    spec, specError, fallbackUsed, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs, mergedThumbs, classicRecognitions, cageTotalRecognitions: cellRecognitions,
+    spec, specError, fallbackUsed, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs, classicRecognitions, cageTotalRecognitions: cellRecognitions,
   };
 }
 
@@ -400,8 +395,6 @@ export interface CageTotalsResult {
   cageTotals: number[][];
   /** Post-split thumbnails presented to the digit recogniser, keyed "row,col". */
   cellThumbs: Map<string, Uint8Array[]>;
-  /** Pre-split merged thumbnail for each cell, keyed "row,col". Used for split-recogniser training. */
-  mergedThumbs: Map<string, Uint8Array>;
   /** Recognition for each cage-total digit crop, keyed "row,col", array order matching cellThumbs. */
   cellRecognitions: Map<string, Recognition[]>;
 }
@@ -415,7 +408,6 @@ export function buildCageTotals(
   const numPixels: Array<Array<Uint8Array[] | null>> = Array.from(
     { length: 9 }, () => new Array<Uint8Array[] | null>(9).fill(null),
   );
-  const mergedPixels = new Map<string, Uint8Array>();
 
   const contours = new cv.MatVector();
   const hierMat = new cv.Mat();
@@ -439,9 +431,8 @@ export function buildCageTotals(
       if (col < 0 || col >= 9 || row < 0 || row >= 9) continue;
 
       let numThumbArr: Uint8Array[];
-      let mergedThumb: Uint8Array;
       try {
-        [numThumbArr, mergedThumb] = splitNum(cv, br, warpedBlk, subres);
+        [numThumbArr] = splitNum(cv, br, warpedBlk, subres);
       } catch (err) {
         console.warn('splitNum failed for contour', br, err);
         continue;
@@ -449,7 +440,6 @@ export function buildCageTotals(
 
       if (numPixels[row]![col] === null) numPixels[row]![col] = [];
       numPixels[row]![col]!.push(...numThumbArr);
-      mergedPixels.set(`${row},${col}`, mergedThumb);
     }
   }
   contours.delete();
@@ -480,7 +470,7 @@ export function buildCageTotals(
     }
   }
   return {
-    cageTotals, cellThumbs, mergedThumbs: mergedPixels, cellRecognitions,
+    cageTotals, cellThumbs, cellRecognitions,
   };
 }
 

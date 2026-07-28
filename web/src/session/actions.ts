@@ -44,7 +44,7 @@ import {
   virtualCageKeyFromCage,
   solutionKey,
 } from './specUtils.js';
-import { getState, setState, getStateCandidates, setStateCandidates, getCV, getRec, getSplitRec } from './store.js';
+import { getState, setState, getStateCandidates, setStateCandidates, getCV, getRec } from './store.js';
 import { PuzzleState } from './types.js';
 import type {
   CandidatesResponse,
@@ -136,7 +136,6 @@ export interface UploadResult {
   warpedImageUrl: string | null;
   warning: string | null;
   cellThumbs: ReadonlyMap<string, Uint8Array[]>;
-  mergedThumbs: ReadonlyMap<string, Uint8Array>;
   detectedBigApple: boolean;
   fallbackUsed: boolean;
   specError: string | null;
@@ -157,7 +156,7 @@ export function loadSpecDirect(spec: PuzzleSpec): UploadResult {
   const settings = loadSettings();
   const state = PuzzleState.createKiller(specToData(spec), specToCageStates(spec), [...settings.alwaysApplyRules], null, null);
   setState(state);
-  return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map(), mergedThumbs: new Map(), detectedBigApple: false, fallbackUsed: false, specError: null };
+  return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map(), detectedBigApple: false, fallbackUsed: false, specError: null };
 }
 
 /**
@@ -176,7 +175,6 @@ export function loadClassicDirect(givenDigits: readonly (readonly number[])[]): 
     warpedImageUrl: null,
     warning: 'Review the detected digits and press Confirm & Solve',
     cellThumbs: new Map(),
-    mergedThumbs: new Map(),
     detectedBigApple: false,
     fallbackUsed: false,
     specError: null,
@@ -195,7 +193,7 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
   const config = defaultImagePipelineConfig();
   let result: ParseResult;
   try {
-    result = await parsePuzzleImage(cv, file, config, getSplitRec() ?? undefined);
+    result = await parsePuzzleImage(cv, file, config);
   } catch (e) {
     if (e instanceof ImageDecodeError || e instanceof GridNotFoundError) throw e;
     // Any other pipeline error → proceed to review with blank grid.
@@ -207,14 +205,13 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
       givenDigits: null,
       warpedImageData: null,
       cellThumbs: new Map(),
-      mergedThumbs: new Map(),
     };
   }
 
   const originalImageUrl = await fileToDisplayUrl(file);
   const { state, warpedImageUrl, warning, detectedBigApple } = await buildStateFromParseResult(result, originalImageUrl);
   return {
-    state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, mergedThumbs: result.mergedThumbs, detectedBigApple,
+    state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, detectedBigApple,
     fallbackUsed: result.fallbackUsed,
     specError: result.specError,
     givenDigits: result.givenDigits,

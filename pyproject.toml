@@ -87,8 +87,6 @@ dummy-variable-rgx = "^_.*$"
 # N803/N806: X is a standard sklearn feature-matrix convention (uppercase is idiomatic).
 # PLW2901: reassigning loop var to downcast dtype is intentional (in-place reshape).
 "web/train_recogniser.py" = ["PLC0415", "T20", "N803", "N806", "PLW2901"]
-# N806: X is a standard feature-matrix variable (sklearn convention).
-"web/train_split_recogniser.py" = ["PLC0415", "T20", "N806"]
 # PreToolUse hook: print(json.dumps(...)) to stdout IS the hook protocol's
 # output mechanism (Claude Code reads it), not debug output. PLR0911: a
 # hook structured as a series of early-exit guard clauses naturally has

@@ -6,7 +6,7 @@
  * State lives in session/store.ts; no server required.
  */
 
-import { loadCV, loadRec, loadSplitRec, setCandidatesCache, setState, getStateCandidates, setStateCandidates, drainTelemetryFailure, onTelemetryFailure } from './session/store.js';
+import { loadCV, loadRec, setCandidatesCache, setState, getStateCandidates, setStateCandidates, drainTelemetryFailure, onTelemetryFailure } from './session/store.js';
 import { logAction, clearActionLog, formatActionLog, getActionLog } from './session/actionLog.js';
 import { loadSettings } from './session/settings.js';
 import { buildFeedbackPayload, submitFeedback } from './session/feedbackSubmit.js';
@@ -219,7 +219,6 @@ function activeFixtureContext(): { name: string; unsolvedCells: number; totalCan
 }
 let draftEdited = false;              // true once the user changes any total or border
 let pendingCellThumbs = new Map<string, Uint8Array[]>(); // OCR thumbnails, held until Confirm
-let pendingMergedThumbs = new Map<string, Uint8Array>(); // pre-split merged thumbnails, held until Confirm
 let totalEditCell: { row: number; col: number } | null = null;  // 0-based, active overlay
 let totalEditPrev = 0;
 let reviewErrorCells = new Set<string>(); // "row,col" keys — cages failing Confirm validation
@@ -1287,7 +1286,6 @@ function resetToUploadPanel(): void {
   reviewErrorCells = new Set();
   draftEdited = false;
   pendingCellThumbs = new Map();
-  pendingMergedThumbs = new Map();
   el<HTMLElement>('upload-panel').hidden = false;
   el<HTMLElement>('review-panel').hidden = true;
   el<HTMLElement>('solution-panel').hidden = true;
@@ -1343,10 +1341,9 @@ async function handleProcess(file?: File): Promise<void> {
   try {
     const uploadResult = await uploadPuzzle(f);
     parseDoneMs = Date.now();
-    const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs, detectedBigApple } = uploadResult;
+    const { state, warpedImageUrl, warning, cellThumbs, detectedBigApple } = uploadResult;
     const specHash = await computeSpecHash(state);
     pendingCellThumbs = new Map(cellThumbs);
-    pendingMergedThumbs = new Map(mergedThumbs);
 
     // Initialise draft borders from the OCR result (used in both paths below).
     const ocrSpec = PuzzleState.isKiller(state) ? dataToSpec(state.specData) : classicSyntheticSpec();
@@ -1416,8 +1413,7 @@ async function handleProcess(file?: File): Promise<void> {
           if (autoViolation !== null) showAssertionModal(autoViolation);
           el<HTMLButtonElement>('edit-ocr-btn').hidden = false;
           pendingCellThumbs = new Map();
-          pendingMergedThumbs = new Map();
-          setStatus('');
+                  setStatus('');
           if (usedBacktracking && stalledCandidates && state.originalImageUrl !== null) {
             const stallReport = { puzzleType: 'killer' as const, stalledCandidates };
             if (hasConsent()) {
@@ -1587,7 +1583,6 @@ function validateCurrentReview(): string | null {
 
 function clearAndUploadTrainingData(data: TrainingExport | null): void {
   pendingCellThumbs = new Map();
-  pendingMergedThumbs = new Map();
   if (data !== null && data.sampleCount > 0) {
     initiateUpload(data, d => showTrainingConsentModal(() => uploadTrainingData(d)));
   }
@@ -1675,7 +1670,6 @@ async function handleConfirm(): Promise<void> {
         state.specData.cageTotals,
         'killer',
         defaultImagePipelineConfig().numberRecognition.subres,
-        pendingMergedThumbs,
       ));
     } else if (!PuzzleState.isKiller(state) && state.givenDigits !== null) {
       clearAndUploadTrainingData(extractTrainingData(
@@ -2214,7 +2208,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       '  3. Stale service worker — Application > Storage > Clear site data, then reload');
   }, 30_000);
 
-  void Promise.all([cvWithProgress, loadRec(), loadSplitRec()])
+  void Promise.all([cvWithProgress, loadRec()])
     .then(() => {
       clearTimeout(loadTimeout);
       (window as unknown as Record<string, unknown>)['__pipelineReady'] = true;

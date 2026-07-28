@@ -112,13 +112,7 @@ TEMPLATE_THRESHOLD = 0.85
 VARIANCE_THRESHOLD = 0.99  # cumulative explained-variance target for PCA dims
 DITHER_BATCH_SIZE = 4096
 
-# HOG descriptor parameters -- identical values used in cv.HOGDescriptor (TypeScript).
-# Not used by this file's own PCA+RBF pipeline (fit_model/build_dataset below project
-# raw pixels, not HOG features) -- kept here as shared utilities because
-# web/train_split_recogniser.py (a separate 1-vs-2-digit binary classifier, unrelated
-# to the num_recogniser digit model this file trains) and
-# web/scripts/compare-recognisers.py still import extract_hog/extract_hole_features
-# from this module.
+# HOG descriptor parameters exported with the active model. The browser reads these\n# values and uses the matching cv.HOGDescriptor configuration for inference.
 HOG_WIN_SIZE     = 64
 HOG_CELL_SIZE    = 8
 HOG_BLOCK_SIZE   = 16
@@ -324,15 +318,6 @@ class HogRecogniser(NumRecogniser):
 
 ACTIVE_RECOGNISER: NumRecogniser = HogRecogniser()  # the one line that decides everything
 
-
-# ---------------------------------------------------------------------------
-# Shared feature-extraction utilities -- HOG + hole-count features.
-#
-# Unused by this file's own PCA+RBF pipeline (see note on the HOG_* constants
-# above); kept for web/train_split_recogniser.py and
-# web/scripts/compare-recognisers.py, which import extract_hog/
-# extract_hole_features from this module.
-# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # I/O -- loading

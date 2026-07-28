@@ -334,11 +334,7 @@ the digit's natural aspect ratio is preserved and it is centred with black lette
 bars on the narrower axis, rather than stretched to fill the square (the previous
 `squarePadSrc` approach centred the rect in a square *before* warping, which is
 equivalent for single digits but interacted badly with multi-digit splits; see Classic
-digit reading below for the shared rationale). `splitNum` decides whether a raw
-contour represents one or two digits via a secondary split-recogniser classifier (ink
-projection minimum as a non-ML fallback when no split-recogniser is loaded); each
-resulting half is independently `letterboxWarp`-ed. The pre-split merged thumbnail
-(fed to the split-recogniser) remains tight-crop, unwarped.
+digit reading below for the shared rationale). `splitNum` decides whether a raw contour represents one or two digits from the\ncolumn-wise topmost-ink-row profile and the last valid inter-glyph peak. It validates\nboth halves with `contourIsNumber`; no secondary model or fallback branch participates.\nEach selected rectangle is independently `letterboxWarp`-ed, and no pre-split merged\nthumbnail is produced or threaded through training export.
 
 HOG features are extracted via `cv.HOGDescriptor` (OpenCV.js) with a 64 px window,
 8 px cells, 16 px blocks, and 9 orientation bins — producing a 1764-dimensional vector.
@@ -355,7 +351,7 @@ the read's confidence, flagged uncertain below 0.7.
 
 ```mermaid
 flowchart TD
-    A[contour candidates from Stage 3\nbinary blk + M] --> B[splitNum:\nsplit-recogniser decides 1 vs 2 digits\nink-projection-minimum fallback]
+    A[contour candidates from Stage 3\nbinary blk + M] --> B[splitNum:\ntop-ink profile finds a valid\ninter-digit gap]
     B --> C[letterboxWarp each rect\nto 64x64 thumbnail, aspect preserved]
     C --> D[hogExtract:\ncv.HOGDescriptor 64px/8c/16b/9bins\n-> 1764-dim vector]
     C --> E[extractHoleFeatures:\nBFS flood-fill from border\n-> 5-dim vector]

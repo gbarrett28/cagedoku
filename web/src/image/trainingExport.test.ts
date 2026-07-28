@@ -47,28 +47,6 @@ describe('extractTrainingData', () => {
     warn.mockRestore();
   });
 
-  it('populates splitSamples when mergedThumbs is provided', () => {
-    const px1 = new Uint8Array(64 * 64).fill(10);
-    const px2 = new Uint8Array(64 * 64).fill(20);
-    const merged = new Uint8Array(64 * 64).fill(99);
-    const thumbs = new Map([['0,3', [px1, px2]]]);
-    const mergedThumbs = new Map([['0,3', merged]]);
-    const exp = extractTrainingData(thumbs, cageGrid(0, 3, 15), 'killer', 28, mergedThumbs);
-    const splits = exp.splitSamples ?? [];
-    expect(splits).toHaveLength(1);
-    expect(splits[0]!.splitCount).toBe(2);
-    expect(splits[0]!.pixels).toHaveLength(64 * 64);
-  });
-
-  it('single-digit cells with mergedThumbs get splitCount 1', () => {
-    const px = new Uint8Array(64 * 64).fill(5);
-    const merged = new Uint8Array(64 * 64).fill(5);
-    const thumbs = new Map([['0,0', [px]]]);
-    const mergedThumbs = new Map([['0,0', merged]]);
-    const exp = extractTrainingData(thumbs, cageGrid(0, 0, 7), 'killer', 28, mergedThumbs);
-    expect((exp.splitSamples ?? [])[0]!.splitCount).toBe(1);
-  });
-
   it('passes puzzleType and subres through', () => {
     const exp = extractTrainingData(new Map(), cageGrid(0, 0, 0), 'classic', 32);
     expect(exp.puzzleType).toBe('classic');

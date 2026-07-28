@@ -101,6 +101,22 @@ test('page loads with correct title and upload panel visible', async ({ page }) 
   await expect(page.locator('#choose-btn')).toBeVisible();
 });
 
+test('startup does not request an unused split recogniser', async ({ page }) => {
+  test.setTimeout(8_000);
+  const requestedPaths: string[] = [];
+  page.on('request', request => {
+    requestedPaths.push(new URL(request.url()).pathname);
+  });
+
+  await stubOpenCV(page);
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(
+    () => (window as unknown as Record<string, unknown>)['__pipelineReady'] === true,
+  );
+
+  expect(requestedPaths.filter(requestPath => requestPath.includes('split_recogniser'))).toEqual([]);
+});
+
 // ---------------------------------------------------------------------------
 // Test: hint-pill DOM placement  (fast — structural only)
 // ---------------------------------------------------------------------------

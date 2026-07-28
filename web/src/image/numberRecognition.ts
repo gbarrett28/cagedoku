@@ -881,14 +881,8 @@ export function splitNum(
   br: BRect,
   warpedBlk: OpenCVMat,
   subres: number,
-): [Uint8Array[], Uint8Array, number, number] {
+): [Uint8Array[], number, number] {
   const [x, y, w, h] = br;
-
-  // Always warp the full bounding rect to 64×64 — returned as the merged
-  // thumbnail for training export (not used for the split decision itself,
-  // unlike the earlier classifier-based approach this replaces).
-  const fullSrc = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
-  const mergedThumb = getWarpFromRect(cv, fullSrc, warpedBlk);
 
   // Peak detection on the column-wise topmost-ink-row profile: a gap between
   // two digit glyphs shows up as a peak (the profile dips down — less ink
@@ -917,7 +911,7 @@ export function splitNum(
     rec.warpForRecognition(cv, warpedBlk, [xl, yt, xr - xl, yb - yt], halfRes),
   );
 
-  return [thumbs, mergedThumb, x, y];
+  return [thumbs, x, y];
 }
 
 /**

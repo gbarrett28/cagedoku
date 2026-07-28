@@ -67,11 +67,11 @@ hog_features, hole_features, prediction
 
 **Files:** `web/src/main.ts`, `web/src/session/store.ts`, `web/src/image/inpImage.ts`, their tests, `web/e2e/app.spec.ts`, `pyproject.toml`, current image/inventory docs; delete `web/train_split_recogniser.py` and `web/public/split_recogniser.{bin,json}`.
 
-1. Add a Playwright regression test that records requests during startup and asserts no path contains `split_recogniser`.
-2. Confirm it fails because startup loads the assets.
-3. Remove `loadSplitRec`, `_splitRec`, `_splitRecLoading`, `getSplitRec`, and the unused `parsePuzzleImage` parameter.
-4. Delete the trainer/assets and their packaging/docs references. Leave the retained ink-profile `splitNum` algorithm unchanged.
-5. Run:
+- [x] Add a Playwright regression test that records requests during startup and asserts no path contains `split_recogniser`.
+- [x] Confirm it fails because startup loads the assets.
+- [x] Remove `loadSplitRec`, `_splitRec`, `_splitRecLoading`, `getSplitRec`, and the unused `parsePuzzleImage` parameter.
+- [x] Delete the trainer/assets and their packaging/docs references. Leave the retained ink-profile `splitNum` algorithm unchanged.
+- [x] Run:
 
 ```bash
 cd web
@@ -83,7 +83,7 @@ bash scripts/run-bronze-gate.sh
 bash scripts/run-silver-gate.sh
 ```
 
-6. Commit: `refactor: remove unused split recogniser`.
+- [x] Commit: `refactor: remove unused split recogniser`.
 
 **Done when:** startup does not request or retain any split-recogniser model state and both gates pass.
 
