@@ -95,18 +95,18 @@ bash scripts/run-silver-gate.sh
 
 **Files:** `web/src/image/numberRecognition.ts`, `web/src/image/inpImage.ts`, their tests and directly affected result types.
 
-1. Add failing tests for `extractRawDigitCrop(cv, warpedGrid, rect)` using a known non-square ROI. Cover non-positive and out-of-bounds rectangles.
-2. Add failing parity tests for `warpRawDigitCrop(cv, crop, 'stretch'|'letterbox', 64)` against the current production recognition thumbnails.
-3. Implement `RawDigitCrop`, `WarpStrategy`, `extractRawDigitCrop`, and `warpRawDigitCrop`. Reuse the current TypeScript/OpenCV.js destination geometry; do not create a second warp implementation.
-4. Refactor classic `readClassicDigits` and killer `splitNum` to extract once and return both raw source crop and canonical recognition thumbnail. Maintain exact alignment with recognitions and `digitIndex`.
-5. Thread `cellSourceCrops: ReadonlyMap<string, readonly RawDigitCrop[]>` through `ParseResult` and the immediate callers. Assert for every key:
+- [x] Add failing tests for `extractRawDigitCrop(cv, warpedGrid, rect)` using a known non-square ROI. Cover non-positive and out-of-bounds rectangles.
+- [x] Add failing parity tests for `warpRawDigitCrop(cv, crop, 'stretch'|'letterbox', 64)` against the current production recognition thumbnails.
+- [x] Implement `RawDigitCrop`, `WarpStrategy`, `extractRawDigitCrop`, and `warpRawDigitCrop`. Reuse the current TypeScript/OpenCV.js destination geometry; do not create a second warp implementation.
+- [x] Refactor classic `readClassicDigits` and killer `splitNum` to extract once and return both raw source crop and canonical recognition thumbnail. Maintain exact alignment with recognitions and `digitIndex`.
+- [x] Thread `cellSourceCrops: ReadonlyMap<string, readonly RawDigitCrop[]>` through `ParseResult` and the immediate callers. Assert for every key:
 
 ```ts
 sourceCrops.length === cellThumbs.length
 sourceCrops.length === cellRecognitions.length
 ```
 
-6. Run focused tests, then both gates:
+- [x] Run focused tests, then both gates:
 
 ```bash
 cd web
@@ -116,7 +116,7 @@ bash scripts/run-bronze-gate.sh
 bash scripts/run-silver-gate.sh
 ```
 
-7. Commit: `feat: retain raw digit crops before recognition warping`.
+- [x] Commit: `feat: retain raw digit crops before recognition warping`.
 
 **Done when:** production still recognises the same thumbnails, while every recognised digit also exposes its untouched bounding-box pixels from the warped grid.
 

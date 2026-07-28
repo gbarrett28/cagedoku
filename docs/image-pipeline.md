@@ -334,7 +334,17 @@ the digit's natural aspect ratio is preserved and it is centred with black lette
 bars on the narrower axis, rather than stretched to fill the square (the previous
 `squarePadSrc` approach centred the rect in a square *before* warping, which is
 equivalent for single digits but interacted badly with multi-digit splits; see Classic
-digit reading below for the shared rationale). `splitNum` decides whether a raw contour represents one or two digits from the\ncolumn-wise topmost-ink-row profile and the last valid inter-glyph peak. It validates\nboth halves with `contourIsNumber`; no secondary model or fallback branch participates.\nEach selected rectangle is independently `letterboxWarp`-ed, and no pre-split merged\nthumbnail is produced or threaded through training export.
+digit reading below for the shared rationale). `splitNum` decides whether a raw contour represents one or two digits from the
+column-wise topmost-ink-row profile and the last valid inter-glyph peak. It validates
+both halves with `contourIsNumber`; no secondary model or fallback branch participates.
+Each selected rectangle is independently `letterboxWarp`-ed, and no pre-split merged
+thumbnail is produced or threaded through training export.
+
+Before either recognition warp, `extractRawDigitCrop` copies the exact bounding-box
+pixels from the warped binary grid into a `RawDigitCrop`. `warpRawDigitCrop` then applies
+the recogniser's named `stretch` or `letterbox` strategy using the shared production
+perspective-warp geometry. `ParseResult.cellSourceCrops` retains those strategy-neutral
+pixels in the same per-cell order as `cellThumbs` and the recognition results.
 
 HOG features are extracted via `cv.HOGDescriptor` (OpenCV.js) with a 64 px window,
 8 px cells, 16 px blocks, and 9 orientation bins — producing a 1764-dimensional vector.
@@ -409,11 +419,11 @@ const offX = ((64 - 1) - destW) / 2, offY = ((64 - 1) - destH) / 2;
 // dest quad: [[offX,offY],[offX+destW,offY],[offX+destW,offY+destH],[offX,offY+destH]]
 ```
 
-**Return value:** `{ digits: number[][]; thumbs: Map<string, Uint8Array[]> }`
+**Return value:** `{ digits; thumbs; sourceCrops; recognitions }`
 
-`thumbs` is keyed `"r,c"` (0-indexed) and maps each cell to a single-element
-thumbnail array, making it directly compatible with `extractTrainingData` so
-confirmed classic puzzles upload letterboxed training samples automatically.
+`thumbs` and `sourceCrops` are keyed `"r,c"` (0-indexed), with one aligned entry per
+given digit. The raw source crop remains available for later training strategies while
+the thumbnail records the exact deployed recogniser input.
 
 **Training pipeline note:** `letterbox_warp` in both `train_recogniser.py` and
 `extract_guardian_samples.py` mirrors this exact formula, so training and

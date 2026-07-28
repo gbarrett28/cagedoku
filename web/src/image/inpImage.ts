@@ -30,7 +30,7 @@ import type { GrayImage } from './borderClustering.js';
 import {
   splitNum, contourHier, getNumContours, readClassicDigits, activeRecogniser,
 } from './numberRecognition.js';
-import type { Recognition } from './numberRecognition.js';
+import type { RawDigitCrop, Recognition } from './numberRecognition.js';
 import { validateCageLayout, buildLenientCageLayout } from './validation.js';
 import { buildBrdrs } from '../solver/puzzleSpec.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
@@ -71,6 +71,8 @@ export interface ParseResult {
   warpedImageData: ImageData | null;
   /** Post-split thumbnails for the digit recogniser, keyed "row,col". */
   cellThumbs: ReadonlyMap<string, Uint8Array[]>;
+  /** Untouched bounding-box pixels from the warped grid, aligned with cellThumbs. */
+  cellSourceCrops: ReadonlyMap<string, readonly RawDigitCrop[]>;
   /** Recognition (incl. runner-up) for each classic given-digit cell, keyed "row,col". */
   classicRecognitions?: ReadonlyMap<string, import('./numberRecognition.js').Recognition> | undefined;
   /** Recognition for each cage-total digit crop, keyed "row,col", array order matching cellThumbs. Killer only. */
@@ -214,8 +216,12 @@ export async function parsePuzzleImage(
 
   // --- Classic path ---
   if (puzzleType === 'classic') {
-    const { digits: givenDigits, thumbs: classicThumbs, recognitions: classicRecognitions } =
-      readClassicDigits(cv, warpedBlkMat, subres, classicConf);
+    const {
+      digits: givenDigits,
+      thumbs: classicThumbs,
+      sourceCrops: classicSourceCrops,
+      recognitions: classicRecognitions,
+    } = readClassicDigits(cv, warpedBlkMat, subres, classicConf);
 
     warpedGryMat.delete(); warpedBlkMat.delete();
 
@@ -233,7 +239,17 @@ export async function parsePuzzleImage(
     } catch (err) {
       specError = String(err);
     }
-    return { spec, specError, fallbackUsed: false, puzzleType: 'classic', givenDigits, warpedImageData: warpedImgData, cellThumbs: classicThumbs, classicRecognitions };
+    return {
+      spec,
+      specError,
+      fallbackUsed: false,
+      puzzleType: 'classic',
+      givenDigits,
+      warpedImageData: warpedImgData,
+      cellThumbs: classicThumbs,
+      cellSourceCrops: classicSourceCrops,
+      classicRecognitions,
+    };
   }
 
   // --- Killer path: Stage 4 anchored border clustering ---
@@ -251,6 +267,7 @@ export async function parsePuzzleImage(
 
   let cageTotals: number[][] | null = null;
   let cellThumbs = new Map<string, Uint8Array[]>();
+  let cellSourceCrops = new Map<string, RawDigitCrop[]>();
   let cellRecognitions = new Map<string, Recognition[]>();
   let lastCageTotalsResult: CageTotalsResult | null = null;
   let fallbackUsed = false;
@@ -259,7 +276,7 @@ export async function parsePuzzleImage(
     lastCageTotalsResult = buildCageTotals(
       cv, warpedBlkMat, subres, brdrs,
     );
-    ({ cageTotals, cellThumbs, cellRecognitions } = lastCageTotalsResult);
+    ({ cageTotals, cellThumbs, cellSourceCrops, cellRecognitions } = lastCageTotalsResult);
   } catch (e) {
     console.warn('[parsePuzzleImage] buildCageTotals failed, proceeding with initial border estimate', e);
   }
@@ -303,7 +320,7 @@ export async function parsePuzzleImage(
       lastCageTotalsResult = buildCageTotals(
         cv, warpedBlkMat, subres, brdrs2,
       );
-      ({ cageTotals, cellThumbs, cellRecognitions } = lastCageTotalsResult);
+      ({ cageTotals, cellThumbs, cellSourceCrops, cellRecognitions } = lastCageTotalsResult);
 
       const totalSum = cageTotals.reduce((s, row) => s + row.reduce((a, b) => a + b, 0), 0);
       if (totalSum < 360 || totalSum > 450) {
@@ -318,7 +335,7 @@ export async function parsePuzzleImage(
           lastCageTotalsResult = buildCageTotals(
             cv, adaptiveBlk, subres, brdrs2,
           );
-          ({ cageTotals, cellThumbs, cellRecognitions } = lastCageTotalsResult);
+          ({ cageTotals, cellThumbs, cellSourceCrops, cellRecognitions } = lastCageTotalsResult);
           fallbackUsed = true;
         } finally {
           adaptiveBlk.delete();
@@ -347,6 +364,7 @@ export async function parsePuzzleImage(
       givenDigits,
       warpedImageData: warpedImgData,
       cellThumbs: new Map(),
+      cellSourceCrops: new Map(),
       classicRecognitions,
       cageTotalRecognitions: new Map(),
     };
@@ -377,7 +395,16 @@ export async function parsePuzzleImage(
   }
 
   return {
-    spec, specError, fallbackUsed, puzzleType: 'killer', givenDigits, warpedImageData: warpedImgData, cellThumbs, classicRecognitions, cageTotalRecognitions: cellRecognitions,
+    spec,
+    specError,
+    fallbackUsed,
+    puzzleType: 'killer',
+    givenDigits,
+    warpedImageData: warpedImgData,
+    cellThumbs,
+    cellSourceCrops,
+    classicRecognitions,
+    cageTotalRecognitions: cellRecognitions,
   };
 }
 
@@ -395,6 +422,8 @@ export interface CageTotalsResult {
   cageTotals: number[][];
   /** Post-split thumbnails presented to the digit recogniser, keyed "row,col". */
   cellThumbs: Map<string, Uint8Array[]>;
+  /** Untouched bounding-box pixels from the warped grid, aligned with cellThumbs. */
+  cellSourceCrops: Map<string, RawDigitCrop[]>;
   /** Recognition for each cage-total digit crop, keyed "row,col", array order matching cellThumbs. */
   cellRecognitions: Map<string, Recognition[]>;
 }
@@ -407,6 +436,9 @@ export function buildCageTotals(
 ): CageTotalsResult {
   const numPixels: Array<Array<Uint8Array[] | null>> = Array.from(
     { length: 9 }, () => new Array<Uint8Array[] | null>(9).fill(null),
+  );
+  const sourceCrops: Array<Array<RawDigitCrop[] | null>> = Array.from(
+    { length: 9 }, () => new Array<RawDigitCrop[] | null>(9).fill(null),
   );
 
   const contours = new cv.MatVector();
@@ -431,15 +463,18 @@ export function buildCageTotals(
       if (col < 0 || col >= 9 || row < 0 || row >= 9) continue;
 
       let numThumbArr: Uint8Array[];
+      let sourceCropArr: RawDigitCrop[];
       try {
-        [numThumbArr] = splitNum(cv, br, warpedBlk, subres);
+        [numThumbArr, sourceCropArr] = splitNum(cv, br, warpedBlk, subres);
       } catch (err) {
         console.warn('splitNum failed for contour', br, err);
         continue;
       }
 
       if (numPixels[row]![col] === null) numPixels[row]![col] = [];
+      if (sourceCrops[row]![col] === null) sourceCrops[row]![col] = [];
       numPixels[row]![col]!.push(...numThumbArr);
+      sourceCrops[row]![col]!.push(...sourceCropArr);
     }
   }
   contours.delete();
@@ -447,12 +482,20 @@ export function buildCageTotals(
 
   const cageTotals: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
   const cellThumbs = new Map<string, Uint8Array[]>();
+  const cellSourceCrops = new Map<string, RawDigitCrop[]>();
   const cellRecognitions = new Map<string, Recognition[]>();
   for (let row = 0; row < 9; row++) {
     for (let col = 0; col < 9; col++) {
       const sums = numPixels[row]![col]!;
       if (sums !== null) {
+        const crops = sourceCrops[row]![col] ?? null;
         const ntrs = activeRecogniser().recognise(sums);
+        const key = `${row},${col}`;
+        if (crops === null || crops.length !== sums.length || ntrs.length !== sums.length) {
+          throw new Error(
+            `Digit evidence misaligned for ${key}: crops=${crops?.length ?? 0}, thumbnails=${sums.length}, recognitions=${ntrs.length}`,
+          );
+        }
         if (ntrs.length > 4) {
           throw new ProcessingError(
             `Too many digits (${ntrs.length}) in cell (row=${row},col=${col})`,
@@ -464,13 +507,14 @@ export function buildCageTotals(
           if (!confident) console.warn(`Low-confidence digit read in (row=${row},col=${col})`);
           if (label >= 0) cageTotals[row]![col] = 10 * cageTotals[row]![col]! + label;
         }
-        cellThumbs.set(`${row},${col}`, sums);
-        cellRecognitions.set(`${row},${col}`, ntrs);
+        cellThumbs.set(key, sums);
+        cellSourceCrops.set(key, crops);
+        cellRecognitions.set(key, ntrs);
       }
     }
   }
   return {
-    cageTotals, cellThumbs, cellRecognitions,
+    cageTotals, cellThumbs, cellSourceCrops, cellRecognitions,
   };
 }
 

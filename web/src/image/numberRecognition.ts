@@ -23,6 +23,17 @@ type Cv = OpenCVModule;
 /** Bounding rect as [x, y, width, height]. */
 export type BRect = [number, number, number, number];
 
+/** Exact bounding-box pixels copied from the warped grid before any resize. */
+export interface RawDigitCrop {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly pixels: Uint8Array;
+}
+
+export type WarpStrategy = 'stretch' | 'letterbox';
+
 /** Node in the OpenCV contour hierarchy tree. */
 export type ContourInfo = [br: BRect, children: ContourInfo[]];
 
@@ -236,11 +247,17 @@ function rbfPredictWithConfidence(clf: RBFClassifier, x: Float64Array, nSamples:
 
 export abstract class NumRecogniser {
   constructor(readonly confidenceThreshold: number) {}
+  abstract readonly warpStrategy: WarpStrategy;
   abstract recognise(imgs: Uint8Array[]): Recognition[];
-  abstract warpForRecognition(cv: Cv, warpedBlk: OpenCVMat, br: BRect, targetSize: number): Uint8Array;
+
+  warpForRecognition(cv: Cv, crop: RawDigitCrop, targetSize: number): Uint8Array {
+    return warpRawDigitCrop(cv, crop, this.warpStrategy, targetSize);
+  }
 }
 
 export class PcaRbfRecogniser extends NumRecogniser {
+  readonly warpStrategy = 'stretch' as const;
+
   constructor(
     private readonly pca: PCAParams,
     private readonly classifier: RBFClassifier,
@@ -302,14 +319,11 @@ export class PcaRbfRecogniser extends NumRecogniser {
     return results;
   }
 
-  warpForRecognition(cv: Cv, warpedBlk: OpenCVMat, br: BRect, targetSize: number): Uint8Array {
-    const [x, y, w, h] = br;
-    const src = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
-    return getWarpFromRect(cv, src, warpedBlk, targetSize, targetSize);
-  }
 }
 
 export class HogRecogniser extends NumRecogniser {
+  readonly warpStrategy = 'letterbox' as const;
+
   constructor(
     private readonly hog: HOGParams,
     private readonly classifier: Classifier,
@@ -334,10 +348,6 @@ export class HogRecogniser extends NumRecogniser {
     return rbfPredictWithConfidence(classifier, x, n, confidenceThreshold);
   }
 
-  warpForRecognition(cv: Cv, warpedBlk: OpenCVMat, br: BRect, targetSize: number): Uint8Array {
-    const [x, y, w, h] = br;
-    return letterboxWarp(cv, x, y, w, h, warpedBlk, targetSize, targetSize);
-  }
 }
 
 /**
@@ -773,6 +783,62 @@ export function getWarpFromRect(
   return data;
 }
 
+
+/** Copy an untouched digit bounding box from the already-warped puzzle grid. */
+export function extractRawDigitCrop(
+  cv: Cv,
+  warpedGrid: OpenCVMat,
+  rect: readonly [x: number, y: number, width: number, height: number],
+): RawDigitCrop {
+  const [x, y, width, height] = rect;
+  if (width <= 0 || height <= 0) {
+    throw new Error(`extractRawDigitCrop: dimensions must be positive, got [${rect.join(',')}]`);
+  }
+  if (x < 0 || y < 0 || x + width > warpedGrid.cols || y + height > warpedGrid.rows) {
+    throw new Error(
+      `extractRawDigitCrop: rectangle [${rect.join(',')}] is outside grid bounds ${warpedGrid.cols}x${warpedGrid.rows}`,
+    );
+  }
+
+  const roi = warpedGrid.roi(new cv.Rect(x, y, width, height));
+  const contiguous = roi.clone();
+  roi.delete();
+  const pixels = new Uint8Array(contiguous.data);
+  contiguous.delete();
+  return { x, y, width, height, pixels };
+}
+
+/** Apply one named production warp to a strategy-neutral raw digit crop. */
+export function warpRawDigitCrop(
+  cv: Cv,
+  crop: RawDigitCrop,
+  strategy: WarpStrategy,
+  targetSize: number = 64,
+): Uint8Array {
+  if (crop.width <= 0 || crop.height <= 0) {
+    throw new Error(`warpRawDigitCrop: crop dimensions must be positive, got ${crop.width}x${crop.height}`);
+  }
+  if (crop.pixels.length !== crop.width * crop.height) {
+    throw new Error(
+      `warpRawDigitCrop: expected ${crop.width * crop.height} pixels, got ${crop.pixels.length}`,
+    );
+  }
+  if (targetSize <= 0) {
+    throw new Error(`warpRawDigitCrop: target size must be positive, got ${targetSize}`);
+  }
+
+  const source = cv.matFromArray(crop.height, crop.width, cv.CV_8UC1, Array.from(crop.pixels));
+  try {
+    if (strategy === 'stretch') {
+      const src = [[0, 0], [crop.width, 0], [crop.width, crop.height], [0, crop.height]];
+      return getWarpFromRect(cv, src, source, targetSize, targetSize);
+    }
+    return letterboxWarp(cv, 0, 0, crop.width, crop.height, source, targetSize, targetSize);
+  } finally {
+    source.delete();
+  }
+}
+
 /**
  * Aspect-preserving warp: fits the source rect into resH×resW with letterbox
  * padding (centered, background-filled) rather than direct-stretch.
@@ -881,7 +947,7 @@ export function splitNum(
   br: BRect,
   warpedBlk: OpenCVMat,
   subres: number,
-): [Uint8Array[], number, number] {
+): [Uint8Array[], RawDigitCrop[], number, number] {
   const [x, y, w, h] = br;
 
   // Peak detection on the column-wise topmost-ink-row profile: a gap between
@@ -907,11 +973,12 @@ export function splitNum(
 
   const halfRes = subres >> 1;
   const rec = activeRecogniser();
-  const thumbs = rects.map(([yt, yb, xl, xr]) =>
-    rec.warpForRecognition(cv, warpedBlk, [xl, yt, xr - xl, yb - yt], halfRes),
+  const sourceCrops = rects.map(([yt, yb, xl, xr]) =>
+    extractRawDigitCrop(cv, warpedBlk, [xl, yt, xr - xl, yb - yt]),
   );
+  const thumbs = sourceCrops.map(crop => rec.warpForRecognition(cv, crop, halfRes));
 
-  return [thumbs, x, y];
+  return [thumbs, sourceCrops, x, y];
 }
 
 /**
@@ -937,12 +1004,18 @@ export function readClassicDigits(
   warpedBlk: OpenCVMat,
   subres: number,
   classicConf: number[][],
-): { digits: number[][]; thumbs: Map<string, Uint8Array[]>; recognitions: Map<string, Recognition> } {
+): {
+  digits: number[][];
+  thumbs: Map<string, Uint8Array[]>;
+  sourceCrops: Map<string, RawDigitCrop[]>;
+  recognitions: Map<string, Recognition>;
+} {
   const rec = activeRecogniser();
   const half = subres >> 1;
   const margin = subres >> 2;
   const digits: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
   const thumbs = new Map<string, Uint8Array[]>();
+  const sourceCrops = new Map<string, RawDigitCrop[]>();
   const recognitions = new Map<string, Recognition>();
 
   for (let r = 0; r < 9; r++) {
@@ -982,16 +1055,19 @@ export function readClassicDigits(
 
       const ax = x0 + br.x;
       const ay = y0 + br.y;
-      const thumb = rec.warpForRecognition(cv, warpedBlk, [ax, ay, br.width, br.height], half);
+      const sourceCrop = extractRawDigitCrop(cv, warpedBlk, [ax, ay, br.width, br.height]);
+      const thumb = rec.warpForRecognition(cv, sourceCrop, half);
       const [rec0] = rec.recognise([thumb]);
       const d = rec0!.label;
       if (d > 0) {
+        const key = `${r},${c}`;
         digits[r]![c] = d;
-        thumbs.set(`${r},${c}`, [thumb]);
-        recognitions.set(`${r},${c}`, rec0!);
+        thumbs.set(key, [thumb]);
+        sourceCrops.set(key, [sourceCrop]);
+        recognitions.set(key, rec0!);
       }
     }
   }
 
-  return { digits, thumbs, recognitions };
+  return { digits, thumbs, sourceCrops, recognitions };
 }

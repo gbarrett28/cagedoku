@@ -1092,6 +1092,7 @@ describe('buildCandidatesFromParseResult', () => {
       givenDigits: blankGivenDigits,
       warpedImageData: null,
       cellThumbs: new Map(),
+      cellSourceCrops: new Map(),
     };
   }
 
