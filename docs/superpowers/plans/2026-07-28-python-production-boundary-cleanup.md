@@ -386,13 +386,13 @@ def warp_crops(crops, strategy: Literal['stretch', 'letterbox'], size: int = 64)
 
 **Files:** `web/scripts/ts-bridge.ts`, `killer_sudoku/training/ts_bridge.py`, tests, `web/train_recogniser.py`; delete `web/dedupe_browser_train.py` and test.
 
-1. Confirm `predict` and `solve` have no callers after the deletion sprints.
-2. Delete those bridge operations, payload types, model-path arguments, and tests. Retain only `warp-crops` and `extract-features`.
-3. Add ingestion deduplication after all sources are merged and before weighting/dithering. Key raw samples by label, kind, width, height, and bytes; key canonical legacy samples additionally by declared strategy. First occurrence wins; different labels are not merged.
-4. Delete the standalone dedupe script/tests.
-5. Verify `--op predict` and `--op solve` fail as unknown operations.
-6. Run bridge/trainer tests and bronze.
-7. Commit: `refactor: narrow bridge to production warp and features`.
+- [x] 1. Confirm `predict` and `solve` have no callers after the deletion sprints.
+- [x] 2. Delete those bridge operations, payload types, model-path arguments, and tests. Retain only `warp-crops` and `extract-features`.
+- [x] 3. Add ingestion deduplication after all sources are merged and before weighting/dithering. Key raw samples by label, kind, width, height, and bytes; key canonical legacy samples additionally by declared strategy. First occurrence wins; different labels are not merged.
+- [x] 4. Delete the standalone dedupe script/tests.
+- [x] 5. Verify `--op predict` and `--op solve` fail as unknown operations.
+- [x] 6. Run bridge/trainer tests and bronze.
+- [x] 7. Commit: `refactor: narrow bridge to production warp and features`.
 
 **Done when:** the bridge exposes exactly the two production-math operations required by training.
 

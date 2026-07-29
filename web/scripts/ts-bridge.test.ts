@@ -1,7 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { makeTrivialSpec, KNOWN_SOLUTION } from '../src/engine/fixtures.js';
 import { warpRawDigitCrop } from '../src/image/numberRecognition.js';
 import type { OpenCVModule } from '../src/image/opencv.js';
 import { loadNodeOpenCv } from './node-opencv.js';
@@ -70,32 +69,8 @@ describe('ts-bridge --op warp-crops', () => {
   );
 });
 
-describe('ts-bridge --op predict', () => {
-  it('returns a prediction per crop using the currently deployed model', () => {
-    const blank = new Array(64 * 64).fill(0);
-    const payload = JSON.stringify({ crops: [blank] });
-    const out = runBridge(
-      ['--op', 'predict',
-       '--model-bin', path.resolve(__dirname, '../public/num_recogniser.bin'),
-       '--model-json', path.resolve(__dirname, '../public/num_recogniser.json')],
-      payload,
-    );
-    const parsed = JSON.parse(out) as { predictions: Array<{ label: number; confident: boolean }> };
-    expect(parsed.predictions).toHaveLength(1);
-    expect(typeof parsed.predictions[0]!.label).toBe('number');
-  });
-});
-
-describe('ts-bridge --op solve', () => {
-  it('solves a trivial (one cell per cage) spec using the real production solver', () => {
-    const spec = makeTrivialSpec();
-    const payload = JSON.stringify({
-      regions: spec.regions, cageTotals: spec.cageTotals,
-      borderX: spec.borderX, borderY: spec.borderY,
-    });
-    const out = runBridge(['--op', 'solve'], payload);
-    const parsed = JSON.parse(out) as { solved: boolean; board: number[][]; usedBacktracking: boolean };
-    expect(parsed.solved).toBe(true);
-    expect(parsed.board).toEqual(KNOWN_SOLUTION);
+describe('retired ts-bridge operations', () => {
+  it.each(['predict', 'solve'])('rejects --op %s as unknown', op => {
+    expect(() => runBridge(['--op', op], '{}')).toThrow('Unknown --op');
   });
 });

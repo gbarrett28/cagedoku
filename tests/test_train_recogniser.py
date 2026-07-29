@@ -22,6 +22,7 @@ from train_recogniser import (
     RawTrainingSample,
     build_dataset,
     canonicalize_samples,
+    deduplicate_training_samples,
     generate_synthetic_samples,
     load_overrides_file,
     load_training_file,
@@ -230,6 +231,38 @@ def test_canonicalize_samples_surfaces_ts_bridge_failure(monkeypatch: pytest.Mon
             [RawTrainingSample(8, np.ones((2, 3), dtype=np.uint8))],
             "letterbox",
         )
+
+
+def test_deduplicate_training_samples_uses_label_kind_geometry_and_strategy() -> None:
+    raw_pixels = np.arange(6, dtype=np.uint8)
+    raw_first = RawTrainingSample(4, raw_pixels.reshape(2, 3))
+    raw_duplicate = RawTrainingSample(4, raw_pixels.reshape(2, 3).copy())
+    raw_other_label = RawTrainingSample(5, raw_pixels.reshape(2, 3).copy())
+    raw_other_shape = RawTrainingSample(4, raw_pixels.reshape(3, 2).copy())
+    canonical_pixels = np.zeros((64, 64), dtype=np.uint8)
+    raw_square = RawTrainingSample(4, canonical_pixels.copy())
+    canonical_letterbox = CanonicalTrainingSample(4, canonical_pixels.copy(), "letterbox")
+    canonical_duplicate = CanonicalTrainingSample(4, canonical_pixels.copy(), "letterbox")
+    canonical_stretch = CanonicalTrainingSample(4, canonical_pixels.copy(), "stretch")
+
+    deduped = deduplicate_training_samples([
+        raw_first,
+        raw_duplicate,
+        raw_other_label,
+        raw_other_shape,
+        raw_square,
+        canonical_letterbox,
+        canonical_duplicate,
+        canonical_stretch,
+    ])
+
+    assert len(deduped) == 6
+    assert deduped[0] is raw_first
+    assert deduped[1] is raw_other_label
+    assert deduped[2] is raw_other_shape
+    assert deduped[3] is raw_square
+    assert deduped[4] is canonical_letterbox
+    assert deduped[5] is canonical_stretch
 
 
 _EXPECTED_HOG_KEYS = {

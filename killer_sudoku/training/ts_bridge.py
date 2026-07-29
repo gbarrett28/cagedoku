@@ -35,8 +35,8 @@ _BRIDGE_SCRIPT = _REPO_ROOT / "web" / "scripts" / "ts-bridge.ts"
 _BATCH_SIZE = 5000
 
 
-def _run_bridge(op: str, payload: dict[str, Any], extra_args: list[str] | None = None) -> dict[str, Any]:
-    args = ["npx", "tsx", str(_BRIDGE_SCRIPT), "--op", op, *(extra_args or [])]
+def _run_bridge(op: str, payload: dict[str, Any]) -> dict[str, Any]:
+    args = ["npx", "tsx", str(_BRIDGE_SCRIPT), "--op", op]
     result = subprocess.run(
         args,
         input=json.dumps(payload),
@@ -123,26 +123,3 @@ def extract_features(
     return np.concatenate(hog_chunks), np.concatenate(hole_chunks)
 
 
-def solve(payload: dict[str, Any]) -> dict[str, Any]:
-    """Pass a row-major puzzle payload to the TypeScript solver."""
-    return _run_bridge("solve", payload)
-
-
-def predict(
-    crops: Sequence[npt.NDArray[np.uint8]], model_bin: Path, model_json: Path,
-) -> list[dict[str, Any]]:
-    # Resolve relative to the repo root (not cwd) -- _run_bridge invokes the
-    # subprocess with cwd=web/, so a bare relative path like
-    # "web/public/num_recogniser.bin" would otherwise double up.
-    model_bin_abs = model_bin if model_bin.is_absolute() else (_REPO_ROOT / model_bin)
-    model_json_abs = model_json if model_json.is_absolute() else (_REPO_ROOT / model_json)
-    predictions: list[dict[str, Any]] = []
-    for i in range(0, len(crops), _BATCH_SIZE):
-        batch = crops[i : i + _BATCH_SIZE]
-        payload = {"crops": [c.flatten().tolist() for c in batch]}
-        out = _run_bridge(
-            "predict", payload,
-            extra_args=["--model-bin", str(model_bin_abs), "--model-json", str(model_json_abs)],
-        )
-        predictions.extend(out["predictions"])
-    return predictions

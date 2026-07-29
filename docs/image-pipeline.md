@@ -564,9 +564,10 @@ training can later compare those strategies without changing the crop.
 Multiple export files are merged into `web/browser_train.json` over time.
 Because nothing previously deduplicated these merges, the file accumulated many exact
 byte-identical repeats of the same crop (up to 65% of its 8362 samples, in one
-clean-up pass); `web/dedupe_browser_train.py` drops exact duplicates (keeping first
-occurrence) before training, since duplicates would otherwise be multiply-counted
-under `--browser-weight`.
+clean-up pass). `web/train_recogniser.py` now deduplicates all merged inputs before
+production warping, weighting, or dithering. The key includes label, raw/canonical kind,
+geometry, pixels, and (for canonical samples) warp strategy; the first occurrence wins,
+so a later duplicate cannot be multiply-counted under `--browser-weight`.
 
 ```mermaid
 flowchart LR
@@ -574,7 +575,7 @@ flowchart LR
     B --> C[user reviews +\ncorrects labels]
     C --> D[Export Training button\n-> browser_train.json]
     D --> E[merge into\nweb/browser_train.json]
-    E --> F[dedupe_browser_train.py\ndrop exact pixel duplicates]
+    E --> F[train_recogniser.py\ndedupe merged inputs before warp]
 ```
 
 **Historical bulk exports.** The archived Python newspaper extractor and pickle-cache

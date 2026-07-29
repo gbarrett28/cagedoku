@@ -467,6 +467,42 @@ def generate_synthetic_samples(
     return samples
 
 
+def deduplicate_training_samples(
+    samples: list[TrainingSample],
+) -> list[TrainingSample]:
+    """Keep the first exact input from the merged sources and discard later duplicates."""
+    seen: set[tuple[int, str, int, int, WarpStrategy | None, bytes]] = set()
+    deduplicated: list[TrainingSample] = []
+
+    for index, sample in enumerate(samples):
+        if sample.pixels.ndim != 2:
+            raise ValueError(
+                f"training sample {index} must have two-dimensional pixels, "
+                f"got {sample.pixels.shape}"
+            )
+        height, width = sample.pixels.shape
+        if isinstance(sample, RawTrainingSample):
+            sample_kind = "raw"
+            warp_strategy = None
+        else:
+            sample_kind = "canonical"
+            warp_strategy = sample.warp_strategy
+        key = (
+            sample.digit,
+            sample_kind,
+            width,
+            height,
+            warp_strategy,
+            sample.pixels.tobytes(order="C"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduplicated.append(sample)
+
+    return deduplicated
+
+
 def canonicalize_samples(
     samples: list[TrainingSample],
     strategy: WarpStrategy,
@@ -774,13 +810,27 @@ def main() -> None:
         synthetic_inputs = generate_synthetic_samples()
         print(f"{_elapsed()} Generated {len(synthetic_inputs)} synthetic samples", flush=True)
 
+    merged_inputs = browser_inputs + bulk_inputs + synthetic_inputs
+    deduplicated_inputs = deduplicate_training_samples(merged_inputs)
+    if len(deduplicated_inputs) != len(merged_inputs):
+        print(
+            f"{_elapsed()} Deduplicated merged inputs: "
+            f"{len(merged_inputs)} -> {len(deduplicated_inputs)} (first occurrence wins)",
+            flush=True,
+        )
+
+    retained_ids = {id(sample) for sample in deduplicated_inputs}
+    browser_inputs = [sample for sample in browser_inputs if id(sample) in retained_ids]
+    bulk_inputs = [sample for sample in bulk_inputs if id(sample) in retained_ids]
+    synthetic_inputs = [sample for sample in synthetic_inputs if id(sample) in retained_ids]
+
     strategy: WarpStrategy = args.warp_strategy
     print(f"{_elapsed()} Applying production TS {strategy} warp to raw samples...", flush=True)
     browser_samples = canonicalize_samples(browser_inputs, strategy)
     bulk_samples = canonicalize_samples(bulk_inputs, strategy)
     synthetic_samples = canonicalize_samples(synthetic_inputs, strategy)
     excluded_legacy = (
-        len(browser_inputs) + len(bulk_inputs) + len(synthetic_inputs)
+        len(deduplicated_inputs)
         - len(browser_samples) - len(bulk_samples) - len(synthetic_samples)
     )
     if excluded_legacy:

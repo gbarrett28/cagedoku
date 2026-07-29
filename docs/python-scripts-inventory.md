@@ -11,17 +11,17 @@ dates are from edits made during that migration session, not evidence of real us
 ## Removed structured OCR/solver code
 
 The remaining `killer_sudoku/image/` and `killer_sudoku/solver/` packages were
-removed wholesale after symbol-level reachability checks found only their own tests,
-three dependent diagnostic helpers, and the temporary TS bridge solver type. The
-debug helpers and test-only digit-rectangle extractor were deleted with the packages;
-the bridge now passes an already row-major JSON payload and defines no Python puzzle
-model.
+removed wholesale after symbol-level reachability checks found only their own tests
+and three dependent diagnostic helpers. The debug helpers, test-only digit-rectangle
+extractor, and temporary bridge `predict`/`solve` operations were deleted rather than
+refactored. The retained bridge exposes only production TypeScript crop warping and
+feature extraction to Python training orchestration.
 
 ## Live — wired into scheduled automation
 
 | Path | Purpose | Last touched |
 |---|---|---|
-| `web/train_recogniser.py` | Selects the TS crop warp, fits HOG+RBF-SVM, and writes the deployable manifest | 2026-07-29 (raw crops and features route through `ts_bridge`) |
+| `web/train_recogniser.py` | Merges and deduplicates inputs, selects the TS crop warp, fits HOG+RBF-SVM, and writes the deployable manifest | 2026-07-29 (raw crops and features route through `ts_bridge`) |
 | `scripts/_r2_list.py` / `_r2_download.py` / `_r2_delete.py` | List/pull/clear pending training-sample uploads from Cloudflare R2 | 2026-07-04 |
 | `killer_sudoku/training/ts_bridge.py` | Calls production TypeScript crop warping and feature extraction for the trainer (not a user entry point) | 2026-07-29 |
 
@@ -30,10 +30,6 @@ R2 helpers. Model regression evaluation is TypeScript: the workflow builds the
 production app and runs `web/scripts/evaluate-corpus.ts` over committed fixtures.
 
 ## Remaining manual scripts
-
-### Temporary ingestion helper
-
-- `web/dedupe_browser_train.py` (2026-06-28) — drops exact-duplicate crops from `browser_train.json`
 
 ### Human training/curation CLIs
 
@@ -67,14 +63,13 @@ were **two** Python solving implementations: a legacy constraint/equation-based
 `Grid.solve()`, and a newer rule-engine `Grid.engine_solve()` (mirroring
 `web/src/engine/`). Both are now retired:
 
-- The temporary `--op solve` bridge remains only until the bridge-narrowing
-  sprint. Its Python wrapper accepts a row-major JSON payload directly and defines
-  no Python puzzle model or solver behaviour.
+- The temporary bridge `solve` operation and Python wrapper were removed after
+  reference checks found no production, CI, or user caller.
 - The final `grid.py`/`puzzle_spec.py` remnants and the entire Python image pipeline
   were deleted with their direct tests rather than refactored.
 
 ## What did NOT get removed, and why
 
-The standalone browser-training dedupe helper remains temporarily and is removed only
-when deduplication is folded into retained ingestion. It is not being refactored before
-that replacement exists.
+Exact-input deduplication now runs inside `web/train_recogniser.py` after all sources
+are merged and before production warping, weighting, or dithering. The standalone
+mutation script was removed after its replacement and regression tests were in place.
