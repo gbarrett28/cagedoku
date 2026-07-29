@@ -49,6 +49,12 @@ and `ks-train-numbers` entry point were then removed as one closed legacy family
 Callerless calibration, scraping, archive extraction, and pickle-cache migration tools
 were removed next; no replacement wrappers were added.
 
+The complete human-facing Python surface is now exactly three files:
+`web/train_recogniser.py`, `killer_sudoku/training/review_low_confidence.py`, and
+`killer_sudoku/training/apply_review_corrections.py`. GitHub Actions additionally invokes
+only the trainer and the three private `_r2_*.py` helpers. Production image-to-spec,
+warping, features, inference, evaluation, and solving remain TypeScript-owned.
+
 ## Removed entry points
 
 The broken `cagedoku` entry point was removed earlier. The `ks-evaluate` entry point

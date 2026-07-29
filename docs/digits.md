@@ -8,7 +8,8 @@ unsupported, `pca_rbf`, and `linear` formats explicitly.
 
 TypeScript is the source of truth for every operation required by production:
 bounding-box crop handling, recognition warping, feature extraction, model loading,
-and inference. Python is limited to orchestration and fitting. Raw training crops are
+and inference. Python is limited to training orchestration, augmentation,
+scikit-learn fitting, and label curation. Raw training crops are
 warped once and their features extracted through the TypeScript implementation via
 `killer_sudoku/training/ts_bridge.py`; Python must not reproduce those algorithms.
 

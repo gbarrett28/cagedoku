@@ -9,13 +9,13 @@ reimplement browser inference.
 Usage
 -----
     # Standard retrain from accumulated browser training data:
-    python web/train_recogniser.py --out web/public --browser-weight 1000 web/browser_train.json
+    python web/train_recogniser.py --out web/public --browser-weight 1000
 
     # Train from synthetic fonts only (no puzzle data needed):
     python web/train_recogniser.py --out web/public
 
     # Skip synthetic font generation:
-    python web/train_recogniser.py --no-synthetic web/browser_train.json
+    python web/train_recogniser.py --no-synthetic
 
 Workflow
 --------

@@ -93,7 +93,9 @@ Set by `installCvMonitors()` in `store.ts`. NULL before that initialises.
 
 One row per digit read produced by the deployed TypeScript pipeline, for both
 classic givens and killer cage totals. New rows retain both the strategy-neutral
-bounding-box crop and the exact derived input presented to the recogniser.
+bounding-box crop and the exact derived input presented to the recogniser. The source
+crop comes directly from TypeScript's fixed bounding-box selection on the warped grid;
+switching between `stretch` and `letterbox` changes only the derived warp, never cropping.
 
 | Column | Type | Meaning |
 |--------|------|---------|

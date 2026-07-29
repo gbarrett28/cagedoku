@@ -71,10 +71,10 @@ deductions. All processing runs client-side.
 | Solver | `web/src/solver/` | Cage equations, PuzzleSpec |
 | E2E tests | `web/e2e/` | Playwright tests |
 | Unit tests | `web/src/**/*.test.ts` | Vitest tests co-located with source |
-| Digit recogniser training | `killer_sudoku/training/` | Offline Python scripts; call `ts_bridge.py` for feature extraction/classification instead of reimplementing |
-| Retraining helper | `web/train_recogniser.py` | Converts browser-exported samples to model; HOG/hole feature extraction routes through `ts_bridge.extract_features()` |
-| TS↔Python bridge | `web/scripts/ts-bridge.ts`, `killer_sudoku/training/ts_bridge.py` | CLI wrapper exposing `hogExtract`/`extractHoleFeatures`/`loadNumRecogniser` to Python via subprocess — see `docs/superpowers/specs/2026-07-26-ts-single-source-of-truth-design.md` |
-| Corpus cache | `web/scripts/corpus-db.ts` (`cell_reads`, `evaluations` tables) | Per-cell crop/feature/prediction cache populated by `evaluate-corpus.ts`, keyed by `(puzzle_hash, git_hash)` |
+| Digit recogniser curation | `killer_sudoku/training/` | Human review/apply-review CLIs plus the private TS bridge; no production OCR or solver logic |
+| Retraining helper | `web/train_recogniser.py` | Merges/deduplicates inputs, calls TS warping/features, augments, and fits the HOG/hole RBF model |
+| TS↔Python bridge | `web/scripts/ts-bridge.ts`, `killer_sudoku/training/ts_bridge.py` | Private subprocess bridge exposing only `warp-crops` and `extract-features` — see `docs/superpowers/specs/2026-07-28-python-production-boundary-cleanup-design.md` |
+| Corpus cache | `web/scripts/corpus-db.ts` (`cell_reads`, `evaluations` tables) | Stores raw variable-sized warped-grid crops plus derived 64×64 recognition evidence, keyed by `(puzzle_hash, git_hash)` |
 
 ## Key Reference Documents
 
@@ -121,8 +121,12 @@ these without updating the comment in `web/src/image/validation.ts` that explain
 that same code — not a reimplementation — must be called from everywhere else
 that needs it.**
 
-Python may orchestrate (corpus walks, `scikit-learn` model fitting, dataset
-curation) but must never reimplement logic that also runs in the browser. Two
+Python is limited to training orchestration, augmentation, `scikit-learn` fitting,
+and human label curation; it must never reimplement logic that also runs in the
+browser. The only human-facing Python entry points are `web/train_recogniser.py`,
+`killer_sudoku/training/review_low_confidence.py`, and
+`killer_sudoku/training/apply_review_corrections.py`. GitHub Actions additionally uses
+only the trainer and the three private `scripts/_r2_*.py` helpers. Two
 independently-hand-written versions of the same algorithm will drift, silently,
 and the drift will not be caught by either side's own tests — each side only
 tests itself against itself.
@@ -140,15 +144,14 @@ model weights, with no test anywhere verifying they agree.
 **Concrete rule:**
 - Anything that's a pure function of (image/crop → number/geometry) — grid
   location, crop/bounding-box extraction, HOG/hole-feature extraction,
-  RBF-SVM inference — lives in TS only. Python calls it; it never reimplements it.
+  RBF-SVM inference — lives in TS only. Python calls only the retained warp and
+  feature operations; it never reimplements any of them.
 - Python's own responsibility narrows to what's genuinely Python-only:
-  orchestrating the corpus walk, `scikit-learn`'s `SVC.fit()`, dithering
-  augmentation, gluing pieces together.
-- Two calling mechanisms, chosen by runtime need: OpenCV.js/WASM-dependent
-  code (grid location) needs an actual browser — drive it via Playwright, the
-  same pattern `web/scripts/evaluate-corpus.ts` already uses. Pure array-math
-  code with no OpenCV dependency (HOG, hole features, RBF-SVM predict) can run
-  under a lightweight Node/`tsx` subprocess instead.
+  merging and deduplicating labelled inputs, augmentation, `scikit-learn`'s
+  `SVC.fit()`, and human review orchestration.
+- The retained Node/`tsx` bridge exposes only production crop warping and
+  HOG/hole-feature extraction. Grid location, bounding-box selection, RBF-SVM
+  inference, corpus evaluation, and puzzle solving have no Python entry point.
 - If you're about to write a Python function whose job is "reproduce what the
   TS pipeline would do to this input" — stop. That function is either wrong
   today or will be wrong tomorrow. Call the TS code instead.

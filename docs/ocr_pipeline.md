@@ -265,8 +265,9 @@ to `cageTotalMinFillRatio = 0.3`.
 No significant change from `image-pipeline.md`. For reference:
 
 `buildCageTotals` walks the `RETR_TREE` contour hierarchy to find digit-sized
-contours. `splitNum` decides 1 vs 2 digits per contour. Each digit is letterbox-warped
-to a 64 × 64 binary thumbnail.
+contours. `splitNum` decides 1 vs 2 digits per contour. Each digit keeps its raw
+bounding-box crop from the warped grid, then the model manifest selects the production
+`stretch` or `letterbox` warp that derives its 64 × 64 recognition input.
 
 A cage-total region may contain 1 or 2 digit contours **plus** non-digit artefacts
 (cage border fragments, dashes) that bleed into the region. `splitNum` and the

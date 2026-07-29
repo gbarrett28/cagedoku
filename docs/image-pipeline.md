@@ -336,7 +336,7 @@ the read's confidence, flagged uncertain below 0.7.
 ```mermaid
 flowchart TD
     A[contour candidates from Stage 3\nbinary blk + M] --> B[splitNum:\ntop-ink profile finds a valid\ninter-digit gap]
-    B --> C[letterboxWarp each rect\nto 64x64 thumbnail, aspect preserved]
+    B --> C[warpRawDigitCrop using manifest strategy\nstretch or letterbox -> 64x64]
     C --> D[hogExtract:\ncv.HOGDescriptor 64px/8c/16b/9bins\n-> 1764-dim vector]
     C --> E[extractHoleFeatures:\nBFS flood-fill from border\n-> 5-dim vector]
     D --> F[concatenate -> 1769-dim]
@@ -352,7 +352,7 @@ flowchart TD
 
 | Parameter | Value | Derivation |
 |-----------|-------|------------|
-| Thumbnail size | 64 × 64 px | HOG window size; matches `letterboxWarp` output |
+| Thumbnail size | 64 × 64 px | HOG window size; matches either `warpRawDigitCrop` strategy |
 | HOG cell size | 8 × 8 px | 8 cells/dim; captures local edge orientation |
 | HOG block size | 16 × 16 px | 2×2 cells; block normalisation neighbourhood |
 | HOG bins | 9 | Unsigned gradient; ~40° per bin |
@@ -597,6 +597,9 @@ warp; its default is read from the currently deployed model manifest. Every raw 
 passes once through `warpRawDigitCrop` via the batched TS bridge before dithering.
 Historical version-1 64×64 samples are explicitly treated as canonical `letterbox`
 inputs, never as raw crops, and are eligible only when `letterbox` is selected.
+Python is limited to orchestration, augmentation, scikit-learn fitting, and human label
+curation; the human entry points are the trainer, low-confidence review, and applying
+review corrections.
 
 ```bash
 python web/train_recogniser.py --warp-strategy letterbox --browser-weight 1000 --max-per-class 1500 --no-synthetic --dither 18 guardian/guardian_train_sq.json observer/observer_train_sq.json

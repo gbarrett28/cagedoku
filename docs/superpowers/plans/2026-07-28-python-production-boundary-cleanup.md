@@ -404,19 +404,19 @@ def warp_crops(crops, strategy: Literal['stretch', 'letterbox'], size: int = 64)
 
 **Files:** `pyproject.toml`, `uv.lock`, `.github/workflows/retrain.yml`, `docs/architecture.md`, `docs/image-pipeline.md`, `docs/python-scripts-inventory.md`, `docs/corpus-db.md`, `AGENTS.md`, `CLAUDE.md`, superseded plan notice.
 
-1. Audit imports in the three human Python scripts, `ts_bridge.py`, and `_r2_*.py`.
-2. Remove all `[project.scripts]`, obsolete OCR/solver dependencies, deleted package data, extras, and Ruff overrides. Add only directly imported retained dependencies. Regenerate `uv.lock`.
-3. Keep GitHub Actions invocations limited to `web/train_recogniser.py` plus the three private R2 helpers.
-4. Current docs must say:
+- [x] 1. Audit imports in the three human Python scripts, `ts_bridge.py`, and `_r2_*.py`.
+- [x] 2. Remove all `[project.scripts]`, obsolete OCR/solver dependencies, deleted package data, extras, and Ruff overrides. Add only directly imported retained dependencies. Regenerate `uv.lock`.
+- [x] 3. Keep GitHub Actions invocations limited to `web/train_recogniser.py` plus the three private R2 helpers.
+- [x] 4. Current docs must say:
    - TS owns image-to-spec, bounding boxes, both warp strategies, features, prediction, evaluation, and solving;
    - `cell_reads.source_pixels` is the raw variable-sized bounding-box crop from the warped grid;
    - `recognition_pixels` is the derived deployed 64×64 audit input;
    - Python owns training orchestration/augmentation/fitting/curation only;
    - only train, review, and apply-review are human Python entry points;
    - HOG/hole RBF is the sole shipped recogniser.
-5. Add a “Superseded by” link to the 2026-07-26 plan; do not rewrite historical evidence.
-6. Run editable-install/help checks, documentation greps, and bronze.
-7. Commit: `chore: expose only recogniser training and CI Python`.
+- [x] 5. Add a “Superseded by” link to the 2026-07-26 plan; do not rewrite historical evidence.
+- [x] 6. Run editable-install/help checks, documentation greps, and bronze.
+- [x] 7. Commit: `chore: expose only recogniser training and CI Python`.
 
 **Done when:** packaging, CI, AGENTS/CLAUDE guidance, and current architecture docs all describe the same retained surface.
 

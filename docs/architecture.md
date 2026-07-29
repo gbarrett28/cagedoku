@@ -173,10 +173,10 @@ array that is effectively `[row][col]`. The `[col][row]` annotation in the
 The `borderX`/`borderY` annotations are correct; their shape alone (9×8 and 8×9)
 distinguishes them from the square region/total arrays.
 
-**No transposition at any boundary:** Python `PuzzleSpec` (NumPy, row-major) maps
-directly to TypeScript `PuzzleSpec` without transposition. The frontend canvas
-also reads `spec_data.regions[row][col]` row-major. No coordinate flip occurs at
-any stage of the pipeline.
+**No transposition at any boundary:** the TypeScript pipeline, session state, solver,
+and frontend canvas all use `grid[row][col]` row-major arrays. There is no retained
+Python `PuzzleSpec` or Python solver boundary, and no coordinate flip occurs at any
+stage of the deployable pipeline.
 
 ---
 
@@ -208,10 +208,12 @@ represented by HOG plus hole-count features and classified by an OvO RBF SVM.
 PCA/template matching and the linear-classifier branch have been retired; unsupported
 or incomplete manifests fail explicitly instead of silently taking a fallback path.
 
-TypeScript owns every operation used by the browser, including crop warping, feature
-extraction, and inference. Python may orchestrate fitting, but calls the production
-crop-warp and feature implementations through `killer_sudoku/training/ts_bridge.py`
-rather than reimplementing them. Raw crops are batched across the bridge and a bridge
+TypeScript owns image acquisition through `PuzzleSpec`, digit bounding-box selection,
+both crop-warp strategies, HOG/hole features, RBF inference, corpus evaluation, and
+puzzle solving. Python owns only training orchestration, augmentation, scikit-learn
+fitting, and label curation; it calls the retained production crop-warp and feature
+implementations through `killer_sudoku/training/ts_bridge.py` rather than
+reimplementing them. Raw crops are batched across the bridge and a bridge
 failure is fatal; Python has no alternate warp path. `web/train_recogniser.py` accepts
 `--warp-strategy`, applies that TS warp exactly once to every raw input before
 augmentation, and writes the choice into the model manifest. Historical version-1
@@ -220,6 +222,12 @@ different strategy is selected. `web/scripts/validate-model.ts` audits an extern
 written model through the production `loadNumRecogniser` path using canonical
 schema-v2 `recognitionPixels`.
 
+The only human-facing Python entry points are `web/train_recogniser.py`,
+`killer_sudoku/training/review_low_confidence.py`, and
+`killer_sudoku/training/apply_review_corrections.py`. The only application-specific
+Python invoked by GitHub Actions is the trainer plus the private `_r2_list.py`,
+`_r2_download.py`, and `_r2_delete.py` helpers.
+
 A single active-instance singleton (`setActiveRecogniser`/`activeRecogniser` in
 `numberRecognition.ts`, set once by `store.ts` after loading the model) means callers
 never thread a recogniser instance through the pipeline by hand. The recogniser's
@@ -227,9 +235,10 @@ never thread a recogniser instance through the pipeline by hand. The recogniser'
 strategy-neutral until that production warp is applied.
 
 When a user corrects OCR errors and confirms a killer puzzle, the app automatically
-uploads the digit thumbnails (user-verified labels, 64×64 uint8) to a remote
-collection pipeline. A consent modal is shown on first upload; "Always send" sets a
-1-year cookie that silences it thereafter.
+uploads each user-verified label with its raw, variable-sized bounding-box crop from
+the warped grid, plus the derived 64×64 deployed recognition input and named warp
+strategy, to a remote collection pipeline. A consent modal is shown on first upload;
+"Always send" sets a 1-year cookie that silences it thereafter.
 
 #### Remote collection pipeline
 
@@ -294,19 +303,20 @@ When new data appears as a comment on Issue #1:
 
 ```bash
 bash scripts/collect_training.sh /tmp/training
-python web/train_recogniser.py --browser-weight 1000 \
-  web/browser_train.json /tmp/training/*.json
+python web/train_recogniser.py --browser-weight 1000 /tmp/training/*.json
 # verify accuracy, then:
 bash scripts/mark_processed.sh /tmp/training
 ```
 
 `train_recogniser.py` steps:
-1. Loads labelled thumbnails from each JSON file
-2. Optionally generates synthetic font samples
-3. Applies dithering (translation ±2 px, morphological step, 1% pixel noise)
-4. Extracts HOG features — 64 px window / 8 px cells / 16 px blocks / 9 bins = 1764 dims
-5. Fits an RBF SVM OvO classifier (45 binary SVMs for digits 0–9)
-6. Saves updated model files; the web app picks them up on next page reload
+1. Loads raw or explicitly canonical labelled inputs from all configured sources
+2. Deduplicates the merged inputs before weighting, warping, or augmentation
+3. Optionally generates training-only raw font glyphs
+4. Calls the selected production TypeScript `stretch` or `letterbox` warp once per raw input
+5. Applies Python-only dithering (translation ±2 px, morphological step, 1% pixel noise)
+6. Calls TypeScript HOG and hole-feature extraction
+7. Fits the sole shipped recogniser: an OvO RBF SVM (45 binary SVMs for digits 0–9)
+8. Saves the model and warp strategy; the web app picks them up on next page reload
 
 `--browser-weight 1000` up-weights real samples over synthetic fonts.
 For purely synthetic training (no real data), omit the flag.

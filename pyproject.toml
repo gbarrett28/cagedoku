@@ -8,17 +8,15 @@ version = "0.1.0"
 description = "Killer sudoku coaching tool with a browser-based OCR pipeline"
 requires-python = ">=3.12"
 dependencies = [
-    "opencv-python-headless",
-    "numpy",
-    "scikit-learn",
-    "scipy",
+    "boto3",
+    "botocore",
     "matplotlib",
-    "python-constraint",
-    "joblib",
+    "numba",
+    "numpy",
+    "opencv-python-headless",
+    "Pillow",
+    "scikit-learn",
 ]
-
-[project.optional-dependencies]
-dev = ["ruff", "mypy", "pytest", "pytest-cov", "playwright>=1.40", "pytest-playwright>=0.4", "numba"]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -73,9 +71,8 @@ ignore = [
 dummy-variable-rgx = "^_.*$"
 
 [tool.ruff.lint.per-file-ignores]
-# Training scripts use intentional lazy imports for heavy optional deps
-# (PIL, matplotlib, sklearn, psutil, numba) so they don't force installation
-# for users who don't need training. T20 allowed because these are CLI scripts.
+# The trainer lazily imports Pillow and matplotlib only on image/font paths to
+# avoid their startup cost. T20 is allowed because this is a CLI script.
 # N803/N806: X is a standard sklearn feature-matrix convention (uppercase is idiomatic).
 # PLW2901: reassigning loop var to downcast dtype is intentional (in-place reshape).
 "web/train_recogniser.py" = ["PLC0415", "T20", "N803", "N806", "PLW2901"]
@@ -87,8 +84,6 @@ dummy-variable-rgx = "^_.*$"
 ".codex/hooks/enforce-serena.py" = ["T20", "PLR0911"]
 # CLI training scripts: print() is the output mechanism
 "killer_sudoku/training/*.py" = ["T20"]
-# Corpus evaluator CLI: print() for progress output.
-"killer_sudoku/scripts/*.py" = ["T20"]
 # CLI utility scripts: print() is the output mechanism
 "scripts/_r2_*.py" = ["T20"]
 # Tests: sys.path manipulation before imports is standard pytest pattern.
@@ -105,13 +100,6 @@ convention = "google"
 quote-style = "double"
 indent-style = "space"
 line-ending = "auto"
-
-[tool.pytest.ini_options]
-asyncio_mode = "strict"
-markers = [
-    "pipeline: requires guardian/ and observer/ image directories",
-    "pipeline_full: full pipeline over every image (~30-40 min); implies pipeline",
-]
 
 [tool.mypy]
 strict = true

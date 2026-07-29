@@ -39,11 +39,9 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Install Python dependencies
-        # boto3 (R2) and numba (train_recogniser.py's dither kernel) are not
-        # project dependencies, so they are listed explicitly.
         # Pin coverage<7.8: numba 0.66.0 uses coverage.types.Tracer which was
         # removed in coverage 7.8; pin to keep the import working.
-        run: pip install -e . boto3 numba "coverage<7.8"
+        run: pip install -e . "coverage<7.8"
 
       - name: Install web dependencies
         run: npm ci --prefix web
@@ -71,15 +69,16 @@ jobs:
       - name: Merge samples into browser_train.json
         if: steps.list.outputs.count != '0'
         run: |
-          python3 - <<'EOF'
-          import json, glob, pathlib
-          base_path = pathlib.Path('web/browser_train.json')
-          base = json.loads(base_path.read_text()) if base_path.exists() else {'version': 1, 'samples': []}
-          for f in sorted(glob.glob('/tmp/training/sample_*.json')):
-              incoming = json.loads(pathlib.Path(f).read_text())
-              base['samples'].extend(incoming.get('samples', []))
-          base['sampleCount'] = len(base['samples'])
-          base_path.write_text(json.dumps(base, separators=(',', ':')))
+          node --input-type=module <<'EOF'
+          import { globSync, readFileSync, writeFileSync } from 'node:fs';
+          const basePath = 'web/browser_train.json';
+          const base = JSON.parse(readFileSync(basePath, 'utf8'));
+          for (const file of globSync('/tmp/training/sample_*.json').sort()) {
+            const incoming = JSON.parse(readFileSync(file, 'utf8'));
+            base.samples.push(...(incoming.samples ?? []));
+          }
+          base.sampleCount = base.samples.length;
+          writeFileSync(basePath, JSON.stringify(base));
           EOF
           git add web/browser_train.json
           git diff --cached --quiet && echo "No sample changes." || \
