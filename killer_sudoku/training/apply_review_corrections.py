@@ -1,8 +1,7 @@
 """Merges a downloaded tick-sheet review JSON into the overrides file.
 
-The JSON comes from review_low_confidence.py's tick sheet. The next
-train_combinations.py or review_low_confidence.py run picks up the
-corrections automatically.
+The JSON comes from review_low_confidence.py's tick sheet. Subsequent
+training and review runs pick up the corrections automatically.
 """
 
 import argparse

@@ -1,8 +1,8 @@
 # Python Scripts Inventory
 
-Audit of `killer_sudoku`'s and `web`'s Python code (~70 non-test files, excluding
-`__init__.py`/stubs), done 2026-07-26 while closing out the TS-single-source-of-truth
-migration.
+Audit of `killer_sudoku`'s and `web`'s Python code, begun 2026-07-26 while
+closing out the TS-single-source-of-truth migration and updated as the production-
+boundary cleanup removes confirmed-dead families.
 
 **Caveat:** dates below are last-*commit* dates (`git log -1 --format=%ad -- <path>`),
 not last-*run* dates — there's no execution telemetry available. Several "2026-07-26"
@@ -12,8 +12,8 @@ dates are from edits made during that migration session, not evidence of real us
 
 | Path | Purpose | Last touched | Still reachable? |
 |---|---|---|---|
-| `killer_sudoku/image/*.py` (8 files: `border_clustering.py`, `border_detection.py`, `cell_scan.py`, `config.py`, `grid_location.py`, `inp_image.py`, `number_recognition.py`, `validation.py`) | Legacy image pipeline: grid location, border clustering/detection, cell scanning, digit recognition (`RBFClassifier`/`CayenneNumber`), `InpImage` orchestrator | 2026-07-24 | **Temporarily** — only the manual agreement/training family still calls it; scheduled evaluation no longer does |
-| `killer_sudoku/solver/grid.py`, `puzzle_spec.py` | `ProcessingError` (image-pipeline error, misplaced here historically) and `PuzzleSpec` (the validated cage-layout contract) | 2026-07-26 | **Temporarily** — imported only by the legacy Python image/agreement family |
+| `killer_sudoku/image/*.py` (8 files: `border_clustering.py`, `border_detection.py`, `cell_scan.py`, `config.py`, `grid_location.py`, `inp_image.py`, `number_recognition.py`, `validation.py`) | Legacy image pipeline: grid location, border clustering/detection, cell scanning, digit recognition (`RBFClassifier`/`CayenneNumber`), `InpImage` orchestrator | 2026-07-24 | **Obsolete** — no training/review caller remains; only diagnostics and acquisition utilities scheduled for wholesale removal still import it |
+| `killer_sudoku/solver/grid.py`, `puzzle_spec.py` | `ProcessingError` (image-pipeline error, misplaced here historically) and `PuzzleSpec` (the validated cage-layout contract) | 2026-07-26 | **Obsolete** — retained only by the legacy Python image/diagnostic family scheduled for wholesale removal |
 
 ## Live — wired into scheduled automation
 
@@ -42,13 +42,10 @@ No CI wiring, narrow single-purpose, no evidence of recent real use:
 Run by hand when retraining or investigating something:
 
 - `killer_sudoku/training/train_number_recogniser.py` (2026-07-26) — fits the PCA/SVM `.npz` checkpoint; has a live `ks-train-numbers` entry point but no evidence anyone runs it regularly
-- `killer_sudoku/training/train_combinations.py` (2026-07-25) — compares PCA/HOG × stretch/letterbox architectures
-- `killer_sudoku/training/synthetic_holdout.py` (2026-07-25) — renders TTF-font digits as a cross-font generalization check
 - `killer_sudoku/training/calibrate.py` (2026-06-28) — data-driven threshold calibration for one specific grid-location constant
 - `killer_sudoku/training/scrape_puzzles.py` (2026-06-28) — scrapes Guardian puzzle images
 - `killer_sudoku/training/review_low_confidence.py` (2026-07-28) — generates a tick-sheet for manually reviewing duplicate-conflict digit reads from browser-selected raw crops
 - `killer_sudoku/training/apply_review_corrections.py` (2026-07-25) — merges that tick-sheet's corrections back in
-- `killer_sudoku/training/balanced_sample.py` — not a script (no `__main__`), just a helper the above import
 
 ### Pure debug/visualization one-offs
 No automation, clearly "run this once while investigating a specific image":
@@ -59,11 +56,10 @@ No automation, clearly "run this once while investigating a specific image":
 
 ## Bottom line
 
-Of ~70 substantive Python files, roughly **23 are genuine "temp/manual" scripts** —
-about a third. Five of those (the migration chain) look like they've served their
-purpose and probably haven't run in a while; the rest are still plausible manual
-tools for retraining/debugging work, just with no way to confirm actual recent use
-beyond edit history.
+The agreement/comparison-training family (`agreement_pool.py`,
+`balanced_sample.py`, `train_combinations.py`, and `synthetic_holdout.py`) has now
+been removed as a unit. Its only non-test callers were inside that same family; the
+manual review workflow retained only its small corpus-name/key helpers locally.
 
 ## Removed entry points
 
@@ -93,7 +89,6 @@ were **two** Python solving implementations: a legacy constraint/equation-based
 
 ## What did NOT get removed, and why
 
-Nothing else in this inventory is confirmed dead. The migration-chain scripts,
-debug tools, and manual training CLIs above are flagged only as "hasn't been
-edited in a while" — that is not the same claim as "has zero callers." None of
-them were deleted.
+The remaining migration-chain scripts, debug tools, and legacy training CLIs are
+handled by later wholesale-removal sprints after their callers are proved absent.
+They are not being refactored merely because they still exist.

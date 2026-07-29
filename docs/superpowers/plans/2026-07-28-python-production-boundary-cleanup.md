@@ -250,11 +250,11 @@ bash scripts/run-bronze-gate.sh
 
 **Files:** delete `agreement_pool.py`, `balanced_sample.py`, `train_combinations.py`, `synthetic_holdout.py` and their tests; update current image/inventory docs and surviving review imports.
 
-1. Confirm `build_full_corpus_pool`, `build_agreement_pool`, `balanced_split`, and `generate_cross_font_holdout` have no retained callers after Sprint 6.
-2. Delete the whole family; do not adapt it to `cell_reads`.
-3. Remove stale imports, CLI/docs references, and dependencies used only by the family.
-4. Run retained review/training tests and bronze.
-5. Commit: `refactor: remove recogniser agreement harness`.
+- [x] Confirm `build_full_corpus_pool`, `build_agreement_pool`, `balanced_split`, and `generate_cross_font_holdout` have no retained callers after Sprint 6.
+- [x] Delete the whole family; do not adapt it to `cell_reads`.
+- [x] Remove stale imports, CLI/docs references, and dependencies used only by the family.
+- [x] Run retained review/training tests and bronze.
+- [x] Commit: `refactor: remove recogniser agreement harness`.
 
 **Done when:** reachability from tests or historical manual tools no longer keeps a second OCR architecture alive.
 

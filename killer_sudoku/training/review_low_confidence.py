@@ -19,9 +19,32 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 
-from killer_sudoku.training.agreement_pool import resolve_corpus_name, sample_key
-
 DEFAULT_DB_PATH = Path("corpus.db")
+
+
+DEFAULT_CORPORA: list[tuple[str, Path]] = [
+    ("guardian", Path("guardian")),
+    ("observer", Path("observer")),
+    ("classic_guardian", Path("classic_guardian/easy")),
+    ("classic_observer", Path("classic_observer")),
+]
+
+
+def resolve_corpus_name(
+    path: Path,
+    corpora: list[tuple[str, Path]] = DEFAULT_CORPORA,
+) -> str:
+    """Map a source image path to its corpus name by directory."""
+    resolved = path.resolve().parent
+    for name, corpus_dir in corpora:
+        if resolved == corpus_dir.resolve():
+            return name
+    raise ValueError(f"{path} is not under any registered corpus directory")
+
+
+def sample_key(corpus: str, source_name: str, row: int, col: int) -> str:
+    """Return the stable manual-review identifier for a corpus cell."""
+    return f"{corpus}|{source_name}|{row}|{col}"
 
 
 @dataclasses.dataclass(frozen=True)

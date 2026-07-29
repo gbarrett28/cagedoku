@@ -6,9 +6,10 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import matplotlib.font_manager as fm
 import numpy as np
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "web"))
 from train_recogniser import (
@@ -35,6 +36,29 @@ def test_generate_synthetic_samples_covers_digits_1_to_9() -> None:
         assert img.shape == (64, 64)
         assert img.dtype == np.uint8
         assert img.max() > 0
+
+
+def test_generate_synthetic_samples_skips_fonts_that_fail_during_render(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def find_broken_font(*, fontext: str) -> list[str]:
+        assert fontext == "ttf"
+        return ["broken.ttf"]
+
+    def load_broken_font(path: str, size: int) -> object:
+        assert path == "broken.ttf"
+        assert size == 32
+        return object()
+
+    def fail_text_bbox(*args: object, **kwargs: object) -> tuple[int, int, int, int]:
+        del args, kwargs
+        raise OSError("invalid reference")
+
+    monkeypatch.setattr(fm, "findSystemFonts", find_broken_font)
+    monkeypatch.setattr(ImageFont, "truetype", load_broken_font)
+    monkeypatch.setattr(ImageDraw.ImageDraw, "textbbox", fail_text_bbox)
+
+    assert generate_synthetic_samples(pt_sizes=(32,)) == []
 
 
 def _make_samples() -> list[tuple[int, np.ndarray[Any, np.dtype[np.uint8]]]]:

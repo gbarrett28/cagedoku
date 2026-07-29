@@ -9,6 +9,7 @@ import pytest
 from numpy.typing import NDArray
 from PIL import Image
 
+from killer_sudoku.training import review_low_confidence as review
 from killer_sudoku.training.review_low_confidence import (
     build_review_items,
     crops_from_duplicate_conflicts,
@@ -164,3 +165,23 @@ def test_duplicate_review_skips_rows_without_raw_source_pixels(
     conn.close()
 
     assert crops_from_duplicate_conflicts([("guardian", "p1", src)], "h1", db_path) == []
+
+
+def test_resolve_corpus_name_disambiguates_same_named_directories() -> None:
+    corpora = [
+        ("guardian", Path("guardian")),
+        ("classic_guardian", Path("classic_guardian/easy")),
+    ]
+
+    assert review.resolve_corpus_name(Path("guardian/killer_sudoku_140.jpg"), corpora) == "guardian"
+    assert (
+        review.resolve_corpus_name(Path("classic_guardian/easy/killer_sudoku_140.jpg"), corpora)
+        == "classic_guardian"
+    )
+
+
+def test_resolve_corpus_name_rejects_unregistered_directory() -> None:
+    corpora = [("classic_guardian", Path("classic_guardian/easy"))]
+
+    with pytest.raises(ValueError, match="not under any registered corpus"):
+        review.resolve_corpus_name(Path("classic_guardian/expert/killer_sudoku_123.jpg"), corpora)

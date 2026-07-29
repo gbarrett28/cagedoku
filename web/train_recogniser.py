@@ -448,19 +448,19 @@ def generate_synthetic_samples(
             for digit in range(1, 10):
                 try:
                     font = ImageFont.truetype(font_path, pt)
+                    canvas = win_size * 2
+                    img = Image.new("L", (canvas, canvas), 0)
+                    draw = ImageDraw.Draw(img)
+                    text = str(digit)
+                    bbox = draw.textbbox((0, 0), text, font=font)
+                    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+                    if w == 0 or h == 0:
+                        continue
+                    x = (canvas - w) // 2 - bbox[0]
+                    y = (canvas - h) // 2 - bbox[1]
+                    draw.text((x, y), text, fill=255, font=font)
                 except Exception:
                     continue
-                canvas = win_size * 2
-                img = Image.new("L", (canvas, canvas), 0)
-                draw = ImageDraw.Draw(img)
-                text = str(digit)
-                bbox = draw.textbbox((0, 0), text, font=font)
-                w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-                if w == 0 or h == 0:
-                    continue
-                x = (canvas - w) // 2 - bbox[0]
-                y = (canvas - h) // 2 - bbox[1]
-                draw.text((x, y), text, fill=255, font=font)
                 arr = np.array(img, dtype=np.uint8)
                 ys, xs = np.where(arr > 0)
                 if len(ys) == 0:
