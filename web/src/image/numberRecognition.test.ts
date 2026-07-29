@@ -175,13 +175,11 @@ describe('Recognition.runnerUp', () => {
   });
 });
 
-// Note: guardian_train_sq.json / observer_train_sq.json are deliberately not
-// tested here. /guardian/ and /observer/ are entirely gitignored (the source
-// .jpg files cannot be committed), so any test depending on them only ever
-// runs on a machine that has manually run extract_guardian_samples.py — it
-// can never be a real CI/bronze-gate check. Those datasets are bulk training
-// input only; browser_train.json (committed, hand-verified) is the ground
-// truth this suite holds to 100% minus KNOWN_FAILURE_SAMPLE_HASHES above.
+// Historical guardian_train_sq.json / observer_train_sq.json bulk datasets are
+// deliberately not tested here because neither their gitignored source images nor
+// their retired extraction workflow is available in CI. browser_train.json is the
+// committed, hand-verified ground truth this suite holds to 100% minus
+// KNOWN_FAILURE_SAMPLE_HASHES above.
 
 describe('loadNumRecogniser class dispatch', () => {
   it.each(['pca_rbf', 'linear'])('rejects unsupported classifier_type "%s" explicitly', classifierType => {

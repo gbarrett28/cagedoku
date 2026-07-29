@@ -319,11 +319,11 @@ bash scripts/run-bronze-gate.sh
 
 **Files:** delete `calibrate.py`, border/debug scripts, `digit_rects.py`, `scrape_puzzles.py`, `web/extract_guardian_samples.py`, `web/migrate_pic_cache.py`, and their tests; update `pyproject.toml` and current docs.
 
-1. Confirm every script is now callerless or depended only on the deleted Python image pipeline.
-2. Delete them wholesale, including `ks-scrape`, scraper extras, Ruff overrides, and direct tests.
-3. Do not replace one-time migration or diagnostic scripts with TS wrappers absent a current user/CI entry point.
-4. Run absence greps and bronze.
-5. Commit: `refactor: remove obsolete Python OCR utilities`.
+- [x] 1. Confirm every script is now callerless or depended only on the deleted Python image pipeline.
+- [x] 2. Delete them wholesale, including `ks-scrape`, scraper extras, Ruff overrides, and direct tests.
+- [x] 3. Do not replace one-time migration or diagnostic scripts with TS wrappers absent a current user/CI entry point.
+- [x] 4. Run absence greps and bronze.
+- [x] 5. Commit: `refactor: remove obsolete Python OCR utilities`.
 
 **Done when:** no Python user-level entry point remains outside recogniser training/curation.
 

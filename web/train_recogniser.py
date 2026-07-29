@@ -103,24 +103,6 @@ class HogRecogniser:
             dtype=np.uint8,
         )
 
-    def warp_from_rect(
-        self, ax: float, ay: float, bw: float, bh: float,
-        source: NDArray[np.uint8], win_size: int,
-    ) -> NDArray[np.uint8]:
-        # extract_guardian_samples.py's former standalone letterbox_warp, moved here unchanged.
-        import cv2
-        scale = min((win_size - 1) / bw, (win_size - 1) / bh)
-        dest_w, dest_h = bw * scale, bh * scale
-        off_x, off_y = ((win_size - 1) - dest_w) / 2, ((win_size - 1) - dest_h) / 2
-        src = np.array([[ax, ay], [ax + bw, ay], [ax + bw, ay + bh], [ax, ay + bh]], dtype=np.float32)
-        dst = np.array([
-            [off_x, off_y], [off_x + dest_w, off_y],
-            [off_x + dest_w, off_y + dest_h], [off_x, off_y + dest_h],
-        ], dtype=np.float32)
-        m = cv2.getPerspectiveTransform(src, dst)
-        thumb = cv2.warpPerspective(source, m, (win_size, win_size), flags=cv2.INTER_LINEAR)
-        return ((thumb > 127).astype(np.uint8) * 255)
-
     def extract_features(self, imgs: NDArray[np.uint8]) -> NDArray[np.float64]:
         hog, hole = ts_bridge.extract_features(list(imgs))
         return np.hstack([hog, hole])

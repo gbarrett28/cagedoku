@@ -29,20 +29,14 @@ Scheduled Python is now limited to `web/train_recogniser.py` plus the three priv
 R2 helpers. Model regression evaluation is TypeScript: the workflow builds the
 production app and runs `web/scripts/evaluate-corpus.ts` over committed fixtures.
 
-## Actual temp/manual scripts (~23 files)
+## Remaining manual scripts
 
-### A one-time-looking data-migration chain
-No CI wiring, narrow single-purpose, no evidence of recent real use:
+### Temporary ingestion helper
 
-- `web/migrate_pic_cache.py` (2026-07-04) — converts old `.jpk` pickle caches to JSON
-- `web/extract_guardian_samples.py` (2026-07-24) — re-extracts cage-total thumbnails from that JSON cache
 - `web/dedupe_browser_train.py` (2026-06-28) — drops exact-duplicate crops from `browser_train.json`
 
-### Manual training/tuning CLIs
-Run by hand when retraining or investigating something:
+### Human training/curation CLIs
 
-- `killer_sudoku/training/calibrate.py` (2026-06-28) — data-driven threshold calibration for one specific grid-location constant
-- `killer_sudoku/training/scrape_puzzles.py` (2026-06-28) — scrapes Guardian puzzle images
 - `killer_sudoku/training/review_low_confidence.py` (2026-07-28) — generates a tick-sheet for manually reviewing duplicate-conflict digit reads from browser-selected raw crops
 - `killer_sudoku/training/apply_review_corrections.py` (2026-07-25) — merges that tick-sheet's corrections back in
 
@@ -56,6 +50,8 @@ The standalone recogniser comparison and legacy NPZ-to-browser conversion script
 were also removed when TypeScript retired PCA/template and linear manifests.
 The Python PCA trainer/exporter, Python HOG model loader, frozen checkpoint package,
 and `ks-train-numbers` entry point were then removed as one closed legacy family.
+Callerless calibration, scraping, archive extraction, and pickle-cache migration tools
+were removed next; no replacement wrappers were added.
 
 ## Removed entry points
 
@@ -79,6 +75,6 @@ were **two** Python solving implementations: a legacy constraint/equation-based
 
 ## What did NOT get removed, and why
 
-The remaining acquisition/migration and calibration/scraping scripts are handled by
-the next wholesale-removal sprint after their callers are proved absent. They are not
-being refactored merely because they still exist.
+The standalone browser-training dedupe helper remains temporarily and is removed only
+when deduplication is folded into retained ingestion. It is not being refactored before
+that replacement exists.

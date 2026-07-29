@@ -397,9 +397,9 @@ const offX = ((64 - 1) - destW) / 2, offY = ((64 - 1) - destH) / 2;
 given digit. The raw source crop remains available for later training strategies while
 the thumbnail records the exact deployed recogniser input.
 
-**Training pipeline note:** `letterbox_warp` in both `train_recogniser.py` and
-`extract_guardian_samples.py` mirrors this exact formula, so training and
-inference thumbnails are produced identically.
+**Training pipeline note:** archived Python extraction and migration paths have been
+removed. New training inputs preserve the raw bounding-box crop so the selected
+production TypeScript warp can be applied without changing crop acquisition.
 
 ---
 
@@ -575,39 +575,10 @@ flowchart LR
     E --> F[dedupe_browser_train.py\ndrop exact pixel duplicates]
 ```
 
-**Bulk newspaper-archive extraction.** `extract_guardian_samples.py` re-derives
-labelled thumbnails from archived guardian/observer puzzle photos (`guardian/`,
-`observer/` — gitignored, irreplaceable raw `.jpg`s plus cached grid/cage-total JSON
-from `migrate_pic_cache.py`). Per cell with a non-zero cage total, it crops the
-cell's top-left quadrant, upscales/binarizes to match the live pipeline's warp
-exactly, then finds digit-sized ink blobs via a **Node bridge**
-(`web/scripts/find-digit-blobs-server.ts`) that calls the literal production
-`isDigitSizedContour` + real `cv.findContours` logic — not a second cv2
-reimplementation, which previously drifted from production (a bespoke
-ink-column-projection heuristic mistook a cage-border line bleeding into the crop
-margin for digit content). `select_digit_blobs` then resolves the common ambiguity
-where more blobs are found than the cage total has digits: a thick cage-border or
-underline decoration band can itself fragment into a piece small enough to pass the
-size filter, but it is always shorter and lower in the crop than the real digit(s)
-(which sit at the top, since that's exactly why the crop is scoped to the cell's
-top-left quadrant) — so the topmost N blobs are kept. A genuinely touching 2-digit
-pair (one merged blob where two are expected) falls back to an ink-projection-minimum
-split of that blob's own bounding rect, gated by the same size filter.
-
-```mermaid
-flowchart LR
-    A[guardian/observer .jpg + cached grid/cage_totals] --> B[warp + binarize\n(matches live pipeline)]
-    B --> C[per-cell top-left quadrant crop]
-    C --> D[find_digit_blobs:\nNode bridge -> real cv.findContours\n+ isDigitSizedContour]
-    D --> E{blob count\n== ndigits?}
-    E -- yes --> F[direct left-to-right assignment]
-    E -- more --> G[select_digit_blobs:\nkeep topmost N]
-    E -- one, ndigits=2 --> H[split_bounding_rect:\nink-projection minimum]
-    F --> I[letterbox_warp -> 64x64]
-    G --> I
-    H --> I
-    I --> J[guardian_train_sq.json /\nobserver_train_sq.json]
-```
+**Historical bulk exports.** The archived Python newspaper extractor and pickle-cache
+migration utility were removed because they had no current user or CI entry point and
+reimplemented doomed acquisition/warp behaviour. Existing labelled JSON files may be
+used only as explicitly tagged legacy inputs; no retained tool regenerates them.
 
 The cached bulk exports are historical labelled training inputs. Candidate-model
 regression gating is separate: it runs the production browser over

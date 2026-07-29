@@ -18,11 +18,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-scraper = ["requests", "beautifulsoup4"]
 dev = ["ruff", "mypy", "pytest", "pytest-cov", "playwright>=1.40", "pytest-playwright>=0.4", "numba"]
-
-[project.scripts]
-ks-scrape = "killer_sudoku.training.scrape_puzzles:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -103,10 +99,6 @@ dummy-variable-rgx = "^_.*$"
 # Stub files don't need docstrings; N803/N806 don't apply to type stubs.
 # UP047: PEP 695 type param syntax is Python 3.12+ only — stubs target older versions too.
 "stubs/**/*.pyi" = ["D", "N803", "N806", "UP047"]
-# M/M_hr/M_out are OpenCV transformation matrix conventions (standard uppercase).
-# PLW0603: module-level subprocess singleton requires global to reassign.
-"web/extract_guardian_samples.py" = ["N806", "PLW0603"]
-
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 

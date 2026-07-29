@@ -1173,24 +1173,6 @@ succeed instead of dropping.
 
 ## Stress-Test Tooling
 
-### Scraper
-
-`killer_sudoku/training/scrape_puzzles.py` downloads puzzle images from any
-Guardian/Observer series index page.
-
-```bash
-# Classic sudoku, sorted into subdirectories by difficulty keyword in URL
-python -m killer_sudoku.training.scrape_puzzles \
-    --output-dir classic_guardian \
-    --series-url "https://www.theguardian.com/lifeandstyle/series/sudoku?page={}" \
-    --subdir-keywords easy medium hard diabolical
-```
-
-`--subdir-keywords` detects the first matching keyword in each article URL and
-saves images into `<output-dir>/<keyword>/`. Articles matching none of the
-keywords go into `other/`. The per-subdirectory guard (skip if directory already
-exists) means re-runs are safe — existing images are never overwritten.
-
 ### Stress-Test Runner
 
 `scripts/run-stress-test.sh <puzzle-dir> [workers] [--copy-stalls <dest>]` processes
