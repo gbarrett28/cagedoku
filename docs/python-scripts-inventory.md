@@ -8,12 +8,14 @@ boundary cleanup removes confirmed-dead families.
 not last-*run* dates — there's no execution telemetry available. Several "2026-07-26"
 dates are from edits made during that migration session, not evidence of real usage.
 
-## Not "temp" — structured library/engine code (~38 files)
+## Removed structured OCR/solver code
 
-| Path | Purpose | Last touched | Still reachable? |
-|---|---|---|---|
-| `killer_sudoku/image/*.py` (8 files: `border_clustering.py`, `border_detection.py`, `cell_scan.py`, `config.py`, `grid_location.py`, `inp_image.py`, `number_recognition.py`, `validation.py`) | Legacy image pipeline: grid location, border clustering/detection, cell scanning, digit recognition (`RBFClassifier`/`CayenneNumber`), `InpImage` orchestrator | 2026-07-24 | **Obsolete** — no training/review caller remains; only diagnostics and acquisition utilities scheduled for wholesale removal still import it |
-| `killer_sudoku/solver/grid.py`, `puzzle_spec.py` | `ProcessingError` (image-pipeline error, misplaced here historically) and `PuzzleSpec` (the validated cage-layout contract) | 2026-07-26 | **Obsolete** — retained only by the legacy Python image/diagnostic family scheduled for wholesale removal |
+The remaining `killer_sudoku/image/` and `killer_sudoku/solver/` packages were
+removed wholesale after symbol-level reachability checks found only their own tests,
+three dependent diagnostic helpers, and the temporary TS bridge solver type. The
+debug helpers and test-only digit-rectangle extractor were deleted with the packages;
+the bridge now passes an already row-major JSON payload and defines no Python puzzle
+model.
 
 ## Live — wired into scheduled automation
 
@@ -44,12 +46,6 @@ Run by hand when retraining or investigating something:
 - `killer_sudoku/training/review_low_confidence.py` (2026-07-28) — generates a tick-sheet for manually reviewing duplicate-conflict digit reads from browser-selected raw crops
 - `killer_sudoku/training/apply_review_corrections.py` (2026-07-25) — merges that tick-sheet's corrections back in
 
-### Pure debug/visualization one-offs
-No automation, clearly "run this once while investigating a specific image":
-
-- `killer_sudoku/training/debug_borders.py` (2026-06-28) — draws classified border decisions on a warped image
-- `killer_sudoku/training/debug_border_strips.py` (2026-06-28) — draws where border-sampling strips land
-
 ## Bottom line
 
 The agreement/comparison-training family (`agreement_pool.py`,
@@ -75,20 +71,14 @@ were **two** Python solving implementations: a legacy constraint/equation-based
 `Grid.solve()`, and a newer rule-engine `Grid.engine_solve()` (mirroring
 `web/src/engine/`). Both are now retired:
 
-- Added `--op solve` to `web/scripts/ts-bridge.ts`, calling the real production
-  solver (`web/src/engine/index.ts`'s `solve()`) directly — no reimplementation.
-- Added `killer_sudoku/training/ts_bridge.py`'s `solve()`, which transposes
-  `PuzzleSpec.regions`/`cage_totals` (confirmed col-major by reading
-  `validate_cage_layout`'s union-find loop directly, not its docstring — a real
-  row/col bug caught by a deliberately transpose-sensitive test) to the
-  row-major shape the TS side expects.
-- Deleted: `killer_sudoku/solver/engine/**` (~30 files), `equation.py`,
-  `types.py` (`GridLike`, only used by `equation.py`), and `killer_sudoku/output/`
-  (`SolImage`, only used by `Grid.__init__`). `Grid` itself is gone from
-  `grid.py` — only `ProcessingError` remains there.
+- The temporary `--op solve` bridge remains only until the bridge-narrowing
+  sprint. Its Python wrapper accepts a row-major JSON payload directly and defines
+  no Python puzzle model or solver behaviour.
+- The final `grid.py`/`puzzle_spec.py` remnants and the entire Python image pipeline
+  were deleted with their direct tests rather than refactored.
 
 ## What did NOT get removed, and why
 
-The remaining migration-chain scripts, debug tools, and legacy training CLIs are
-handled by later wholesale-removal sprints after their callers are proved absent.
-They are not being refactored merely because they still exist.
+The remaining acquisition/migration and calibration/scraping scripts are handled by
+the next wholesale-removal sprint after their callers are proved absent. They are not
+being refactored merely because they still exist.

@@ -94,14 +94,6 @@ dummy-variable-rgx = "^_.*$"
 "killer_sudoku/training/*.py" = ["T20"]
 # Corpus evaluator CLI: print() for progress output.
 "killer_sudoku/scripts/*.py" = ["T20"]
-# Remaining killer_sudoku/solver/ files (grid.py, puzzle_spec.py, equation-based
-# engine/api/output packages retired) predate style rules added since they were
-# written. RUF001/002: legacy unicode chars (×, –, ⋃) in old docstrings/comments.
-# ERA001: explanatory structure comments misidentified by eradicate.
-"killer_sudoku/solver/**/*.py" = ["RUF001", "RUF002", "ERA001", "SIM102", "SIM105", "D205", "RUF005"]
-# Restored image pipeline files — RUF001/002/003: legacy unicode in docstrings;
-# ERA001: explanatory structure notes in comments.
-"killer_sudoku/image/**/*.py" = ["RUF001", "RUF002", "RUF003", "ERA001"]
 # CLI utility scripts: print() is the output mechanism
 "scripts/_r2_*.py" = ["T20"]
 # Tests: sys.path manipulation before imports is standard pytest pattern.

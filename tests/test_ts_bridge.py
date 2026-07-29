@@ -3,7 +3,6 @@ from typing import Any
 
 import numpy as np
 
-from killer_sudoku.solver.puzzle_spec import PuzzleSpec
 from killer_sudoku.training import ts_bridge
 from killer_sudoku.training.ts_bridge import extract_features, predict, solve
 
@@ -96,18 +95,14 @@ def test_predict_chunks_large_inputs_across_multiple_bridge_calls(monkeypatch: A
 
 
 def test_solve_matches_known_solution_for_a_trivial_one_cell_per_cage_spec() -> None:
-    # validate_cage_layout's own regions/cage_totals are col-major ([col, row]),
-    # confirmed by reading its union-find loop directly -- NOT what its Args
-    # docstring says, and the opposite of the row-major convention ts-bridge.ts's
-    # solve() expects (verified empirically by ts-bridge.test.ts's own trivial-spec
-    # test). solve() below must transpose to catch a regression here.
-    regions = np.arange(1, 82, dtype=np.intp).reshape(9, 9).T
-    cage_totals = np.array(KNOWN_SOLUTION, dtype=np.intp).T
-    border_x = np.ones((9, 8), dtype=np.bool_)
-    border_y = np.ones((8, 9), dtype=np.bool_)
-    spec = PuzzleSpec(regions=regions, cage_totals=cage_totals, border_x=border_x, border_y=border_y)
+    payload = {
+        "regions": np.arange(1, 82, dtype=np.intp).reshape(9, 9).tolist(),
+        "cageTotals": KNOWN_SOLUTION,
+        "borderX": np.ones((9, 8), dtype=np.bool_).tolist(),
+        "borderY": np.ones((8, 9), dtype=np.bool_).tolist(),
+    }
 
-    result = solve(spec)
+    result = solve(payload)
 
     assert result["solved"] is True
     assert result["board"] == KNOWN_SOLUTION

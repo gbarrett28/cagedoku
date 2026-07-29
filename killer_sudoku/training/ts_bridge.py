@@ -15,8 +15,6 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from killer_sudoku.solver.puzzle_spec import PuzzleSpec
-
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _BRIDGE_SCRIPT = _REPO_ROOT / "web" / "scripts" / "ts-bridge.ts"
 
@@ -68,25 +66,8 @@ def extract_features(
     return np.concatenate(hog_chunks), np.concatenate(hole_chunks)
 
 
-def solve(spec: PuzzleSpec, given_digits: npt.NDArray[np.intp] | None = None) -> dict[str, Any]:
-    """Solves a spec by calling into the real TS engine instead of any Python solver.
-
-    spec.regions/spec.cage_totals are col-major ([col, row]) -- confirmed by
-    reading validate_cage_layout's union-find loop directly, not its (stale)
-    Args docstring -- so they're transposed here to the row-major shape
-    ts-bridge.ts's solve() expects (see ts-bridge.test.ts's own trivial-spec
-    test for the empirical proof of that expectation). border_x/border_y are
-    already col-first in both TS and Python by convention (see this repo's
-    CLAUDE.md "Exception -- border arrays") and pass through unchanged.
-    """
-    payload: dict[str, Any] = {
-        "regions": spec.regions.T.tolist(),
-        "cageTotals": spec.cage_totals.T.tolist(),
-        "borderX": spec.border_x.tolist(),
-        "borderY": spec.border_y.tolist(),
-    }
-    if given_digits is not None:
-        payload["givenDigits"] = given_digits.tolist()
+def solve(payload: dict[str, Any]) -> dict[str, Any]:
+    """Pass a row-major puzzle payload to the TypeScript solver."""
     return _run_bridge("solve", payload)
 
 

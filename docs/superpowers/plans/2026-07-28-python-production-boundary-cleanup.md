@@ -302,12 +302,12 @@ bash scripts/run-bronze-gate.sh
 
 **Files:** delete `killer_sudoku/image/`, `killer_sudoku/solver/`, and tests whose sole subject is those packages; adjust only direct retained imports/docs required for green tests.
 
-1. Use Serena references on `InpImage`, `locate_grid`, `validate_cage_layout`, `CayenneNumber`, Python `PuzzleSpec`, and `ProcessingError`.
-2. If a retained caller appears, stop and add its migration to this sprint; do not create an adapter.
-3. Delete both packages as directories before doing survivor refactors.
-4. Delete tests for their production behaviour rather than porting them to caches.
-5. Run forbidden-import greps and bronze.
-6. Commit: `refactor: remove redundant Python image and solver pipelines`.
+- [x] 1. Use Serena references on `InpImage`, `locate_grid`, `validate_cage_layout`, `CayenneNumber`, Python `PuzzleSpec`, and `ProcessingError`.
+- [x] 2. If a retained caller appears, stop and add its migration to this sprint; do not create an adapter.
+- [x] 3. Delete both packages as directories before doing survivor refactors.
+- [x] 4. Delete tests for their production behaviour rather than porting them to caches.
+- [x] 5. Run forbidden-import greps and bronze.
+- [x] 6. Commit: `refactor: remove redundant Python image and solver pipelines`.
 
 **Done when:** Python has no importable image-to-puzzle or puzzle-solving implementation.
 
