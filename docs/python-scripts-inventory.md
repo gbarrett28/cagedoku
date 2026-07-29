@@ -36,7 +36,6 @@ No CI wiring, narrow single-purpose, no evidence of recent real use:
 - `web/extract_guardian_samples.py` (2026-07-24) — re-extracts cage-total thumbnails from that JSON cache
 - `web/dedupe_browser_train.py` (2026-06-28) — drops exact-duplicate crops from `browser_train.json`
 - `killer_sudoku/training/export_model_web.py` (2026-06-28) — converts `.npz` → the TS `.bin`/`.json` format (superseded in spirit by `HogRecogniser.save()` doing this directly now)
-- `web/scripts/convert_npz_to_ts.py` (2026-07-22) — looks like a near-duplicate of `export_model_web.py`; worth checking if one is stale
 
 ### Manual training/tuning CLIs
 Run by hand when retraining or investigating something:
@@ -52,7 +51,6 @@ No automation, clearly "run this once while investigating a specific image":
 
 - `killer_sudoku/training/debug_borders.py` (2026-06-28) — draws classified border decisions on a warped image
 - `killer_sudoku/training/debug_border_strips.py` (2026-06-28) — draws where border-sampling strips land
-- `web/scripts/compare-recognisers.py` (2026-07-26) — diffs two model versions' predictions on harvested samples
 
 ## Bottom line
 
@@ -60,6 +58,8 @@ The agreement/comparison-training family (`agreement_pool.py`,
 `balanced_sample.py`, `train_combinations.py`, and `synthetic_holdout.py`) has now
 been removed as a unit. Its only non-test callers were inside that same family; the
 manual review workflow retained only its small corpus-name/key helpers locally.
+The standalone recogniser comparison and legacy NPZ-to-browser conversion scripts
+were also removed when TypeScript retired PCA/template and linear manifests.
 
 ## Removed entry points
 

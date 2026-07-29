@@ -266,14 +266,14 @@ bash scripts/run-bronze-gate.sh
 
 **Files:** `web/src/image/numberRecognition.ts` and test; create `web/scripts/validate-model.ts` and test; remove `web/scripts/compare-recognisers.py` and `web/scripts/convert_npz_to_ts.py` if their last TS/PCA use is gone.
 
-1. Add a failing test that a `pca_rbf` manifest raises an explicit unsupported-classifier error.
-2. Delete PCA parameter parsing, templates, recogniser class, and dispatch. Retain the shipped HOG/hole RBF path.
-3. Add `validateModel(modelBinPath, modelJsonPath, canonicalCrops)` which uses `loadNumRecogniser`; it contains no classifier implementation.
-4. Its CLI reads schema-v2 `recognitionPixels` for deployed-model auditing. It must never call them raw or rewarp them.
-5. Test committed model loading using two canonical samples.
-6. Delete comparison/conversion scripts once references prove they are obsolete.
-7. Run focused tests, build, and bronze.
-8. Commit: `refactor: retain only production HOG RBF loading`.
+- [x] 1. Add a failing test that a `pca_rbf` manifest raises an explicit unsupported-classifier error.
+- [x] 2. Delete PCA parameter parsing, templates, recogniser class, and dispatch. Retain the shipped HOG/hole RBF path.
+- [x] 3. Add `validateModel(modelBinPath, modelJsonPath, canonicalCrops)` which uses `loadNumRecogniser`; it contains no classifier implementation.
+- [x] 4. Its CLI reads schema-v2 `recognitionPixels` for deployed-model auditing. It must never call them raw or rewarp them.
+- [x] 5. Test committed model loading using two canonical samples.
+- [x] 6. Delete comparison/conversion scripts once references prove they are obsolete.
+- [x] 7. Run focused tests, build, and bronze.
+- [x] 8. Commit: `refactor: retain only production HOG RBF loading`.
 
 **Done when:** the browser supports one manifest type and externally written models can be validated through the real loader.
 

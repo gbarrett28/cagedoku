@@ -283,19 +283,12 @@ formats without format-specific training.
 
 Cage totals are printed in the top-left of the cage's top-left cell.  This stage
 classifies each contour candidate (located in Stage 3) using HOG + hole-count features
-and a LinearSVC.
+and the production OvO RBF SVM.
 
-> **Both architectures are permanent, drop-in alternatives** — see
-> `docs/architecture.md` § Web Recogniser Training for the `NumRecogniser`
-> class hierarchy overview. `PcaRbfRecogniser` (currently shipped) uses direct
-> corner-to-corner stretch via `getWarpFromRect`, matching Python's
-> `get_warp_from_rect`; `HogRecogniser` uses the aspect-preserving
-> `letterboxWarp` described below, restored in `numberRecognition.ts` as
-> `HogRecogniser.warpForRecognition`'s implementation. Each subclass's
-> `warpForRecognition`/`warp_from_rect` method picks its own crop geometry —
-> callers never choose it directly. The feature-extraction pipeline described
-> below (HOG + hole-count + LinearSVC/RBF-SVM) is `HogRecogniser`'s
-> implementation specifically, not the only path through this stage.
+> The browser supports one recogniser architecture: `HogRecogniser` with
+> `classifier_type: "rbf"`. It applies the aspect-preserving `letterboxWarp`
+> before TypeScript-owned HOG/hole feature extraction and inference. Legacy
+> PCA/template matching and linear-classifier manifests are rejected explicitly.
 
 `buildCageTotals` (`inpImage.ts`) runs `cv.findContours` once over the whole warped
 board (`RETR_TREE`), walks the resulting hierarchy (`contourHier`), and keeps contours
@@ -327,15 +320,15 @@ pixels in the same per-cell order as `cellThumbs` and the recognition results.
 
 HOG features are extracted via `cv.HOGDescriptor` (OpenCV.js) with a 64 px window,
 8 px cells, 16 px blocks, and 9 orientation bins — producing a 1764-dimensional vector.
-A 5-dimensional hole-count feature (`extractHoleFeatures`/`extract_hole_features`,
-mirrored exactly between TypeScript and Python) is concatenated: a BFS flood-fill from
+A 5-dimensional hole-count feature (`extractHoleFeatures`, called from Python through
+`ts_bridge.py`) is concatenated: a BFS flood-fill from
 every border background pixel marks "outside"; unvisited background pixels are
 enclosed "holes", labelled and sized (regions under 6px discarded as anti-aliasing
 noise), encoded as `[onehot(0 holes), onehot(1), onehot(2+), frac(largest), frac(2nd
 largest)]`. This gives the classifier a global-topology signal HOG's local gradient
 histograms cannot encode — e.g. distinguishing "3" (0 holes) from "8" (2 holes), a
 confirmed confusion pair before this feature was added. The combined 1769-dimensional
-vector feeds an OvO LinearSVC (45 binary classifiers); the winner's vote fraction is
+vector feeds an OvO RBF SVM (45 binary classifiers); the winner's vote fraction is
 the read's confidence, flagged uncertain below 0.7.
 
 ```mermaid
@@ -346,7 +339,7 @@ flowchart TD
     C --> E[extractHoleFeatures:\nBFS flood-fill from border\n-> 5-dim vector]
     D --> F[concatenate -> 1769-dim]
     E --> F
-    F --> G[LinearSVC OvO 45 classifiers\n-> vote count per digit]
+    F --> G[RBF SVM OvO 45 classifiers\n-> vote count per digit]
     G --> H[Recognition: label + confident flag\nper candidate]
     H --> I[accumulate candidates per cell\n-> digit_candidates 9x9]
 ```
@@ -625,7 +618,7 @@ regression gating is separate: it runs the production browser over
 
 Loads browser-exported ground truth (always included in full, never capped) plus
 optionally-capped bulk guardian/observer data and/or synthetic font samples, augments
-with dithering, extracts HOG + hole-count features, and fits a LinearSVC OvO
+with dithering, extracts HOG + hole-count features, and fits a RBF SVM OvO
 classifier.
 
 ```bash
@@ -648,7 +641,7 @@ flowchart LR
     E --> G[extract_hole_features\n5-dim vectors]
     F --> H[concatenate -> 1769-dim]
     G --> H
-    H --> I[LinearSVC OvO fit\n--svm-c]
+    H --> I[RBF SVM OvO fit\n--svm-c]
     I --> J[num_recogniser.bin + .json\nweb/public/]
 ```
 
@@ -709,11 +702,6 @@ border clustering.
 **Derivation:** on a representative image set, plot the distribution of
 `cage_total_confidence` for true cage heads vs non-heads.  Set the threshold at the
 valley between the two distributions.
-
-### PCA Variance Threshold (99%)
-
-The number of PCA components kept explains 99% of variance in mean digit images.
-This is a conventional value; tune by cross-validation at 90%, 95%, 99%, 99.5%.
 
 ---
 

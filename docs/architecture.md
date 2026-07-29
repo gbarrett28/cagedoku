@@ -196,31 +196,30 @@ model is required.
 
 See **`docs/image-pipeline.md`** for the full pipeline architecture, stage
 descriptions, training pipeline (T1/T2), threshold derivation guide, and migration plan.
-The [Training Pipeline](image-pipeline.md#training-pipeline) section covers the T1
-(collect numerals) and T2 (fit PCA + classifier) steps in detail.
+The [Training Pipeline](image-pipeline.md#training-pipeline) section covers sample
+collection and HOG/RBF model fitting in detail.
 
 ### Web Recogniser Training
 
-The digit recogniser is a `NumRecogniser` class hierarchy
-(`web/src/image/numberRecognition.ts`, mirrored in `web/train_recogniser.py`): an
-abstract base class plus two concrete implementations, `PcaRbfRecogniser` (PCA +
-template-match + RBF-SVM, currently shipped, `classifier_type: "pca_rbf"` in
-`num_recogniser.json`) and `HogRecogniser` (HOG features + LinearSVC/RBF-SVM, the
-historical architecture). Exactly one dispatch point per language decides which is
-active: TS reads `classifier_type` once in `loadNumRecogniser`; Python's active
-architecture is the `ACTIVE_RECOGNISER` module constant in `train_recogniser.py`. A
-single active-instance singleton (`setActiveRecogniser`/`activeRecogniser` in
-`numberRecognition.ts`, set once by `store.ts` after loading the model) means callers
-never thread a recogniser instance through the pipeline by hand.
+The production digit recogniser lives in `web/src/image/numberRecognition.ts`.
+`loadNumRecogniser` accepts one manifest type, `classifier_type: "rbf"`, and creates
+a `HogRecogniser`: 64×64 letterboxed digit crops are represented by HOG plus
+hole-count features and classified by an OvO RBF SVM. PCA/template matching and the
+linear-classifier branch have been retired; unsupported manifests fail explicitly
+instead of silently taking a fallback path.
 
-Cropping is part of the recogniser, not the caller: each subclass implements
-`warpForRecognition`/`warp_from_rect`, choosing direct-stretch (`PcaRbfRecogniser`) or
-aspect-preserving letterbox padding (`HogRecogniser`) — the two architectures were
-trained on different crop geometries, so this can't be a shared helper. Swapping which
-architecture ships is a one-line change (`num_recogniser.json`'s `classifier_type` for
-TS consumers built from whichever files are copied into `web/public/`; `ACTIVE_RECOGNISER`
-for retraining). Benchmarking the two against each other is not yet wired up as a
-repeatable workflow — see `docs/superpowers/specs/` history if reviving that effort.
+TypeScript owns every operation used by the browser, including crop warping, feature
+extraction, and inference. Python may orchestrate fitting, but calls the TypeScript
+feature implementation through `killer_sudoku/training/ts_bridge.py` rather than
+reimplementing it. `web/scripts/validate-model.ts` audits an externally written model
+through the production `loadNumRecogniser` path using canonical schema-v2
+`recognitionPixels`.
+
+A single active-instance singleton (`setActiveRecogniser`/`activeRecogniser` in
+`numberRecognition.ts`, set once by `store.ts` after loading the model) means callers
+never thread a recogniser instance through the pipeline by hand. The recogniser's
+`warpStrategy` is `letterbox`; raw bounding-box crops stay strategy-neutral until the
+production warp is applied.
 
 When a user corrects OCR errors and confirms a killer puzzle, the app automatically
 uploads the digit thumbnails (user-verified labels, 64×64 uint8) to a remote
@@ -301,7 +300,7 @@ bash scripts/mark_processed.sh /tmp/training
 2. Optionally generates synthetic font samples
 3. Applies dithering (translation ±2 px, morphological step, 1% pixel noise)
 4. Extracts HOG features — 64 px window / 8 px cells / 16 px blocks / 9 bins = 1764 dims
-5. Fits a LinearSVC OvO classifier (45 binary SVMs for digits 0–9)
+5. Fits an RBF SVM OvO classifier (45 binary SVMs for digits 0–9)
 6. Saves updated model files; the web app picks them up on next page reload
 
 `--browser-weight 1000 --svm-c 100` up-weights real samples over synthetic fonts.

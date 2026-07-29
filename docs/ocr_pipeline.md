@@ -287,20 +287,11 @@ as a pre-scan.
 | Hole-count | 5 | BFS flood-fill; encodes 0/1/2+ holes + 2 size fractions |
 | Combined | 1769 | Concatenated HOG ⊕ hole-count |
 
-**Classifier:** LinearSVC OvO, 45 binary classifiers (digits 0–9). Confidence =
-vote fraction; flagged uncertain below 0.7.
-
-> The currently shipped model is `PcaRbfRecogniser` (PCA + template-match +
-> RBF-SVM, ported from the Python reference — see `docs/architecture.md` §
-> Web Recogniser Training). This section describes `HogRecogniser`, the
-> HOG + LinearSVC architecture retained as the other branch of the
-> `NumRecogniser` class hierarchy, not the active default. The Python
-> bit-exact port effort that produced the PCA+RBF port was abandoned — the
-> Python reference implementation turned out to be missing validation checks
-> that would have caused it to fail on certain inputs, so its apparent 99.9%
-> corpus clean rate wasn't a trustworthy target to bit-match against. See
-> `docs/bitexact-port-debugged-images.md` for what the effort found before
-> being closed out.
+**Classifier:** RBF SVM OvO, 45 binary classifiers (digits 0–9). Confidence =
+vote fraction; flagged uncertain below 0.7. The browser accepts only the production
+`classifier_type: "rbf"` manifest and rejects the retired PCA/template and linear
+formats explicitly. HOG/hole feature extraction and inference are TypeScript-owned;
+Python fitting calls the TypeScript feature implementation through `ts_bridge.py`.
 
 The non-digit binary classifier (Stage 3b, not yet implemented) is distinct from the
 digit recogniser. It operates on contour metrics (fill ratio, aspect ratio, area,
