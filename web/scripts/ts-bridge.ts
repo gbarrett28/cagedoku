@@ -1,8 +1,15 @@
 import fs from 'node:fs';
-import { hogExtract, loadNumRecogniser, DEFAULT_HOG_PARAMS } from '../src/image/numberRecognition.js';
+import {
+  DEFAULT_HOG_PARAMS,
+  hogExtract,
+  loadNumRecogniser,
+  warpRawDigitCrop,
+} from '../src/image/numberRecognition.js';
+import type { RawDigitCrop, WarpStrategy } from '../src/image/numberRecognition.js';
 import { extractHoleFeatures } from '../src/image/holeFeatures.js';
 import { solve } from '../src/engine/index.js';
 import type { PuzzleSpec } from '../src/solver/puzzleSpec.js';
+import { loadNodeOpenCv } from './node-opencv.js';
 
 const HOG_PARAMS = DEFAULT_HOG_PARAMS;
 
@@ -12,6 +19,18 @@ interface Args {
   output: string | null;
   modelBin: string | null;
   modelJson: string | null;
+}
+
+interface RawCropPayload {
+  readonly width: number;
+  readonly height: number;
+  readonly pixels: number[];
+}
+
+interface WarpCropsPayload {
+  readonly crops: RawCropPayload[];
+  readonly strategy: WarpStrategy;
+  readonly size: number;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -27,7 +46,7 @@ function parseArgs(argv: string[]): Args {
     else if (argv[i] === '--model-bin') modelBin = argv[++i]!;
     else if (argv[i] === '--model-json') modelJson = argv[++i]!;
   }
-  if (!op) throw new Error('--op is required (extract-features | predict)');
+  if (!op) throw new Error('--op is required (warp-crops | extract-features | predict | solve)');
   return { op, input, output, modelBin, modelJson };
 }
 
@@ -58,6 +77,57 @@ function runExtractFeatures(payload: { crops: number[][] }): string {
     hole.push(Array.from(holeFeat.subarray(i * nHole, (i + 1) * nHole)));
   }
   return JSON.stringify({ hog, hole });
+}
+
+function parseWarpCropsPayload(value: unknown): WarpCropsPayload {
+  if (typeof value !== 'object' || value === null) {
+    throw new Error('warp-crops payload must be an object');
+  }
+  const payload = value as Partial<WarpCropsPayload>;
+  if (payload.strategy !== 'stretch' && payload.strategy !== 'letterbox') {
+    throw new Error(`warp-crops strategy must be stretch or letterbox, got ${String(payload.strategy)}`);
+  }
+  if (!Number.isInteger(payload.size) || (payload.size ?? 0) <= 0) {
+    throw new Error(`warp-crops size must be a positive integer, got ${String(payload.size)}`);
+  }
+  if (!Array.isArray(payload.crops)) {
+    throw new Error('warp-crops crops must be an array');
+  }
+  for (const [index, crop] of payload.crops.entries()) {
+    if (!Number.isInteger(crop.width) || crop.width <= 0
+        || !Number.isInteger(crop.height) || crop.height <= 0) {
+      throw new Error(`warp-crops crop ${index} dimensions must be positive integers`);
+    }
+    if (!Array.isArray(crop.pixels) || crop.pixels.length !== crop.width * crop.height) {
+      throw new Error(
+        `warp-crops crop ${index} expected ${crop.width * crop.height} pixels, got ${crop.pixels?.length ?? 'non-array'}`,
+      );
+    }
+    if (crop.pixels.some(pixel => !Number.isInteger(pixel) || pixel < 0 || pixel > 255)) {
+      throw new Error(`warp-crops crop ${index} pixels must be uint8 values`);
+    }
+  }
+  return payload as WarpCropsPayload;
+}
+
+async function runWarpCrops(value: unknown): Promise<string> {
+  const payload = parseWarpCropsPayload(value);
+  const cv = await loadNodeOpenCv();
+  const crops = payload.crops.map((crop): RawDigitCrop => ({
+    x: 0,
+    y: 0,
+    width: crop.width,
+    height: crop.height,
+    pixels: Uint8Array.from(crop.pixels),
+  }));
+  const warped = crops.map(crop => warpRawDigitCrop(cv, crop, payload.strategy, payload.size));
+  const expectedLength = payload.size * payload.size;
+  for (const [index, crop] of warped.entries()) {
+    if (crop.length !== expectedLength) {
+      throw new Error(`warp-crops crop ${index} returned ${crop.length} pixels, expected ${expectedLength}`);
+    }
+  }
+  return JSON.stringify({ crops: warped.map(crop => Array.from(crop)) });
 }
 
 function runPredict(
@@ -93,23 +163,28 @@ function runSolve(payload: PuzzleSpec & { givenDigits?: number[][] }): string {
   return JSON.stringify({ solved, board: out, usedBacktracking });
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  const payload = JSON.parse(readPayload(args.input));
+  const payload: unknown = JSON.parse(readPayload(args.input));
   let result: string;
-  if (args.op === 'extract-features') {
-    result = runExtractFeatures(payload);
+  if (args.op === 'warp-crops') {
+    result = await runWarpCrops(payload);
+  } else if (args.op === 'extract-features') {
+    result = runExtractFeatures(payload as { crops: number[][] });
   } else if (args.op === 'predict') {
     if (!args.modelBin || !args.modelJson) {
       throw new Error('--op predict requires --model-bin and --model-json');
     }
-    result = runPredict(payload, args.modelBin, args.modelJson);
+    result = runPredict(payload as { crops: number[][] }, args.modelBin, args.modelJson);
   } else if (args.op === 'solve') {
-    result = runSolve(payload);
+    result = runSolve(payload as PuzzleSpec & { givenDigits?: number[][] });
   } else {
-    throw new Error(`unknown --op '${args.op}' (expected extract-features | predict | solve)`);
+    throw new Error(`unknown --op '${args.op}' (expected warp-crops | extract-features | predict | solve)`);
   }
   writeResult(args.output, result);
 }
 
-main();
+main().catch((error: unknown) => {
+  console.error(error);
+  process.exit(1);
+});

@@ -402,11 +402,9 @@ export function loadNumRecogniser(
  */
 /**
  * Width/height-only digit-glyph size gate (no vertical-position parity
- * check). Shared by contourIsNumber (board-wide live recognition, which also
- * needs the parity check to exclude centred solution digits) and the offline
- * training-data bridge (find-digit-blobs-server.ts), whose caller has
- * already scoped the search to a cage-total's own quadrant — there is no
- * solution-digit ambiguity left to resolve there.
+ * check). Shared by contourIsNumber and production digit extraction.
+ * contourIsNumber also applies the vertical-position check needed to exclude
+ * centred solution digits during board-wide live recognition.
  *
  * @param w - Contour bounding-rect width.
  * @param h - Contour bounding-rect height.

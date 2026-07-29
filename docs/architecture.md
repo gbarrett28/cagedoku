@@ -209,9 +209,10 @@ linear-classifier branch have been retired; unsupported manifests fail explicitl
 instead of silently taking a fallback path.
 
 TypeScript owns every operation used by the browser, including crop warping, feature
-extraction, and inference. Python may orchestrate fitting, but calls the TypeScript
-feature implementation through `killer_sudoku/training/ts_bridge.py` rather than
-reimplementing it. `web/scripts/validate-model.ts` audits an externally written model
+extraction, and inference. Python may orchestrate fitting, but calls the production
+crop-warp and feature implementations through `killer_sudoku/training/ts_bridge.py`
+rather than reimplementing them. Raw crops are batched across the bridge and a bridge
+failure is fatal; Python has no alternate warp path. `web/scripts/validate-model.ts` audits an externally written model
 through the production `loadNumRecogniser` path using canonical schema-v2
 `recognitionPixels`.
 

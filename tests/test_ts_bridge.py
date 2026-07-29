@@ -2,9 +2,10 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pytest
 
 from killer_sudoku.training import ts_bridge
-from killer_sudoku.training.ts_bridge import extract_features, predict, solve
+from killer_sudoku.training.ts_bridge import RawDigitCrop, extract_features, predict, solve, warp_crops
 
 KNOWN_SOLUTION = [
     [5, 3, 4, 6, 7, 8, 9, 1, 2],
@@ -73,6 +74,44 @@ def test_extract_features_chunks_large_inputs_across_multiple_bridge_calls(monke
     assert calls == [2, 2, 1]
     assert hog[:, 0].tolist() == [0.0, 1.0, 0.0, 1.0, 0.0]
     assert hole[:, 0].tolist() == [0.0, 10.0, 0.0, 10.0, 0.0]
+
+
+def test_warp_crops_chunks_large_inputs_and_preserves_order(monkeypatch: Any) -> None:
+    monkeypatch.setattr(ts_bridge, "_BATCH_SIZE", 2)
+    calls: list[int] = []
+
+    def fake_run_bridge(_op: str, payload: dict[str, Any], _extra_args: list[str] | None = None) -> dict[str, Any]:
+        assert payload["strategy"] == "letterbox"
+        assert payload["size"] == 2
+        batch = payload["crops"]
+        calls.append(len(batch))
+        return {"crops": [[crop["pixels"][0]] * 4 for crop in batch]}
+
+    monkeypatch.setattr(ts_bridge, "_run_bridge", fake_run_bridge)
+    crops = [RawDigitCrop(np.full((2, 3), i, dtype=np.uint8)) for i in range(5)]
+
+    warped = warp_crops(crops, "letterbox", size=2)
+
+    assert calls == [2, 2, 1]
+    assert warped.shape == (5, 2, 2)
+    assert warped[:, 0, 0].tolist() == [0, 1, 2, 3, 4]
+
+
+def test_warp_crops_rejects_invalid_crop_shapes() -> None:
+    with pytest.raises(ValueError, match="two-dimensional"):
+        warp_crops([RawDigitCrop(np.zeros((2, 3, 1), dtype=np.uint8))], "stretch")
+    with pytest.raises(ValueError, match="positive"):
+        warp_crops([RawDigitCrop(np.zeros((0, 3), dtype=np.uint8))], "stretch")
+
+
+def test_warp_crops_surfaces_bridge_failure(monkeypatch: Any) -> None:
+    def fail_bridge(_op: str, _payload: dict[str, Any], _extra_args: list[str] | None = None) -> dict[str, Any]:
+        raise RuntimeError("bridge failed")
+
+    monkeypatch.setattr(ts_bridge, "_run_bridge", fail_bridge)
+
+    with pytest.raises(RuntimeError, match="bridge failed"):
+        warp_crops([RawDigitCrop(np.zeros((2, 3), dtype=np.uint8))], "stretch")
 
 
 def test_predict_chunks_large_inputs_across_multiple_bridge_calls(monkeypatch: Any) -> None:

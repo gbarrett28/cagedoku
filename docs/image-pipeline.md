@@ -296,10 +296,9 @@ matching `contourIsNumber` — a digit-sized bounding rect (`isDigitSizedContour
 in `[subres>>4, subres>>1)`, height in `[subres>>3, subres>>1)`) at a vertical position
 consistent with a cage total rather than a centred solution digit (a parity check on
 `y`, since solution digits and cage totals occupy alternating vertical "rows" within
-`contourIsNumber`'s scan). `isDigitSizedContour` is factored out as its own function
-specifically so the offline training-data extractor (see Training Pipeline T1 below)
-can reuse the exact same size bounds without inheriting the parity check, which only
-makes sense at whole-board scale.
+`contourIsNumber`'s scan). `isDigitSizedContour` is factored out so production digit
+acquisition shares one width/height gate without forcing callers that already scoped a
+candidate glyph to inherit the whole-board parity check.
 
 Each digit thumbnail is a 64×64 binary uint8 image produced by `letterboxWarp` —
 the digit's natural aspect ratio is preserved and it is centred with black letterbox
@@ -316,7 +315,9 @@ Before either recognition warp, `extractRawDigitCrop` copies the exact bounding-
 pixels from the warped binary grid into a `RawDigitCrop`. `warpRawDigitCrop` then applies
 the recogniser's named `stretch` or `letterbox` strategy using the shared production
 perspective-warp geometry. `ParseResult.cellSourceCrops` retains those strategy-neutral
-pixels in the same per-cell order as `cellThumbs` and the recognition results.
+pixels in the same per-cell order as `cellThumbs` and the recognition results. The
+Node bridge exposes this same `warpRawDigitCrop` implementation to Python training in
+batches; bridge failures are hard errors and there is no Python warp fallback.
 
 HOG features are extracted via `cv.HOGDescriptor` (OpenCV.js) with a 64 px window,
 8 px cells, 16 px blocks, and 9 orientation bins — producing a 1764-dimensional vector.

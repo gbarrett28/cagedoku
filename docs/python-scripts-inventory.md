@@ -23,7 +23,7 @@ model.
 |---|---|---|
 | `web/train_recogniser.py` | Fits the deployed HOG+RBF-SVM model | 2026-07-26 (routes feature extraction through `ts_bridge` now) |
 | `scripts/_r2_list.py` / `_r2_download.py` / `_r2_delete.py` | List/pull/clear pending training-sample uploads from Cloudflare R2 | 2026-07-04 |
-| `killer_sudoku/training/ts_bridge.py` | Calls TypeScript feature extraction for the trainer (not a user entry point) | 2026-07-26 |
+| `killer_sudoku/training/ts_bridge.py` | Calls production TypeScript crop warping and feature extraction for the trainer (not a user entry point) | 2026-07-29 |
 
 Scheduled Python is now limited to `web/train_recogniser.py` plus the three private
 R2 helpers. Model regression evaluation is TypeScript: the workflow builds the

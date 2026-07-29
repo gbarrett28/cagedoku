@@ -335,23 +335,24 @@ bash scripts/run-bronze-gate.sh
 
 **Files:** create a retained shared Node OpenCV.js loader; delete the now-callerless `web/scripts/find-digit-blobs-server.ts`; modify `web/scripts/ts-bridge.ts`, `killer_sudoku/training/ts_bridge.py`, and their tests; reuse `warpRawDigitCrop` from Sprint 2.
 
-1. Add TS parity tests: for one non-square raw crop, `--op warp-crops` output for both strategies must exactly match direct production `warpRawDigitCrop` output.
-2. Add Python batching/error tests for:
+- [x] 1. Add TS parity tests: for one non-square raw crop, `--op warp-crops` output for both strategies must exactly match direct production `warpRawDigitCrop` output.
+- [x] 2. Add Python batching/error tests for:
 
 ```python
 @dataclass(frozen=True)
 class RawDigitCrop:
     pixels: npt.NDArray[np.uint8]  # shape is height,width
 
+
 def warp_crops(crops, strategy: Literal['stretch', 'letterbox'], size: int = 64) -> NDArray[np.uint8]: ...
 ```
 
-3. Confirm `find-digit-blobs-server.ts` lost its only caller when `extract_guardian_samples.py` was deleted. Move only its proven Node OpenCV.js loading mechanism into the new retained loader, then delete the obsolete server and its request protocol. Do not refactor or preserve the doomed diagnostic path.
-4. Implement batched `warp-crops`; validate positive dimensions, pixel lengths, strategy, and exact square output.
-5. Python raises on bridge failure and has no local fallback.
-6. Keep existing `predict`/`solve` operations temporarily; their callers are removed, but narrowing is isolated in Sprint 14.
-7. Run TS/Python bridge tests and bronze.
-8. Commit: `feat: expose production crop warping to training`.
+- [x] 3. Confirm `find-digit-blobs-server.ts` lost its only caller when `extract_guardian_samples.py` was deleted. Move only its proven Node OpenCV.js loading mechanism into the new retained loader, then delete the obsolete server and its request protocol. Do not refactor or preserve the doomed diagnostic path.
+- [x] 4. Implement batched `warp-crops`; validate positive dimensions, pixel lengths, strategy, and exact square output.
+- [x] 5. Python raises on bridge failure and has no local fallback.
+- [x] 6. Keep existing `predict`/`solve` operations temporarily; their callers are removed, but narrowing is isolated in Sprint 14.
+- [x] 7. Run TS/Python bridge tests and bronze.
+- [x] 8. Commit: `feat: expose production crop warping to training`.
 
 **Done when:** Python can select stretch or letterbox but the executed warp is byte-for-byte the production TypeScript implementation.
 

@@ -1,7 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { makeTrivialSpec, KNOWN_SOLUTION } from '../src/engine/fixtures.js';
+import { warpRawDigitCrop } from '../src/image/numberRecognition.js';
+import type { OpenCVModule } from '../src/image/opencv.js';
+import { loadNodeOpenCv } from './node-opencv.js';
 
 const BRIDGE = path.resolve(__dirname, 'ts-bridge.ts');
 
@@ -26,6 +29,45 @@ describe('ts-bridge --op extract-features', () => {
     expect(parsed.hole).toHaveLength(2);
     expect(parsed.hole[0]).toHaveLength(5);
   });
+});
+
+describe('ts-bridge --op warp-crops', () => {
+  let cv: OpenCVModule;
+
+  beforeAll(async () => {
+    cv = await loadNodeOpenCv();
+  });
+
+  it.each(['stretch', 'letterbox'] as const)(
+    'matches direct production %s warping byte-for-byte',
+    strategy => {
+      const width = 5;
+      const height = 3;
+      const pixels = [
+        0, 0, 255, 0, 0,
+        0, 255, 255, 255, 0,
+        255, 0, 255, 0, 255,
+      ];
+      const size = 8;
+      const payload = JSON.stringify({
+        crops: [{ width, height, pixels }],
+        strategy,
+        size,
+      });
+
+      const out = runBridge(['--op', 'warp-crops'], payload);
+      const parsed = JSON.parse(out) as { crops: number[][] };
+      const direct = warpRawDigitCrop(cv, {
+        x: 0,
+        y: 0,
+        width,
+        height,
+        pixels: Uint8Array.from(pixels),
+      }, strategy, size);
+
+      expect(parsed.crops).toEqual([Array.from(direct)]);
+    },
+  );
 });
 
 describe('ts-bridge --op predict', () => {

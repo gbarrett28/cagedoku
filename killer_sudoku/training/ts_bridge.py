@@ -9,11 +9,20 @@ deliberately no fallback path.
 import json
 import subprocess
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import numpy.typing as npt
+
+
+@dataclass(frozen=True)
+class RawDigitCrop:
+    """Strategy-neutral bounding-box pixels copied from the warped grid."""
+
+    pixels: npt.NDArray[np.uint8]
+
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _BRIDGE_SCRIPT = _REPO_ROOT / "web" / "scripts" / "ts-bridge.ts"
@@ -48,6 +57,54 @@ def _run_bridge(op: str, payload: dict[str, Any], extra_args: list[str] | None =
         raise RuntimeError(
             f"ts-bridge --op {op} produced unparseable output: {result.stdout!r}"
         ) from exc
+
+def warp_crops(
+    crops: Sequence[RawDigitCrop],
+    strategy: Literal["stretch", "letterbox"],
+    size: int = 64,
+) -> npt.NDArray[np.uint8]:
+    """Warp raw crops in batches using the production TypeScript implementation."""
+    if strategy not in ("stretch", "letterbox"):
+        raise ValueError(f"unsupported warp strategy: {strategy}")
+    if size <= 0:
+        raise ValueError(f"warp size must be positive, got {size}")
+
+    chunks: list[npt.NDArray[np.uint8]] = []
+    for i in range(0, len(crops), _BATCH_SIZE):
+        batch = crops[i : i + _BATCH_SIZE]
+        encoded: list[dict[str, Any]] = []
+        for crop in batch:
+            pixels = crop.pixels
+            if pixels.ndim != 2:
+                raise ValueError(f"raw crop pixels must be two-dimensional, got shape {pixels.shape}")
+            height, width = pixels.shape
+            if width <= 0 or height <= 0:
+                raise ValueError(f"raw crop dimensions must be positive, got {width}x{height}")
+            if pixels.dtype != np.uint8:
+                raise ValueError(f"raw crop pixels must have dtype uint8, got {pixels.dtype}")
+            encoded.append({
+                "width": width,
+                "height": height,
+                "pixels": pixels.ravel().tolist(),
+            })
+
+        out = _run_bridge(
+            "warp-crops",
+            {"crops": encoded, "strategy": strategy, "size": size},
+        )
+        rows = out.get("crops")
+        if not isinstance(rows, list) or len(rows) != len(batch):
+            raise RuntimeError("ts-bridge --op warp-crops returned an invalid crop count")
+        if any(not isinstance(row, list) or len(row) != size * size for row in rows):
+            raise RuntimeError("ts-bridge --op warp-crops returned a non-square crop")
+        array = np.asarray(rows)
+        if np.any(array < 0) or np.any(array > 255):
+            raise RuntimeError("ts-bridge --op warp-crops returned pixels outside uint8 range")
+        chunks.append(array.astype(np.uint8).reshape(len(batch), size, size))
+
+    if not chunks:
+        return np.zeros((0, size, size), dtype=np.uint8)
+    return np.concatenate(chunks)
 
 
 def extract_features(
