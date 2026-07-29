@@ -285,12 +285,12 @@ bash scripts/run-bronze-gate.sh
 
 **Files:** `web/train_recogniser.py`, tests, `pyproject.toml`, current docs; delete `killer_sudoku/training/hog_model_loader.py`, `train_number_recogniser.py`, `export_model_web.py`, `killer_sudoku/data/`, and their tests.
 
-1. Replace the stale PCA-active test with an assertion that the active trainer is HOG/RBF.
-2. Delete `PcaRbfRecogniser`, PCA branches/constants/tests, legacy model loading/export, package data, and `ks-train-numbers`.
-3. Collapse the trainer abstraction only after alternate implementations are gone; do not retain a one-member abstract hierarchy.
-4. Keep fitting/export, augmentation, and TS feature calls intact for later raw-input work.
-5. Run trainer tests, model validation tests, absence greps, and bronze.
-6. Commit: `refactor: remove legacy Python recognisers and checkpoints`.
+- [x] 1. Replace the stale PCA-active test with an assertion that the active trainer is HOG/RBF.
+- [x] 2. Delete `PcaRbfRecogniser`, PCA branches/constants/tests, legacy model loading/export, package data, and `ks-train-numbers`.
+- [x] 3. Collapse the trainer abstraction only after alternate implementations are gone; do not retain a one-member abstract hierarchy.
+- [x] 4. Keep fitting/export, augmentation, and TS feature calls intact for later raw-input work.
+- [x] 5. Run trainer tests, model validation tests, absence greps, and bronze.
+- [x] 6. Commit: `refactor: remove legacy Python recognisers and checkpoints`.
 
 **Done when:** Python has one fitting implementation matching the only shipped browser model.
 

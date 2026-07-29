@@ -17,13 +17,10 @@ from train_recogniser import (
     CONFIDENCE_THRESHOLD,
     THUMBNAIL_SIZE,
     HogRecogniser,
-    PcaRbfRecogniser,
     build_dataset,
-    fit_model,
     generate_synthetic_samples,
     load_overrides_file,
     load_training_file,
-    save_model,
 )
 
 
@@ -76,34 +73,6 @@ def test_build_dataset_shape() -> None:
     assert y.shape == (27,)
     assert set(y.tolist()) == set(range(1, 10))
 
-
-_EXPECTED_KEYS = {
-    "pca_win_size", "pca_dims", "pca_components", "pca_mean",
-    "rbf_support_vectors", "rbf_dual_coef", "rbf_intercept", "rbf_n_support", "rbf_gamma",
-    "classes", "template_threshold", "confidence_threshold",
-} | {f"template_{d}" for d in range(10)}
-
-
-def test_save_model_pca_rbf_keys() -> None:
-    samples = _make_samples()
-    aug_imgs, y, _w = build_dataset(samples, n_dither=1)
-    X = PcaRbfRecogniser().extract_features(aug_imgs)
-    model = fit_model(X, y)
-    with tempfile.TemporaryDirectory() as tmp:
-        out = Path(tmp)
-        save_model(model, out, confidence_threshold=CONFIDENCE_THRESHOLD)
-        manifest: dict[str, Any] = json.loads((out / "num_recogniser.json").read_text())
-
-    assert manifest["classifier_type"] == "pca_rbf"
-    keys = set(manifest["arrays"].keys())
-    assert keys == _EXPECTED_KEYS
-    # 9 classes (digits 1-9, no 0 in this synthetic fixture) -> PCA basis has
-    # at most 9 components; support vectors share that same feature width.
-    sv_shape = manifest["arrays"]["rbf_support_vectors"]["shape"]
-    dims = manifest["arrays"]["pca_dims"]["shape"]
-    assert dims == [1]
-    assert len(sv_shape) == 2
-    assert sv_shape[1] <= 9
 
 
 def test_active_recogniser_is_hog_by_default() -> None:
@@ -163,17 +132,6 @@ def test_hog_recogniser_save_keys() -> None:
     assert set(manifest["arrays"].keys()) == _EXPECTED_HOG_KEYS
     # No PCA/template keys on a HOG manifest.
     assert not any(k.startswith("pca") or k.startswith("template") for k in manifest["arrays"])
-
-
-def test_fit_to_thumbnail_stretch_vs_letterbox_differ() -> None:
-    # A tall, narrow crop: stretch and letterbox produce visibly different results
-    # (letterbox pads with black bars top/bottom after scaling to fit width; stretch
-    # doesn't). Assert they're not just both valid but actually different.
-    crop = np.zeros((40, 10), dtype=np.uint8)
-    crop[:, 3:7] = 255  # a thin vertical stripe, non-square
-    pca_out = PcaRbfRecogniser().fit_to_thumbnail(crop, 64)
-    hog_out = HogRecogniser().fit_to_thumbnail(crop, 64)
-    assert not np.array_equal(pca_out, hog_out)
 
 
 def _make_override_png_b64(w: int, h: int) -> str:

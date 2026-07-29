@@ -1,32 +1,15 @@
 #!/usr/bin/env python3
-"""Train the web digit recogniser using PCA + RBF-SVM + template matching.
+"""Fit and export the production web digit recogniser.
 
-Generates synthetic digit images from system fonts, optionally merges
-browser-exported labelled samples and bulk (guardian/observer) samples,
-augments all sources with dithering, fits PCA on per-class mean images
-followed by an RBF-SVM in PCA space, and writes the trained model to
-web/public/.
-
-This mirrors the "warped PCA" architecture used by
-killer_sudoku.training.train_number_recogniser (the numerals.pkl-based
-trainer that produces the shipped killer_sudoku/data/num_recogniser.npz) --
-same PCA-on-class-means + RBF-SVM-in-PCA-space + per-digit template
-approach, same manifest schema, different input data source (browser/bulk
-JSON samples here vs numerals.pkl there). Kept in sync manually; see
-docs/digits.md for the two pipelines' relationship.
-
-Was HOG+LinearSVC/OVO-SVC between commit 212dc57 (2026-05-01) and the
-Stage 5 revert (2eb4fa2, 2026-07-22) that moved the shipped model back to
-PCA+RBF -- this script was not updated at the time and drifted out of sync
-with numberRecognition.ts's manifest schema, which is why the scheduled
-"Retrain digit recogniser" GitHub Action has been failing (originally on a
-missing psutil import used only by the HOG/LinearSVC OVO path; restoring
-PCA removes that dependency entirely).
+This is Python orchestration around one deployable architecture: an OvO RBF SVM
+trained on HOG plus hole-count features. Feature extraction is owned by TypeScript
+and called through ``killer_sudoku.training.ts_bridge``; this module does not
+reimplement browser inference.
 
 Usage
 -----
     # Standard retrain from accumulated browser training data:
-    python web/train_recogniser.py --out web/public --browser-weight 1000 --svm-c 100 web/browser_train.json
+    python web/train_recogniser.py --out web/public --browser-weight 1000 web/browser_train.json
 
     # Train from synthetic fonts only (no puzzle data needed):
     python web/train_recogniser.py --out web/public
@@ -36,36 +19,16 @@ Usage
 
 Workflow
 --------
-1. Export training data from the browser (OCR review screen -> Export Training).
-2. Run the merge step to add it to web/browser_train.json (or provide the
-   exported JSON directly as an additional positional argument).
-3. Run this script with --browser-weight 1000 --svm-c 100.
-4. The updated model is live immediately: reload the web app.
+1. Export or collect labelled digit samples.
+2. Run this script with the desired input sources and weights.
+3. Audit the emitted model through ``web/scripts/validate-model.ts``.
+4. Evaluate the candidate using the production-browser corpus gate.
 
-Model format
-------------
-The binary layout is documented in web/src/image/numberRecognition.ts
-(loadNumRecogniser, classifier_type == 'pca_rbf'). The JSON manifest records
-each array's name, dtype, shape, byte offset, and byte length.
-
-Stale-sample filtering
------------------------
-web/browser_train.json accumulates samples captured under whatever crop
-geometry was live in-browser at capture time. web/known-stale-training-hashes.json
-lists content hashes of samples confirmed captured under crop geometry the
-current pipeline no longer produces -- these are excluded from training so
-they cannot pollute the PCA/SVM fit. This is a *different* list from
-numberRecognition.test.ts's known-model-failure-hashes.json: that one tracks
-whatever the currently-shipped model happens to get wrong (regenerated per
-model), while this one is permanent (geometry incompatibility doesn't change
-across retrains). Do not merge the two files.
-
-Sample weights
---------------
---browser-weight upweights browser-exported samples' influence on the SVM
-decision boundary via sklearn's sample_weight (not repetition -- the PCA
-basis itself is still fit on unweighted per-class mean images, matching
-killer_sudoku.training.train_number_recogniser's convention).
+The output binary layout is consumed by
+``web/src/image/numberRecognition.ts::loadNumRecogniser`` and the manifest must use
+``classifier_type: "rbf"``. Known stale-geometry samples are filtered by content
+hash before training. Browser and reviewed samples may be upweighted at the SVM fit
+stage without duplicating input rows.
 """
 
 from __future__ import annotations
@@ -74,7 +37,6 @@ import argparse
 import hashlib
 import json
 import time
-from abc import ABC, abstractmethod
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -82,37 +44,24 @@ from typing import Any
 import numpy as np
 from numba import njit, prange
 from numpy.typing import NDArray
-from sklearn.decomposition import PCA
 from sklearn.svm import SVC
 
 from killer_sudoku.training import ts_bridge
 
 # ---------------------------------------------------------------------------
-# Constants -- must match killer_sudoku/image/config.py's NumberRecognitionConfig
-# defaults and web/src/image/numberRecognition.ts's pca_rbf loader.
+# Constants shared with the TypeScript HOG/RBF production model.
 # ---------------------------------------------------------------------------
 
-THUMBNAIL_SIZE = 64        # splitNum output: 64x64 binary image per digit
-N_DIGITS = 10              # digits 0-9
-DEFAULT_DITHER = 5         # augmented variants per source sample -- PCA+RBF (fit in an
-                            # ~10-dim PCA-projected space) needs far fewer augmented copies
-                            # to generalise than the old HOG+LinearSVC architecture did;
-                            # RBF-SVM's fit cost also scales worse than linear with sample
-                            # count, so keep this small. See MAX_FIT_SAMPLES below for a
-                            # hard backstop regardless of this value.
-MAX_FIT_SAMPLES = 60_000   # hard cap on rows passed to fit_model (post-dither). Random
-                            # subsample if exceeded. killer_sudoku.training.train_number_recogniser
-                            # fits comfortably (~1s) on ~36k rows; this leaves headroom above
-                            # that proven-fast scale without letting a growing browser_train.json
-                            # or a raised --dither silently balloon SVC.fit to minutes/hours.
+THUMBNAIL_SIZE = 64        # production recognition input is 64x64
+DEFAULT_DITHER = 5         # augmented variants per source sample
+MAX_FIT_SAMPLES = 60_000   # hard cap on post-dither rows passed to SVC.fit
 CONFIDENCE_THRESHOLD = 0.7 # OVO vote fraction to mark a read as confident
 SVM_C = 5.0
 SVM_GAMMA = "scale"
-TEMPLATE_THRESHOLD = 0.85
-VARIANCE_THRESHOLD = 0.99  # cumulative explained-variance target for PCA dims
 DITHER_BATCH_SIZE = 4096
 
-# HOG descriptor parameters exported with the active model. The browser reads these\n# values and uses the matching cv.HOGDescriptor configuration for inference.
+# HOG descriptor parameters exported with the active model. The browser reads these
+# values and uses the matching cv.HOGDescriptor configuration for inference.
 HOG_WIN_SIZE     = 64
 HOG_CELL_SIZE    = 8
 HOG_BLOCK_SIZE   = 16
@@ -136,92 +85,11 @@ def _sample_hash(pixels: list[int]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# NumRecogniser -- single active instance, no CLI flag, no branching.
+# Production HOG/RBF trainer.
 # ---------------------------------------------------------------------------
 
 
-class NumRecogniser(ABC):
-    """One implementation per digit-recogniser architecture.
-
-    ACTIVE_RECOGNISER (bottom of this section) is the single point of truth --
-    change that one line to switch every consumer (main(), generate_synthetic_samples,
-    extract_guardian_samples.py) to the other architecture at once.
-    """
-
-    @abstractmethod
-    def fit_to_thumbnail(self, crop: NDArray[np.uint8], win_size: int) -> NDArray[np.uint8]:
-        """Fit an already-extracted, variable-aspect-ratio crop into a win_size square."""
-
-    @abstractmethod
-    def warp_from_rect(
-        self, ax: float, ay: float, bw: float, bh: float,
-        source: NDArray[np.uint8], win_size: int,
-    ) -> NDArray[np.uint8]:
-        """Perspective-warp a bounding rect directly from a full source image."""
-
-    @abstractmethod
-    def extract_features(self, imgs: NDArray[np.uint8]) -> NDArray[np.float64]:
-        """Convert a stacked (n, 64, 64) uint8 image array into fit-ready features."""
-
-    @abstractmethod
-    def fit(
-        self, X: NDArray[np.float64], y: NDArray[np.int64],
-        sample_weights: NDArray[np.float64] | None,
-    ) -> dict[str, Any]:
-        """Fit a classifier on X/y, returning an opaque model dict for save()."""
-
-    @abstractmethod
-    def save(
-        self, model: dict[str, Any], out_dir: Path,
-        confidence_threshold: float = CONFIDENCE_THRESHOLD,
-        template_threshold: float = TEMPLATE_THRESHOLD,
-    ) -> None:
-        """Write num_recogniser.json (manifest) and num_recogniser.bin (arrays)."""
-
-
-class PcaRbfRecogniser(NumRecogniser):
-    def fit_to_thumbnail(self, crop: NDArray[np.uint8], win_size: int) -> NDArray[np.uint8]:
-        # Direct stretch, no aspect preservation -- matches TS's getWarpFromRect.
-        from PIL import Image
-        return np.array(
-            Image.fromarray(crop).resize((win_size, win_size), Image.Resampling.LANCZOS),
-            dtype=np.uint8,
-        )
-
-    def warp_from_rect(
-        self, ax: float, ay: float, bw: float, bh: float,
-        source: NDArray[np.uint8], win_size: int,
-    ) -> NDArray[np.uint8]:
-        # Direct stretch via cv2.warpPerspective -- matches TS's getWarpFromRect
-        # exactly (same mechanism). No square-padding step.
-        import cv2
-        src = np.array([[ax, ay], [ax + bw, ay], [ax + bw, ay + bh], [ax, ay + bh]], dtype=np.float32)
-        dst = np.array(
-            [[0, 0], [win_size - 1, 0], [win_size - 1, win_size - 1], [0, win_size - 1]],
-            dtype=np.float32,
-        )
-        m = cv2.getPerspectiveTransform(src, dst)
-        thumb = cv2.warpPerspective(source, m, (win_size, win_size), flags=cv2.INTER_LINEAR)
-        return ((thumb > 127).astype(np.uint8) * 255)
-
-    def extract_features(self, imgs: NDArray[np.uint8]) -> NDArray[np.float64]:
-        return imgs.reshape(len(imgs), -1).astype(np.float64)
-
-    def fit(
-        self, X: NDArray[np.float64], y: NDArray[np.int64],
-        sample_weights: NDArray[np.float64] | None,
-    ) -> dict[str, Any]:
-        return fit_model(X, y, svm_c=SVM_C, svm_gamma=SVM_GAMMA, sample_weights=sample_weights)
-
-    def save(
-        self, model: dict[str, Any], out_dir: Path,
-        confidence_threshold: float = CONFIDENCE_THRESHOLD,
-        template_threshold: float = TEMPLATE_THRESHOLD,
-    ) -> None:
-        save_model(model, out_dir, confidence_threshold=confidence_threshold, template_threshold=template_threshold)
-
-
-class HogRecogniser(NumRecogniser):
+class HogRecogniser:
     def fit_to_thumbnail(self, crop: NDArray[np.uint8], win_size: int) -> NDArray[np.uint8]:
         # Pad to a square (aspect-preserving), then uniform-scale -- matches TS's
         # letterboxWarp. This is generate_synthetic_samples' former inline logic.
@@ -261,8 +129,7 @@ class HogRecogniser(NumRecogniser):
         self, X: NDArray[np.float64], y: NDArray[np.int64],
         sample_weights: NDArray[np.float64] | None,
     ) -> dict[str, Any]:
-        # Direct RBF-SVM fit only -- see this repo's implementation plan for why the
-        # original checkpointed LinearSVC/OVO path is not restored here.
+        # Fit the sole production classifier architecture.
         svc = SVC(kernel="rbf", C=SVM_C, gamma=SVM_GAMMA, decision_function_shape="ovo")
         svc.fit(X, y, sample_weight=sample_weights)
         return {"kind": "rbf", "clf": svc, "classes": svc.classes_}
@@ -270,8 +137,6 @@ class HogRecogniser(NumRecogniser):
     def save(
         self, model: dict[str, Any], out_dir: Path,
         confidence_threshold: float = CONFIDENCE_THRESHOLD,
-        # HOG has no templates; kept for a signature substitutable with PcaRbfRecogniser.save.
-        template_threshold: float = TEMPLATE_THRESHOLD,
     ) -> None:
         svc: SVC = model["clf"]
         try:
@@ -316,7 +181,7 @@ class HogRecogniser(NumRecogniser):
         print(f"  Bin size: {len(blob):,} bytes", flush=True)
 
 
-ACTIVE_RECOGNISER: NumRecogniser = HogRecogniser()  # the one line that decides everything
+ACTIVE_RECOGNISER = HogRecogniser()
 
 
 # ---------------------------------------------------------------------------
@@ -625,121 +490,6 @@ def build_dataset(
 
 
 # ---------------------------------------------------------------------------
-# Fitting -- PCA on per-class means + RBF-SVM in PCA space
-# ---------------------------------------------------------------------------
-
-def fit_model(
-    X: NDArray[np.float64],
-    y: NDArray[np.int64],
-    svm_c: float = SVM_C,
-    svm_gamma: float | str = SVM_GAMMA,
-    sample_weights: NDArray[np.float64] | None = None,
-) -> dict[str, Any]:
-    """Fit PCA + RBF SVM and collect per-digit template images.
-
-    PCA is fitted on the per-class mean images (unweighted -- the PCA basis
-    captures inter-digit structure, not decision-boundary placement, so
-    sample_weights is applied only at the SVM-fit stage, matching
-    killer_sudoku.training.train_number_recogniser's convention). The number
-    of components kept is the minimum that explains VARIANCE_THRESHOLD of
-    cumulative variance.
-    """
-    classes = sorted(set(y.tolist()))
-
-    means = np.array([X[y == c].mean(axis=0) for c in classes])
-    pca = PCA()
-    pca.fit(means)
-    cumsum = np.cumsum(pca.explained_variance_ratio_)
-    dims = int(np.argmax(cumsum > VARIANCE_THRESHOLD))
-    print(f"  PCA dims for {VARIANCE_THRESHOLD:.0%} variance: {dims}", flush=True)
-
-    X_pca = pca.transform(X)[:, :dims]
-    svc = SVC(kernel="rbf", C=svm_c, gamma=svm_gamma, decision_function_shape="ovo")
-    svc.fit(X_pca, y, sample_weight=sample_weights)
-    print(f"  Trained SVC (C={svm_c}, gamma={svm_gamma}) on {len(y)} samples", flush=True)
-
-    templates_out: dict[int, NDArray[np.float32]] = {}
-    for c in range(N_DIGITS):
-        mask = y == c
-        if mask.any():
-            tmpl = X[mask].mean(axis=0).reshape(THUMBNAIL_SIZE, THUMBNAIL_SIZE)
-        else:
-            tmpl = np.zeros((THUMBNAIL_SIZE, THUMBNAIL_SIZE))
-        templates_out[c] = tmpl.astype(np.float32)
-
-    return {"pca": pca, "dims": dims, "svc": svc, "classes": classes, "templates": templates_out}
-
-
-# ---------------------------------------------------------------------------
-# I/O -- saving
-# ---------------------------------------------------------------------------
-
-def save_model(
-    model: dict[str, Any],
-    out_dir: Path,
-    confidence_threshold: float = CONFIDENCE_THRESHOLD,
-    template_threshold: float = TEMPLATE_THRESHOLD,
-) -> None:
-    """Write num_recogniser.json (manifest) and num_recogniser.bin (arrays).
-
-    The binary layout and 'classifier_type': 'pca_rbf' manifest field must
-    match loadNumRecogniser in web/src/image/numberRecognition.ts.
-    """
-    pca: PCA = model["pca"]
-    svc: SVC = model["svc"]
-    dims: int = model["dims"]
-
-    try:
-        gamma = float(svc._gamma)  # available after fit(); sklearn >= 0.22
-    except AttributeError:
-        gamma = 1.0 / (float(pca.n_features_in_) * float(np.var(pca.transform(pca.mean_.reshape(1, -1)))))
-
-    named: list[tuple[str, np.ndarray[Any, Any], str]] = [
-        ("pca_win_size",         np.array([THUMBNAIL_SIZE], dtype=np.int32),        "int32"),
-        ("pca_dims",             np.array([dims], dtype=np.int32),                  "int32"),
-        ("pca_components",       pca.components_.astype(np.float64),                "float64"),
-        ("pca_mean",             pca.mean_.astype(np.float64),                      "float64"),
-        ("rbf_support_vectors",  svc.support_vectors_.astype(np.float64),           "float64"),
-        ("rbf_dual_coef",        svc.dual_coef_.astype(np.float64),                 "float64"),
-        ("rbf_intercept",        svc.intercept_.astype(np.float64),                 "float64"),
-        ("rbf_n_support",        svc.n_support_.astype(np.int32),                   "int32"),
-        ("rbf_gamma",            np.array([gamma], dtype=np.float64),               "float64"),
-        ("classes",              svc.classes_.astype(np.int32),                     "int32"),
-        ("template_threshold",   np.array([template_threshold], dtype=np.float64),  "float64"),
-        ("confidence_threshold", np.array([confidence_threshold], dtype=np.float64), "float64"),
-    ]
-    for d, tmpl in sorted(model["templates"].items()):
-        named.append((f"template_{d}", tmpl, "float32"))
-
-    blob = bytearray()
-    manifest_arrays: dict[str, dict[str, Any]] = {}
-    for name, arr, dtype_str in named:
-        arr = np.asarray(arr)
-        data = arr.tobytes()
-        manifest_arrays[name] = {
-            "dtype": dtype_str,
-            "shape": list(arr.shape),
-            "offset": len(blob),
-            "byteLength": len(data),
-        }
-        blob.extend(data)
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "num_recogniser.bin").write_bytes(bytes(blob))
-    (out_dir / "num_recogniser.json").write_text(
-        json.dumps({"classifier_type": "pca_rbf", "arrays": manifest_arrays}, indent=2),
-        encoding="utf-8",
-    )
-
-    n_sv = svc.support_vectors_.shape[0]
-    print(f"\nSaved to {out_dir}/ [pca_rbf]", flush=True)
-    print(f"  PCA:       {pca.components_.shape[0]} components, {dims} active dims", flush=True)
-    print(f"  SVM:       {n_sv} support vectors, classes {svc.classes_.tolist()}", flush=True)
-    print(f"  Templates: digits 0-9 ({THUMBNAIL_SIZE}x{THUMBNAIL_SIZE} float32)", flush=True)
-    print(f"  Bin size:  {len(blob):,} bytes", flush=True)
-
-
-# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -790,10 +540,6 @@ def main() -> None:
         help=f"OVO vote fraction to mark a read as confident (default: {CONFIDENCE_THRESHOLD})",
     )
     parser.add_argument(
-        "--template-threshold", type=float, default=TEMPLATE_THRESHOLD, metavar="T",
-        help=f"Template-match score below which the SVM fallback runs (default: {TEMPLATE_THRESHOLD})",
-    )
-    parser.add_argument(
         "--browser-weight", type=float, default=0.0, metavar="W",
         help="sklearn sample_weight for --browser-file samples relative to bulk/synthetic "
              "(0 = auto-balance: weight = (n_bulk + n_synthetic) / n_browser)",
@@ -805,7 +551,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--max-fit-samples", type=int, default=MAX_FIT_SAMPLES, metavar="N",
-        help="Hard cap on rows passed to fit_model, applied by random subsampling after "
+        help="Hard cap on rows passed to SVC.fit, applied by random subsampling after "
              f"dithering (default: {MAX_FIT_SAMPLES}). RBF-SVM fit cost scales worse than "
              "linearly with sample count -- this bounds worst-case fit time regardless of "
              "--dither or how large browser_train.json grows.",
@@ -907,7 +653,6 @@ def main() -> None:
     ACTIVE_RECOGNISER.save(
         model, Path(args.out),
         confidence_threshold=args.confidence_threshold,
-        template_threshold=args.template_threshold,
     )
     print(f"{_elapsed()} Done.", flush=True)
 

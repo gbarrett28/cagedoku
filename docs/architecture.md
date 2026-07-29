@@ -289,7 +289,7 @@ When new data appears as a comment on Issue #1:
 
 ```bash
 bash scripts/collect_training.sh /tmp/training
-python web/train_recogniser.py --browser-weight 1000 --svm-c 100 \
+python web/train_recogniser.py --browser-weight 1000 \
   web/browser_train.json /tmp/training/*.json
 # verify accuracy, then:
 bash scripts/mark_processed.sh /tmp/training
@@ -303,8 +303,8 @@ bash scripts/mark_processed.sh /tmp/training
 5. Fits an RBF SVM OvO classifier (45 binary SVMs for digits 0–9)
 6. Saves updated model files; the web app picks them up on next page reload
 
-`--browser-weight 1000 --svm-c 100` up-weights real samples over synthetic fonts.
-For purely synthetic training (no real data), omit both flags.
+`--browser-weight 1000` up-weights real samples over synthetic fonts.
+For purely synthetic training (no real data), omit the flag.
 
 #### Phase 2 — scheduled auto-retrain
 

@@ -622,7 +622,7 @@ with dithering, extracts HOG + hole-count features, and fits a RBF SVM OvO
 classifier.
 
 ```bash
-python web/train_recogniser.py --browser-weight 1000 --svm-c 100 --max-per-class 1500 --no-synthetic --dither 18 guardian/guardian_train_sq.json observer/observer_train_sq.json
+python web/train_recogniser.py --browser-weight 1000 --max-per-class 1500 --no-synthetic --dither 18 guardian/guardian_train_sq.json observer/observer_train_sq.json
 ```
 
 `--browser-weight` up-weights the hand-verified `browser_train.json` samples relative
@@ -641,7 +641,7 @@ flowchart LR
     E --> G[extract_hole_features\n5-dim vectors]
     F --> H[concatenate -> 1769-dim]
     G --> H
-    H --> I[RBF SVM OvO fit\n--svm-c]
+    H --> I[RBF SVM OvO fit]
     I --> J[num_recogniser.bin + .json\nweb/public/]
 ```
 

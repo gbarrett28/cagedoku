@@ -35,12 +35,10 @@ No CI wiring, narrow single-purpose, no evidence of recent real use:
 - `web/migrate_pic_cache.py` (2026-07-04) — converts old `.jpk` pickle caches to JSON
 - `web/extract_guardian_samples.py` (2026-07-24) — re-extracts cage-total thumbnails from that JSON cache
 - `web/dedupe_browser_train.py` (2026-06-28) — drops exact-duplicate crops from `browser_train.json`
-- `killer_sudoku/training/export_model_web.py` (2026-06-28) — converts `.npz` → the TS `.bin`/`.json` format (superseded in spirit by `HogRecogniser.save()` doing this directly now)
 
 ### Manual training/tuning CLIs
 Run by hand when retraining or investigating something:
 
-- `killer_sudoku/training/train_number_recogniser.py` (2026-07-26) — fits the PCA/SVM `.npz` checkpoint; has a live `ks-train-numbers` entry point but no evidence anyone runs it regularly
 - `killer_sudoku/training/calibrate.py` (2026-06-28) — data-driven threshold calibration for one specific grid-location constant
 - `killer_sudoku/training/scrape_puzzles.py` (2026-06-28) — scrapes Guardian puzzle images
 - `killer_sudoku/training/review_low_confidence.py` (2026-07-28) — generates a tick-sheet for manually reviewing duplicate-conflict digit reads from browser-selected raw crops
@@ -60,6 +58,8 @@ been removed as a unit. Its only non-test callers were inside that same family; 
 manual review workflow retained only its small corpus-name/key helpers locally.
 The standalone recogniser comparison and legacy NPZ-to-browser conversion scripts
 were also removed when TypeScript retired PCA/template and linear manifests.
+The Python PCA trainer/exporter, Python HOG model loader, frozen checkpoint package,
+and `ks-train-numbers` entry point were then removed as one closed legacy family.
 
 ## Removed entry points
 
