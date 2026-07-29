@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pytest
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "web"))
@@ -160,17 +161,27 @@ def _make_override_png_b64(w: int, h: int) -> str:
 
 
 def test_load_overrides_file_decodes_crops_and_skips_excluded() -> None:
+    raw = np.arange(21, dtype=np.uint8).reshape(3, 7)
+    buf = io.BytesIO()
+    Image.fromarray(raw).save(buf, format="PNG")
+    raw_png = base64.b64encode(buf.getvalue()).decode("ascii")
     overrides = {
         "classic_guardian|killer_sudoku_1.jpg|0|0": {
             "label": 7,
             "expectedPrior": 3,
-            "cropPng": _make_override_png_b64(49, 64),
+            "cropPng": raw_png,
+            "sourceRect": {"x": 11, "y": 13, "width": 7, "height": 3},
+            "sourceWidth": 7,
+            "sourceHeight": 3,
             "puzzleType": "classic",
         },
         "classic_guardian|killer_sudoku_1.jpg|1|1": {
             "label": "exclude",
             "expectedPrior": 5,
             "cropPng": _make_override_png_b64(40, 60),
+            "sourceRect": {"x": 2, "y": 4, "width": 40, "height": 60},
+            "sourceWidth": 40,
+            "sourceHeight": 60,
             "puzzleType": "classic",
         },
     }
@@ -182,8 +193,28 @@ def test_load_overrides_file_decodes_crops_and_skips_excluded() -> None:
     assert len(samples) == 1
     label, img = samples[0]
     assert label == 7
-    assert img.shape == (THUMBNAIL_SIZE, THUMBNAIL_SIZE)
+    assert img.shape == (3, 7)
     assert img.dtype == np.uint8
+    assert np.array_equal(img, raw)
+
+
+def test_load_overrides_file_rejects_png_metadata_dimension_mismatch() -> None:
+    overrides = {
+        "guardian|puzzle.jpg|0|0": {
+            "label": 4,
+            "expectedPrior": 8,
+            "cropPng": _make_override_png_b64(7, 3),
+            "sourceRect": {"x": 1, "y": 2, "width": 8, "height": 3},
+            "sourceWidth": 8,
+            "sourceHeight": 3,
+            "puzzleType": "classic",
+        },
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "manual_label_overrides.json"
+        path.write_text(json.dumps(overrides), encoding="utf-8")
+        with pytest.raises(ValueError, match="PNG dimensions"):
+            load_overrides_file(path)
 
 
 def test_load_overrides_file_missing_path_returns_empty() -> None:

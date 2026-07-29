@@ -349,15 +349,12 @@ def load_training_file(path: Path, exclude_hashes: frozenset[str] = frozenset())
 
 
 def load_overrides_file(path: Path) -> list[tuple[int, NDArray[np.uint8]]]:
-    """Load human-verified (digit, 64x64 uint8) samples from manual_label_overrides.json.
+    """Load human-reviewed crops without warping them.
 
-    Each entry's cropPng is the RAW (unwarped, variable-size) crop -- see
-    review_low_confidence.py's score_candidates -- so it's passed through
-    ACTIVE_RECOGNISER.fit_to_thumbnail() the same way every other training
-    sample is, rather than assumed to already be THUMBNAIL_SIZE. Entries
-    with label == "exclude" (a bad/non-digit crop, not a corrected one) are
-    skipped. Missing path returns an empty list rather than raising, since
-    this file is optional (some checkouts won't have any reviewed samples yet).
+    New records carry production source-crop dimensions and are validated
+    against their PNG. Historical 64x64 records predate raw-crop capture and
+    remain canonical compatibility samples; non-square legacy records are
+    rejected because their geometry cannot be established.
     """
     if not path.exists():
         return []
@@ -368,12 +365,36 @@ def load_overrides_file(path: Path) -> list[tuple[int, NDArray[np.uint8]]]:
 
     overrides: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
     samples: list[tuple[int, NDArray[np.uint8]]] = []
-    for entry in overrides.values():
+    for key, entry in overrides.items():
         if entry["label"] == "exclude":
             continue
-        raw = np.array(Image.open(io.BytesIO(base64.b64decode(entry["cropPng"]))).convert("L"), dtype=np.uint8)
-        thumb = ACTIVE_RECOGNISER.fit_to_thumbnail(raw, THUMBNAIL_SIZE)
-        samples.append((int(entry["label"]), thumb))
+        crop = np.array(
+            Image.open(io.BytesIO(base64.b64decode(entry["cropPng"]))).convert("L"),
+            dtype=np.uint8,
+        )
+        metadata_fields = ("sourceRect", "sourceWidth", "sourceHeight")
+        present = [field in entry for field in metadata_fields]
+        if any(present) and not all(present):
+            raise ValueError(f"{key}: raw crop metadata is incomplete")
+        if all(present):
+            width = int(entry["sourceWidth"])
+            height = int(entry["sourceHeight"])
+            rect = entry["sourceRect"]
+            if width <= 0 or height <= 0:
+                raise ValueError(f"{key}: source dimensions must be positive")
+            if int(rect["width"]) != width or int(rect["height"]) != height:
+                raise ValueError(f"{key}: sourceRect dimensions disagree with source dimensions")
+            if crop.shape != (height, width):
+                raise ValueError(
+                    f"{key}: PNG dimensions {crop.shape[1]}x{crop.shape[0]} "
+                    f"do not match source metadata {width}x{height}"
+                )
+        elif crop.shape != (THUMBNAIL_SIZE, THUMBNAIL_SIZE):
+            raise ValueError(
+                f"{key}: legacy override lacks raw crop metadata and is not "
+                f"{THUMBNAIL_SIZE}x{THUMBNAIL_SIZE}"
+            )
+        samples.append((int(entry["label"]), crop))
     return samples
 
 
@@ -825,7 +846,16 @@ def main() -> None:
             print(f"{_elapsed()} Loaded {len(override_samples)} human-reviewed corrections from "
                   f"{args.overrides_file.name} (ground truth, folded into browser weight bucket)",
                   flush=True)
-            browser_samples = browser_samples + override_samples
+            canonical_overrides = [
+                (
+                    digit,
+                    crop
+                    if crop.shape == (THUMBNAIL_SIZE, THUMBNAIL_SIZE)
+                    else ACTIVE_RECOGNISER.fit_to_thumbnail(crop, THUMBNAIL_SIZE),
+                )
+                for digit, crop in override_samples
+            ]
+            browser_samples = browser_samples + canonical_overrides
 
     all_samples: list[tuple[int, NDArray[np.uint8]]] = browser_samples + bulk_samples
     n_browser = len(browser_samples)

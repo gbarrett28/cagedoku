@@ -232,13 +232,13 @@ bash scripts/run-bronze-gate.sh
 
 **Files:** `killer_sudoku/training/review_low_confidence.py`, `killer_sudoku/training/apply_review_corrections.py`, `web/train_recogniser.py`, and their focused tests.
 
-1. Add a round-trip test using a 3×7 raw crop. The override record contains `sourceRect`, `sourceWidth`, `sourceHeight`, and raw `cropPng`; loading must reproduce the exact array.
-2. Add a failure case where PNG dimensions disagree with metadata.
-3. Remove review `confidence` mode, startup model fitting, `ovo_predictions`, `score_candidates`, `least_confident`, and `fit_deployed_hog_model` before simplifying rendering.
-4. Build review items only from duplicate conflicts in `cell_reads.source_pixels`. Render the browser-selected raw crop; do not read `recognition_pixels` for an override.
-5. In `load_overrides_file`, decode grayscale PNG and require shape `(sourceHeight, sourceWidth)`. Preserve pixels unchanged. Do not warp here.
-6. Run focused Python tests and bronze.
-7. Commit: `refactor: preserve raw conflict crops during review`.
+- [x] Add a round-trip test using a 3×7 raw crop. The override record contains `sourceRect`, `sourceWidth`, `sourceHeight`, and raw `cropPng`; loading must reproduce the exact array.
+- [x] Add a failure case where PNG dimensions disagree with metadata.
+- [x] Remove review `confidence` mode, startup model fitting, `ovo_predictions`, `score_candidates`, `least_confident`, and `fit_deployed_hog_model` before simplifying rendering.
+- [x] Build review items only from duplicate conflicts in `cell_reads.source_pixels`. Render the browser-selected raw crop; do not read `recognition_pixels` for an override.
+- [x] In `load_overrides_file`, decode grayscale PNG and require shape `(sourceHeight, sourceWidth)`. Preserve pixels unchanged. Do not warp here.
+- [x] Run focused Python tests and bronze.
+- [x] Commit: `refactor: preserve raw conflict crops during review`.
 
 **Done when:** a manual correction preserves the original TS-selected bounding box and can later be warped exactly once by either strategy.
 

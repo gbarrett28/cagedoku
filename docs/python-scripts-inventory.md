@@ -46,7 +46,7 @@ Run by hand when retraining or investigating something:
 - `killer_sudoku/training/synthetic_holdout.py` (2026-07-25) — renders TTF-font digits as a cross-font generalization check
 - `killer_sudoku/training/calibrate.py` (2026-06-28) — data-driven threshold calibration for one specific grid-location constant
 - `killer_sudoku/training/scrape_puzzles.py` (2026-06-28) — scrapes Guardian puzzle images
-- `killer_sudoku/training/review_low_confidence.py` (2026-07-26) — generates a tick-sheet for manually reviewing low-confidence/conflicting digit reads
+- `killer_sudoku/training/review_low_confidence.py` (2026-07-28) — generates a tick-sheet for manually reviewing duplicate-conflict digit reads from browser-selected raw crops
 - `killer_sudoku/training/apply_review_corrections.py` (2026-07-25) — merges that tick-sheet's corrections back in
 - `killer_sudoku/training/balanced_sample.py` — not a script (no `__main__`), just a helper the above import
 

@@ -1541,7 +1541,7 @@ async function handleProcess(file?: File): Promise<void> {
       // gated the same as retrainingSuggestions (only non-clean puzzles have
       // anything worth investigating here) to avoid inflating corpus.db with
       // per-cell crops for the majority of puzzles that read cleanly.
-      const givenDigitReads = bucket !== 'clean' && uploadResult.classicRecognitions !== undefined
+      const givenDigitReads = uploadResult.classicRecognitions !== undefined
         ? buildGivenDigitReads(state.givenDigits, uploadResult.cellThumbs, uploadResult.classicRecognitions)
           .map(r => {
             const source = uploadResult.cellSourceCrops.get(`${r.row},${r.col}`)?.[0];
