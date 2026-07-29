@@ -19,7 +19,8 @@ import type { NumRecogniser } from './numberRecognition.js';
 
 interface TrainingSample {
   digit: number;
-  pixels: number[];
+  pixels?: number[];
+  recognitionPixels?: number[];
 }
 interface TrainingFile {
   sampleCount: number;
@@ -54,8 +55,17 @@ function sha256(pixels: number[]): string {
   return createHash('sha256').update(Buffer.from(pixels)).digest('hex');
 }
 
+
+function canonicalPixels(sample: TrainingSample): number[] {
+  const pixels = sample.recognitionPixels ?? sample.pixels;
+  if (pixels?.length !== 64 * 64) {
+    throw new Error('Training sample has no canonical 64x64 recognition pixels');
+  }
+  return pixels;
+}
+
 function runOnSamples(subset: TrainingSample[]): { correct: number; total: number; errors: string[] } {
-  const imgs = subset.map(s => new Uint8Array(s.pixels));
+  const imgs = subset.map(s => new Uint8Array(canonicalPixels(s)));
   const results = rec.recognise(imgs);
   let correct = 0;
   const errors: string[] = [];
@@ -71,12 +81,12 @@ function runOnSamples(subset: TrainingSample[]): { correct: number; total: numbe
 
 /** Failures whose content hash is not in KNOWN_FAILURE_SAMPLE_HASHES -- a regression. */
 function unexpectedFailures(subset: TrainingSample[]): string[] {
-  const imgs = subset.map(s => new Uint8Array(s.pixels));
+  const imgs = subset.map(s => new Uint8Array(canonicalPixels(s)));
   const results = rec.recognise(imgs);
   const unexpected: string[] = [];
   for (let i = 0; i < subset.length; i++) {
     if (results[i]!.label !== subset[i]!.digit) {
-      const hash = sha256(subset[i]!.pixels);
+      const hash = sha256(canonicalPixels(subset[i]!));
       if (!KNOWN_FAILURE_SAMPLE_HASHES.has(hash)) {
         unexpected.push(
           `sample ${i}: expected ${subset[i]!.digit}, got ${results[i]!.label} (hash=${hash})`,
@@ -135,7 +145,7 @@ describe('digit recogniser — bundled model inference on training data', () => 
     // browser_train.json): each still counts as one real failure even
     // though its hash only occupies one Set slot. Count samples actually
     // covered by the known-failure set instead of the set's own size.
-    const knownCoveredCount = samples.filter(s => KNOWN_FAILURE_SAMPLE_HASHES.has(sha256(s.pixels))).length;
+    const knownCoveredCount = samples.filter(s => KNOWN_FAILURE_SAMPLE_HASHES.has(sha256(canonicalPixels(s)))).length;
     const floor = total - knownCoveredCount;
     expect(correct, `Expected at least ${floor}/${total} correct; failures:\n${errors.join('\n')}`)
       .toBeGreaterThanOrEqual(floor);
@@ -162,7 +172,7 @@ describe('digit recogniser — bundled model inference on training data', () => 
 
 describe('Recognition.runnerUp', () => {
   it('is present and distinct from the winning label whenever the classifier saw more than one class', () => {
-    const imgs = samples.slice(0, 30).map(s => new Uint8Array(s.pixels));
+    const imgs = samples.slice(0, 30).map(s => new Uint8Array(canonicalPixels(s)));
     const results = rec.recognise(imgs);
     let sawRunnerUp = false;
     for (const r of results) {
@@ -187,6 +197,33 @@ describe('loadNumRecogniser class dispatch', () => {
       classifier_type: classifierType,
       arrays: {},
     })).toThrow(`Unsupported classifier type: ${classifierType}`);
+  });
+
+  it.each(['stretch', 'letterbox'] as const)(
+    'loads the model warp strategy "%s" for production recognition',
+    warpStrategy => {
+      const pub = join(process.cwd(), 'public');
+      const bin = readFileSync(join(pub, 'num_recogniser.bin'));
+      const manifest = JSON.parse(readFileSync(join(pub, 'num_recogniser.json'), 'utf-8'));
+      const loaded = loadNumRecogniser(
+        bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength),
+        { ...manifest, warp_strategy: warpStrategy },
+      );
+
+      expect(loaded.warpStrategy).toBe(warpStrategy);
+    },
+  );
+
+  it('rejects a missing or unsupported model warp strategy', () => {
+    expect(() => loadNumRecogniser(new ArrayBuffer(0), {
+      classifier_type: 'rbf',
+      arrays: {},
+    })).toThrow('Unsupported warp strategy: undefined');
+    expect(() => loadNumRecogniser(new ArrayBuffer(0), {
+      classifier_type: 'rbf',
+      warp_strategy: 'diagonal',
+      arrays: {},
+    })).toThrow('Unsupported warp strategy: diagonal');
   });
 
   it('throws a clear error from activeRecogniser() before any recogniser is set', () => {

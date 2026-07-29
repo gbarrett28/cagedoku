@@ -207,12 +207,11 @@ export abstract class NumRecogniser {
 }
 
 export class HogRecogniser extends NumRecogniser {
-  readonly warpStrategy = 'letterbox' as const;
-
   constructor(
     private readonly hog: HOGParams,
     private readonly classifier: RBFClassifier,
     confidenceThreshold: number,
+    readonly warpStrategy: WarpStrategy,
   ) {
     super(confidenceThreshold);
   }
@@ -339,11 +338,19 @@ export function activeRecogniser(): NumRecogniser {
  */
 export function loadNumRecogniser(
   binBuffer: ArrayBuffer,
-  manifestJson: { classifier_type?: string; arrays: Record<string, { dtype: string; shape: number[]; offset: number; byteLength: number }> },
+  manifestJson: {
+    classifier_type?: string;
+    warp_strategy?: string;
+    arrays: Record<string, { dtype: string; shape: number[]; offset: number; byteLength: number }>;
+  },
 ): NumRecogniser {
   const classifierType = manifestJson.classifier_type;
   if (classifierType !== 'rbf') {
     throw new Error(`Unsupported classifier type: ${String(classifierType)}`);
+  }
+  const warpStrategy = manifestJson.warp_strategy;
+  if (warpStrategy !== 'stretch' && warpStrategy !== 'letterbox') {
+    throw new Error(`Unsupported warp strategy: ${String(warpStrategy)}`);
   }
 
   const arrays = manifestJson.arrays;
@@ -383,7 +390,7 @@ export function loadNumRecogniser(
     nFeatures,
   };
 
-  return new HogRecogniser(hog, classifier, scalarF64('confidence_threshold'));
+  return new HogRecogniser(hog, classifier, scalarF64('confidence_threshold'), warpStrategy);
 }
 
 // ---------------------------------------------------------------------------

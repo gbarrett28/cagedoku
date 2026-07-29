@@ -364,17 +364,17 @@ def warp_crops(crops, strategy: Literal['stretch', 'letterbox'], size: int = 64)
 
 **Files:** `web/train_recogniser.py`, tests, `web/browser_train.json` migration as necessary, export/override loaders, current training docs.
 
-1. Add CLI `--warp-strategy {stretch,letterbox}`; default to the currently deployed HOG strategy.
-2. Define discriminated training inputs:
+- [x] 1. Add CLI `--warp-strategy {stretch,letterbox}`; default to the currently deployed HOG strategy.
+- [x] 2. Define discriminated training inputs:
    - **raw:** dimensions plus bounding-box pixels; eligible for either strategy and passed once through `warp_crops`;
    - **legacy canonical:** explicit `recognitionPixels` plus the strategy that produced them; eligible only when that strategy matches.
-3. Never infer that a 64×64 array is raw. Migrate version-1 committed browser samples to explicitly tagged canonical records if original raw crops cannot be reconstructed. New browser exports and reviewed overrides are raw.
-4. Load raw DB/export/override samples, call the selected TS warp exactly once, then perform dithering and TS feature extraction.
-5. Synthetic generation may create training-only raw glyph arrays, but it must call the same TS warp before features; it must not claim to reproduce browser bounding-box selection.
-6. Add tests for both strategies, mixed raw/legacy input, incompatible legacy exclusion, invalid dimensions, and hard bridge failures.
-7. Train to a temporary directory and validate the exact output with `validate-model.ts` using canonical audit samples.
-8. Run focused tests and bronze.
-9. Commit: `feat: train raw crops with selectable TS warping`.
+- [x] 3. Never infer that a 64×64 array is raw. Migrate version-1 committed browser samples to explicitly tagged canonical records if original raw crops cannot be reconstructed. New browser exports and reviewed overrides are raw.
+- [x] 4. Load raw DB/export/override samples, call the selected TS warp exactly once, then perform dithering and TS feature extraction.
+- [x] 5. Synthetic generation may create training-only raw glyph arrays, but it must call the same TS warp before features; it must not claim to reproduce browser bounding-box selection.
+- [x] 6. Add tests for both strategies, mixed raw/legacy input, incompatible legacy exclusion, invalid dimensions, and hard bridge failures.
+- [x] 7. Train to a temporary directory and validate the exact output with `validate-model.ts` using canonical audit samples.
+- [x] 8. Run focused tests and bronze.
+- [x] 9. Commit: `feat: train raw crops with selectable TS warping`.
 
 **Done when:** changing the flag changes only the TS-derived warp, never cropping, and all raw corpus/review samples remain reusable.
 

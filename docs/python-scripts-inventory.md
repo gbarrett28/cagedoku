@@ -21,7 +21,7 @@ model.
 
 | Path | Purpose | Last touched |
 |---|---|---|
-| `web/train_recogniser.py` | Fits the deployed HOG+RBF-SVM model | 2026-07-26 (routes feature extraction through `ts_bridge` now) |
+| `web/train_recogniser.py` | Selects the TS crop warp, fits HOG+RBF-SVM, and writes the deployable manifest | 2026-07-29 (raw crops and features route through `ts_bridge`) |
 | `scripts/_r2_list.py` / `_r2_download.py` / `_r2_delete.py` | List/pull/clear pending training-sample uploads from Cloudflare R2 | 2026-07-04 |
 | `killer_sudoku/training/ts_bridge.py` | Calls production TypeScript crop warping and feature extraction for the trainer (not a user entry point) | 2026-07-29 |
 

@@ -289,9 +289,10 @@ as a pre-scan.
 
 **Classifier:** RBF SVM OvO, 45 binary classifiers (digits 0–9). Confidence =
 vote fraction; flagged uncertain below 0.7. The browser accepts only the production
-`classifier_type: "rbf"` manifest and rejects the retired PCA/template and linear
-formats explicitly. HOG/hole feature extraction and inference are TypeScript-owned;
-Python fitting calls the TypeScript feature implementation through `ts_bridge.py`.
+`classifier_type: "rbf"` manifest, requires its `warp_strategy` to be `stretch` or
+`letterbox`, and rejects retired PCA/template and linear formats explicitly. Warping,
+HOG/hole feature extraction, and inference are TypeScript-owned; Python fitting calls
+the TS warp and feature implementations through `ts_bridge.py`.
 
 The non-digit binary classifier (Stage 3b, not yet implemented) is distinct from the
 digit recogniser. It operates on contour metrics (fill ratio, aspect ratio, area,

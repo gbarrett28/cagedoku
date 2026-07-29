@@ -286,9 +286,10 @@ classifies each contour candidate (located in Stage 3) using HOG + hole-count fe
 and the production OvO RBF SVM.
 
 > The browser supports one recogniser architecture: `HogRecogniser` with
-> `classifier_type: "rbf"`. It applies the aspect-preserving `letterboxWarp`
-> before TypeScript-owned HOG/hole feature extraction and inference. Legacy
-> PCA/template matching and linear-classifier manifests are rejected explicitly.
+> `classifier_type: "rbf"`. Its required manifest `warp_strategy` selects the
+> production `stretch` or aspect-preserving `letterbox` warp before TypeScript-owned
+> HOG/hole feature extraction and inference. Missing/unsupported strategies and legacy
+> PCA/template or linear-classifier manifests are rejected explicitly.
 
 `buildCageTotals` (`inpImage.ts`) runs `cv.findContours` once over the whole warped
 board (`RETR_TREE`), walks the resulting hierarchy (`contourHier`), and keeps contours
@@ -588,33 +589,37 @@ regression gating is separate: it runs the production browser over
 
 ### T2: Train Number Recogniser
 
-Loads browser-exported ground truth (always included in full, never capped) plus
-optionally-capped bulk guardian/observer data and/or synthetic font samples, augments
-with dithering, extracts HOG + hole-count features, and fits a RBF SVM OvO
-classifier.
+The trainer accepts strategy-neutral raw crops from schema-v2 browser exports and
+human-review overrides, optionally-capped historical bulk inputs, and training-only raw
+font glyphs. `--warp-strategy {stretch,letterbox}` selects the production TypeScript
+warp; its default is read from the currently deployed model manifest. Every raw sample
+passes once through `warpRawDigitCrop` via the batched TS bridge before dithering.
+Historical version-1 64×64 samples are explicitly treated as canonical `letterbox`
+inputs, never as raw crops, and are eligible only when `letterbox` is selected.
 
 ```bash
-python web/train_recogniser.py --browser-weight 1000 --max-per-class 1500 --no-synthetic --dither 18 guardian/guardian_train_sq.json observer/observer_train_sq.json
+python web/train_recogniser.py --warp-strategy letterbox --browser-weight 1000 --max-per-class 1500 --no-synthetic --dither 18 guardian/guardian_train_sq.json observer/observer_train_sq.json
 ```
 
-`--browser-weight` up-weights the hand-verified `browser_train.json` samples relative
-to bulk/synthetic ones; `--max-per-class` caps each bulk digit class (otherwise
-heavily skewed — digit '1' naturally appears far more often than '5') before
-dithering, bounding worst-case OVO pair fit time/memory regardless of input skew.
+`--browser-weight` up-weights hand-verified browser/review samples relative to
+bulk/synthetic ones; `--max-per-class` caps each bulk digit class before any warp or
+dithering, bounding worst-case OVO fit time without doing doomed work. HOG and hole
+features are also extracted through the production TypeScript bridge. The selected
+strategy is written into `num_recogniser.json`, and the browser refuses missing or
+unsupported values.
 
 ```mermaid
 flowchart LR
-    A[bulk guardian/observer\n+ browser_train.json] --> B[load labelled\n64x64 thumbnails]
-    B --> C{synthetic fonts?}
-    C -- yes --> D[generate_synthetic_samples\nPillow + system fonts]
-    C -- no --> E[dither augmentation\ntranslation / morph / noise]
-    D --> E
-    E --> F[extract_hog\ncv2.HOGDescriptor\n1764-dim vectors]
-    E --> G[extract_hole_features\n5-dim vectors]
-    F --> H[concatenate -> 1769-dim]
-    G --> H
-    H --> I[RBF SVM OvO fit]
-    I --> J[num_recogniser.bin + .json\nweb/public/]
+    A["Raw browser/review crops"] --> D["TS warp: stretch or letterbox"]
+    B["Legacy canonical samples"] --> E{"Strategy matches?"}
+    C["Training-only raw font glyphs"] --> D
+    D --> F["64x64 canonical inputs"]
+    E -- yes --> F
+    E -- no --> X["Exclude"]
+    F --> G["Dither augmentation"]
+    G --> H["TS HOG + hole features"]
+    H --> I["RBF SVM OvO fit"]
+    I --> J["Model + warp strategy manifest"]
 ```
 
 ### T3: Observer Border Detector (RETIRED)

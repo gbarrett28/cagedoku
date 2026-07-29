@@ -1,15 +1,16 @@
 # Digit Recognition
 
-The production web app has one digit-recognition architecture: 64×64 letterboxed
-crops, TypeScript HOG plus hole-count feature extraction, and an OvO RBF SVM. The
-model manifest uses `classifier_type: "rbf"`; the browser rejects the retired
-`pca_rbf` and `linear` formats explicitly.
+The production web app has one digit-recognition architecture: 64×64 crops produced
+by the manifest-selected `stretch` or `letterbox` warp, TypeScript HOG plus hole-count
+feature extraction, and an OvO RBF SVM. The model manifest uses
+`classifier_type: "rbf"` and requires `warp_strategy`; the browser rejects missing,
+unsupported, `pca_rbf`, and `linear` formats explicitly.
 
 TypeScript is the source of truth for every operation required by production:
 bounding-box crop handling, recognition warping, feature extraction, model loading,
-and inference. Python is limited to orchestration and fitting. When Python needs
-production features or predictions it calls the TypeScript implementation through
-`killer_sudoku/training/ts_bridge.py`; it must not reproduce those algorithms.
+and inference. Python is limited to orchestration and fitting. Raw training crops are
+warped once and their features extracted through the TypeScript implementation via
+`killer_sudoku/training/ts_bridge.py`; Python must not reproduce those algorithms.
 
 ## Crop contract
 
@@ -22,7 +23,9 @@ classifier input without first applying the selected production warp.
 Schema-v2 browser exports distinguish strategy-neutral source pixels from canonical
 64×64 `recognitionPixels`. The latter exist for exact deployed-model auditing;
 `web/scripts/validate-model.ts` consumes them through the real `loadNumRecogniser`
-path and never rewarps them.
+path and never rewarps them. Version-1 64×64 records are explicitly canonical
+`letterbox` inputs and are excluded if training selects `stretch`; they are never
+reclassified as raw crops.
 
 ## Historical note
 

@@ -38,8 +38,9 @@ import hashlib
 import json
 import time
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from numba import njit, prange
@@ -47,6 +48,7 @@ from numpy.typing import NDArray
 from sklearn.svm import SVC
 
 from killer_sudoku.training import ts_bridge
+from killer_sudoku.training.ts_bridge import RawDigitCrop, warp_crops
 
 # ---------------------------------------------------------------------------
 # Constants shared with the TypeScript HOG/RBF production model.
@@ -72,6 +74,46 @@ _STALE_HASHES_PATH = Path(__file__).parent / "known-stale-training-hashes.json"
 DEFAULT_OVERRIDES_PATH = Path("killer_sudoku/training/manual_label_overrides.json")
 
 
+type WarpStrategy = Literal["stretch", "letterbox"]
+
+
+@dataclass(frozen=True)
+class RawTrainingSample:
+    """A browser-selected bounding-box crop that has not been recognition-warped."""
+
+    digit: int
+    pixels: NDArray[np.uint8]
+
+
+@dataclass(frozen=True)
+class CanonicalTrainingSample:
+    """A historical square recogniser input tied to the strategy that produced it."""
+
+    digit: int
+    pixels: NDArray[np.uint8]
+    warp_strategy: WarpStrategy
+
+
+type TrainingSample = RawTrainingSample | CanonicalTrainingSample
+
+# Version-1 exports were produced by square-padding before resize, which is
+# geometrically equivalent to the deployed single-digit letterbox strategy.
+LEGACY_V1_WARP_STRATEGY: WarpStrategy = "letterbox"
+
+def deployed_warp_strategy(
+    manifest_path: Path = Path(__file__).parent / "public" / "num_recogniser.json",
+) -> WarpStrategy:
+    """Read the current browser model's strategy instead of duplicating its default."""
+    strategy = json.loads(manifest_path.read_text(encoding="utf-8")).get("warp_strategy")
+    if strategy == "stretch":
+        return "stretch"
+    if strategy == "letterbox":
+        return "letterbox"
+    raise ValueError(
+        f"{manifest_path}: unsupported deployed warp strategy {strategy!r}"
+    )
+
+
 def _load_stale_hashes() -> frozenset[str]:
     """Load the shared stale-sample-hash blocklist (see module docstring)."""
     if not _STALE_HASHES_PATH.exists():
@@ -80,8 +122,55 @@ def _load_stale_hashes() -> frozenset[str]:
 
 
 def _sample_hash(pixels: list[int]) -> str:
-    """sha256 of the raw pixel array -- must match numberRecognition.test.ts's sha256()."""
+    """Hash canonical audit pixels exactly as numberRecognition.test.ts does."""
     return hashlib.sha256(bytes(pixels)).hexdigest()
+
+
+def _byte_pixels(value: Any, expected: int, source: str) -> NDArray[np.uint8]:
+    if not isinstance(value, list) or len(value) != expected:
+        actual = len(value) if isinstance(value, list) else "non-array"
+        raise ValueError(f"{source}: expected {expected} pixels, got {actual}")
+    if any(not isinstance(pixel, int) or isinstance(pixel, bool) or not 0 <= pixel <= 255 for pixel in value):
+        raise ValueError(f"{source}: pixels must be uint8 values")
+    return np.asarray(value, dtype=np.uint8)
+
+
+def _raw_training_sample(
+    digit: int,
+    pixels: Any,
+    width: Any,
+    height: Any,
+    source: str,
+) -> RawTrainingSample:
+    if (
+        not isinstance(width, int)
+        or isinstance(width, bool)
+        or not isinstance(height, int)
+        or isinstance(height, bool)
+        or width <= 0
+        or height <= 0
+    ):
+        raise ValueError(f"{source}: raw crop dimensions must be positive integers")
+    return RawTrainingSample(
+        digit,
+        _byte_pixels(pixels, width * height, source).reshape(height, width),
+    )
+
+
+def _canonical_training_sample(
+    digit: int,
+    pixels: Any,
+    strategy: WarpStrategy,
+    source: str,
+) -> CanonicalTrainingSample:
+    return CanonicalTrainingSample(
+        digit,
+        _byte_pixels(pixels, THUMBNAIL_SIZE**2, source).reshape(
+            THUMBNAIL_SIZE,
+            THUMBNAIL_SIZE,
+        ),
+        strategy,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -90,19 +179,6 @@ def _sample_hash(pixels: list[int]) -> str:
 
 
 class HogRecogniser:
-    def fit_to_thumbnail(self, crop: NDArray[np.uint8], win_size: int) -> NDArray[np.uint8]:
-        # Pad to a square (aspect-preserving), then uniform-scale -- matches TS's
-        # letterboxWarp. This is generate_synthetic_samples' former inline logic.
-        from PIL import Image
-        h_c, w_c = crop.shape
-        side = max(h_c, w_c)
-        square = np.zeros((side, side), dtype=np.uint8)
-        square[(side - h_c) // 2:(side - h_c) // 2 + h_c, (side - w_c) // 2:(side - w_c) // 2 + w_c] = crop
-        return np.array(
-            Image.fromarray(square).resize((win_size, win_size), Image.Resampling.LANCZOS),
-            dtype=np.uint8,
-        )
-
     def extract_features(self, imgs: NDArray[np.uint8]) -> NDArray[np.float64]:
         hog, hole = ts_bridge.extract_features(list(imgs))
         return np.hstack([hog, hole])
@@ -118,6 +194,7 @@ class HogRecogniser:
 
     def save(
         self, model: dict[str, Any], out_dir: Path,
+        warp_strategy: WarpStrategy,
         confidence_threshold: float = CONFIDENCE_THRESHOLD,
     ) -> None:
         svc: SVC = model["clf"]
@@ -154,7 +231,14 @@ class HogRecogniser:
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "num_recogniser.bin").write_bytes(bytes(blob))
         (out_dir / "num_recogniser.json").write_text(
-            json.dumps({"classifier_type": "rbf", "arrays": manifest_arrays}, indent=2),
+            json.dumps(
+                {
+                    "classifier_type": "rbf",
+                    "warp_strategy": warp_strategy,
+                    "arrays": manifest_arrays,
+                },
+                indent=2,
+            ),
             encoding="utf-8",
         )
         n_sv = svc.support_vectors_.shape[0]
@@ -170,39 +254,95 @@ ACTIVE_RECOGNISER = HogRecogniser()
 # I/O -- loading
 # ---------------------------------------------------------------------------
 
-def load_training_file(path: Path, exclude_hashes: frozenset[str] = frozenset()) -> list[tuple[int, NDArray[np.uint8]]]:
-    """Load deployed 64x64 samples from one browser-exported JSON.
-
-    Schema-v2 exports retain both the raw bounding-box crop and the exact
-    recognition input.  This compatibility loader uses only the latter;
-    strategy-neutral training from the raw crop is introduced separately.
-    Legacy exports use the historical ``pixels`` field.
-    """
+def load_training_file(
+    path: Path,
+    exclude_hashes: frozenset[str] = frozenset(),
+) -> list[TrainingSample]:
+    """Discriminate raw and canonical records without using array shape as a hint."""
     data = json.loads(path.read_text(encoding="utf-8"))
-    pixel_field = "recognitionPixels" if data.get("schemaVersion") == 2 else "pixels"
-    samples: list[tuple[int, NDArray[np.uint8]]] = []
+    schema_version = data.get("schemaVersion", data.get("version"))
+    if schema_version not in (1, 2):
+        raise ValueError(f"{path.name}: unsupported training schema version {schema_version!r}")
+    if data.get("thumbnailSize", THUMBNAIL_SIZE) != THUMBNAIL_SIZE:
+        raise ValueError(
+            f"{path.name}: canonical samples must be "
+            f"{THUMBNAIL_SIZE}x{THUMBNAIL_SIZE}"
+        )
+
+    samples: list[TrainingSample] = []
     skipped = 0
-    for sample in data["samples"]:
-        pixels = sample[pixel_field]
+    raw_fields = ("sourceRect", "sourceWidth", "sourceHeight", "sourcePixels")
+    for index, sample in enumerate(data["samples"]):
+        source = f"{path.name} sample {index}"
+        digit = int(sample["digit"])
+        raw_present = [field in sample for field in raw_fields]
+        if any(raw_present) and not all(raw_present):
+            raise ValueError(f"{source}: raw crop metadata is incomplete")
+
+        if all(raw_present):
+            audit_pixels = sample.get("recognitionPixels")
+            _byte_pixels(
+                audit_pixels,
+                THUMBNAIL_SIZE**2,
+                f"{source} recognitionPixels",
+            )
+            if exclude_hashes and _sample_hash(audit_pixels) in exclude_hashes:
+                skipped += 1
+                continue
+            width = sample.get("sourceWidth")
+            height = sample.get("sourceHeight")
+            rect = sample.get("sourceRect")
+            if (
+                not isinstance(rect, list)
+                or len(rect) != 4
+                or any(not isinstance(value, int) or isinstance(value, bool) for value in rect)
+                or rect[2] != width
+                or rect[3] != height
+            ):
+                raise ValueError(f"{source}: sourceRect must match source dimensions")
+            samples.append(_raw_training_sample(
+                digit,
+                sample.get("sourcePixels"),
+                width,
+                height,
+                source,
+            ))
+            continue
+
+        if "pixels" in sample:
+            pixels = sample.get("pixels")
+            strategy = LEGACY_V1_WARP_STRATEGY
+        elif "recognitionPixels" in sample:
+            pixels = sample.get("recognitionPixels")
+            stored_strategy = sample.get("warpStrategy")
+            if stored_strategy == "stretch":
+                strategy = "stretch"
+            elif stored_strategy == "letterbox":
+                strategy = "letterbox"
+            else:
+                raise ValueError(
+                    f"{source}: canonical sample has unsupported warp strategy "
+                    f"{stored_strategy!r}"
+                )
+        else:
+            raise ValueError(f"{source}: sample is neither raw nor explicitly canonical")
+
+        canonical_sample = _canonical_training_sample(digit, pixels, strategy, source)
         if exclude_hashes and _sample_hash(pixels) in exclude_hashes:
             skipped += 1
             continue
-        digit = int(sample["digit"])
-        img = np.array(pixels, dtype=np.uint8).reshape(THUMBNAIL_SIZE, THUMBNAIL_SIZE)
-        samples.append((digit, img))
+        samples.append(canonical_sample)
+
     if skipped:
-        print(f"  Excluded {skipped} known-stale-geometry sample(s) from {path.name}", flush=True)
+        print(
+            f"  Excluded {skipped} known-stale-geometry sample(s) from {path.name}",
+            flush=True,
+        )
     return samples
 
 
-def load_overrides_file(path: Path) -> list[tuple[int, NDArray[np.uint8]]]:
-    """Load human-reviewed crops without warping them.
-
-    New records carry production source-crop dimensions and are validated
-    against their PNG. Historical 64x64 records predate raw-crop capture and
-    remain canonical compatibility samples; non-square legacy records are
-    rejected because their geometry cannot be established.
-    """
+def load_overrides_file(path: Path) -> list[TrainingSample]:
+    """Load human-reviewed raw crops and historical canonical overrides."""
     if not path.exists():
         return []
     import base64
@@ -211,7 +351,7 @@ def load_overrides_file(path: Path) -> list[tuple[int, NDArray[np.uint8]]]:
     from PIL import Image
 
     overrides: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
-    samples: list[tuple[int, NDArray[np.uint8]]] = []
+    samples: list[TrainingSample] = []
     for key, entry in overrides.items():
         if entry["label"] == "exclude":
             continue
@@ -223,10 +363,13 @@ def load_overrides_file(path: Path) -> list[tuple[int, NDArray[np.uint8]]]:
         present = [field in entry for field in metadata_fields]
         if any(present) and not all(present):
             raise ValueError(f"{key}: raw crop metadata is incomplete")
+        digit = int(entry["label"])
         if all(present):
-            width = int(entry["sourceWidth"])
-            height = int(entry["sourceHeight"])
+            width = entry["sourceWidth"]
+            height = entry["sourceHeight"]
             rect = entry["sourceRect"]
+            if not isinstance(width, int) or not isinstance(height, int):
+                raise ValueError(f"{key}: source dimensions must be integers")
             if width <= 0 or height <= 0:
                 raise ValueError(f"{key}: source dimensions must be positive")
             if int(rect["width"]) != width or int(rect["height"]) != height:
@@ -236,30 +379,31 @@ def load_overrides_file(path: Path) -> list[tuple[int, NDArray[np.uint8]]]:
                     f"{key}: PNG dimensions {crop.shape[1]}x{crop.shape[0]} "
                     f"do not match source metadata {width}x{height}"
                 )
-        elif crop.shape != (THUMBNAIL_SIZE, THUMBNAIL_SIZE):
-            raise ValueError(
-                f"{key}: legacy override lacks raw crop metadata and is not "
-                f"{THUMBNAIL_SIZE}x{THUMBNAIL_SIZE}"
-            )
-        samples.append((int(entry["label"]), crop))
+            samples.append(RawTrainingSample(digit, crop))
+        else:
+            if crop.shape != (THUMBNAIL_SIZE, THUMBNAIL_SIZE):
+                raise ValueError(
+                    f"{key}: legacy override lacks raw crop metadata and is not "
+                    f"{THUMBNAIL_SIZE}x{THUMBNAIL_SIZE}"
+                )
+            samples.append(CanonicalTrainingSample(
+                digit,
+                crop,
+                LEGACY_V1_WARP_STRATEGY,
+            ))
     return samples
 
 
 def cap_per_class(
-    samples: list[tuple[int, NDArray[np.uint8]]],
+    samples: list[TrainingSample],
     max_per_class: int,
     rng: np.random.Generator,
-) -> list[tuple[int, NDArray[np.uint8]]]:
-    """Randomly subsample each digit class down to at most max_per_class.
-
-    Bounds the largest class regardless of how skewed the input distribution
-    is -- e.g. digit '1' is far more common in cage totals than digit '5'.
-    A no-op for classes already at or below the cap.
-    """
-    by_digit: dict[int, list[tuple[int, NDArray[np.uint8]]]] = {}
-    for s in samples:
-        by_digit.setdefault(s[0], []).append(s)
-    capped: list[tuple[int, NDArray[np.uint8]]] = []
+) -> list[TrainingSample]:
+    """Randomly subsample each digit class down to at most max_per_class."""
+    by_digit: dict[int, list[TrainingSample]] = {}
+    for sample in samples:
+        by_digit.setdefault(sample.digit, []).append(sample)
+    capped: list[TrainingSample] = []
     for group in by_digit.values():
         if len(group) <= max_per_class:
             capped.extend(group)
@@ -272,13 +416,8 @@ def cap_per_class(
 def generate_synthetic_samples(
     win_size: int = THUMBNAIL_SIZE,
     pt_sizes: tuple[int, ...] = (32, 48, 64),
-) -> list[tuple[int, NDArray[np.uint8]]]:
-    """Render digits 1-9 in all discoverable system TTF fonts via Pillow.
-
-    Returns (label, win_size x win_size uint8) pairs in the same format as
-    load_training_file, supplementing browser-exported samples with coverage
-    across common newspaper and system typefaces.
-    """
+) -> list[TrainingSample]:
+    """Render training-only raw glyph crops without emulating browser selection."""
     t0 = time.time()
     print(f"  [+{time.time() - t0:.0f}s] Scanning system fonts (matplotlib font cache "
           f"may take a while on first run)...", flush=True)
@@ -287,7 +426,7 @@ def generate_synthetic_samples(
 
     font_paths = fm.findSystemFonts(fontext="ttf")
     print(f"  [+{time.time() - t0:.0f}s] Found {len(font_paths)} fonts", flush=True)
-    samples: list[tuple[int, NDArray[np.uint8]]] = []
+    samples: list[TrainingSample] = []
     report_every = max(1, len(font_paths) // 20)
 
     for fi, font_path in enumerate(font_paths):
@@ -318,15 +457,61 @@ def generate_synthetic_samples(
                 x0 = max(0, int(xs.min()) - margin)
                 x1 = min(arr.shape[1], int(xs.max()) + margin + 1)
                 crop = arr[y0:y1, x0:x1]
-                out = ACTIVE_RECOGNISER.fit_to_thumbnail(crop, win_size)
-                if out.max() > 0:
-                    samples.append((digit, out))
+                if crop.max() > 0:
+                    samples.append(RawTrainingSample(digit, crop))
 
         if (fi + 1) % report_every == 0 or fi + 1 == len(font_paths):
             print(f"  [+{time.time() - t0:.0f}s] Rendered fonts {fi + 1}/{len(font_paths)} "
                   f"({len(samples)} samples so far)", flush=True)
 
     return samples
+
+
+def canonicalize_samples(
+    samples: list[TrainingSample],
+    strategy: WarpStrategy,
+) -> list[tuple[int, NDArray[np.uint8]]]:
+    """Warp each raw input once in TS and retain only compatible canonical inputs."""
+    raw_samples = [sample for sample in samples if isinstance(sample, RawTrainingSample)]
+    raw_crops: list[RawDigitCrop] = []
+    for index, raw_sample in enumerate(raw_samples):
+        if raw_sample.pixels.ndim != 2 or 0 in raw_sample.pixels.shape:
+            raise ValueError(
+                f"raw training sample {index} must have positive two-dimensional pixels, "
+                f"got {raw_sample.pixels.shape}"
+            )
+        if raw_sample.pixels.dtype != np.uint8:
+            raise ValueError(
+                f"raw training sample {index} must have dtype uint8, got {raw_sample.pixels.dtype}"
+            )
+        raw_crops.append(RawDigitCrop(raw_sample.pixels))
+
+    warped = warp_crops(raw_crops, strategy, THUMBNAIL_SIZE)
+    if warped.shape != (len(raw_samples), THUMBNAIL_SIZE, THUMBNAIL_SIZE):
+        raise RuntimeError(
+            "warp bridge returned invalid training array shape "
+            f"{warped.shape}, expected {(len(raw_samples), THUMBNAIL_SIZE, THUMBNAIL_SIZE)}"
+        )
+    raw_iter = iter(warped)
+
+    canonical: list[tuple[int, NDArray[np.uint8]]] = []
+    for sample in samples:
+        if isinstance(sample, RawTrainingSample):
+            canonical.append((sample.digit, next(raw_iter)))
+            continue
+        if sample.warp_strategy != strategy:
+            continue
+        if sample.pixels.shape != (THUMBNAIL_SIZE, THUMBNAIL_SIZE):
+            raise ValueError(
+                f"canonical training sample must be {THUMBNAIL_SIZE}x{THUMBNAIL_SIZE}, "
+                f"got {sample.pixels.shape}"
+            )
+        if sample.pixels.dtype != np.uint8:
+            raise ValueError(
+                f"canonical training sample must have dtype uint8, got {sample.pixels.dtype}"
+            )
+        canonical.append((sample.digit, sample.pixels))
+    return canonical
 
 
 # ---------------------------------------------------------------------------
@@ -518,6 +703,13 @@ def main() -> None:
         help="Skip system-font synthetic digit generation",
     )
     parser.add_argument(
+        "--warp-strategy",
+        choices=("stretch", "letterbox"),
+        default=deployed_warp_strategy(),
+        help="Production TypeScript crop warp used for raw training inputs "
+             "(default: strategy in the deployed model manifest)",
+    )
+    parser.add_argument(
         "--confidence-threshold", type=float, default=CONFIDENCE_THRESHOLD, metavar="T",
         help=f"OVO vote fraction to mark a read as confident (default: {CONFIDENCE_THRESHOLD})",
     )
@@ -550,22 +742,22 @@ def main() -> None:
     if stale_hashes:
         print(f"{_elapsed()} Loaded {len(stale_hashes)} known-stale-geometry sample hashes", flush=True)
 
-    bulk_samples: list[tuple[int, NDArray[np.uint8]]] = []
+    bulk_inputs: list[TrainingSample] = []
     for path in args.training_json:
         samples = load_training_file(path, exclude_hashes=stale_hashes)
         print(f"{_elapsed()} Loaded {len(samples)} bulk samples from {path.name}", flush=True)
-        bulk_samples.extend(samples)
+        bulk_inputs.extend(samples)
 
-    if args.max_per_class > 0 and bulk_samples:
-        before = len(bulk_samples)
-        bulk_samples = cap_per_class(bulk_samples, args.max_per_class, rng_cap)
+    if args.max_per_class > 0 and bulk_inputs:
+        before = len(bulk_inputs)
+        bulk_inputs = cap_per_class(bulk_inputs, args.max_per_class, rng_cap)
         print(f"{_elapsed()} Capped bulk samples to {args.max_per_class}/class: "
-              f"{before} -> {len(bulk_samples)}", flush=True)
+              f"{before} -> {len(bulk_inputs)}", flush=True)
 
-    browser_samples: list[tuple[int, NDArray[np.uint8]]] = []
+    browser_inputs: list[TrainingSample] = []
     if not args.no_browser_file and args.browser_file.exists():
-        browser_samples = load_training_file(args.browser_file, exclude_hashes=stale_hashes)
-        print(f"{_elapsed()} Loaded {len(browser_samples)} samples from {args.browser_file.name} "
+        browser_inputs = load_training_file(args.browser_file, exclude_hashes=stale_hashes)
+        print(f"{_elapsed()} Loaded {len(browser_inputs)} samples from {args.browser_file.name} "
               f"(ground truth, never capped)", flush=True)
 
     if not args.no_overrides_file:
@@ -574,26 +766,32 @@ def main() -> None:
             print(f"{_elapsed()} Loaded {len(override_samples)} human-reviewed corrections from "
                   f"{args.overrides_file.name} (ground truth, folded into browser weight bucket)",
                   flush=True)
-            canonical_overrides = [
-                (
-                    digit,
-                    crop
-                    if crop.shape == (THUMBNAIL_SIZE, THUMBNAIL_SIZE)
-                    else ACTIVE_RECOGNISER.fit_to_thumbnail(crop, THUMBNAIL_SIZE),
-                )
-                for digit, crop in override_samples
-            ]
-            browser_samples = browser_samples + canonical_overrides
+            browser_inputs.extend(override_samples)
 
-    all_samples: list[tuple[int, NDArray[np.uint8]]] = browser_samples + bulk_samples
-    n_browser = len(browser_samples)
-    n_bulk = len(bulk_samples)
-
+    synthetic_inputs: list[TrainingSample] = []
     if not args.no_synthetic:
         print(f"{_elapsed()} Generating synthetic font samples...", flush=True)
-        synth = generate_synthetic_samples()
-        print(f"{_elapsed()} Generated {len(synth)} synthetic samples", flush=True)
-        all_samples.extend(synth)
+        synthetic_inputs = generate_synthetic_samples()
+        print(f"{_elapsed()} Generated {len(synthetic_inputs)} synthetic samples", flush=True)
+
+    strategy: WarpStrategy = args.warp_strategy
+    print(f"{_elapsed()} Applying production TS {strategy} warp to raw samples...", flush=True)
+    browser_samples = canonicalize_samples(browser_inputs, strategy)
+    bulk_samples = canonicalize_samples(bulk_inputs, strategy)
+    synthetic_samples = canonicalize_samples(synthetic_inputs, strategy)
+    excluded_legacy = (
+        len(browser_inputs) + len(bulk_inputs) + len(synthetic_inputs)
+        - len(browser_samples) - len(bulk_samples) - len(synthetic_samples)
+    )
+    if excluded_legacy:
+        print(
+            f"{_elapsed()} Excluded {excluded_legacy} canonical sample(s) produced by a different warp",
+            flush=True,
+        )
+
+    all_samples = browser_samples + bulk_samples + synthetic_samples
+    n_browser = len(browser_samples)
+    n_bulk = len(bulk_samples)
 
     if not all_samples:
         import sys as _sys
@@ -635,6 +833,7 @@ def main() -> None:
     ACTIVE_RECOGNISER.save(
         model, Path(args.out),
         confidence_threshold=args.confidence_threshold,
+        warp_strategy=strategy,
     )
     print(f"{_elapsed()} Done.", flush=True)
 

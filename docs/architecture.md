@@ -202,25 +202,29 @@ collection and HOG/RBF model fitting in detail.
 ### Web Recogniser Training
 
 The production digit recogniser lives in `web/src/image/numberRecognition.ts`.
-`loadNumRecogniser` accepts one manifest type, `classifier_type: "rbf"`, and creates
-a `HogRecogniser`: 64×64 letterboxed digit crops are represented by HOG plus
-hole-count features and classified by an OvO RBF SVM. PCA/template matching and the
-linear-classifier branch have been retired; unsupported manifests fail explicitly
-instead of silently taking a fallback path.
+`loadNumRecogniser` accepts one manifest type, `classifier_type: "rbf"`, and requires
+its `warp_strategy` to be `stretch` or `letterbox`. The resulting 64×64 inputs are
+represented by HOG plus hole-count features and classified by an OvO RBF SVM.
+PCA/template matching and the linear-classifier branch have been retired; unsupported
+or incomplete manifests fail explicitly instead of silently taking a fallback path.
 
 TypeScript owns every operation used by the browser, including crop warping, feature
 extraction, and inference. Python may orchestrate fitting, but calls the production
 crop-warp and feature implementations through `killer_sudoku/training/ts_bridge.py`
 rather than reimplementing them. Raw crops are batched across the bridge and a bridge
-failure is fatal; Python has no alternate warp path. `web/scripts/validate-model.ts` audits an externally written model
-through the production `loadNumRecogniser` path using canonical schema-v2
-`recognitionPixels`.
+failure is fatal; Python has no alternate warp path. `web/train_recogniser.py` accepts
+`--warp-strategy`, applies that TS warp exactly once to every raw input before
+augmentation, and writes the choice into the model manifest. Historical version-1
+64×64 inputs become explicit canonical `letterbox` records and are excluded when a
+different strategy is selected. `web/scripts/validate-model.ts` audits an externally
+written model through the production `loadNumRecogniser` path using canonical
+schema-v2 `recognitionPixels`.
 
 A single active-instance singleton (`setActiveRecogniser`/`activeRecogniser` in
 `numberRecognition.ts`, set once by `store.ts` after loading the model) means callers
 never thread a recogniser instance through the pipeline by hand. The recogniser's
-`warpStrategy` is `letterbox`; raw bounding-box crops stay strategy-neutral until the
-production warp is applied.
+`warpStrategy` comes from the validated model manifest; raw bounding-box crops stay
+strategy-neutral until that production warp is applied.
 
 When a user corrects OCR errors and confirms a killer puzzle, the app automatically
 uploads the digit thumbnails (user-verified labels, 64×64 uint8) to a remote
