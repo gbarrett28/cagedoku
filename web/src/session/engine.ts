@@ -1,11 +1,6 @@
 /**
  * Session-level engine helpers.
  *
- * Mirrors Python helpers in api/routers/puzzle.py:
- *   _build_engine, _apply_auto_placements, _record_turn,
- *   _rebuild_user_grid, _user_eliminations, _user_removed,
- *   _user_virtual_cages, _find_last_consistent_turn_idx
- *
  * Key design decisions:
  * - Engine state is NOT serialised. On every state change the board is
  *   rebuilt from scratch by replaying the Turn history.
@@ -206,7 +201,7 @@ export function isUserCorrupted(state: PuzzleState): boolean {
 /**
  * Builds a fresh KillerBoardState + SolverEngine from the current PuzzleState.
  *
- * Steps (mirrors Python's _build_engine):
+ * Steps:
  * 1. Parse PuzzleSpec from specData
  * 2. Create KillerBoardState (includeVirtualCages=false to skip linear derivation)
  * 3. Re-add all virtual cages from turn history

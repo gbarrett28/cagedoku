@@ -1,9 +1,10 @@
+import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  addGroundTruth, claimEvaluation, completeEvaluation, getCorpora, getPuzzle,
+  addGroundTruth, claimEvaluation, completeEvaluation, getCorpora, getEvaluationOutcomeRows, getPuzzle,
   insertCellRead, insertPuzzle, insertRetrainingSuggestion, openDb, upsertCorpus,
   type CellReadRow, type CtEvalExtras, type RetrainingSuggestionRow,
 } from './corpus-db.js';
@@ -34,6 +35,33 @@ describe('openDb', () => {
     const db = tmpDb();
     db.close();
     expect(() => { const db2 = openDb(dbPath); db2.close(); }).not.toThrow();
+  });
+});
+
+
+describe('cell_reads evidence migration', () => {
+  it('renames legacy crop_pixels and leaves raw-source fields null', () => {
+    dbPath = path.join(os.tmpdir(), `corpus-legacy-${Date.now()}-${Math.random()}.db`);
+    const legacyDb = new Database(dbPath);
+    legacyDb.exec('CREATE TABLE cell_reads (crop_pixels TEXT NOT NULL)');
+    legacyDb.prepare('INSERT INTO cell_reads (crop_pixels) VALUES (?)').run('[1,2,3]');
+    legacyDb.close();
+
+    const db = openDb(dbPath);
+    const columns = (db.prepare('PRAGMA table_info(cell_reads)').all() as { name: string }[])
+      .map(column => column.name);
+    const migrated = db.prepare(
+      'SELECT recognition_pixels, source_pixels, warp_strategy FROM cell_reads',
+    ).get() as { recognition_pixels: string; source_pixels: string | null; warp_strategy: string | null };
+
+    expect(columns).not.toContain('crop_pixels');
+    expect(columns).toContain('recognition_pixels');
+    expect(migrated).toEqual({
+      recognition_pixels: '[1,2,3]',
+      source_pixels: null,
+      warp_strategy: null,
+    });
+    db.close();
   });
 });
 
@@ -126,11 +154,20 @@ describe('claimEvaluation / completeEvaluation', () => {
     db.close();
   });
 
-  it('drops the dead centroid columns on open', () => {
+  it('drops the dead centroid and contour-tree-experiment columns on open', () => {
     const db = tmpDb();
     const cols = (db.prepare('PRAGMA table_info(evaluations)').all() as { name: string }[]).map(r => r.name);
     expect(cols).not.toContain('cell_centroid_dist_sq');
     expect(cols).not.toContain('box_centroid_dist_sq');
+    expect(cols).not.toContain('ct_d1_count');
+    expect(cols).not.toContain('ct_d2_count');
+    expect(cols).not.toContain('ct_type');
+    expect(cols).not.toContain('ct_orientation');
+    expect(cols).not.toContain('quad_sum_orientation');
+    expect(cols).not.toContain('ct_border_agreement');
+    expect(cols).not.toContain('ct_border_fp');
+    expect(cols).not.toContain('ct_border_fn');
+    expect(cols).not.toContain('ct_digit_agreement');
     db.close();
   });
 
@@ -140,10 +177,6 @@ describe('claimEvaluation / completeEvaluation', () => {
     const claim = claimEvaluation(db, 'gitabc', 1)!;
     const extras: CtEvalExtras = {
       liveMats: 3, heapBytes: 1_000_000, allocBytes: 500_000,
-      ctD1Count: 81, ctD2Count: 120, ctType: 'killer',
-      ctOrientation: 0, quadSumOrientation: 0,
-      ctBorderAgreement: 0.97, ctBorderFp: 2, ctBorderFn: 1,
-      ctDigitAgreement: 0.95,
       detectedBigApple: false, specError: null, fallbackUsed: false,
       parseElapsedMs: 800, solveElapsedMs: 200,
     };
@@ -152,20 +185,30 @@ describe('claimEvaluation / completeEvaluation', () => {
     expect(row['live_mats']).toBe(3);
     expect(row['heap_bytes']).toBe(1_000_000);
     expect(row['alloc_bytes']).toBe(500_000);
-    expect(row['ct_d1_count']).toBe(81);
-    expect(row['ct_d2_count']).toBe(120);
-    expect(row['ct_type']).toBe('killer');
-    expect(row['ct_orientation']).toBeCloseTo(0);
-    expect(row['quad_sum_orientation']).toBeCloseTo(0);
-    expect(row['ct_border_agreement']).toBeCloseTo(0.97);
-    expect(row['ct_border_fp']).toBe(2);
-    expect(row['ct_border_fn']).toBe(1);
-    expect(row['ct_digit_agreement']).toBeCloseTo(0.95);
     expect(row['detected_big_apple']).toBe(0);
     expect(row['spec_error']).toBeNull();
     expect(row['fallback_used']).toBe(0);
     expect(row['parse_elapsed_ms']).toBe(800);
     expect(row['solve_elapsed_ms']).toBe(200);
+    db.close();
+  });
+
+  it('returns the latest evaluation row per puzzle in deterministic path order', () => {
+    const db = tmpDb();
+    insertPuzzle(db, 'z', '/z.jpg', 'test', 'killer');
+    insertPuzzle(db, 'a', '/a.jpg', 'test', 'killer');
+    db.exec(`
+      INSERT INTO evaluations (puzzle_hash, git_hash, status, bucket, reason, spec_hash)
+      VALUES ('z', 'g1', 'done', 'notSolved', 'old', NULL),
+             ('a', 'g1', 'done', 'clean', NULL, 'spec-a'),
+             ('z', 'g1', 'done', 'backtracked', 'latest', 'spec-z'),
+             ('a', 'other', 'done', 'notSolved', 'wrong run', NULL);
+    `);
+
+    expect(getEvaluationOutcomeRows(db, 'g1')).toEqual([
+      { puzzleHash: 'a', path: '/a.jpg', bucket: 'clean', reason: null, specHash: 'spec-a' },
+      { puzzleHash: 'z', path: '/z.jpg', bucket: 'backtracked', reason: 'latest', specHash: 'spec-z' },
+    ]);
     db.close();
   });
 });
@@ -235,20 +278,32 @@ describe('retraining_suggestions table', () => {
 
 
 describe('cell_reads (generalized from given_digit_reads)', () => {
-  it('inserts and reads back a cage-total-digit row', () => {
+  it('round-trips a non-square raw crop in row-major byte order', () => {
     const db = tmpDb();
     insertPuzzle(db, 'p1', '/x.jpg', 'guardian', 'killer');
-    const row: CellReadRow = {
+    const row = {
       puzzleHash: 'p1', gitHash: 'h1', cellType: 'cage_total_digit',
       row: 0, col: 0, digitIndex: 1, predictedLabel: 6, confident: true,
-      clashesWith: [], cropPixels: [0, 1], hogFeatures: [0.1], holeFeatures: [0.2],
-    };
+      clashesWith: [], hogFeatures: [0.1], holeFeatures: [0.2],
+      sourceX: 17, sourceY: 23, sourceWidth: 3, sourceHeight: 2,
+      sourcePixels: [12, 13, 14, 22, 23, 24],
+      recognitionPixels: Array.from({ length: 4096 }, (_, index) => index % 256),
+      warpStrategy: 'letterbox',
+    } satisfies CellReadRow;
     insertCellRead(db, row);
     const saved = db.prepare('SELECT * FROM cell_reads WHERE puzzle_hash = ?').get('p1') as {
       cell_type: string; digit_index: number; hog_features: string; hole_features: string;
+      source_x: number; source_y: number; source_width: number; source_height: number;
+      source_pixels: string; recognition_pixels: string; warp_strategy: string;
     };
     expect(saved.cell_type).toBe('cage_total_digit');
     expect(saved.digit_index).toBe(1);
+    expect([saved.source_x, saved.source_y, saved.source_width, saved.source_height]).toEqual([17, 23, 3, 2]);
+    expect(JSON.parse(saved.source_pixels)).toEqual([12, 13, 14, 22, 23, 24]);
+    const recognitionPixels = JSON.parse(saved.recognition_pixels) as number[];
+    expect(recognitionPixels).toHaveLength(4096);
+    expect(recognitionPixels.slice(0, 4)).toEqual([0, 1, 2, 3]);
+    expect(saved.warp_strategy).toBe('letterbox');
     expect(JSON.parse(saved.hog_features)).toEqual([0.1]);
     expect(JSON.parse(saved.hole_features)).toEqual([0.2]);
     db.close();
@@ -260,13 +315,41 @@ describe('cell_reads (generalized from given_digit_reads)', () => {
     insertCellRead(db, {
       puzzleHash: 'p2', gitHash: 'h1', cellType: 'given_digit',
       row: 3, col: 4, digitIndex: 0, predictedLabel: 7, confident: false,
-      clashesWith: [{ row: 3, col: 8 }], cropPixels: [], hogFeatures: [], holeFeatures: [],
+      clashesWith: [{ row: 3, col: 8 }], hogFeatures: [], holeFeatures: [],
+      sourceX: 4, sourceY: 5, sourceWidth: 1, sourceHeight: 1,
+      sourcePixels: [255], recognitionPixels: new Array<number>(4096).fill(0),
+      warpStrategy: 'letterbox',
     });
     const saved = db.prepare('SELECT * FROM cell_reads WHERE puzzle_hash = ?').get('p2') as {
       digit_index: number; clashes_with: string;
     };
     expect(saved.digit_index).toBe(0);
     expect(JSON.parse(saved.clashes_with)).toEqual([{ row: 3, col: 8 }]);
+    db.close();
+  });
+});
+
+
+describe('insertCellRead evidence validation', () => {
+  it('rejects malformed raw or recognition evidence and unknown strategies', () => {
+    const db = tmpDb();
+    insertPuzzle(db, 'p-validation', '/validation.jpg', 'guardian', 'classic');
+    const valid = {
+      puzzleHash: 'p-validation', gitHash: 'h1', cellType: 'given_digit',
+      row: 0, col: 0, digitIndex: 0, predictedLabel: 4, confident: true,
+      clashesWith: [], hogFeatures: [], holeFeatures: [],
+      sourceX: 1, sourceY: 2, sourceWidth: 2, sourceHeight: 2,
+      sourcePixels: [1, 2, 3, 4], recognitionPixels: new Array<number>(4096).fill(0),
+      warpStrategy: 'stretch',
+    } satisfies CellReadRow;
+
+    expect(() => insertCellRead(db, { ...valid, sourceWidth: 0 })).toThrow(/dimensions must be positive/);
+    expect(() => insertCellRead(db, { ...valid, sourcePixels: [1, 2, 3] })).toThrow(/source pixel length/);
+    expect(() => insertCellRead(db, { ...valid, recognitionPixels: [1] })).toThrow(/recognition pixel length/);
+    expect(() => insertCellRead(db, {
+      ...valid,
+      warpStrategy: 'crop' as CellReadRow['warpStrategy'],
+    })).toThrow(/warp strategy is invalid/);
     db.close();
   });
 });

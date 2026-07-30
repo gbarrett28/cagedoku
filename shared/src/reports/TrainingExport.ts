@@ -2,11 +2,17 @@ import type { GitHubAction } from '../report.js';
 
 export interface TrainingSample {
   readonly digit: number;
-  readonly pixels: readonly number[];
+  readonly sourceRect: readonly [number, number, number, number];
+  readonly sourceWidth: number;
+  readonly sourceHeight: number;
+  readonly sourcePixels: readonly number[];
+  readonly recognitionPixels: readonly number[];
+  readonly warpStrategy: 'stretch' | 'letterbox';
 }
 
 export interface TrainingExport {
   readonly reportType: 'training-export';
+  readonly schemaVersion: 2;
   readonly exportedAt: string;
   readonly appVersion: string;
   readonly puzzleType: 'killer' | 'classic';
@@ -20,30 +26,39 @@ export namespace TrainingExport {
   export function is(value: unknown): value is TrainingExport {
     if (typeof value !== 'object' || value === null) return false;
     const v = value as Record<string, unknown>;
-    if (v['reportType'] !== 'training-export') return false;
+    if (v['reportType'] !== 'training-export' || v['schemaVersion'] !== 2) return false;
     if (typeof v['exportedAt'] !== 'string') return false;
     if (typeof v['appVersion'] !== 'string') return false;
     if (v['puzzleType'] !== 'killer' && v['puzzleType'] !== 'classic') return false;
     if (typeof v['subres'] !== 'number') return false;
-    if (typeof v['thumbnailSize'] !== 'number') return false;
+    if (v['thumbnailSize'] !== 64) return false;
     if (typeof v['sampleCount'] !== 'number') return false;
     if (!Array.isArray(v['samples'])) return false;
     if (v['sampleCount'] !== (v['samples'] as unknown[]).length) return false;
-    for (const s of v['samples'] as unknown[]) {
-      if (!isSample(s)) return false;
-    }
-    return true;
+    return (v['samples'] as unknown[]).every(isSample);
+  }
+
+  function isByteArray(value: unknown, expectedLength: number): value is number[] {
+    return Array.isArray(value)
+      && value.length === expectedLength
+      && value.every(pixel => typeof pixel === 'number' && Number.isInteger(pixel) && pixel >= 0 && pixel <= 255);
   }
 
   function isSample(value: unknown): value is TrainingSample {
     if (typeof value !== 'object' || value === null) return false;
     const s = value as Record<string, unknown>;
-    if (typeof s['digit'] !== 'number' || s['digit'] < 0 || s['digit'] > 9) return false;
-    if (!Array.isArray(s['pixels'])) return false;
-    if ((s['pixels'] as unknown[]).length !== 4096) return false;
-    for (const p of s['pixels'] as unknown[]) {
-      if (typeof p !== 'number' || p < 0 || p > 255) return false;
-    }
+    if (typeof s['digit'] !== 'number' || !Number.isInteger(s['digit']) || s['digit'] < 0 || s['digit'] > 9) return false;
+    if (!Array.isArray(s['sourceRect']) || s['sourceRect'].length !== 4) return false;
+    if (!(s['sourceRect'] as unknown[]).every(coordinate => typeof coordinate === 'number' && Number.isInteger(coordinate))) return false;
+    const sourceWidth = s['sourceWidth'];
+    const sourceHeight = s['sourceHeight'];
+    if (typeof sourceWidth !== 'number' || !Number.isInteger(sourceWidth) || sourceWidth <= 0) return false;
+    if (typeof sourceHeight !== 'number' || !Number.isInteger(sourceHeight) || sourceHeight <= 0) return false;
+    const [, , rectWidth, rectHeight] = s['sourceRect'] as number[];
+    if (rectWidth !== sourceWidth || rectHeight !== sourceHeight) return false;
+    if (!isByteArray(s['sourcePixels'], sourceWidth * sourceHeight)) return false;
+    if (!isByteArray(s['recognitionPixels'], 64 * 64)) return false;
+    if (s['warpStrategy'] !== 'stretch' && s['warpStrategy'] !== 'letterbox') return false;
     return true;
   }
 

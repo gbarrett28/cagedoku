@@ -5,36 +5,15 @@
  */
 
 import { cellLabel } from '../engine/rules/_labels.js';
+import type { RawDigitCrop, WarpStrategy } from './numberRecognition.js';
+import type {
+  TrainingExport as SharedTrainingExport,
+  TrainingSample as SharedTrainingSample,
+} from '../../../shared/src/reports/TrainingExport.js';
 
-export interface TrainingSample {
-  /** Digit label (0–9). */
-  digit: number;
-  /** Flattened 64×64 uint8 pixel values. */
-  pixels: number[];
-}
+export type TrainingSample = SharedTrainingSample;
 
-export interface SplitTrainingSample {
-  /** 1 = single digit, 2 = two digits in this thumbnail. */
-  splitCount: 1 | 2;
-  /** Flattened 64×64 uint8 pixel values of the pre-split merged thumbnail. */
-  pixels: number[];
-}
-
-export interface TrainingExport {
-  reportType: 'training-export';
-  exportedAt: string;
-  /** App build timestamp — identifies which recogniser generated these samples. */
-  appVersion: string;
-  puzzleType: 'killer' | 'classic';
-  /** Pixels per cell side used during pipeline processing (default 128). */
-  subres: number;
-  /** Side length of each thumbnail square in pixels (always 64). */
-  thumbnailSize: number;
-  sampleCount: number;
-  samples: TrainingSample[];
-  /** Pre-split merged thumbnails for retraining the 1-vs-2-digit split recogniser. */
-  splitSamples?: SplitTrainingSample[];
-}
+export type TrainingExport = SharedTrainingExport;
 
 /**
  * Build a TrainingExport from the thumbnails captured during OCR and the
@@ -46,14 +25,14 @@ export interface TrainingExport {
  * @param subres      Pixels per cell side (from ImagePipelineConfig).
  */
 export function extractTrainingData(
-  cellThumbs: ReadonlyMap<string, Uint8Array[]>,
+  cellThumbs: ReadonlyMap<string, readonly Uint8Array[]>,
+  cellSourceCrops: ReadonlyMap<string, readonly RawDigitCrop[]>,
   cageTotals: readonly (readonly number[])[],
   puzzleType: 'killer' | 'classic',
   subres: number,
-  mergedThumbs?: ReadonlyMap<string, Uint8Array>,
+  warpStrategy: WarpStrategy,
 ): TrainingExport {
   const samples: TrainingSample[] = [];
-  const splitSamples: SplitTrainingSample[] = [];
 
   for (const [key, thumbArr] of cellThumbs) {
     const [row, col] = key.split(',').map(Number) as [number, number];
@@ -61,31 +40,32 @@ export function extractTrainingData(
     if (confirmed <= 0) continue;
 
     const digits = String(confirmed).split('').map(Number);
-    if (digits.length !== thumbArr.length) {
+    const sourceArr = cellSourceCrops.get(key);
+    if (digits.length !== thumbArr.length || sourceArr === undefined || sourceArr.length !== thumbArr.length) {
       console.warn(
-        `[trainingExport] ${cellLabel([row, col])}: confirmed=${confirmed} ` +
-        `(${digits.length} digit${digits.length > 1 ? 's' : ''}) ` +
-        `but found ${thumbArr.length} thumbnail${thumbArr.length !== 1 ? 's' : ''} — skipped`,
+        `[trainingExport] ${cellLabel([row, col])}: evidence count mismatch ` +
+        `(digits=${digits.length}, thumbnails=${thumbArr.length}, sourceCrops=${sourceArr?.length ?? 0}) — skipped`,
       );
       continue;
     }
 
     for (let i = 0; i < digits.length; i++) {
-      samples.push({ digit: digits[i]!, pixels: Array.from(thumbArr[i]!) });
-    }
-
-    // Emit a split-recogniser sample from the merged pre-split thumbnail.
-    const mergedThumb = mergedThumbs?.get(key);
-    if (mergedThumb !== undefined) {
-      splitSamples.push({
-        splitCount: digits.length === 2 ? 2 : 1,
-        pixels: Array.from(mergedThumb),
+      const source = sourceArr[i]!;
+      samples.push({
+        digit: digits[i]!,
+        sourceRect: [source.x, source.y, source.width, source.height],
+        sourceWidth: source.width,
+        sourceHeight: source.height,
+        sourcePixels: Array.from(source.pixels),
+        recognitionPixels: Array.from(thumbArr[i]!),
+        warpStrategy,
       });
     }
   }
 
   return {
-    reportType: 'training-export' as const,
+    reportType: 'training-export',
+    schemaVersion: 2,
     exportedAt: new Date().toISOString(),
     appVersion: __BUILD_TIME__,
     puzzleType,
@@ -93,6 +73,5 @@ export function extractTrainingData(
     thumbnailSize: 64,
     sampleCount: samples.length,
     samples,
-    splitSamples,
   };
 }

@@ -1,8 +1,6 @@
 /**
  * MustContain — R5: cage must-contain digits confined to overlap → eliminate from unit.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.must_contain` module.
- *
  * If the intersection of all cage solutions gives a set of "must-contain"
  * digits, and a must-contain digit has no candidates outside the overlap of
  * the cage with the current unit, that digit is confined to the overlap and

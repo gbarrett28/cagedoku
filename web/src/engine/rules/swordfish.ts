@@ -1,7 +1,6 @@
 /**
  * Swordfish — R13: 3-row or 3-column basic fish.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.incomplete.swordfish`.
  */
 
 import type { HintResult } from '../hint.js';

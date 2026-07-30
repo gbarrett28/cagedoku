@@ -16,6 +16,9 @@
  *   --base-url URL    App URL (default http://localhost:4173)
  *   --git-hash SHA    Git commit to tag results against (default: current HEAD)
  *   --db-path PATH    Path to corpus.db (default: ../../corpus.db)
+ *   --puzzle-dir PATH  Content-hash ingest image files from PATH before evaluation
+ *   --report-out PATH  Write deterministic version-1 evaluation JSON
+ *   --compare-report PATH  Fail if a baseline puzzle drops outcome rank
  *   --stop-on-fail [N]  Stop all workers once N puzzles (default 1) have
  *                        landed in notSolved/timeout/failed (i.e. didn't solve)
  *
@@ -25,7 +28,6 @@
  */
 import { chromium } from '@playwright/test';
 import type { Browser, Page } from '@playwright/test';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
@@ -34,11 +36,15 @@ import {
   openDb, type CtEvalExtras,
 } from './corpus-db.js';
 import { waitForPipelineReady } from '../e2e/helpers.js';
+import {
+  buildEvaluationReport, emitEvaluationReport, ingestPuzzleDirectory,
+} from './evaluation-report.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DEFAULT_WORKERS = 4;
 const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_MODEL_PATH = path.resolve(__dirname, '../public/num_recogniser.bin');
 
 interface Args {
   readonly workers: number;
@@ -47,8 +53,10 @@ interface Args {
   readonly gitHash: string;
   readonly dbPath: string;
   readonly filter: string | undefined;
-  readonly dumpContoursDir: string | null;
   readonly stopOnFailCount: number | null;
+  readonly puzzleDir: string | undefined;
+  readonly reportOut: string | undefined;
+  readonly compareReport: string | undefined;
 }
 
 
@@ -62,19 +70,6 @@ interface UploadOutcomeJson {
   readonly specError: string | null;
   readonly parseElapsedMs: number;
   readonly solveElapsedMs: number;
-  // Optional: only present when running against the contour-tree feature branch
-  readonly contourTreeDiagnostics?: {
-    readonly d1Count: number;
-    readonly d2Count: number;
-    readonly contourTreeType: string;
-    readonly tlFractionType: string;
-    readonly contourTreeOrientation?: number;
-    readonly quadSumOrientation?: number;
-    readonly contourTreeBorderAgreement?: number;
-    readonly ctBorderFP?: number;
-    readonly ctBorderFN?: number;
-    readonly contourTreeDigitAgreement?: number;
-  };
   readonly liveMats?: number;
   readonly heapBytes?: number;
   readonly allocBytes?: number;
@@ -84,7 +79,7 @@ interface UploadOutcomeJson {
     readonly predictedLabel: number;
     readonly suggestedLabel: number;
     readonly confidenceTier: 'proven_unique' | 'feasible_only';
-    readonly crop: number[]; // JSON-serialised Uint8Array
+    readonly crop: number[];
   }>;
   readonly givenDigitReads?: ReadonlyArray<{
     readonly row: number;
@@ -92,7 +87,13 @@ interface UploadOutcomeJson {
     readonly predictedLabel: number;
     readonly confident: boolean;
     readonly clashesWith: ReadonlyArray<{ readonly row: number; readonly col: number }>;
-    readonly crop: number[]; // JSON-serialised Uint8Array
+    readonly sourceX: number;
+    readonly sourceY: number;
+    readonly sourceWidth: number;
+    readonly sourceHeight: number;
+    readonly sourcePixels: number[];
+    readonly recognitionPixels: number[];
+    readonly warpStrategy: 'stretch' | 'letterbox';
     readonly hogFeatures?: number[];
     readonly holeFeatures?: number[];
   }>;
@@ -102,7 +103,13 @@ interface UploadOutcomeJson {
     readonly digitIndex: number;
     readonly predictedLabel: number;
     readonly confident: boolean;
-    readonly crop: number[]; // JSON-serialised Uint8Array
+    readonly sourceX: number;
+    readonly sourceY: number;
+    readonly sourceWidth: number;
+    readonly sourceHeight: number;
+    readonly sourcePixels: number[];
+    readonly recognitionPixels: number[];
+    readonly warpStrategy: 'stretch' | 'letterbox';
     readonly hogFeatures?: number[];
     readonly holeFeatures?: number[];
   }>;
@@ -128,8 +135,10 @@ function parseArgs(argv: readonly string[]): Args {
     .trim();
   let dbPath = DEFAULT_DB_PATH;
   let filter: string | undefined;
-  let dumpContoursDir: string | null = null;
   let stopOnFailCount: number | null = null;
+  let puzzleDir: string | undefined;
+  let reportOut: string | undefined;
+  let compareReport: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--workers') workers = Number(argv[++i]);
     else if (argv[i] === '--limit') limit = Number(argv[++i]);
@@ -137,7 +146,9 @@ function parseArgs(argv: readonly string[]): Args {
     else if (argv[i] === '--git-hash') gitHash = argv[++i]!;
     else if (argv[i] === '--db-path') dbPath = argv[++i]!;
     else if (argv[i] === '--filter') filter = argv[++i];
-    else if (argv[i] === '--dump-contours') dumpContoursDir = argv[++i] ?? null;
+    else if (argv[i] === '--puzzle-dir') puzzleDir = argv[++i];
+    else if (argv[i] === '--report-out') reportOut = argv[++i];
+    else if (argv[i] === '--compare-report') compareReport = argv[++i];
     else if (argv[i] === '--stop-on-fail') {
       const next = argv[i + 1];
       if (next !== undefined && /^\d+$/.test(next)) {
@@ -148,7 +159,10 @@ function parseArgs(argv: readonly string[]): Args {
       }
     }
   }
-  return { workers, limit, baseUrl, gitHash, dbPath, filter, dumpContoursDir, stopOnFailCount };
+  return {
+    workers, limit, baseUrl, gitHash, dbPath, filter, stopOnFailCount,
+    puzzleDir, reportOut, compareReport,
+  };
 }
 
 async function checkServerReachable(baseUrl: string): Promise<void> {
@@ -182,7 +196,6 @@ async function runWorker(
   workerId: number,
   limit: number | null,
   filter: string | undefined,
-  dumpContoursDir: string | null,
   counts: BucketCounts,
   progress: { done: number; total: number },
   stopOnFailCount: number | null,
@@ -217,7 +230,6 @@ async function runWorker(
     let detectedType: string | null = null;
     let specHash: string | null = null;
     let outcome: UploadOutcomeJson | undefined;
-    let contourTreeDiagnostics: UploadOutcomeJson['contourTreeDiagnostics'] | undefined;
     let liveMats: number | undefined;
     let heapBytes: number | undefined;
     let allocBytes: number | undefined;
@@ -242,84 +254,8 @@ async function runWorker(
       detectedType = outcome.puzzleType;
       specHash = outcome.specHash;
       counts[outcome.bucket]++;
-      ({ contourTreeDiagnostics, liveMats, heapBytes, allocBytes,
+      ({ liveMats, heapBytes, allocBytes,
          fallbackUsed, specError, parseElapsedMs, solveElapsedMs } = outcome);
-
-      if (dumpContoursDir !== null) {
-        const patches = await page.evaluate(() => {
-          // Runs in the browser. Accesses the contour tree exposed by inpImage.ts.
-          type ContourNode = [number[][], [number, number, number, number], number, ContourNode[]];
-          const tree = (window as any).__lastContourTree as ContourNode[] | undefined;
-          const subres = (window as any).__lastSubres as number | undefined;
-          if (!tree || !subres) return [];
-
-          function renderMask(pts: number[][], children: number[][][], size: number): number[] {
-            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            for (const [x, y] of pts) {
-              if (x! < minX) minX = x!;
-              if (y! < minY) minY = y!;
-              if (x! > maxX) maxX = x!;
-              if (y! > maxY) maxY = y!;
-            }
-            const bw = maxX - minX || 1;
-            const bh = maxY - minY || 1;
-            const scale = Math.min((size - 2) / bw, (size - 2) / bh);
-            const offX = ((size - 2) - bw * scale) / 2 + 1;
-            const offY = ((size - 2) - bh * scale) / 2 + 1;
-            function tx(p: number[]): [number, number] {
-              return [(p[0]! - minX) * scale + offX, (p[1]! - minY) * scale + offY];
-            }
-            const data = new Uint8Array(size * size);
-            function fill(poly: number[][], color: number): void {
-              const tpoly = poly.map(tx);
-              for (let row = 0; row < size; row++) {
-                const crossings: number[] = [];
-                for (let i = 0; i < tpoly.length; i++) {
-                  const [x1, y1] = tpoly[i]!;
-                  const [x2, y2] = tpoly[(i + 1) % tpoly.length]!;
-                  if ((y1! <= row && y2! > row) || (y2! <= row && y1! > row)) {
-                    crossings.push(x1! + ((row - y1!) / (y2! - y1!)) * (x2! - x1!));
-                  }
-                }
-                crossings.sort((a, b) => a - b);
-                for (let i = 0; i + 1 < crossings.length; i += 2) {
-                  const left = Math.max(0, Math.ceil(crossings[i]!));
-                  const right = Math.min(size - 1, Math.floor(crossings[i + 1]!));
-                  for (let col = left; col <= right; col++) {
-                    data[row * size + col] = color;
-                  }
-                }
-              }
-            }
-            fill(pts, 255);
-            for (const hole of children) fill(hole, 0);
-            return Array.from(data);
-          }
-
-          const minW = subres >> 4;
-          const minH = subres >> 3;
-          const maxW = (subres * 7) >> 3;
-          const maxH = (subres * 7) >> 3;
-          const results: { pixels: number[]; depth: number; fillRatio: number; w: number; h: number }[] = [];
-
-          function visit(nodes: ContourNode[], depth: number): void {
-            for (const [pts, br, area, children] of nodes) {
-              const [, , w, h] = br;
-              if (depth >= 2 && w >= minW && w <= maxW && h >= minH && h <= maxH) {
-                const childPts = children.map(c => c[0]);
-                const pixels = renderMask(pts, childPts, 64);
-                results.push({ pixels, depth, fillRatio: area / (w * h), w, h });
-              }
-              visit(children, depth + 1);
-            }
-          }
-          visit(tree, 0);
-          return results;
-        });
-
-        const outPath = path.join(dumpContoursDir, `${claim.puzzle_hash}.json`);
-        fs.writeFileSync(outPath, JSON.stringify({ path: puzzle.path, contours: patches }));
-      }
     } catch (e) {
       status = 'failed';
       const message = String(e);
@@ -333,20 +269,10 @@ async function runWorker(
       }
     }
 
-    const diag = contourTreeDiagnostics;
     const extras: CtEvalExtras = {
       liveMats:           liveMats           ?? null,
       heapBytes:          heapBytes          ?? null,
       allocBytes:         allocBytes         ?? null,
-      ctD1Count:          diag?.d1Count          ?? null,
-      ctD2Count:          diag?.d2Count          ?? null,
-      ctType:             diag?.contourTreeType   ?? null,
-      ctOrientation:      diag?.contourTreeOrientation   ?? null,
-      quadSumOrientation: diag?.quadSumOrientation ?? null,
-      ctBorderAgreement:  diag?.contourTreeBorderAgreement ?? null,
-      ctBorderFp:         diag?.ctBorderFP        ?? null,
-      ctBorderFn:         diag?.ctBorderFN        ?? null,
-      ctDigitAgreement:   diag?.contourTreeDigitAgreement ?? null,
       detectedBigApple:   outcome?.detectedBigApple ?? null,
       specError:          specError          ?? null,
       fallbackUsed:       fallbackUsed       ?? null,
@@ -379,7 +305,13 @@ async function runWorker(
         predictedLabel: r.predictedLabel,
         confident: r.confident,
         clashesWith: r.clashesWith,
-        cropPixels: r.crop,
+        sourceX: r.sourceX,
+        sourceY: r.sourceY,
+        sourceWidth: r.sourceWidth,
+        sourceHeight: r.sourceHeight,
+        sourcePixels: r.sourcePixels,
+        recognitionPixels: r.recognitionPixels,
+        warpStrategy: r.warpStrategy,
         hogFeatures: r.hogFeatures ?? [],
         holeFeatures: r.holeFeatures ?? [],
       });
@@ -396,7 +328,13 @@ async function runWorker(
         predictedLabel: r.predictedLabel,
         confident: r.confident,
         clashesWith: [],
-        cropPixels: r.crop,
+        sourceX: r.sourceX,
+        sourceY: r.sourceY,
+        sourceWidth: r.sourceWidth,
+        sourceHeight: r.sourceHeight,
+        sourcePixels: r.sourcePixels,
+        recognitionPixels: r.recognitionPixels,
+        warpStrategy: r.warpStrategy,
         hogFeatures: r.hogFeatures ?? [],
         holeFeatures: r.holeFeatures ?? [],
       });
@@ -426,59 +364,83 @@ async function runWorker(
 }
 
 async function main(): Promise<void> {
-  const { workers, limit, baseUrl, gitHash, dbPath, filter, dumpContoursDir, stopOnFailCount } = parseArgs(process.argv.slice(2));
-  if (dumpContoursDir !== null) fs.mkdirSync(dumpContoursDir, { recursive: true });
+  const args = parseArgs(process.argv.slice(2));
+  const {
+    workers, limit, baseUrl, gitHash, dbPath, filter, stopOnFailCount,
+    puzzleDir, reportOut, compareReport,
+  } = args;
   await checkServerReachable(baseUrl);
 
   const db = openDb(dbPath);
-
-  const filterClause = filter ? `AND ${filter}` : '';
-  const totalInDb = (
-    db
-      .prepare(
-        `SELECT COUNT(*) as n FROM puzzles WHERE content_hash NOT IN (SELECT puzzle_hash FROM evaluations WHERE git_hash = ?) ${filterClause}`,
-      )
-      .get(gitHash) as { n: number }
-  ).n;
-  const total = limit !== null ? Math.min(limit, totalInDb) : totalInDb;
-
-  if (total === 0) {
-    console.log('[evaluate-corpus] No puzzles to evaluate (all already done for this git hash).');
-    db.close();
-    return;
-  }
-  const filterLabel = filter ? ` [${filter}]` : '';
-  console.log(
-    `[evaluate-corpus] ${total} puzzles queued${filterLabel}, ${workers} workers (git: ${gitHash.slice(0, 8)})`,
-  );
-
-  const counts: BucketCounts = { clean: 0, backtracked: 0, notSolved: 0, timeout: 0, failed: 0 };
-  const progress = { done: 0, total };
-
-  process.on('SIGINT', () => {
-    console.log('\n[evaluate-corpus] Shutting down — finishing in-flight evaluations...');
-    shuttingDown = true;
-  });
-
-  const browser = await chromium.launch();
-  activeBrowser = browser;
   try {
-    await Promise.all(
-      Array.from({ length: workers }, (_, i) =>
-        runWorker(browser, baseUrl, db, gitHash, i + 1, limit, filter, dumpContoursDir, counts, progress, stopOnFailCount),
-      ),
+    if (puzzleDir !== undefined) {
+      const ingestion = ingestPuzzleDirectory(db, puzzleDir);
+      console.log(
+        `[evaluate-corpus] Ingested ${ingestion.added}/${ingestion.scanned} new puzzle image(s) from ${puzzleDir}`,
+      );
+    }
+
+    const filterClause = filter ? `AND ${filter}` : '';
+    const totalInDb = (
+      db
+        .prepare(
+          `SELECT COUNT(*) as n FROM puzzles WHERE content_hash NOT IN (SELECT puzzle_hash FROM evaluations WHERE git_hash = ?) ${filterClause}`,
+        )
+        .get(gitHash) as { n: number }
+    ).n;
+    const total = limit !== null ? Math.min(limit, totalInDb) : totalInDb;
+    const counts: BucketCounts = { clean: 0, backtracked: 0, notSolved: 0, timeout: 0, failed: 0 };
+    const progress = { done: 0, total };
+
+    if (total === 0) {
+      console.log('[evaluate-corpus] No puzzles to evaluate (all already done for this git hash).');
+    } else {
+      const filterLabel = filter ? ` [${filter}]` : '';
+      console.log(
+        `[evaluate-corpus] ${total} puzzles queued${filterLabel}, ${workers} workers (git: ${gitHash.slice(0, 8)})`,
+      );
+
+      process.on('SIGINT', () => {
+        console.log('\n[evaluate-corpus] Shutting down — finishing in-flight evaluations...');
+        shuttingDown = true;
+      });
+
+      const browser = await chromium.launch();
+      activeBrowser = browser;
+      try {
+        await Promise.all(
+          Array.from({ length: workers }, (_, i) =>
+            runWorker(browser, baseUrl, db, gitHash, i + 1, limit, filter, counts, progress, stopOnFailCount),
+          ),
+        );
+      } finally {
+        await browser.close();
+        activeBrowser = null;
+      }
+    }
+
+    const { clean, backtracked, notSolved, timeout, failed } = counts;
+    console.log('\n=== Final summary ===');
+    console.log(
+      `Total: ${progress.done} | clean: ${clean} | backtracked: ${backtracked} | notSolved: ${notSolved} | timeout: ${timeout} | failed: ${failed}`,
     );
+
+    if (reportOut !== undefined || compareReport !== undefined) {
+      const report = buildEvaluationReport(db, gitHash, DEFAULT_MODEL_PATH, puzzleDir);
+      const emitted = emitEvaluationReport(report, reportOut, compareReport);
+      if (reportOut !== undefined) {
+        console.log(`[evaluate-corpus] Wrote ${report.outcomes.length} outcome(s) to ${reportOut}`);
+      }
+      for (const regression of emitted.regressions) {
+        console.error(
+          `[evaluate-corpus] REGRESSION: ${regression.current.path}: ${regression.baseline.bucket} -> ${regression.current.bucket}`,
+        );
+      }
+      if (emitted.exitCode !== 0) process.exitCode = emitted.exitCode;
+    }
   } finally {
-    await browser.close();
-    activeBrowser = null;
     db.close();
   }
-
-  const { clean, backtracked, notSolved, timeout, failed } = counts;
-  console.log('\n=== Final summary ===');
-  console.log(
-    `Total: ${progress.done} | clean: ${clean} | backtracked: ${backtracked} | notSolved: ${notSolved} | timeout: ${timeout} | failed: ${failed}`,
-  );
 }
 
 process.on('SIGTERM', () => {

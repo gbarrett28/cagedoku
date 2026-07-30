@@ -1,8 +1,7 @@
 """Merges a downloaded tick-sheet review JSON into the overrides file.
 
-The JSON comes from review_low_confidence.py's tick sheet. The next
-train_combinations.py or review_low_confidence.py run picks up the
-corrections automatically.
+The JSON comes from review_low_confidence.py's tick sheet. Subsequent
+training and review runs pick up the corrections automatically.
 """
 
 import argparse
@@ -18,18 +17,7 @@ def merge_corrections(
     review: list[dict[str, Any]],
     candidates: dict[str, Any],
 ) -> dict[str, Any]:
-    """Joins the browser-downloaded review answers with the candidates file.
-
-    The candidates.json companion file (id -> expectedPrior/cropPng/
-    puzzleType) is written alongside the tick sheet, producing self-contained
-    override entries that agreement_pool.apply_manual_overrides can act on
-    without needing the source images again.
-
-    An entry whose id has no matching candidates.json record is skipped
-    (not merged) -- it means the review file and candidates file don't
-    belong to the same tick-sheet run, and there is nothing to build an
-    override from.
-    """
+    """Join review answers to the raw crop evidence in candidates.json."""
     merged = dict(existing)
     for entry in review:
         candidate = candidates.get(entry["id"])
@@ -39,6 +27,9 @@ def merge_corrections(
             "label": entry["chosen"],
             "expectedPrior": candidate["expectedPrior"],
             "cropPng": candidate["cropPng"],
+            "sourceRect": candidate["sourceRect"],
+            "sourceWidth": candidate["sourceWidth"],
+            "sourceHeight": candidate["sourceHeight"],
             "puzzleType": candidate.get("puzzleType", "classic"),
         }
     return merged

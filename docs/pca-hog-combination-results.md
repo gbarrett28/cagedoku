@@ -1,5 +1,10 @@
 # PCA/HOG Combination Results
 
+> Historical experiment only. The PCA/template and linear-classifier browser paths,
+> plus their comparison harness, were removed during the TypeScript-single-source
+> cleanup. These figures preserve evidence from that investigation; they are not
+> current architecture, validation, or retraining guidance.
+
 Training set: 800 samples. Same-distribution holdout: 200. Cross-font holdout: 10080.
 
 | Combination | Train accuracy | Same-distribution accuracy | Cross-font accuracy |

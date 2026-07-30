@@ -1,8 +1,6 @@
 /**
  * LinearSystem — Gaussian elimination and virtual cage derivation.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.linear_system` module.
- *
  * Builds a linear system over Q from all row/col/box/cage sum equations,
  * reduces to RREF using exact rational arithmetic, then extracts:
  *  - initialEliminations: cells whose digit is determined at setup

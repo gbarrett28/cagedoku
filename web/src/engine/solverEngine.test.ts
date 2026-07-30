@@ -58,9 +58,7 @@ describe('SolverEngine trigger routing on a BigAppleBoardState', () => {
 
 describe('SolverEngine.solve', () => {
   it('LinearElimination alone fully determines trivial spec', () => {
-    // Mirrors Python's test_engine_solve_trivial_empty_rules:
-    // Python calls apply_initial_eliminations() then empty-rules engine.
-    // In TS, LinearElimination handles initial eliminations from the linear system.
+    // LinearElimination handles the initial eliminations from the linear system.
     const spec = makeTrivialSpec();
     const bs = new KillerBoardState(spec);
     const engine = new SolverEngine(bs, [new LinearElimination()]);

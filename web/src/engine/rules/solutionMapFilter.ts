@@ -1,8 +1,6 @@
 /**
  * SolutionMapFilter — R4: per-cell feasibility filter for cage solutions.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.solution_map_filter` module.
- *
  * For each cage, backtracks to find which (cell, digit) pairs are reachable in
  * at least one valid assignment of a surviving solution. Infeasible solutions
  * are pruned directly from board.cageSolns. Unreachable (cell, digit) pairs

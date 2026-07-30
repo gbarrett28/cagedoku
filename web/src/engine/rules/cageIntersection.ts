@@ -1,8 +1,6 @@
 /**
  * CageIntersection — R3: cage must-contain digit confined to one unit → eliminate outside.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.cage_intersection` module.
- *
  * When every remaining cage solution contains digit d, and every cell in the
  * cage that can hold d lies within a single row, column, or box, d can be
  * eliminated from the rest of that unit (outside the cage).

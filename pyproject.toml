@@ -5,33 +5,21 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cagedoku"
 version = "0.1.0"
-description = "Killer sudoku coaching tool that reads puzzle images using OpenCV and PCA"
+description = "Killer sudoku coaching tool with a browser-based OCR pipeline"
 requires-python = ">=3.12"
 dependencies = [
-    "opencv-python-headless",
-    "numpy",
-    "scikit-learn",
-    "scipy",
+    "boto3",
+    "botocore",
     "matplotlib",
-    "python-constraint",
-    "joblib",
+    "numba",
+    "numpy",
+    "Pillow",
+    "scikit-learn",
 ]
-
-[project.optional-dependencies]
-scraper = ["requests", "beautifulsoup4"]
-dev = ["ruff", "mypy", "pytest", "pytest-cov", "playwright>=1.40", "pytest-playwright>=0.4", "numba"]
-
-[project.scripts]
-ks-train-numbers = "killer_sudoku.training.train_number_recogniser:main"
-ks-scrape = "killer_sudoku.training.scrape_puzzles:main"
-ks-evaluate = "killer_sudoku.training.evaluate:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["killer_sudoku*"]
-
-[tool.setuptools.package-data]
-"killer_sudoku.data" = ["*.npz"]
 
 [tool.ruff]
 target-version = "py312"
@@ -75,42 +63,26 @@ ignore = [
     "PLR0912", # too many branches
     "PLR0913", # too many arguments
     "PLR0915", # too many statements
+    "PLR0917", # too many positional arguments
     "PLR2004", # magic value in comparison
     "C901",    # too complex
 ]
 dummy-variable-rgx = "^_.*$"
 
 [tool.ruff.lint.per-file-ignores]
-# Training scripts use intentional lazy imports for heavy optional deps
-# (PIL, matplotlib, sklearn, psutil, numba) so they don't force installation
-# for users who don't need training. T20 allowed because these are CLI scripts.
+# The trainer lazily imports Pillow and matplotlib only on image/font paths to
+# avoid their startup cost. T20 is allowed because this is a CLI script.
 # N803/N806: X is a standard sklearn feature-matrix convention (uppercase is idiomatic).
 # PLW2901: reassigning loop var to downcast dtype is intentional (in-place reshape).
 "web/train_recogniser.py" = ["PLC0415", "T20", "N803", "N806", "PLW2901"]
-# N806: X is a standard feature-matrix variable (sklearn convention).
-"web/train_split_recogniser.py" = ["PLC0415", "T20", "N806"]
 # PreToolUse hook: print(json.dumps(...)) to stdout IS the hook protocol's
 # output mechanism (Claude Code reads it), not debug output. PLR0911: a
 # hook structured as a series of early-exit guard clauses naturally has
 # more return points than the default limit.
 ".claude/hooks/enforce-serena.py" = ["T20", "PLR0911"]
-# Standalone scripts legitimately use print() for progress output
-"web/scripts/compare-recognisers.py" = ["T20"]
-"web/scripts/analyse-contours.py" = ["T20"]
-"web/scripts/convert_npz_to_ts.py" = ["T20"]
-"web/dedupe_browser_train.py" = ["T20"]
+".codex/hooks/enforce-serena.py" = ["T20", "PLR0911"]
 # CLI training scripts: print() is the output mechanism
 "killer_sudoku/training/*.py" = ["T20"]
-# Corpus evaluator CLI: print() for progress output.
-"killer_sudoku/scripts/*.py" = ["T20"]
-# Remaining killer_sudoku/solver/ files (grid.py, puzzle_spec.py, equation-based
-# engine/api/output packages retired) predate style rules added since they were
-# written. RUF001/002: legacy unicode chars (×, –, ⋃) in old docstrings/comments.
-# ERA001: explanatory structure comments misidentified by eradicate.
-"killer_sudoku/solver/**/*.py" = ["RUF001", "RUF002", "ERA001", "SIM102", "SIM105", "D205", "RUF005"]
-# Restored image pipeline files — RUF001/002/003: legacy unicode in docstrings;
-# ERA001: explanatory structure notes in comments.
-"killer_sudoku/image/**/*.py" = ["RUF001", "RUF002", "RUF003", "ERA001"]
 # CLI utility scripts: print() is the output mechanism
 "scripts/_r2_*.py" = ["T20"]
 # Tests: sys.path manipulation before imports is standard pytest pattern.
@@ -120,10 +92,6 @@ dummy-variable-rgx = "^_.*$"
 # Stub files don't need docstrings; N803/N806 don't apply to type stubs.
 # UP047: PEP 695 type param syntax is Python 3.12+ only — stubs target older versions too.
 "stubs/**/*.pyi" = ["D", "N803", "N806", "UP047"]
-# M/M_hr/M_out are OpenCV transformation matrix conventions (standard uppercase).
-# PLW0603: module-level subprocess singleton requires global to reassign.
-"web/extract_guardian_samples.py" = ["N806", "PLW0603"]
-
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
@@ -131,13 +99,6 @@ convention = "google"
 quote-style = "double"
 indent-style = "space"
 line-ending = "auto"
-
-[tool.pytest.ini_options]
-asyncio_mode = "strict"
-markers = [
-    "pipeline: requires guardian/ and observer/ image directories",
-    "pipeline_full: full pipeline over every image (~30-40 min); implies pipeline",
-]
 
 [tool.mypy]
 strict = true

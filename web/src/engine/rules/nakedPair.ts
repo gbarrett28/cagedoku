@@ -1,8 +1,6 @@
 /**
  * NakedPair — R7: two cells locked to the same two candidates → eliminate from unit peers.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.incomplete.naked_pair` module.
- *
  * When exactly two cells in a ROW/COL/BOX share the same two candidates and no
  * others, those two digits can be removed from all other cells in that unit.
  */

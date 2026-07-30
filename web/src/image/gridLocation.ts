@@ -1,9 +1,6 @@
 /**
  * Grid location: Stage 1 of the image pipeline.
  *
- * Mirrors Python's `killer_sudoku.image.grid_location` module (post-Phase-0
- * cleanup — Hough fallback removed).
- *
  * Locates the sudoku grid in a browser ImageData via OpenCV.js contour
  * detection.  All functions receive `cv` (the OpenCV.js module object) as
  * their first argument so the async module load is handled by the caller.

@@ -1,8 +1,7 @@
 /**
  * Core types for the in-browser puzzle session.
  *
- * Mirrors the Python API layer (api/schemas.py, api/routers/puzzle.py)
- * but with no server round-trips — all state lives in memory.
+ * All state lives in memory with no server round-trips.
  */
 
 import type { Cell } from '../engine/types.js';
@@ -21,8 +20,8 @@ export type { DiffSolution };
 // ---------------------------------------------------------------------------
 
 /**
- * Wire format for PuzzleSpec — matches Python's PuzzleSpecData Pydantic model.
- * regions[row][col] and cageTotals[row][col] use row-major order (same as Python numpy layout).
+ * Wire format for PuzzleSpec.
+ * regions[row][col] and cageTotals[row][col] use row-major order.
  */
 export interface PuzzleSpecData {
   readonly regions: number[][];
@@ -664,7 +663,7 @@ export interface CoachSettings {
 }
 
 // ---------------------------------------------------------------------------
-// Candidates response — mirrors Python GET /candidates
+// Candidate view data
 // ---------------------------------------------------------------------------
 
 export interface CellInfo {
@@ -721,7 +720,7 @@ export interface CandidatesResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Hints response — mirrors Python GET /hints
+// Hint view data
 // ---------------------------------------------------------------------------
 
 export interface VirtualCageSuggestion {
@@ -756,7 +755,7 @@ export interface HintsResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Solve response — mirrors Python POST /solve
+// Solve result data
 // ---------------------------------------------------------------------------
 
 export interface SolveResponse {
@@ -766,7 +765,7 @@ export interface SolveResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Cage solutions response — mirrors Python GET /cage/:label/solutions
+// Cage solution data
 // ---------------------------------------------------------------------------
 
 export interface CageSolutionsResponse extends SolutionCategorization {
@@ -774,7 +773,7 @@ export interface CageSolutionsResponse extends SolutionCategorization {
 }
 
 // ---------------------------------------------------------------------------
-// Settings response — mirrors Python GET /api/settings
+// Settings data
 // ---------------------------------------------------------------------------
 
 export interface RuleInfo {

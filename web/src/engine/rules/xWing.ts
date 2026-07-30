@@ -1,7 +1,6 @@
 /**
  * XWing — R12: X-Wing pattern.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.incomplete.x_wing`.
  */
 
 import type { HintResult } from '../hint.js';

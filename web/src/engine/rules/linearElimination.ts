@@ -1,8 +1,6 @@
 /**
  * LinearElimination — apply cells determined by the cage-sum linear system.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.incomplete.linear_elimination` module.
- *
  * Fires as GLOBAL. Returns initial_eliminations still present in the candidate
  * sets. As hints, returns two kinds:
  *  T1 (single-cell placement) — a cell whose digit is uniquely determined by the system.

@@ -1,7 +1,6 @@
 /**
  * Label helpers shared by all rule hint implementations.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules._labels` module.
  */
 
 import type { Cell } from '../types.js';

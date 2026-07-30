@@ -1,10 +1,8 @@
 /**
- * Session actions — replaces all Python `fetch('/api/puzzle/...')` calls.
+ * Session actions for the entirely in-browser app.
  *
- * Each function reads/writes the in-memory store directly and calls the
- * TS engine helpers instead of making network requests. The function
- * signatures and return shapes mirror the Python API so that the adapted
- * main.ts can call them as drop-in replacements.
+ * Each function reads or writes the in-memory store and calls TypeScript engine
+ * helpers directly; no puzzle API or network round-trip is involved.
  */
 
 import { solve, solveBigApple, detectBigApple, BoardState, KillerBoardState, intersectAll, SolveResult } from '../engine/index.js';
@@ -44,7 +42,7 @@ import {
   virtualCageKeyFromCage,
   solutionKey,
 } from './specUtils.js';
-import { getState, setState, getStateCandidates, setStateCandidates, getCV, getRec, getSplitRec } from './store.js';
+import { getState, setState, getStateCandidates, setStateCandidates, getCV, getRec } from './store.js';
 import { PuzzleState } from './types.js';
 import type {
   CandidatesResponse,
@@ -136,20 +134,11 @@ export interface UploadResult {
   warpedImageUrl: string | null;
   warning: string | null;
   cellThumbs: ReadonlyMap<string, Uint8Array[]>;
-  mergedThumbs: ReadonlyMap<string, Uint8Array>;
+  cellSourceCrops: ReadonlyMap<string, readonly import('../image/numberRecognition.js').RawDigitCrop[]>;
   detectedBigApple: boolean;
   fallbackUsed: boolean;
   specError: string | null;
   givenDigits?: number[][] | null | undefined;
-  /** Populated only when window.__reportContourTree is truthy. Bitcheck harness only. */
-  gray?: number[][] | undefined;
-  graySize?: [number, number] | undefined;
-  gridCorners?: number[] | undefined;
-  detectedBorderX?: boolean[][] | undefined;
-  detectedBorderY?: boolean[][] | undefined;
-  detectedCageTotals?: number[][] | undefined;
-  /** spec.regions when spec construction succeeded, else null. Bitcheck harness only. */
-  regions?: number[][] | null | undefined;
   /** Recognition (incl. runner-up) for each classic given-digit cell, keyed "row,col". Present whenever ParseResult provides it. */
   classicRecognitions?: ReadonlyMap<string, import('../image/numberRecognition.js').Recognition> | undefined;
   /** Recognition[] (one per digit crop) for each cage-total cell, keyed "row,col". Present whenever ParseResult provides it. */
@@ -166,7 +155,16 @@ export function loadSpecDirect(spec: PuzzleSpec): UploadResult {
   const settings = loadSettings();
   const state = PuzzleState.createKiller(specToData(spec), specToCageStates(spec), [...settings.alwaysApplyRules], null, null);
   setState(state);
-  return { state, warpedImageUrl: null, warning: null, cellThumbs: new Map(), mergedThumbs: new Map(), detectedBigApple: false, fallbackUsed: false, specError: null };
+  return {
+    state,
+    warpedImageUrl: null,
+    warning: null,
+    cellThumbs: new Map(),
+    cellSourceCrops: new Map(),
+    detectedBigApple: false,
+    fallbackUsed: false,
+    specError: null,
+  };
 }
 
 /**
@@ -185,7 +183,7 @@ export function loadClassicDirect(givenDigits: readonly (readonly number[])[]): 
     warpedImageUrl: null,
     warning: 'Review the detected digits and press Confirm & Solve',
     cellThumbs: new Map(),
-    mergedThumbs: new Map(),
+    cellSourceCrops: new Map(),
     detectedBigApple: false,
     fallbackUsed: false,
     specError: null,
@@ -204,7 +202,7 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
   const config = defaultImagePipelineConfig();
   let result: ParseResult;
   try {
-    result = await parsePuzzleImage(cv, file, config, getSplitRec() ?? undefined);
+    result = await parsePuzzleImage(cv, file, config);
   } catch (e) {
     if (e instanceof ImageDecodeError || e instanceof GridNotFoundError) throw e;
     // Any other pipeline error → proceed to review with blank grid.
@@ -216,24 +214,22 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
       givenDigits: null,
       warpedImageData: null,
       cellThumbs: new Map(),
-      mergedThumbs: new Map(),
+      cellSourceCrops: new Map(),
     };
   }
 
   const originalImageUrl = await fileToDisplayUrl(file);
   const { state, warpedImageUrl, warning, detectedBigApple } = await buildStateFromParseResult(result, originalImageUrl);
   return {
-    state, warpedImageUrl, warning, cellThumbs: result.cellThumbs, mergedThumbs: result.mergedThumbs, detectedBigApple,
+    state,
+    warpedImageUrl,
+    warning,
+    cellThumbs: result.cellThumbs,
+    cellSourceCrops: result.cellSourceCrops,
+    detectedBigApple,
     fallbackUsed: result.fallbackUsed,
     specError: result.specError,
     givenDigits: result.givenDigits,
-    gray: result.gray,
-    graySize: result.graySize,
-    gridCorners: result.gridCorners,
-    detectedBorderX: result.detectedBorderX,
-    detectedBorderY: result.detectedBorderY,
-    detectedCageTotals: result.detectedCageTotals,
-    regions: result.spec?.regions ?? null,
     classicRecognitions: result.classicRecognitions,
     cageTotalRecognitions: result.cageTotalRecognitions,
   };

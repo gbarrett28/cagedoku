@@ -6,7 +6,7 @@
  * State lives in session/store.ts; no server required.
  */
 
-import { loadCV, loadRec, loadSplitRec, setCandidatesCache, setState, getStateCandidates, setStateCandidates, drainTelemetryFailure, onTelemetryFailure } from './session/store.js';
+import { loadCV, loadRec, setCandidatesCache, setState, getStateCandidates, setStateCandidates, drainTelemetryFailure, onTelemetryFailure } from './session/store.js';
 import { logAction, clearActionLog, formatActionLog, getActionLog } from './session/actionLog.js';
 import { loadSettings } from './session/settings.js';
 import { buildFeedbackPayload, submitFeedback } from './session/feedbackSubmit.js';
@@ -62,7 +62,8 @@ import { buildEngine } from './session/engine.js';
 import type { BoardState, ClassicSolveAssessment } from './engine/index.js';
 import { detectBigApple, assessClassicSolvability } from './engine/index.js';
 import { findRetrainingSuggestions, buildGivenDigitReads, buildCageTotalReads } from './engine/retrainingSuggestions.js';
-import { hogExtract, DEFAULT_HOG_PARAMS } from './image/numberRecognition.js';
+import { activeRecogniser, hogExtract, DEFAULT_HOG_PARAMS } from './image/numberRecognition.js';
+import type { RawDigitCrop, WarpStrategy } from './image/numberRecognition.js';
 import { extractHoleFeatures } from './image/holeFeatures.js';
 import type { Cell } from './engine/types.js';
 import { GridNotFoundError } from './image/inpImage.js';
@@ -86,7 +87,6 @@ import { INSTALL_DISMISSED_KEY, shouldShowInstallBanner } from './installPrompt.
 import { saveSession, loadSession, clearPersistedSession } from './session/persistence.js';
 import { toCanvas as qrToCanvas } from 'qrcode';
 import { computeSpecHash } from './solver/specHash.js';
-import type { UploadResult } from './session/actions.js';
 
 // ---------------------------------------------------------------------------
 
@@ -95,17 +95,6 @@ type ReportOutcomeFn = (o: {
   detectedBigApple: boolean; specHash: string | null;
   fallbackUsed: boolean; specError: string | null;
   parseElapsedMs: number; solveElapsedMs: number;
-  /** Present only when window.__reportContourTree is set. Bitcheck harness only. */
-  borderX?: boolean[][] | null | undefined;
-  borderY?: boolean[][] | null | undefined;
-  cageTotals?: number[][] | null | undefined;
-  regions?: number[][] | null | undefined;
-  givenDigits?: number[][] | null | undefined;
-  /** cellThumbs keyed "row,col" -> array of thumbnail pixel arrays. Bitcheck harness only. */
-  cellThumbs?: Record<string, number[][]> | undefined;
-  gray?: number[][] | undefined;
-  graySize?: [number, number] | undefined;
-  gridCorners?: number[] | undefined;
   /** WASM leak monitors — present when installCvMonitors() has run */
   liveMats?: number | undefined;
   heapBytes?: number | undefined;
@@ -118,13 +107,17 @@ type ReportOutcomeFn = (o: {
   /** Ground-truth crop+label+clash-partners for every given-digit cell of a non-clean classic puzzle. */
   givenDigitReads?: ReadonlyArray<{
     row: number; col: number; predictedLabel: number; confident: boolean;
-    clashesWith: { row: number; col: number }[]; crop: number[];
+    clashesWith: { row: number; col: number }[];
+    sourceX: number; sourceY: number; sourceWidth: number; sourceHeight: number;
+    sourcePixels: number[]; recognitionPixels: number[]; warpStrategy: 'stretch' | 'letterbox';
     hogFeatures: number[]; holeFeatures: number[];
   }> | undefined;
   /** Ground-truth crop+label for every cage-total digit cell of a non-clean killer puzzle. */
   cageTotalReads?: ReadonlyArray<{
     row: number; col: number; digitIndex: number; predictedLabel: number; confident: boolean;
-    crop: number[]; hogFeatures: number[]; holeFeatures: number[];
+    sourceX: number; sourceY: number; sourceWidth: number; sourceHeight: number;
+    sourcePixels: number[]; recognitionPixels: number[]; warpStrategy: 'stretch' | 'letterbox';
+    hogFeatures: number[]; holeFeatures: number[];
   }> | undefined;
 }) => void;
 
@@ -141,6 +134,23 @@ function computeCropFeatures(crops: Uint8Array[]): { hog: number[]; hole: number
   }));
 }
 
+
+function rawCropPayload(crop: RawDigitCrop): {
+  sourceX: number;
+  sourceY: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  sourcePixels: number[];
+} {
+  return {
+    sourceX: crop.x,
+    sourceY: crop.y,
+    sourceWidth: crop.width,
+    sourceHeight: crop.height,
+    sourcePixels: Array.from(crop.pixels),
+  };
+}
+
 function timingPayload(
   parseElapsedMs: number, solveElapsedMs: number,
   fallbackUsed: boolean, specError: string | null,
@@ -154,30 +164,6 @@ function metricsPayload(): { liveMats: number; heapBytes: number; allocBytes: nu
     liveMats: (win['__cvLiveMats'] as (() => number) | undefined)?.() ?? -1,
     heapBytes: (win['__cvHeapBytes'] as (() => number) | undefined)?.() ?? -1,
     allocBytes: (win['__cvAllocBytes'] as (() => number) | undefined)?.() ?? -1,
-  };
-}
-
-function debugStagePayload(upload: UploadResult | null): object {
-  const win = window as unknown as Record<string, unknown>;
-  if (!win['__reportContourTree'] || upload?.gray === undefined) return {};
-  return {
-    // detectedBorderX/Y/CageTotals reflect what the pipeline actually found,
-    // independent of whether spec construction (validateCageLayout) later
-    // succeeded — spec is null on validation failure, but the bit-check
-    // harness needs the real detection result, not a UI placeholder.
-    borderX: upload.detectedBorderX ?? null,
-    borderY: upload.detectedBorderY ?? null,
-    cageTotals: upload.detectedCageTotals ?? null,
-    // regions is null when spec construction failed (it's derived from the
-    // validated PuzzleSpec, unlike the raw detectedX fields above).
-    regions: upload.regions ?? null,
-    givenDigits: upload.givenDigits ?? null,
-    gray: upload.gray,
-    graySize: upload.graySize,
-    gridCorners: upload.gridCorners,
-    cellThumbs: Object.fromEntries(
-      [...upload.cellThumbs].map(([key, thumbs]) => [key, thumbs.map(t => Array.from(t))]),
-    ),
   };
 }
 
@@ -254,8 +240,9 @@ function activeFixtureContext(): { name: string; unsolvedCells: number; totalCan
   };
 }
 let draftEdited = false;              // true once the user changes any total or border
-let pendingCellThumbs = new Map<string, Uint8Array[]>(); // OCR thumbnails, held until Confirm
-let pendingMergedThumbs = new Map<string, Uint8Array>(); // pre-split merged thumbnails, held until Confirm
+let pendingCellThumbs = new Map<string, Uint8Array[]>(); // deployed recognition thumbnails, held until Confirm
+let pendingCellSourceCrops = new Map<string, readonly RawDigitCrop[]>(); // raw warped-grid bounding boxes
+let pendingWarpStrategy: WarpStrategy | null = null; // strategy that produced pendingCellThumbs
 let totalEditCell: { row: number; col: number } | null = null;  // 0-based, active overlay
 let totalEditPrev = 0;
 let reviewErrorCells = new Set<string>(); // "row,col" keys — cages failing Confirm validation
@@ -1323,7 +1310,8 @@ function resetToUploadPanel(): void {
   reviewErrorCells = new Set();
   draftEdited = false;
   pendingCellThumbs = new Map();
-  pendingMergedThumbs = new Map();
+  pendingCellSourceCrops = new Map();
+  pendingWarpStrategy = null;
   el<HTMLElement>('upload-panel').hidden = false;
   el<HTMLElement>('review-panel').hidden = true;
   el<HTMLElement>('solution-panel').hidden = true;
@@ -1379,10 +1367,11 @@ async function handleProcess(file?: File): Promise<void> {
   try {
     const uploadResult = await uploadPuzzle(f);
     parseDoneMs = Date.now();
-    const { state, warpedImageUrl, warning, cellThumbs, mergedThumbs, detectedBigApple } = uploadResult;
+    const { state, warpedImageUrl, warning, cellThumbs, cellSourceCrops, detectedBigApple } = uploadResult;
     const specHash = await computeSpecHash(state);
     pendingCellThumbs = new Map(cellThumbs);
-    pendingMergedThumbs = new Map(mergedThumbs);
+    pendingCellSourceCrops = new Map(cellSourceCrops);
+    pendingWarpStrategy = activeRecogniser().warpStrategy;
 
     // Initialise draft borders from the OCR result (used in both paths below).
     const ocrSpec = PuzzleState.isKiller(state) ? dataToSpec(state.specData) : classicSyntheticSpec();
@@ -1409,13 +1398,27 @@ async function handleProcess(file?: File): Promise<void> {
       // mirroring givenDigitReads' gating on the classic side.
       const buildCageTotalReadsPayload = (): ReadonlyArray<{
         row: number; col: number; digitIndex: number; predictedLabel: number; confident: boolean;
-        crop: number[]; hogFeatures: number[]; holeFeatures: number[];
+        sourceX: number; sourceY: number; sourceWidth: number; sourceHeight: number;
+        sourcePixels: number[]; recognitionPixels: number[]; warpStrategy: 'stretch' | 'letterbox';
+        hogFeatures: number[]; holeFeatures: number[];
       }> =>
         uploadResult.cageTotalRecognitions !== undefined
           ? buildCageTotalReads(uploadResult.cellThumbs, uploadResult.cageTotalRecognitions)
             .map(r => {
+              const source = uploadResult.cellSourceCrops.get(`${r.row},${r.col}`)?.[r.digitIndex];
+              if (source === undefined) {
+                throw new Error(`Missing raw crop for cage-total digit ${r.row},${r.col},${r.digitIndex}`);
+              }
               const { hog, hole } = computeCropFeatures([r.crop])[0]!;
-              return { ...r, crop: Array.from(r.crop), hogFeatures: hog, holeFeatures: hole };
+              const { crop, ...read } = r;
+              return {
+                ...read,
+                ...rawCropPayload(source),
+                recognitionPixels: Array.from(crop),
+                warpStrategy: activeRecogniser().warpStrategy,
+                hogFeatures: hog,
+                holeFeatures: hole,
+              };
             })
           : [];
       const layoutResult = applyDraftLayout(draftBorderX, draftBorderY, state.specData.cageTotals);
@@ -1442,7 +1445,6 @@ async function handleProcess(file?: File): Promise<void> {
             puzzleType: 'killer',
             detectedBigApple,
             specHash,
-            ...debugStagePayload(uploadResult),
             ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
             ...metricsPayload(),
           });
@@ -1453,7 +1455,8 @@ async function handleProcess(file?: File): Promise<void> {
           if (autoViolation !== null) showAssertionModal(autoViolation);
           el<HTMLButtonElement>('edit-ocr-btn').hidden = false;
           pendingCellThumbs = new Map();
-          pendingMergedThumbs = new Map();
+          pendingCellSourceCrops = new Map();
+          pendingWarpStrategy = null;
           setStatus('');
           if (usedBacktracking && stalledCandidates && state.originalImageUrl !== null) {
             const stallReport = { puzzleType: 'killer' as const, stalledCandidates };
@@ -1476,7 +1479,7 @@ async function handleProcess(file?: File): Promise<void> {
         logAction('review_shown', 'layout errors');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'layout errors', puzzleType: PuzzleState.kind(state),
-          detectedBigApple, specHash, ...debugStagePayload(uploadResult),
+          detectedBigApple, specHash,
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
           cageTotalReads: buildCageTotalReadsPayload(),
@@ -1488,7 +1491,7 @@ async function handleProcess(file?: File): Promise<void> {
         logAction('review_shown', 'sum warning');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'sum warning', puzzleType: PuzzleState.kind(state),
-          detectedBigApple, specHash, ...debugStagePayload(uploadResult),
+          detectedBigApple, specHash,
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
           cageTotalReads: buildCageTotalReadsPayload(),
@@ -1501,7 +1504,7 @@ async function handleProcess(file?: File): Promise<void> {
         logAction('review_shown', 'pipeline warning');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'ocr warning', puzzleType: PuzzleState.kind(state),
-          detectedBigApple, specHash, ...debugStagePayload(uploadResult),
+          detectedBigApple, specHash,
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
           cageTotalReads: buildCageTotalReadsPayload(),
@@ -1511,7 +1514,7 @@ async function handleProcess(file?: File): Promise<void> {
         logAction('review_shown', 'solver incomplete');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'solver incomplete', puzzleType: PuzzleState.kind(state),
-          detectedBigApple, specHash, ...debugStagePayload(uploadResult),
+          detectedBigApple, specHash,
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
           cageTotalReads: buildCageTotalReadsPayload(),
@@ -1538,16 +1541,27 @@ async function handleProcess(file?: File): Promise<void> {
       // gated the same as retrainingSuggestions (only non-clean puzzles have
       // anything worth investigating here) to avoid inflating corpus.db with
       // per-cell crops for the majority of puzzles that read cleanly.
-      const givenDigitReads = bucket !== 'clean' && uploadResult.classicRecognitions !== undefined
+      const givenDigitReads = uploadResult.classicRecognitions !== undefined
         ? buildGivenDigitReads(state.givenDigits, uploadResult.cellThumbs, uploadResult.classicRecognitions)
           .map(r => {
+            const source = uploadResult.cellSourceCrops.get(`${r.row},${r.col}`)?.[0];
+            if (source === undefined) {
+              throw new Error(`Missing raw crop for given digit ${r.row},${r.col}`);
+            }
             const { hog, hole } = computeCropFeatures([r.crop])[0]!;
-            return { ...r, crop: Array.from(r.crop), hogFeatures: hog, holeFeatures: hole };
+            const { crop, ...read } = r;
+            return {
+              ...read,
+              ...rawCropPayload(source),
+              recognitionPixels: Array.from(crop),
+              warpStrategy: activeRecogniser().warpStrategy,
+              hogFeatures: hog,
+              holeFeatures: hole,
+            };
           })
         : [];
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket, reason, puzzleType: PuzzleState.kind(state), detectedBigApple, specHash,
-        ...debugStagePayload(uploadResult),
         ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
         ...metricsPayload(),
         retrainingSuggestions,
@@ -1558,7 +1572,7 @@ async function handleProcess(file?: File): Promise<void> {
       logAction('review_shown', 'ocr warning');
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket: 'notSolved', reason: 'ocr warning', puzzleType: PuzzleState.kind(state),
-        detectedBigApple, specHash, ...debugStagePayload(uploadResult),
+        detectedBigApple, specHash,
         ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
         ...metricsPayload(),
       });
@@ -1576,7 +1590,6 @@ async function handleProcess(file?: File): Promise<void> {
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket: 'notSolved', reason: `GridNotFoundError: ${e.message}`,
         puzzleType: null, detectedBigApple: false, specHash: null,
-        ...debugStagePayload(null),
         ...timingPayload(Date.now() - parseStartMs, 0, false, null),
         ...metricsPayload(),
       });
@@ -1586,7 +1599,6 @@ async function handleProcess(file?: File): Promise<void> {
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket: 'notSolved', reason: `error: ${String(e)}`,
         puzzleType: null, detectedBigApple: false, specHash: null,
-        ...debugStagePayload(null),
         ...timingPayload(Date.now() - parseStartMs, 0, false, null),
         ...metricsPayload(),
       });
@@ -1625,9 +1637,17 @@ function validateCurrentReview(): string | null {
   return null;
 }
 
+function pendingTrainingWarpStrategy(): WarpStrategy {
+  if (pendingWarpStrategy === null) {
+    throw new Error('Training evidence is missing its recognition warp strategy');
+  }
+  return pendingWarpStrategy;
+}
+
 function clearAndUploadTrainingData(data: TrainingExport | null): void {
   pendingCellThumbs = new Map();
-  pendingMergedThumbs = new Map();
+  pendingCellSourceCrops = new Map();
+  pendingWarpStrategy = null;
   if (data !== null && data.sampleCount > 0) {
     initiateUpload(data, d => showTrainingConsentModal(() => uploadTrainingData(d)));
   }
@@ -1712,17 +1732,20 @@ async function handleConfirm(): Promise<void> {
     if (draftEdited && PuzzleState.isKiller(state)) {
       clearAndUploadTrainingData(extractTrainingData(
         pendingCellThumbs,
+        pendingCellSourceCrops,
         state.specData.cageTotals,
         'killer',
         defaultImagePipelineConfig().numberRecognition.subres,
-        pendingMergedThumbs,
+        pendingTrainingWarpStrategy(),
       ));
     } else if (!PuzzleState.isKiller(state) && state.givenDigits !== null) {
       clearAndUploadTrainingData(extractTrainingData(
         pendingCellThumbs,
+        pendingCellSourceCrops,
         state.givenDigits,
         'classic',
         defaultImagePipelineConfig().numberRecognition.subres,
+        pendingTrainingWarpStrategy(),
       ));
     } else {
       clearAndUploadTrainingData(null);
@@ -1910,7 +1933,6 @@ async function handleGivenDigitEdit(row1b: number, col1b: number, digit: number)
     const specHash = await computeSpecHash(currentState);
     (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
       bucket, reason, puzzleType: PuzzleState.kind(currentState), detectedBigApple, specHash,
-      ...debugStagePayload(null),
       ...timingPayload(0, 0, false, null),
       ...metricsPayload(),
     });
@@ -2255,7 +2277,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       '  3. Stale service worker — Application > Storage > Clear site data, then reload');
   }, 30_000);
 
-  void Promise.all([cvWithProgress, loadRec(), loadSplitRec()])
+  void Promise.all([cvWithProgress, loadRec()])
     .then(() => {
       clearTimeout(loadTimeout);
       (window as unknown as Record<string, unknown>)['__pipelineReady'] = true;
@@ -3008,6 +3030,19 @@ document.addEventListener('DOMContentLoaded', async () => {
           arrays.map(a => new Uint8Array(a)),
         ]),
       );
+      pendingCellSourceCrops = new Map(
+        Object.entries(entries).map(([key, arrays]) => [
+          key,
+          arrays.map((pixels, digitIndex) => ({
+            x: digitIndex * 64,
+            y: 0,
+            width: 64,
+            height: 64,
+            pixels: new Uint8Array(pixels),
+          })),
+        ]),
+      );
+      pendingWarpStrategy = 'letterbox';
     };
 
     // Exposes window.__testShowConsentModal() so Playwright tests can exercise
@@ -3015,13 +3050,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     (window as unknown as Record<string, unknown>)['__testShowConsentModal'] = () => {
       const mockData: TrainingExport = {
         reportType: 'training-export',
+        schemaVersion: 2,
         exportedAt: new Date().toISOString(),
         appVersion: __BUILD_TIME__,
         puzzleType: 'killer',
         subres: 128,
         thumbnailSize: 64,
         sampleCount: 1,
-        samples: [{ digit: 3, pixels: Array<number>(4096).fill(128) }],
+        samples: [{
+          digit: 3,
+          sourceRect: [0, 0, 2, 3],
+          sourceWidth: 2,
+          sourceHeight: 3,
+          sourcePixels: [10, 20, 30, 40, 50, 60],
+          recognitionPixels: Array<number>(4096).fill(128),
+          warpStrategy: 'letterbox',
+        }],
       };
       showTrainingConsentModal(() => uploadTrainingData(mockData));
     };

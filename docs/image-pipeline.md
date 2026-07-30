@@ -54,39 +54,18 @@ flowchart LR
 
 ---
 
-## Stage 1: Image Acquisition and Status Tracking
+## Stage 1: Image Acquisition
 
-Puzzle images are downloaded manually (or via `scrape_puzzles`) and stored as `.jpg`
-files.  A companion `status.pkl` file maps each image path to a string status label:
-`"SOLVED"`, `"CHEATED"` (CSP fallback used), `"ProcessingError"`, or
-`"AssertionError"`.  Only `"SOLVED"` puzzles are used as training data.
+The deployable pipeline acquires puzzle images in the browser and processes them
+with OpenCV.js. Offline corpus evaluation uses the same production bundle:
+`web/scripts/evaluate-corpus.ts` content-hashes images, drives a production Vite
+preview with Playwright, and stores outcomes and raw/derived crop evidence in
+`corpus.db`.
 
-`get_gry_img` reads a `.jpg`, upscales it with `cv2.pyrUp` until both dimensions
-exceed the target resolution (1152 px by default), then adds a 3-pixel black border.
-The border ensures Hough lines near the true image edge are picked up by the
-transform.  It returns both the grayscale and BGR versions.
-
-```mermaid
-flowchart LR
-    A[.jpg file] --> B[cv2.imread]
-    B --> C{height and width\n>= resolution?}
-    C -- no --> D[cv2.pyrUp\ndouble size]
-    D --> C
-    C -- yes --> E[add 3px\nblack border]
-    E --> F[grayscale gry\n+ colour img]
-
-    G[status.pkl] <--> H[StatusStore]
-    H --> I{puzzle\nSOLVED?}
-    I -- yes --> J[include in\ntraining data]
-    I -- no --> K[skip]
-```
-
-**Parameters**: `resolution = 9 * subres = 1152 px`.  Increasing `subres` gives more
-pixels per cell at the cost of memory and compute.
-
-[gb] Move pkl to something more robust — represent the path in an OS-independent way.
-
-[gb] Could use "CHEATED" puzzles for training as well.
+Scheduled retraining uses the committed `web/eval-fixtures/` smoke corpus and
+compares the candidate model's browser-produced report with
+`web/eval-baseline.json`. The retired Python `status.pkl` evaluator is not a
+production or training authority.
 
 ---
 
@@ -304,19 +283,13 @@ formats without format-specific training.
 
 Cage totals are printed in the top-left of the cage's top-left cell.  This stage
 classifies each contour candidate (located in Stage 3) using HOG + hole-count features
-and a LinearSVC.
+and the production OvO RBF SVM.
 
-> **Both architectures are permanent, drop-in alternatives** — see
-> `docs/architecture.md` § Web Recogniser Training for the `NumRecogniser`
-> class hierarchy overview. `PcaRbfRecogniser` (currently shipped) uses direct
-> corner-to-corner stretch via `getWarpFromRect`, matching Python's
-> `get_warp_from_rect`; `HogRecogniser` uses the aspect-preserving
-> `letterboxWarp` described below, restored in `numberRecognition.ts` as
-> `HogRecogniser.warpForRecognition`'s implementation. Each subclass's
-> `warpForRecognition`/`warp_from_rect` method picks its own crop geometry —
-> callers never choose it directly. The feature-extraction pipeline described
-> below (HOG + hole-count + LinearSVC/RBF-SVM) is `HogRecogniser`'s
-> implementation specifically, not the only path through this stage.
+> The browser supports one recogniser architecture: `HogRecogniser` with
+> `classifier_type: "rbf"`. Its required manifest `warp_strategy` selects the
+> production `stretch` or aspect-preserving `letterbox` warp before TypeScript-owned
+> HOG/hole feature extraction and inference. Missing/unsupported strategies and legacy
+> PCA/template or linear-classifier manifests are rejected explicitly.
 
 `buildCageTotals` (`inpImage.ts`) runs `cv.findContours` once over the whole warped
 board (`RETR_TREE`), walks the resulting hierarchy (`contourHier`), and keeps contours
@@ -324,44 +297,51 @@ matching `contourIsNumber` — a digit-sized bounding rect (`isDigitSizedContour
 in `[subres>>4, subres>>1)`, height in `[subres>>3, subres>>1)`) at a vertical position
 consistent with a cage total rather than a centred solution digit (a parity check on
 `y`, since solution digits and cage totals occupy alternating vertical "rows" within
-`contourIsNumber`'s scan). `isDigitSizedContour` is factored out as its own function
-specifically so the offline training-data extractor (see Training Pipeline T1 below)
-can reuse the exact same size bounds without inheriting the parity check, which only
-makes sense at whole-board scale.
+`contourIsNumber`'s scan). `isDigitSizedContour` is factored out so production digit
+acquisition shares one width/height gate without forcing callers that already scoped a
+candidate glyph to inherit the whole-board parity check.
 
 Each digit thumbnail is a 64×64 binary uint8 image produced by `letterboxWarp` —
 the digit's natural aspect ratio is preserved and it is centred with black letterbox
 bars on the narrower axis, rather than stretched to fill the square (the previous
 `squarePadSrc` approach centred the rect in a square *before* warping, which is
 equivalent for single digits but interacted badly with multi-digit splits; see Classic
-digit reading below for the shared rationale). `splitNum` decides whether a raw
-contour represents one or two digits via a secondary split-recogniser classifier (ink
-projection minimum as a non-ML fallback when no split-recogniser is loaded); each
-resulting half is independently `letterboxWarp`-ed. The pre-split merged thumbnail
-(fed to the split-recogniser) remains tight-crop, unwarped.
+digit reading below for the shared rationale). `splitNum` decides whether a raw contour represents one or two digits from the
+column-wise topmost-ink-row profile and the last valid inter-glyph peak. It validates
+both halves with `contourIsNumber`; no secondary model or fallback branch participates.
+Each selected rectangle is independently `letterboxWarp`-ed, and no pre-split merged
+thumbnail is produced or threaded through training export.
+
+Before either recognition warp, `extractRawDigitCrop` copies the exact bounding-box
+pixels from the warped binary grid into a `RawDigitCrop`. `warpRawDigitCrop` then applies
+the recogniser's named `stretch` or `letterbox` strategy using the shared production
+perspective-warp geometry. `ParseResult.cellSourceCrops` retains those strategy-neutral
+pixels in the same per-cell order as `cellThumbs` and the recognition results. The
+Node bridge exposes this same `warpRawDigitCrop` implementation to Python training in
+batches; bridge failures are hard errors and there is no Python warp fallback.
 
 HOG features are extracted via `cv.HOGDescriptor` (OpenCV.js) with a 64 px window,
 8 px cells, 16 px blocks, and 9 orientation bins — producing a 1764-dimensional vector.
-A 5-dimensional hole-count feature (`extractHoleFeatures`/`extract_hole_features`,
-mirrored exactly between TypeScript and Python) is concatenated: a BFS flood-fill from
+A 5-dimensional hole-count feature (`extractHoleFeatures`, called from Python through
+`ts_bridge.py`) is concatenated: a BFS flood-fill from
 every border background pixel marks "outside"; unvisited background pixels are
 enclosed "holes", labelled and sized (regions under 6px discarded as anti-aliasing
 noise), encoded as `[onehot(0 holes), onehot(1), onehot(2+), frac(largest), frac(2nd
 largest)]`. This gives the classifier a global-topology signal HOG's local gradient
 histograms cannot encode — e.g. distinguishing "3" (0 holes) from "8" (2 holes), a
 confirmed confusion pair before this feature was added. The combined 1769-dimensional
-vector feeds an OvO LinearSVC (45 binary classifiers); the winner's vote fraction is
+vector feeds an OvO RBF SVM (45 binary classifiers); the winner's vote fraction is
 the read's confidence, flagged uncertain below 0.7.
 
 ```mermaid
 flowchart TD
-    A[contour candidates from Stage 3\nbinary blk + M] --> B[splitNum:\nsplit-recogniser decides 1 vs 2 digits\nink-projection-minimum fallback]
-    B --> C[letterboxWarp each rect\nto 64x64 thumbnail, aspect preserved]
+    A[contour candidates from Stage 3\nbinary blk + M] --> B[splitNum:\ntop-ink profile finds a valid\ninter-digit gap]
+    B --> C[warpRawDigitCrop using manifest strategy\nstretch or letterbox -> 64x64]
     C --> D[hogExtract:\ncv.HOGDescriptor 64px/8c/16b/9bins\n-> 1764-dim vector]
     C --> E[extractHoleFeatures:\nBFS flood-fill from border\n-> 5-dim vector]
     D --> F[concatenate -> 1769-dim]
     E --> F
-    F --> G[LinearSVC OvO 45 classifiers\n-> vote count per digit]
+    F --> G[RBF SVM OvO 45 classifiers\n-> vote count per digit]
     G --> H[Recognition: label + confident flag\nper candidate]
     H --> I[accumulate candidates per cell\n-> digit_candidates 9x9]
 ```
@@ -372,7 +352,7 @@ flowchart TD
 
 | Parameter | Value | Derivation |
 |-----------|-------|------------|
-| Thumbnail size | 64 × 64 px | HOG window size; matches `letterboxWarp` output |
+| Thumbnail size | 64 × 64 px | HOG window size; matches either `warpRawDigitCrop` strategy |
 | HOG cell size | 8 × 8 px | 8 cells/dim; captures local edge orientation |
 | HOG block size | 16 × 16 px | 2×2 cells; block normalisation neighbourhood |
 | HOG bins | 9 | Unsigned gradient; ~40° per bin |
@@ -413,15 +393,15 @@ const offX = ((64 - 1) - destW) / 2, offY = ((64 - 1) - destH) / 2;
 // dest quad: [[offX,offY],[offX+destW,offY],[offX+destW,offY+destH],[offX,offY+destH]]
 ```
 
-**Return value:** `{ digits: number[][]; thumbs: Map<string, Uint8Array[]> }`
+**Return value:** `{ digits; thumbs; sourceCrops; recognitions }`
 
-`thumbs` is keyed `"r,c"` (0-indexed) and maps each cell to a single-element
-thumbnail array, making it directly compatible with `extractTrainingData` so
-confirmed classic puzzles upload letterboxed training samples automatically.
+`thumbs` and `sourceCrops` are keyed `"r,c"` (0-indexed), with one aligned entry per
+given digit. The raw source crop remains available for later training strategies while
+the thumbnail records the exact deployed recogniser input.
 
-**Training pipeline note:** `letterbox_warp` in both `train_recogniser.py` and
-`extract_guardian_samples.py` mirrors this exact formula, so training and
-inference thumbnails are produced identically.
+**Training pipeline note:** archived Python extraction and migration paths have been
+removed. New training inputs preserve the raw bounding-box crop so the selected
+production TypeScript warp can be applied without changing crop acquisition.
 
 ---
 
@@ -575,14 +555,19 @@ remain; T3 (Observer border detector) has been retired — see [Migration Plan](
 Two independent sources feed training data:
 
 **Browser-exported ground truth.** The web app collects training data in-browser.
-After the user reviews and corrects the OCR output, the app exports a JSON file
-containing labelled 64×64 binary thumbnails for each digit extracted from that
-session. Multiple export files are merged into `web/browser_train.json` over time.
+After the user reviews and corrects the OCR output, schema-v2 exports retain each
+labelled digit's raw, variable-sized bounding-box crop (`sourceRect`,
+`sourceWidth`, `sourceHeight`, `sourcePixels`) together with the deployed 64×64
+audit input (`recognitionPixels`) and its named `warpStrategy`. The raw pixels
+are copied from the warped grid before any stretch or letterbox operation, so
+training can later compare those strategies without changing the crop.
+Multiple export files are merged into `web/browser_train.json` over time.
 Because nothing previously deduplicated these merges, the file accumulated many exact
 byte-identical repeats of the same crop (up to 65% of its 8362 samples, in one
-clean-up pass); `web/dedupe_browser_train.py` drops exact duplicates (keeping first
-occurrence) before training, since duplicates would otherwise be multiply-counted
-under `--browser-weight`.
+clean-up pass). `web/train_recogniser.py` now deduplicates all merged inputs before
+production warping, weighting, or dithering. The key includes label, raw/canonical kind,
+geometry, pixels, and (for canonical samples) warp strategy; the first occurrence wins,
+so a later duplicate cannot be multiply-counted under `--browser-weight`.
 
 ```mermaid
 flowchart LR
@@ -590,80 +575,55 @@ flowchart LR
     B --> C[user reviews +\ncorrects labels]
     C --> D[Export Training button\n-> browser_train.json]
     D --> E[merge into\nweb/browser_train.json]
-    E --> F[dedupe_browser_train.py\ndrop exact pixel duplicates]
+    E --> F[train_recogniser.py\ndedupe merged inputs before warp]
 ```
 
-**Bulk newspaper-archive extraction.** `extract_guardian_samples.py` re-derives
-labelled thumbnails from archived guardian/observer puzzle photos (`guardian/`,
-`observer/` — gitignored, irreplaceable raw `.jpg`s plus cached grid/cage-total JSON
-from `migrate_pic_cache.py`). Per cell with a non-zero cage total, it crops the
-cell's top-left quadrant, upscales/binarizes to match the live pipeline's warp
-exactly, then finds digit-sized ink blobs via a **Node bridge**
-(`web/scripts/find-digit-blobs-server.ts`) that calls the literal production
-`isDigitSizedContour` + real `cv.findContours` logic — not a second cv2
-reimplementation, which previously drifted from production (a bespoke
-ink-column-projection heuristic mistook a cage-border line bleeding into the crop
-margin for digit content). `select_digit_blobs` then resolves the common ambiguity
-where more blobs are found than the cage total has digits: a thick cage-border or
-underline decoration band can itself fragment into a piece small enough to pass the
-size filter, but it is always shorter and lower in the crop than the real digit(s)
-(which sit at the top, since that's exactly why the crop is scoped to the cell's
-top-left quadrant) — so the topmost N blobs are kept. A genuinely touching 2-digit
-pair (one merged blob where two are expected) falls back to an ink-projection-minimum
-split of that blob's own bounding rect, gated by the same size filter.
+**Historical bulk exports.** The archived Python newspaper extractor and pickle-cache
+migration utility were removed because they had no current user or CI entry point and
+reimplemented doomed acquisition/warp behaviour. Existing labelled JSON files may be
+used only as explicitly tagged legacy inputs; no retained tool regenerates them.
 
-```mermaid
-flowchart LR
-    A[guardian/observer .jpg + cached grid/cage_totals] --> B[warp + binarize\n(matches live pipeline)]
-    B --> C[per-cell top-left quadrant crop]
-    C --> D[find_digit_blobs:\nNode bridge -> real cv.findContours\n+ isDigitSizedContour]
-    D --> E{blob count\n== ndigits?}
-    E -- yes --> F[direct left-to-right assignment]
-    E -- more --> G[select_digit_blobs:\nkeep topmost N]
-    E -- one, ndigits=2 --> H[split_bounding_rect:\nink-projection minimum]
-    F --> I[letterbox_warp -> 64x64]
-    G --> I
-    H --> I
-    I --> J[guardian_train_sq.json /\nobserver_train_sq.json]
-```
-
-This bulk data also serves as a **held-out comparison set**: because it is
-solver-gated (cached `cage_totals` only trusted when the independent rule-based
-killer solver could actually solve the grid using them — `TRAINING_STATUSES =
-{SOLVED, CHEAT}` in `killer_sudoku/training/status.py`) and no training recipe on
-`master` has ever seen it, comparing a candidate model's accuracy on
-`guardian_train_sq.json`/`observer_train_sq.json` against `origin/master`'s deployed
-model is a genuine, non-circular accuracy check, not just a training-data source.
+The cached bulk exports are historical labelled training inputs. Candidate-model
+regression gating is separate: it runs the production browser over
+`web/eval-fixtures/` and compares the resulting content-hash-keyed outcomes with
+`web/eval-baseline.json`.
 
 ### T2: Train Number Recogniser
 
-Loads browser-exported ground truth (always included in full, never capped) plus
-optionally-capped bulk guardian/observer data and/or synthetic font samples, augments
-with dithering, extracts HOG + hole-count features, and fits a LinearSVC OvO
-classifier.
+The trainer accepts strategy-neutral raw crops from schema-v2 browser exports and
+human-review overrides, optionally-capped historical bulk inputs, and training-only raw
+font glyphs. `--warp-strategy {stretch,letterbox}` selects the production TypeScript
+warp; its default is read from the currently deployed model manifest. Every raw sample
+passes once through `warpRawDigitCrop` via the batched TS bridge before dithering.
+Historical version-1 64×64 samples are explicitly treated as canonical `letterbox`
+inputs, never as raw crops, and are eligible only when `letterbox` is selected.
+Python is limited to orchestration, augmentation, scikit-learn fitting, and human label
+curation; the human entry points are the trainer, low-confidence review, and applying
+review corrections.
 
 ```bash
-python web/train_recogniser.py --browser-weight 1000 --svm-c 100 --max-per-class 1500 --no-synthetic --dither 18 guardian/guardian_train_sq.json observer/observer_train_sq.json
+python web/train_recogniser.py --warp-strategy letterbox --browser-weight 1000 --max-per-class 1500 --no-synthetic --dither 18 guardian/guardian_train_sq.json observer/observer_train_sq.json
 ```
 
-`--browser-weight` up-weights the hand-verified `browser_train.json` samples relative
-to bulk/synthetic ones; `--max-per-class` caps each bulk digit class (otherwise
-heavily skewed — digit '1' naturally appears far more often than '5') before
-dithering, bounding worst-case OVO pair fit time/memory regardless of input skew.
+`--browser-weight` up-weights hand-verified browser/review samples relative to
+bulk/synthetic ones; `--max-per-class` caps each bulk digit class before any warp or
+dithering, bounding worst-case OVO fit time without doing doomed work. HOG and hole
+features are also extracted through the production TypeScript bridge. The selected
+strategy is written into `num_recogniser.json`, and the browser refuses missing or
+unsupported values.
 
 ```mermaid
 flowchart LR
-    A[bulk guardian/observer\n+ browser_train.json] --> B[load labelled\n64x64 thumbnails]
-    B --> C{synthetic fonts?}
-    C -- yes --> D[generate_synthetic_samples\nPillow + system fonts]
-    C -- no --> E[dither augmentation\ntranslation / morph / noise]
-    D --> E
-    E --> F[extract_hog\ncv2.HOGDescriptor\n1764-dim vectors]
-    E --> G[extract_hole_features\n5-dim vectors]
-    F --> H[concatenate -> 1769-dim]
-    G --> H
-    H --> I[LinearSVC OvO fit\n--svm-c]
-    I --> J[num_recogniser.bin + .json\nweb/public/]
+    A["Raw browser/review crops"] --> D["TS warp: stretch or letterbox"]
+    B["Legacy canonical samples"] --> E{"Strategy matches?"}
+    C["Training-only raw font glyphs"] --> D
+    D --> F["64x64 canonical inputs"]
+    E -- yes --> F
+    E -- no --> X["Exclude"]
+    F --> G["Dither augmentation"]
+    G --> H["TS HOG + hole features"]
+    H --> I["RBF SVM OvO fit"]
+    I --> J["Model + warp strategy manifest"]
 ```
 
 ### T3: Observer Border Detector (RETIRED)
@@ -723,11 +683,6 @@ border clustering.
 **Derivation:** on a representative image set, plot the distribution of
 `cage_total_confidence` for true cage heads vs non-heads.  Set the threshold at the
 valley between the two distributions.
-
-### PCA Variance Threshold (99%)
-
-The number of PCA components kept explains 99% of variance in mean digit images.
-This is a conventional value; tune by cross-validation at 90%, 95%, 99%, 99.5%.
 
 ---
 
@@ -809,70 +764,21 @@ misses.
 
 ---
 
-## Contour Feature Exploration Tooling
+## Contour tree
 
-Research scripts for extracting and analysing per-contour features from corpus
-puzzles, used to explore what geometric signals best distinguish grid-structure
-contours from number contours.
+`buildCageTotals` (Stage 5) walks the OpenCV `RETR_TREE` contour hierarchy once
+per upload via `contourHier()`, producing `ContourInfo[]` nodes of `[br, children]`
+(bounding rect + recursive children only — no point list, no area; both were
+found to be unused outside a since-removed diagnostic dump, and extracting a
+full point array for every contour, including the thousands of noise-speck
+contours `RETR_TREE` returns on a noisy mobile photo, was a real per-upload
+cost with no production consumer). `getNumContours` walks this tree looking for
+digit-sized bounding rects via `contourIsNumber`.
 
-### `window.__reportContourTree` flag
-
-When `window.__reportContourTree` is truthy, `parsePuzzleImage` passes
-`includeTree = true` to `buildCageTotals`. This causes `buildCageTotals` to capture:
-
-- `contourTree` — the full RETR_TREE hierarchy (`ContourInfo[]`) from
-  `contourHier()`
-- `selectedNumbers` — the `BRect[]` of contours returned by `getNumContours`
-- `outerGridBR` — the bounding rect of the outermost contour (`chiers[0]?.[1]`)
-
-These are threaded back through `CageTotalsResult` → `ParseResult` →
-`UploadResult`, and included in the `__reportOutcome` payload via a
-`contourPayload()` helper in `main.ts`. The helper returns `{}` when the flag is
-not set, so there is zero overhead in normal operation.
-
-**Labels** come exclusively from the pipeline's own outputs — no Python heuristics:
-
-| Label | Condition |
-|-------|-----------|
-| `grid` | bounding rect matches `outerGridBR` |
-| `number` | bounding rect appears in `selectedNumbers` |
-| `unlabelled` | everything else |
-
-### `web/scripts/dump-contour-trees.ts`
-
-Playwright script that queries `corpus.db` for up to 50 clean/backtracked puzzles
-per `(corpus × ground_truth)` combination where `detected_type` matches the ground
-truth label, then uploads each puzzle via the production preview server with
-`window.__reportContourTree = true` set via `addInitScript`. The `__reportOutcome`
-callback payload is written to `contour-dumps/<puzzle_hash>.json`.
-
-Each dump contains: `puzzle_hash`, `corpus`, `ground_truth`, `detected_type`,
-`bucket`, `subres` (128), `tree`, `selectedNumbers`, `outerGridBR`, `borderX`,
-`borderY`, `cageTotals`, `givenDigits`.
-
-Run from `web/` after `npm run build && npm run preview` (in another terminal):
-
-```bash
-npx vite-node --script scripts/dump-contour-trees.ts [--limit N] [--out-dir DIR]
-```
-
-### `web/scripts/analyse-contours.py`
-
-Python script that traverses `contour-dumps/*.json` depth-first and computes a
-flat per-contour feature row for every node in every tree. Output is
-`contour-dumps/features.csv`.
-
-Per-contour features: `depth`, `depth_below`, `num_peers`, `num_children`,
-`x/y/w/h`, `cx_norm`/`cy_norm`/`w_norm`/`h_norm`/`area_norm` (all divided by
-`subres`), `aspect_ratio` (`w/h`), `fill_ratio` (`area / w×h`),
-`area_rel_parent`, `hu1`–`hu7` (log-scaled Hu moments via `cv2.HuMoments`),
-`label`, and for `number`-labelled contours: `cell_row`, `cell_col`,
-`cage_total`, `given_digit`.
-
-Run from repo root:
-
-```bash
-python web/scripts/analyse-contours.py [--dump-dir DIR] [--out PATH]
-```
-
-`contour-dumps/` is gitignored and never committed.
+A prior experimental contour-tree-based border detector (compared against the
+existing border-clustering pipeline via `ct_*` corpus.db columns) and its
+supporting diagnostic-dump/analysis tooling were removed as dead code — the
+comparison was never wired up to run in this codebase (the `ct_*` columns were
+always NULL) and the diagnostic capture path was gated behind a flag
+(`window.__reportContourTree`) no code ever set outside a Playwright harness
+that had itself already been deleted.

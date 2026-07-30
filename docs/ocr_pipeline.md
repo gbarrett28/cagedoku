@@ -265,8 +265,9 @@ to `cageTotalMinFillRatio = 0.3`.
 No significant change from `image-pipeline.md`. For reference:
 
 `buildCageTotals` walks the `RETR_TREE` contour hierarchy to find digit-sized
-contours. `splitNum` decides 1 vs 2 digits per contour. Each digit is letterbox-warped
-to a 64 × 64 binary thumbnail.
+contours. `splitNum` decides 1 vs 2 digits per contour. Each digit keeps its raw
+bounding-box crop from the warped grid, then the model manifest selects the production
+`stretch` or `letterbox` warp that derives its 64 × 64 recognition input.
 
 A cage-total region may contain 1 or 2 digit contours **plus** non-digit artefacts
 (cage border fragments, dashes) that bleed into the region. `splitNum` and the
@@ -287,20 +288,12 @@ as a pre-scan.
 | Hole-count | 5 | BFS flood-fill; encodes 0/1/2+ holes + 2 size fractions |
 | Combined | 1769 | Concatenated HOG ⊕ hole-count |
 
-**Classifier:** LinearSVC OvO, 45 binary classifiers (digits 0–9). Confidence =
-vote fraction; flagged uncertain below 0.7.
-
-> The currently shipped model is `PcaRbfRecogniser` (PCA + template-match +
-> RBF-SVM, ported from the Python reference — see `docs/architecture.md` §
-> Web Recogniser Training). This section describes `HogRecogniser`, the
-> HOG + LinearSVC architecture retained as the other branch of the
-> `NumRecogniser` class hierarchy, not the active default. The Python
-> bit-exact port effort that produced the PCA+RBF port was abandoned — the
-> Python reference implementation turned out to be missing validation checks
-> that would have caused it to fail on certain inputs, so its apparent 99.9%
-> corpus clean rate wasn't a trustworthy target to bit-match against. See
-> `docs/bitexact-port-debugged-images.md` for what the effort found before
-> being closed out.
+**Classifier:** RBF SVM OvO, 45 binary classifiers (digits 0–9). Confidence =
+vote fraction; flagged uncertain below 0.7. The browser accepts only the production
+`classifier_type: "rbf"` manifest, requires its `warp_strategy` to be `stretch` or
+`letterbox`, and rejects retired PCA/template and linear formats explicitly. Warping,
+HOG/hole feature extraction, and inference are TypeScript-owned; Python fitting calls
+the TS warp and feature implementations through `ts_bridge.py`.
 
 The non-digit binary classifier (Stage 3b, not yet implemented) is distinct from the
 digit recogniser. It operates on contour metrics (fill ratio, aspect ratio, area,

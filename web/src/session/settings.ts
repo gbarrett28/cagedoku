@@ -1,8 +1,7 @@
 /**
  * Coach settings persistence via localStorage.
  *
- * Mirrors Python's api/settings.py SettingsStore and api/schemas.py
- * DEFAULT_ALWAYS_APPLY_RULES — both the default value and the persistence
+ * Both the default value and the persistence
  * logic live here so that nothing in the engine layer depends on user-facing
  * configuration defaults.
  */
@@ -13,8 +12,7 @@ const SETTINGS_KEY = 'killer_sudoku_settings';
 
 /**
  * Rules that are applied automatically on every engine pass when the user has
- * not yet configured anything (cold start).  Mirrors Python schemas.py
- * DEFAULT_ALWAYS_APPLY_RULES.
+ * not yet configured anything (cold start).
  */
 export const DEFAULT_ALWAYS_APPLY_RULES: readonly string[] = [
   'CageCandidateFilter',

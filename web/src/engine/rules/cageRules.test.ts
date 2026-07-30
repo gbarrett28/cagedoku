@@ -48,8 +48,7 @@ describe('SolutionMapFilter', () => {
   });
 
   it('eliminates per-cell infeasible digits (3-cell cage test)', () => {
-    // Regression test for coarse-vs-per-cell gap (mirrors Python's
-    // test_solution_map_filter_eliminates_per_cell_infeasible_digits):
+    // Regression test for the coarse-vs-per-cell feasibility gap:
     // 3-cell cage (row=0,col=0),(row=1,col=0),(row=2,col=0); total=12.
     // Restrict (row=0,col=0) and (row=1,col=0) to {1,2} → (row=2,col=0) forced to 9.
     const spec = makeThreeCellCageSpec();

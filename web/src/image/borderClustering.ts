@@ -1,8 +1,6 @@
 /**
  * Format-agnostic anchored border clustering: Stage 4 of the image pipeline.
  *
- * Mirrors Python's `killer_sudoku.image.border_clustering` module.
- *
  * Classifies all 144 inner borders as cage/non-cage using per-image k-means
  * clustering, anchored by cage-total cells detected in Stage 3.
  *

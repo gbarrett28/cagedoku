@@ -1,71 +1,34 @@
 #!/usr/bin/env python3
-"""Train the web digit recogniser using PCA + RBF-SVM + template matching.
+"""Fit and export the production web digit recogniser.
 
-Generates synthetic digit images from system fonts, optionally merges
-browser-exported labelled samples and bulk (guardian/observer) samples,
-augments all sources with dithering, fits PCA on per-class mean images
-followed by an RBF-SVM in PCA space, and writes the trained model to
-web/public/.
-
-This mirrors the "warped PCA" architecture used by
-killer_sudoku.training.train_number_recogniser (the numerals.pkl-based
-trainer that produces the shipped killer_sudoku/data/num_recogniser.npz) --
-same PCA-on-class-means + RBF-SVM-in-PCA-space + per-digit template
-approach, same manifest schema, different input data source (browser/bulk
-JSON samples here vs numerals.pkl there). Kept in sync manually; see
-docs/digits.md for the two pipelines' relationship.
-
-Was HOG+LinearSVC/OVO-SVC between commit 212dc57 (2026-05-01) and the
-Stage 5 revert (2eb4fa2, 2026-07-22) that moved the shipped model back to
-PCA+RBF -- this script was not updated at the time and drifted out of sync
-with numberRecognition.ts's manifest schema, which is why the scheduled
-"Retrain digit recogniser" GitHub Action has been failing (originally on a
-missing psutil import used only by the HOG/LinearSVC OVO path; restoring
-PCA removes that dependency entirely).
+This is Python orchestration around one deployable architecture: an OvO RBF SVM
+trained on HOG plus hole-count features. Feature extraction is owned by TypeScript
+and called through ``killer_sudoku.training.ts_bridge``; this module does not
+reimplement browser inference.
 
 Usage
 -----
     # Standard retrain from accumulated browser training data:
-    python web/train_recogniser.py --out web/public --browser-weight 1000 --svm-c 100 web/browser_train.json
+    python web/train_recogniser.py --out web/public --browser-weight 1000
 
     # Train from synthetic fonts only (no puzzle data needed):
     python web/train_recogniser.py --out web/public
 
     # Skip synthetic font generation:
-    python web/train_recogniser.py --no-synthetic web/browser_train.json
+    python web/train_recogniser.py --no-synthetic
 
 Workflow
 --------
-1. Export training data from the browser (OCR review screen -> Export Training).
-2. Run the merge step to add it to web/browser_train.json (or provide the
-   exported JSON directly as an additional positional argument).
-3. Run this script with --browser-weight 1000 --svm-c 100.
-4. The updated model is live immediately: reload the web app.
+1. Export or collect labelled digit samples.
+2. Run this script with the desired input sources and weights.
+3. Audit the emitted model through ``web/scripts/validate-model.ts``.
+4. Evaluate the candidate using the production-browser corpus gate.
 
-Model format
-------------
-The binary layout is documented in web/src/image/numberRecognition.ts
-(loadNumRecogniser, classifier_type == 'pca_rbf'). The JSON manifest records
-each array's name, dtype, shape, byte offset, and byte length.
-
-Stale-sample filtering
------------------------
-web/browser_train.json accumulates samples captured under whatever crop
-geometry was live in-browser at capture time. web/known-stale-training-hashes.json
-lists content hashes of samples confirmed captured under crop geometry the
-current pipeline no longer produces -- these are excluded from training so
-they cannot pollute the PCA/SVM fit. This is a *different* list from
-numberRecognition.test.ts's known-model-failure-hashes.json: that one tracks
-whatever the currently-shipped model happens to get wrong (regenerated per
-model), while this one is permanent (geometry incompatibility doesn't change
-across retrains). Do not merge the two files.
-
-Sample weights
---------------
---browser-weight upweights browser-exported samples' influence on the SVM
-decision boundary via sklearn's sample_weight (not repetition -- the PCA
-basis itself is still fit on unweighted per-class mean images, matching
-killer_sudoku.training.train_number_recogniser's convention).
+The output binary layout is consumed by
+``web/src/image/numberRecognition.ts::loadNumRecogniser`` and the manifest must use
+``classifier_type: "rbf"``. Known stale-geometry samples are filtered by content
+hash before training. Browser and reviewed samples may be upweighted at the SVM fit
+stage without duplicating input rows.
 """
 
 from __future__ import annotations
@@ -74,51 +37,33 @@ import argparse
 import hashlib
 import json
 import time
-from abc import ABC, abstractmethod
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from numba import njit, prange
 from numpy.typing import NDArray
-from sklearn.decomposition import PCA
 from sklearn.svm import SVC
 
 from killer_sudoku.training import ts_bridge
+from killer_sudoku.training.ts_bridge import RawDigitCrop, warp_crops
 
 # ---------------------------------------------------------------------------
-# Constants -- must match killer_sudoku/image/config.py's NumberRecognitionConfig
-# defaults and web/src/image/numberRecognition.ts's pca_rbf loader.
+# Constants shared with the TypeScript HOG/RBF production model.
 # ---------------------------------------------------------------------------
 
-THUMBNAIL_SIZE = 64        # splitNum output: 64x64 binary image per digit
-N_DIGITS = 10              # digits 0-9
-DEFAULT_DITHER = 5         # augmented variants per source sample -- PCA+RBF (fit in an
-                            # ~10-dim PCA-projected space) needs far fewer augmented copies
-                            # to generalise than the old HOG+LinearSVC architecture did;
-                            # RBF-SVM's fit cost also scales worse than linear with sample
-                            # count, so keep this small. See MAX_FIT_SAMPLES below for a
-                            # hard backstop regardless of this value.
-MAX_FIT_SAMPLES = 60_000   # hard cap on rows passed to fit_model (post-dither). Random
-                            # subsample if exceeded. killer_sudoku.training.train_number_recogniser
-                            # fits comfortably (~1s) on ~36k rows; this leaves headroom above
-                            # that proven-fast scale without letting a growing browser_train.json
-                            # or a raised --dither silently balloon SVC.fit to minutes/hours.
+THUMBNAIL_SIZE = 64        # production recognition input is 64x64
+DEFAULT_DITHER = 5         # augmented variants per source sample
+MAX_FIT_SAMPLES = 60_000   # hard cap on post-dither rows passed to SVC.fit
 CONFIDENCE_THRESHOLD = 0.7 # OVO vote fraction to mark a read as confident
 SVM_C = 5.0
 SVM_GAMMA = "scale"
-TEMPLATE_THRESHOLD = 0.85
-VARIANCE_THRESHOLD = 0.99  # cumulative explained-variance target for PCA dims
 DITHER_BATCH_SIZE = 4096
 
-# HOG descriptor parameters -- identical values used in cv.HOGDescriptor (TypeScript).
-# Not used by this file's own PCA+RBF pipeline (fit_model/build_dataset below project
-# raw pixels, not HOG features) -- kept here as shared utilities because
-# web/train_split_recogniser.py (a separate 1-vs-2-digit binary classifier, unrelated
-# to the num_recogniser digit model this file trains) and
-# web/scripts/compare-recognisers.py still import extract_hog/extract_hole_features
-# from this module.
+# HOG descriptor parameters exported with the active model. The browser reads these
+# values and uses the matching cv.HOGDescriptor configuration for inference.
 HOG_WIN_SIZE     = 64
 HOG_CELL_SIZE    = 8
 HOG_BLOCK_SIZE   = 16
@@ -126,6 +71,47 @@ HOG_BLOCK_STRIDE = 8
 HOG_NBINS        = 9
 
 _STALE_HASHES_PATH = Path(__file__).parent / "known-stale-training-hashes.json"
+DEFAULT_OVERRIDES_PATH = Path("killer_sudoku/training/manual_label_overrides.json")
+
+
+type WarpStrategy = Literal["stretch", "letterbox"]
+
+
+@dataclass(frozen=True)
+class RawTrainingSample:
+    """A browser-selected bounding-box crop that has not been recognition-warped."""
+
+    digit: int
+    pixels: NDArray[np.uint8]
+
+
+@dataclass(frozen=True)
+class CanonicalTrainingSample:
+    """A historical square recogniser input tied to the strategy that produced it."""
+
+    digit: int
+    pixels: NDArray[np.uint8]
+    warp_strategy: WarpStrategy
+
+
+type TrainingSample = RawTrainingSample | CanonicalTrainingSample
+
+# Version-1 exports were produced by square-padding before resize, which is
+# geometrically equivalent to the deployed single-digit letterbox strategy.
+LEGACY_V1_WARP_STRATEGY: WarpStrategy = "letterbox"
+
+def deployed_warp_strategy(
+    manifest_path: Path = Path(__file__).parent / "public" / "num_recogniser.json",
+) -> WarpStrategy:
+    """Read the current browser model's strategy instead of duplicating its default."""
+    strategy = json.loads(manifest_path.read_text(encoding="utf-8")).get("warp_strategy")
+    if strategy == "stretch":
+        return "stretch"
+    if strategy == "letterbox":
+        return "letterbox"
+    raise ValueError(
+        f"{manifest_path}: unsupported deployed warp strategy {strategy!r}"
+    )
 
 
 def _load_stale_hashes() -> frozenset[str]:
@@ -136,128 +122,63 @@ def _load_stale_hashes() -> frozenset[str]:
 
 
 def _sample_hash(pixels: list[int]) -> str:
-    """sha256 of the raw pixel array -- must match numberRecognition.test.ts's sha256()."""
+    """Hash canonical audit pixels exactly as numberRecognition.test.ts does."""
     return hashlib.sha256(bytes(pixels)).hexdigest()
 
 
+def _byte_pixels(value: Any, expected: int, source: str) -> NDArray[np.uint8]:
+    if not isinstance(value, list) or len(value) != expected:
+        actual = len(value) if isinstance(value, list) else "non-array"
+        raise ValueError(f"{source}: expected {expected} pixels, got {actual}")
+    if any(not isinstance(pixel, int) or isinstance(pixel, bool) or not 0 <= pixel <= 255 for pixel in value):
+        raise ValueError(f"{source}: pixels must be uint8 values")
+    return np.asarray(value, dtype=np.uint8)
+
+
+def _raw_training_sample(
+    digit: int,
+    pixels: Any,
+    width: Any,
+    height: Any,
+    source: str,
+) -> RawTrainingSample:
+    if (
+        not isinstance(width, int)
+        or isinstance(width, bool)
+        or not isinstance(height, int)
+        or isinstance(height, bool)
+        or width <= 0
+        or height <= 0
+    ):
+        raise ValueError(f"{source}: raw crop dimensions must be positive integers")
+    return RawTrainingSample(
+        digit,
+        _byte_pixels(pixels, width * height, source).reshape(height, width),
+    )
+
+
+def _canonical_training_sample(
+    digit: int,
+    pixels: Any,
+    strategy: WarpStrategy,
+    source: str,
+) -> CanonicalTrainingSample:
+    return CanonicalTrainingSample(
+        digit,
+        _byte_pixels(pixels, THUMBNAIL_SIZE**2, source).reshape(
+            THUMBNAIL_SIZE,
+            THUMBNAIL_SIZE,
+        ),
+        strategy,
+    )
+
+
 # ---------------------------------------------------------------------------
-# NumRecogniser -- single active instance, no CLI flag, no branching.
+# Production HOG/RBF trainer.
 # ---------------------------------------------------------------------------
 
 
-class NumRecogniser(ABC):
-    """One implementation per digit-recogniser architecture.
-
-    ACTIVE_RECOGNISER (bottom of this section) is the single point of truth --
-    change that one line to switch every consumer (main(), generate_synthetic_samples,
-    extract_guardian_samples.py) to the other architecture at once.
-    """
-
-    @abstractmethod
-    def fit_to_thumbnail(self, crop: NDArray[np.uint8], win_size: int) -> NDArray[np.uint8]:
-        """Fit an already-extracted, variable-aspect-ratio crop into a win_size square."""
-
-    @abstractmethod
-    def warp_from_rect(
-        self, ax: float, ay: float, bw: float, bh: float,
-        source: NDArray[np.uint8], win_size: int,
-    ) -> NDArray[np.uint8]:
-        """Perspective-warp a bounding rect directly from a full source image."""
-
-    @abstractmethod
-    def extract_features(self, imgs: NDArray[np.uint8]) -> NDArray[np.float64]:
-        """Convert a stacked (n, 64, 64) uint8 image array into fit-ready features."""
-
-    @abstractmethod
-    def fit(
-        self, X: NDArray[np.float64], y: NDArray[np.int64],
-        sample_weights: NDArray[np.float64] | None,
-    ) -> dict[str, Any]:
-        """Fit a classifier on X/y, returning an opaque model dict for save()."""
-
-    @abstractmethod
-    def save(
-        self, model: dict[str, Any], out_dir: Path,
-        confidence_threshold: float = CONFIDENCE_THRESHOLD,
-        template_threshold: float = TEMPLATE_THRESHOLD,
-    ) -> None:
-        """Write num_recogniser.json (manifest) and num_recogniser.bin (arrays)."""
-
-
-class PcaRbfRecogniser(NumRecogniser):
-    def fit_to_thumbnail(self, crop: NDArray[np.uint8], win_size: int) -> NDArray[np.uint8]:
-        # Direct stretch, no aspect preservation -- matches TS's getWarpFromRect.
-        from PIL import Image
-        return np.array(
-            Image.fromarray(crop).resize((win_size, win_size), Image.Resampling.LANCZOS),
-            dtype=np.uint8,
-        )
-
-    def warp_from_rect(
-        self, ax: float, ay: float, bw: float, bh: float,
-        source: NDArray[np.uint8], win_size: int,
-    ) -> NDArray[np.uint8]:
-        # Direct stretch via cv2.warpPerspective -- matches TS's getWarpFromRect
-        # exactly (same mechanism). No square-padding step.
-        import cv2
-        src = np.array([[ax, ay], [ax + bw, ay], [ax + bw, ay + bh], [ax, ay + bh]], dtype=np.float32)
-        dst = np.array(
-            [[0, 0], [win_size - 1, 0], [win_size - 1, win_size - 1], [0, win_size - 1]],
-            dtype=np.float32,
-        )
-        m = cv2.getPerspectiveTransform(src, dst)
-        thumb = cv2.warpPerspective(source, m, (win_size, win_size), flags=cv2.INTER_LINEAR)
-        return ((thumb > 127).astype(np.uint8) * 255)
-
-    def extract_features(self, imgs: NDArray[np.uint8]) -> NDArray[np.float64]:
-        return imgs.reshape(len(imgs), -1).astype(np.float64)
-
-    def fit(
-        self, X: NDArray[np.float64], y: NDArray[np.int64],
-        sample_weights: NDArray[np.float64] | None,
-    ) -> dict[str, Any]:
-        return fit_model(X, y, svm_c=SVM_C, svm_gamma=SVM_GAMMA, sample_weights=sample_weights)
-
-    def save(
-        self, model: dict[str, Any], out_dir: Path,
-        confidence_threshold: float = CONFIDENCE_THRESHOLD,
-        template_threshold: float = TEMPLATE_THRESHOLD,
-    ) -> None:
-        save_model(model, out_dir, confidence_threshold=confidence_threshold, template_threshold=template_threshold)
-
-
-class HogRecogniser(NumRecogniser):
-    def fit_to_thumbnail(self, crop: NDArray[np.uint8], win_size: int) -> NDArray[np.uint8]:
-        # Pad to a square (aspect-preserving), then uniform-scale -- matches TS's
-        # letterboxWarp. This is generate_synthetic_samples' former inline logic.
-        from PIL import Image
-        h_c, w_c = crop.shape
-        side = max(h_c, w_c)
-        square = np.zeros((side, side), dtype=np.uint8)
-        square[(side - h_c) // 2:(side - h_c) // 2 + h_c, (side - w_c) // 2:(side - w_c) // 2 + w_c] = crop
-        return np.array(
-            Image.fromarray(square).resize((win_size, win_size), Image.Resampling.LANCZOS),
-            dtype=np.uint8,
-        )
-
-    def warp_from_rect(
-        self, ax: float, ay: float, bw: float, bh: float,
-        source: NDArray[np.uint8], win_size: int,
-    ) -> NDArray[np.uint8]:
-        # extract_guardian_samples.py's former standalone letterbox_warp, moved here unchanged.
-        import cv2
-        scale = min((win_size - 1) / bw, (win_size - 1) / bh)
-        dest_w, dest_h = bw * scale, bh * scale
-        off_x, off_y = ((win_size - 1) - dest_w) / 2, ((win_size - 1) - dest_h) / 2
-        src = np.array([[ax, ay], [ax + bw, ay], [ax + bw, ay + bh], [ax, ay + bh]], dtype=np.float32)
-        dst = np.array([
-            [off_x, off_y], [off_x + dest_w, off_y],
-            [off_x + dest_w, off_y + dest_h], [off_x, off_y + dest_h],
-        ], dtype=np.float32)
-        m = cv2.getPerspectiveTransform(src, dst)
-        thumb = cv2.warpPerspective(source, m, (win_size, win_size), flags=cv2.INTER_LINEAR)
-        return ((thumb > 127).astype(np.uint8) * 255)
-
+class HogRecogniser:
     def extract_features(self, imgs: NDArray[np.uint8]) -> NDArray[np.float64]:
         hog, hole = ts_bridge.extract_features(list(imgs))
         return np.hstack([hog, hole])
@@ -266,17 +187,15 @@ class HogRecogniser(NumRecogniser):
         self, X: NDArray[np.float64], y: NDArray[np.int64],
         sample_weights: NDArray[np.float64] | None,
     ) -> dict[str, Any]:
-        # Direct RBF-SVM fit only -- see this repo's implementation plan for why the
-        # original checkpointed LinearSVC/OVO path is not restored here.
+        # Fit the sole production classifier architecture.
         svc = SVC(kernel="rbf", C=SVM_C, gamma=SVM_GAMMA, decision_function_shape="ovo")
         svc.fit(X, y, sample_weight=sample_weights)
         return {"kind": "rbf", "clf": svc, "classes": svc.classes_}
 
     def save(
         self, model: dict[str, Any], out_dir: Path,
+        warp_strategy: WarpStrategy,
         confidence_threshold: float = CONFIDENCE_THRESHOLD,
-        # HOG has no templates; kept for a signature substitutable with PcaRbfRecogniser.save.
-        template_threshold: float = TEMPLATE_THRESHOLD,
     ) -> None:
         svc: SVC = model["clf"]
         try:
@@ -312,7 +231,14 @@ class HogRecogniser(NumRecogniser):
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "num_recogniser.bin").write_bytes(bytes(blob))
         (out_dir / "num_recogniser.json").write_text(
-            json.dumps({"classifier_type": "rbf", "arrays": manifest_arrays}, indent=2),
+            json.dumps(
+                {
+                    "classifier_type": "rbf",
+                    "warp_strategy": warp_strategy,
+                    "arrays": manifest_arrays,
+                },
+                indent=2,
+            ),
             encoding="utf-8",
         )
         n_sv = svc.support_vectors_.shape[0]
@@ -321,61 +247,163 @@ class HogRecogniser(NumRecogniser):
         print(f"  Bin size: {len(blob):,} bytes", flush=True)
 
 
-ACTIVE_RECOGNISER: NumRecogniser = HogRecogniser()  # the one line that decides everything
+ACTIVE_RECOGNISER = HogRecogniser()
 
-
-# ---------------------------------------------------------------------------
-# Shared feature-extraction utilities -- HOG + hole-count features.
-#
-# Unused by this file's own PCA+RBF pipeline (see note on the HOG_* constants
-# above); kept for web/train_split_recogniser.py and
-# web/scripts/compare-recognisers.py, which import extract_hog/
-# extract_hole_features from this module.
-# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # I/O -- loading
 # ---------------------------------------------------------------------------
 
-def load_training_file(path: Path, exclude_hashes: frozenset[str] = frozenset()) -> list[tuple[int, NDArray[np.uint8]]]:
-    """Load (digit, 64x64 uint8) samples from one browser-exported JSON.
-
-    The JSON is produced by web/src/image/trainingExport.ts and contains
-    one sample per extracted digit contour, labelled with the user-verified
-    cage total. Samples whose content hash is in exclude_hashes are skipped
-    (see module docstring on stale-sample filtering).
-    """
+def load_training_file(
+    path: Path,
+    exclude_hashes: frozenset[str] = frozenset(),
+) -> list[TrainingSample]:
+    """Discriminate raw and canonical records without using array shape as a hint."""
     data = json.loads(path.read_text(encoding="utf-8"))
-    samples: list[tuple[int, NDArray[np.uint8]]] = []
+    schema_version = data.get("schemaVersion", data.get("version"))
+    if schema_version not in (1, 2):
+        raise ValueError(f"{path.name}: unsupported training schema version {schema_version!r}")
+    if data.get("thumbnailSize", THUMBNAIL_SIZE) != THUMBNAIL_SIZE:
+        raise ValueError(
+            f"{path.name}: canonical samples must be "
+            f"{THUMBNAIL_SIZE}x{THUMBNAIL_SIZE}"
+        )
+
+    samples: list[TrainingSample] = []
     skipped = 0
-    for s in data["samples"]:
-        pixels = s["pixels"]
+    raw_fields = ("sourceRect", "sourceWidth", "sourceHeight", "sourcePixels")
+    for index, sample in enumerate(data["samples"]):
+        source = f"{path.name} sample {index}"
+        digit = int(sample["digit"])
+        raw_present = [field in sample for field in raw_fields]
+        if any(raw_present) and not all(raw_present):
+            raise ValueError(f"{source}: raw crop metadata is incomplete")
+
+        if all(raw_present):
+            audit_pixels = sample.get("recognitionPixels")
+            _byte_pixels(
+                audit_pixels,
+                THUMBNAIL_SIZE**2,
+                f"{source} recognitionPixels",
+            )
+            if exclude_hashes and _sample_hash(audit_pixels) in exclude_hashes:
+                skipped += 1
+                continue
+            width = sample.get("sourceWidth")
+            height = sample.get("sourceHeight")
+            rect = sample.get("sourceRect")
+            if (
+                not isinstance(rect, list)
+                or len(rect) != 4
+                or any(not isinstance(value, int) or isinstance(value, bool) for value in rect)
+                or rect[2] != width
+                or rect[3] != height
+            ):
+                raise ValueError(f"{source}: sourceRect must match source dimensions")
+            samples.append(_raw_training_sample(
+                digit,
+                sample.get("sourcePixels"),
+                width,
+                height,
+                source,
+            ))
+            continue
+
+        if "pixels" in sample:
+            pixels = sample.get("pixels")
+            strategy = LEGACY_V1_WARP_STRATEGY
+        elif "recognitionPixels" in sample:
+            pixels = sample.get("recognitionPixels")
+            stored_strategy = sample.get("warpStrategy")
+            if stored_strategy == "stretch":
+                strategy = "stretch"
+            elif stored_strategy == "letterbox":
+                strategy = "letterbox"
+            else:
+                raise ValueError(
+                    f"{source}: canonical sample has unsupported warp strategy "
+                    f"{stored_strategy!r}"
+                )
+        else:
+            raise ValueError(f"{source}: sample is neither raw nor explicitly canonical")
+
+        canonical_sample = _canonical_training_sample(digit, pixels, strategy, source)
         if exclude_hashes and _sample_hash(pixels) in exclude_hashes:
             skipped += 1
             continue
-        digit = int(s["digit"])
-        img = np.array(pixels, dtype=np.uint8).reshape(THUMBNAIL_SIZE, THUMBNAIL_SIZE)
-        samples.append((digit, img))
+        samples.append(canonical_sample)
+
     if skipped:
-        print(f"  Excluded {skipped} known-stale-geometry sample(s) from {path.name}", flush=True)
+        print(
+            f"  Excluded {skipped} known-stale-geometry sample(s) from {path.name}",
+            flush=True,
+        )
+    return samples
+
+
+def load_overrides_file(path: Path) -> list[TrainingSample]:
+    """Load human-reviewed raw crops and historical canonical overrides."""
+    if not path.exists():
+        return []
+    import base64
+    import io
+
+    from PIL import Image
+
+    overrides: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    samples: list[TrainingSample] = []
+    for key, entry in overrides.items():
+        if entry["label"] == "exclude":
+            continue
+        crop = np.array(
+            Image.open(io.BytesIO(base64.b64decode(entry["cropPng"]))).convert("L"),
+            dtype=np.uint8,
+        )
+        metadata_fields = ("sourceRect", "sourceWidth", "sourceHeight")
+        present = [field in entry for field in metadata_fields]
+        if any(present) and not all(present):
+            raise ValueError(f"{key}: raw crop metadata is incomplete")
+        digit = int(entry["label"])
+        if all(present):
+            width = entry["sourceWidth"]
+            height = entry["sourceHeight"]
+            rect = entry["sourceRect"]
+            if not isinstance(width, int) or not isinstance(height, int):
+                raise ValueError(f"{key}: source dimensions must be integers")
+            if width <= 0 or height <= 0:
+                raise ValueError(f"{key}: source dimensions must be positive")
+            if int(rect["width"]) != width or int(rect["height"]) != height:
+                raise ValueError(f"{key}: sourceRect dimensions disagree with source dimensions")
+            if crop.shape != (height, width):
+                raise ValueError(
+                    f"{key}: PNG dimensions {crop.shape[1]}x{crop.shape[0]} "
+                    f"do not match source metadata {width}x{height}"
+                )
+            samples.append(RawTrainingSample(digit, crop))
+        else:
+            if crop.shape != (THUMBNAIL_SIZE, THUMBNAIL_SIZE):
+                raise ValueError(
+                    f"{key}: legacy override lacks raw crop metadata and is not "
+                    f"{THUMBNAIL_SIZE}x{THUMBNAIL_SIZE}"
+                )
+            samples.append(CanonicalTrainingSample(
+                digit,
+                crop,
+                LEGACY_V1_WARP_STRATEGY,
+            ))
     return samples
 
 
 def cap_per_class(
-    samples: list[tuple[int, NDArray[np.uint8]]],
+    samples: list[TrainingSample],
     max_per_class: int,
     rng: np.random.Generator,
-) -> list[tuple[int, NDArray[np.uint8]]]:
-    """Randomly subsample each digit class down to at most max_per_class.
-
-    Bounds the largest class regardless of how skewed the input distribution
-    is -- e.g. digit '1' is far more common in cage totals than digit '5'.
-    A no-op for classes already at or below the cap.
-    """
-    by_digit: dict[int, list[tuple[int, NDArray[np.uint8]]]] = {}
-    for s in samples:
-        by_digit.setdefault(s[0], []).append(s)
-    capped: list[tuple[int, NDArray[np.uint8]]] = []
+) -> list[TrainingSample]:
+    """Randomly subsample each digit class down to at most max_per_class."""
+    by_digit: dict[int, list[TrainingSample]] = {}
+    for sample in samples:
+        by_digit.setdefault(sample.digit, []).append(sample)
+    capped: list[TrainingSample] = []
     for group in by_digit.values():
         if len(group) <= max_per_class:
             capped.extend(group)
@@ -388,13 +416,8 @@ def cap_per_class(
 def generate_synthetic_samples(
     win_size: int = THUMBNAIL_SIZE,
     pt_sizes: tuple[int, ...] = (32, 48, 64),
-) -> list[tuple[int, NDArray[np.uint8]]]:
-    """Render digits 1-9 in all discoverable system TTF fonts via Pillow.
-
-    Returns (label, win_size x win_size uint8) pairs in the same format as
-    load_training_file, supplementing browser-exported samples with coverage
-    across common newspaper and system typefaces.
-    """
+) -> list[TrainingSample]:
+    """Render training-only raw glyph crops without emulating browser selection."""
     t0 = time.time()
     print(f"  [+{time.time() - t0:.0f}s] Scanning system fonts (matplotlib font cache "
           f"may take a while on first run)...", flush=True)
@@ -403,7 +426,7 @@ def generate_synthetic_samples(
 
     font_paths = fm.findSystemFonts(fontext="ttf")
     print(f"  [+{time.time() - t0:.0f}s] Found {len(font_paths)} fonts", flush=True)
-    samples: list[tuple[int, NDArray[np.uint8]]] = []
+    samples: list[TrainingSample] = []
     report_every = max(1, len(font_paths) // 20)
 
     for fi, font_path in enumerate(font_paths):
@@ -411,19 +434,19 @@ def generate_synthetic_samples(
             for digit in range(1, 10):
                 try:
                     font = ImageFont.truetype(font_path, pt)
+                    canvas = win_size * 2
+                    img = Image.new("L", (canvas, canvas), 0)
+                    draw = ImageDraw.Draw(img)
+                    text = str(digit)
+                    bbox = draw.textbbox((0, 0), text, font=font)
+                    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+                    if w == 0 or h == 0:
+                        continue
+                    x = (canvas - w) // 2 - bbox[0]
+                    y = (canvas - h) // 2 - bbox[1]
+                    draw.text((x, y), text, fill=255, font=font)
                 except Exception:
                     continue
-                canvas = win_size * 2
-                img = Image.new("L", (canvas, canvas), 0)
-                draw = ImageDraw.Draw(img)
-                text = str(digit)
-                bbox = draw.textbbox((0, 0), text, font=font)
-                w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-                if w == 0 or h == 0:
-                    continue
-                x = (canvas - w) // 2 - bbox[0]
-                y = (canvas - h) // 2 - bbox[1]
-                draw.text((x, y), text, fill=255, font=font)
                 arr = np.array(img, dtype=np.uint8)
                 ys, xs = np.where(arr > 0)
                 if len(ys) == 0:
@@ -434,15 +457,97 @@ def generate_synthetic_samples(
                 x0 = max(0, int(xs.min()) - margin)
                 x1 = min(arr.shape[1], int(xs.max()) + margin + 1)
                 crop = arr[y0:y1, x0:x1]
-                out = ACTIVE_RECOGNISER.fit_to_thumbnail(crop, win_size)
-                if out.max() > 0:
-                    samples.append((digit, out))
+                if crop.max() > 0:
+                    samples.append(RawTrainingSample(digit, crop))
 
         if (fi + 1) % report_every == 0 or fi + 1 == len(font_paths):
             print(f"  [+{time.time() - t0:.0f}s] Rendered fonts {fi + 1}/{len(font_paths)} "
                   f"({len(samples)} samples so far)", flush=True)
 
     return samples
+
+
+def deduplicate_training_samples(
+    samples: list[TrainingSample],
+) -> list[TrainingSample]:
+    """Keep the first exact input from the merged sources and discard later duplicates."""
+    seen: set[tuple[int, str, int, int, WarpStrategy | None, bytes]] = set()
+    deduplicated: list[TrainingSample] = []
+
+    for index, sample in enumerate(samples):
+        if sample.pixels.ndim != 2:
+            raise ValueError(
+                f"training sample {index} must have two-dimensional pixels, "
+                f"got {sample.pixels.shape}"
+            )
+        height, width = sample.pixels.shape
+        if isinstance(sample, RawTrainingSample):
+            sample_kind = "raw"
+            warp_strategy = None
+        else:
+            sample_kind = "canonical"
+            warp_strategy = sample.warp_strategy
+        key = (
+            sample.digit,
+            sample_kind,
+            width,
+            height,
+            warp_strategy,
+            sample.pixels.tobytes(order="C"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduplicated.append(sample)
+
+    return deduplicated
+
+
+def canonicalize_samples(
+    samples: list[TrainingSample],
+    strategy: WarpStrategy,
+) -> list[tuple[int, NDArray[np.uint8]]]:
+    """Warp each raw input once in TS and retain only compatible canonical inputs."""
+    raw_samples = [sample for sample in samples if isinstance(sample, RawTrainingSample)]
+    raw_crops: list[RawDigitCrop] = []
+    for index, raw_sample in enumerate(raw_samples):
+        if raw_sample.pixels.ndim != 2 or 0 in raw_sample.pixels.shape:
+            raise ValueError(
+                f"raw training sample {index} must have positive two-dimensional pixels, "
+                f"got {raw_sample.pixels.shape}"
+            )
+        if raw_sample.pixels.dtype != np.uint8:
+            raise ValueError(
+                f"raw training sample {index} must have dtype uint8, got {raw_sample.pixels.dtype}"
+            )
+        raw_crops.append(RawDigitCrop(raw_sample.pixels))
+
+    warped = warp_crops(raw_crops, strategy, THUMBNAIL_SIZE)
+    if warped.shape != (len(raw_samples), THUMBNAIL_SIZE, THUMBNAIL_SIZE):
+        raise RuntimeError(
+            "warp bridge returned invalid training array shape "
+            f"{warped.shape}, expected {(len(raw_samples), THUMBNAIL_SIZE, THUMBNAIL_SIZE)}"
+        )
+    raw_iter = iter(warped)
+
+    canonical: list[tuple[int, NDArray[np.uint8]]] = []
+    for sample in samples:
+        if isinstance(sample, RawTrainingSample):
+            canonical.append((sample.digit, next(raw_iter)))
+            continue
+        if sample.warp_strategy != strategy:
+            continue
+        if sample.pixels.shape != (THUMBNAIL_SIZE, THUMBNAIL_SIZE):
+            raise ValueError(
+                f"canonical training sample must be {THUMBNAIL_SIZE}x{THUMBNAIL_SIZE}, "
+                f"got {sample.pixels.shape}"
+            )
+        if sample.pixels.dtype != np.uint8:
+            raise ValueError(
+                f"canonical training sample must have dtype uint8, got {sample.pixels.dtype}"
+            )
+        canonical.append((sample.digit, sample.pixels))
+    return canonical
 
 
 # ---------------------------------------------------------------------------
@@ -588,121 +693,6 @@ def build_dataset(
 
 
 # ---------------------------------------------------------------------------
-# Fitting -- PCA on per-class means + RBF-SVM in PCA space
-# ---------------------------------------------------------------------------
-
-def fit_model(
-    X: NDArray[np.float64],
-    y: NDArray[np.int64],
-    svm_c: float = SVM_C,
-    svm_gamma: float | str = SVM_GAMMA,
-    sample_weights: NDArray[np.float64] | None = None,
-) -> dict[str, Any]:
-    """Fit PCA + RBF SVM and collect per-digit template images.
-
-    PCA is fitted on the per-class mean images (unweighted -- the PCA basis
-    captures inter-digit structure, not decision-boundary placement, so
-    sample_weights is applied only at the SVM-fit stage, matching
-    killer_sudoku.training.train_number_recogniser's convention). The number
-    of components kept is the minimum that explains VARIANCE_THRESHOLD of
-    cumulative variance.
-    """
-    classes = sorted(set(y.tolist()))
-
-    means = np.array([X[y == c].mean(axis=0) for c in classes])
-    pca = PCA()
-    pca.fit(means)
-    cumsum = np.cumsum(pca.explained_variance_ratio_)
-    dims = int(np.argmax(cumsum > VARIANCE_THRESHOLD))
-    print(f"  PCA dims for {VARIANCE_THRESHOLD:.0%} variance: {dims}", flush=True)
-
-    X_pca = pca.transform(X)[:, :dims]
-    svc = SVC(kernel="rbf", C=svm_c, gamma=svm_gamma, decision_function_shape="ovo")
-    svc.fit(X_pca, y, sample_weight=sample_weights)
-    print(f"  Trained SVC (C={svm_c}, gamma={svm_gamma}) on {len(y)} samples", flush=True)
-
-    templates_out: dict[int, NDArray[np.float32]] = {}
-    for c in range(N_DIGITS):
-        mask = y == c
-        if mask.any():
-            tmpl = X[mask].mean(axis=0).reshape(THUMBNAIL_SIZE, THUMBNAIL_SIZE)
-        else:
-            tmpl = np.zeros((THUMBNAIL_SIZE, THUMBNAIL_SIZE))
-        templates_out[c] = tmpl.astype(np.float32)
-
-    return {"pca": pca, "dims": dims, "svc": svc, "classes": classes, "templates": templates_out}
-
-
-# ---------------------------------------------------------------------------
-# I/O -- saving
-# ---------------------------------------------------------------------------
-
-def save_model(
-    model: dict[str, Any],
-    out_dir: Path,
-    confidence_threshold: float = CONFIDENCE_THRESHOLD,
-    template_threshold: float = TEMPLATE_THRESHOLD,
-) -> None:
-    """Write num_recogniser.json (manifest) and num_recogniser.bin (arrays).
-
-    The binary layout and 'classifier_type': 'pca_rbf' manifest field must
-    match loadNumRecogniser in web/src/image/numberRecognition.ts.
-    """
-    pca: PCA = model["pca"]
-    svc: SVC = model["svc"]
-    dims: int = model["dims"]
-
-    try:
-        gamma = float(svc._gamma)  # available after fit(); sklearn >= 0.22
-    except AttributeError:
-        gamma = 1.0 / (float(pca.n_features_in_) * float(np.var(pca.transform(pca.mean_.reshape(1, -1)))))
-
-    named: list[tuple[str, np.ndarray[Any, Any], str]] = [
-        ("pca_win_size",         np.array([THUMBNAIL_SIZE], dtype=np.int32),        "int32"),
-        ("pca_dims",             np.array([dims], dtype=np.int32),                  "int32"),
-        ("pca_components",       pca.components_.astype(np.float64),                "float64"),
-        ("pca_mean",             pca.mean_.astype(np.float64),                      "float64"),
-        ("rbf_support_vectors",  svc.support_vectors_.astype(np.float64),           "float64"),
-        ("rbf_dual_coef",        svc.dual_coef_.astype(np.float64),                 "float64"),
-        ("rbf_intercept",        svc.intercept_.astype(np.float64),                 "float64"),
-        ("rbf_n_support",        svc.n_support_.astype(np.int32),                   "int32"),
-        ("rbf_gamma",            np.array([gamma], dtype=np.float64),               "float64"),
-        ("classes",              svc.classes_.astype(np.int32),                     "int32"),
-        ("template_threshold",   np.array([template_threshold], dtype=np.float64),  "float64"),
-        ("confidence_threshold", np.array([confidence_threshold], dtype=np.float64), "float64"),
-    ]
-    for d, tmpl in sorted(model["templates"].items()):
-        named.append((f"template_{d}", tmpl, "float32"))
-
-    blob = bytearray()
-    manifest_arrays: dict[str, dict[str, Any]] = {}
-    for name, arr, dtype_str in named:
-        arr = np.asarray(arr)
-        data = arr.tobytes()
-        manifest_arrays[name] = {
-            "dtype": dtype_str,
-            "shape": list(arr.shape),
-            "offset": len(blob),
-            "byteLength": len(data),
-        }
-        blob.extend(data)
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "num_recogniser.bin").write_bytes(bytes(blob))
-    (out_dir / "num_recogniser.json").write_text(
-        json.dumps({"classifier_type": "pca_rbf", "arrays": manifest_arrays}, indent=2),
-        encoding="utf-8",
-    )
-
-    n_sv = svc.support_vectors_.shape[0]
-    print(f"\nSaved to {out_dir}/ [pca_rbf]", flush=True)
-    print(f"  PCA:       {pca.components_.shape[0]} components, {dims} active dims", flush=True)
-    print(f"  SVM:       {n_sv} support vectors, classes {svc.classes_.tolist()}", flush=True)
-    print(f"  Templates: digits 0-9 ({THUMBNAIL_SIZE}x{THUMBNAIL_SIZE} float32)", flush=True)
-    print(f"  Bin size:  {len(blob):,} bytes", flush=True)
-
-
-# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -727,6 +717,16 @@ def main() -> None:
         help="Skip loading --browser-file entirely.",
     )
     parser.add_argument(
+        "--overrides-file", type=Path, default=DEFAULT_OVERRIDES_PATH,
+        help="Human-verified corrections from review_low_confidence.py's tick-sheet workflow "
+             f"(default: {DEFAULT_OVERRIDES_PATH}). Folded into the same ground-truth weight "
+             "bucket as --browser-file. Pass a nonexistent path or --no-overrides-file to skip.",
+    )
+    parser.add_argument(
+        "--no-overrides-file", action="store_true",
+        help="Skip loading --overrides-file entirely.",
+    )
+    parser.add_argument(
         "--out", type=Path, default=Path("web/public"),
         help="Output directory for model files (default: web/public)",
     )
@@ -739,12 +739,15 @@ def main() -> None:
         help="Skip system-font synthetic digit generation",
     )
     parser.add_argument(
-        "--confidence-threshold", type=float, default=CONFIDENCE_THRESHOLD, metavar="T",
-        help=f"OVO vote fraction to mark a read as confident (default: {CONFIDENCE_THRESHOLD})",
+        "--warp-strategy",
+        choices=("stretch", "letterbox"),
+        default=deployed_warp_strategy(),
+        help="Production TypeScript crop warp used for raw training inputs "
+             "(default: strategy in the deployed model manifest)",
     )
     parser.add_argument(
-        "--template-threshold", type=float, default=TEMPLATE_THRESHOLD, metavar="T",
-        help=f"Template-match score below which the SVM fallback runs (default: {TEMPLATE_THRESHOLD})",
+        "--confidence-threshold", type=float, default=CONFIDENCE_THRESHOLD, metavar="T",
+        help=f"OVO vote fraction to mark a read as confident (default: {CONFIDENCE_THRESHOLD})",
     )
     parser.add_argument(
         "--browser-weight", type=float, default=0.0, metavar="W",
@@ -758,7 +761,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--max-fit-samples", type=int, default=MAX_FIT_SAMPLES, metavar="N",
-        help="Hard cap on rows passed to fit_model, applied by random subsampling after "
+        help="Hard cap on rows passed to SVC.fit, applied by random subsampling after "
              f"dithering (default: {MAX_FIT_SAMPLES}). RBF-SVM fit cost scales worse than "
              "linearly with sample count -- this bounds worst-case fit time regardless of "
              "--dither or how large browser_train.json grows.",
@@ -775,33 +778,70 @@ def main() -> None:
     if stale_hashes:
         print(f"{_elapsed()} Loaded {len(stale_hashes)} known-stale-geometry sample hashes", flush=True)
 
-    bulk_samples: list[tuple[int, NDArray[np.uint8]]] = []
+    bulk_inputs: list[TrainingSample] = []
     for path in args.training_json:
         samples = load_training_file(path, exclude_hashes=stale_hashes)
         print(f"{_elapsed()} Loaded {len(samples)} bulk samples from {path.name}", flush=True)
-        bulk_samples.extend(samples)
+        bulk_inputs.extend(samples)
 
-    if args.max_per_class > 0 and bulk_samples:
-        before = len(bulk_samples)
-        bulk_samples = cap_per_class(bulk_samples, args.max_per_class, rng_cap)
+    if args.max_per_class > 0 and bulk_inputs:
+        before = len(bulk_inputs)
+        bulk_inputs = cap_per_class(bulk_inputs, args.max_per_class, rng_cap)
         print(f"{_elapsed()} Capped bulk samples to {args.max_per_class}/class: "
-              f"{before} -> {len(bulk_samples)}", flush=True)
+              f"{before} -> {len(bulk_inputs)}", flush=True)
 
-    browser_samples: list[tuple[int, NDArray[np.uint8]]] = []
+    browser_inputs: list[TrainingSample] = []
     if not args.no_browser_file and args.browser_file.exists():
-        browser_samples = load_training_file(args.browser_file, exclude_hashes=stale_hashes)
-        print(f"{_elapsed()} Loaded {len(browser_samples)} samples from {args.browser_file.name} "
+        browser_inputs = load_training_file(args.browser_file, exclude_hashes=stale_hashes)
+        print(f"{_elapsed()} Loaded {len(browser_inputs)} samples from {args.browser_file.name} "
               f"(ground truth, never capped)", flush=True)
 
-    all_samples: list[tuple[int, NDArray[np.uint8]]] = browser_samples + bulk_samples
-    n_browser = len(browser_samples)
-    n_bulk = len(bulk_samples)
+    if not args.no_overrides_file:
+        override_samples = load_overrides_file(args.overrides_file)
+        if override_samples:
+            print(f"{_elapsed()} Loaded {len(override_samples)} human-reviewed corrections from "
+                  f"{args.overrides_file.name} (ground truth, folded into browser weight bucket)",
+                  flush=True)
+            browser_inputs.extend(override_samples)
 
+    synthetic_inputs: list[TrainingSample] = []
     if not args.no_synthetic:
         print(f"{_elapsed()} Generating synthetic font samples...", flush=True)
-        synth = generate_synthetic_samples()
-        print(f"{_elapsed()} Generated {len(synth)} synthetic samples", flush=True)
-        all_samples.extend(synth)
+        synthetic_inputs = generate_synthetic_samples()
+        print(f"{_elapsed()} Generated {len(synthetic_inputs)} synthetic samples", flush=True)
+
+    merged_inputs = browser_inputs + bulk_inputs + synthetic_inputs
+    deduplicated_inputs = deduplicate_training_samples(merged_inputs)
+    if len(deduplicated_inputs) != len(merged_inputs):
+        print(
+            f"{_elapsed()} Deduplicated merged inputs: "
+            f"{len(merged_inputs)} -> {len(deduplicated_inputs)} (first occurrence wins)",
+            flush=True,
+        )
+
+    retained_ids = {id(sample) for sample in deduplicated_inputs}
+    browser_inputs = [sample for sample in browser_inputs if id(sample) in retained_ids]
+    bulk_inputs = [sample for sample in bulk_inputs if id(sample) in retained_ids]
+    synthetic_inputs = [sample for sample in synthetic_inputs if id(sample) in retained_ids]
+
+    strategy: WarpStrategy = args.warp_strategy
+    print(f"{_elapsed()} Applying production TS {strategy} warp to raw samples...", flush=True)
+    browser_samples = canonicalize_samples(browser_inputs, strategy)
+    bulk_samples = canonicalize_samples(bulk_inputs, strategy)
+    synthetic_samples = canonicalize_samples(synthetic_inputs, strategy)
+    excluded_legacy = (
+        len(deduplicated_inputs)
+        - len(browser_samples) - len(bulk_samples) - len(synthetic_samples)
+    )
+    if excluded_legacy:
+        print(
+            f"{_elapsed()} Excluded {excluded_legacy} canonical sample(s) produced by a different warp",
+            flush=True,
+        )
+
+    all_samples = browser_samples + bulk_samples + synthetic_samples
+    n_browser = len(browser_samples)
+    n_bulk = len(bulk_samples)
 
     if not all_samples:
         import sys as _sys
@@ -843,7 +883,7 @@ def main() -> None:
     ACTIVE_RECOGNISER.save(
         model, Path(args.out),
         confidence_threshold=args.confidence_threshold,
-        template_threshold=args.template_threshold,
+        warp_strategy=strategy,
     )
     print(f"{_elapsed()} Done.", flush=True)
 

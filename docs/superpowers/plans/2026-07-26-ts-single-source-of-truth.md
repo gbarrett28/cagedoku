@@ -1,5 +1,7 @@
 # TS Single Source of Truth — Implementation Plan
 
+> **Superseded by:** [Python/TypeScript Production-Boundary Cleanup](2026-07-28-python-production-boundary-cleanup.md). This historical plan records the earlier evidence and implementation path.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Eliminate every independently-reimplemented copy of production

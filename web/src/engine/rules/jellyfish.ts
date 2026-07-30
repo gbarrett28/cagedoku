@@ -1,7 +1,6 @@
 /**
  * Jellyfish — R14: 4-row or 4-column basic fish.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.incomplete.jellyfish`.
  */
 
 import type { HintResult } from '../hint.js';

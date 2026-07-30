@@ -1,8 +1,6 @@
 /**
  * SolverEngine — main loop, apply_eliminations, trigger routing.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.solver_engine` module.
- *
  * Pull-with-dirty-tracking propagation engine. Constructs a trigger → [rule]
  * map at startup. apply_eliminations routes BoardEvents to the work queue.
  * The main loop pops items, skips stale unit-scoped items, calls rule.apply(),

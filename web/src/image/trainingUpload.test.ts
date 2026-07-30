@@ -54,6 +54,7 @@ describe('revokeConsent', () => {
 
 const minimalExport = {
   reportType: 'training-export' as const,
+  schemaVersion: 2 as const,
   exportedAt: '2026-05-07T00:00:00.000Z',
   appVersion: 'test',
   puzzleType: 'killer' as const,

@@ -1,7 +1,6 @@
 /**
  * SimpleColouring — R18: Single-digit chain colouring.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.incomplete.simple_colouring`.
  */
 
 import type { HintResult } from '../hint.js';

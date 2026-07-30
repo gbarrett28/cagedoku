@@ -9,20 +9,34 @@ deliberately no fallback path.
 import json
 import subprocess
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import numpy.typing as npt
 
-from killer_sudoku.solver.puzzle_spec import PuzzleSpec
+
+@dataclass(frozen=True)
+class RawDigitCrop:
+    """Strategy-neutral bounding-box pixels copied from the warped grid."""
+
+    pixels: npt.NDArray[np.uint8]
+
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _BRIDGE_SCRIPT = _REPO_ROOT / "web" / "scripts" / "ts-bridge.ts"
 
+# Node's fs.readFileSync has a hard ~536MB (0x1fffffe8 char) string-length
+# ceiling. A flattened 64x64 uint8 crop as JSON is ~4 bytes/pixel worst case
+# (values 0-255 plus separators), so one crop is ~16KB -- this keeps a batch's
+# JSON payload comfortably under that ceiling (~80MB) with headroom, while
+# still batching (never one bridge call per crop).
+_BATCH_SIZE = 5000
 
-def _run_bridge(op: str, payload: dict[str, Any], extra_args: list[str] | None = None) -> dict[str, Any]:
-    args = ["npx", "tsx", str(_BRIDGE_SCRIPT), "--op", op, *(extra_args or [])]
+
+def _run_bridge(op: str, payload: dict[str, Any]) -> dict[str, Any]:
+    args = ["npx", "tsx", str(_BRIDGE_SCRIPT), "--op", op]
     result = subprocess.run(
         args,
         input=json.dumps(payload),
@@ -44,51 +58,68 @@ def _run_bridge(op: str, payload: dict[str, Any], extra_args: list[str] | None =
             f"ts-bridge --op {op} produced unparseable output: {result.stdout!r}"
         ) from exc
 
+def warp_crops(
+    crops: Sequence[RawDigitCrop],
+    strategy: Literal["stretch", "letterbox"],
+    size: int = 64,
+) -> npt.NDArray[np.uint8]:
+    """Warp raw crops in batches using the production TypeScript implementation."""
+    if strategy not in ("stretch", "letterbox"):
+        raise ValueError(f"unsupported warp strategy: {strategy}")
+    if size <= 0:
+        raise ValueError(f"warp size must be positive, got {size}")
+
+    chunks: list[npt.NDArray[np.uint8]] = []
+    for i in range(0, len(crops), _BATCH_SIZE):
+        batch = crops[i : i + _BATCH_SIZE]
+        encoded: list[dict[str, Any]] = []
+        for crop in batch:
+            pixels = crop.pixels
+            if pixels.ndim != 2:
+                raise ValueError(f"raw crop pixels must be two-dimensional, got shape {pixels.shape}")
+            height, width = pixels.shape
+            if width <= 0 or height <= 0:
+                raise ValueError(f"raw crop dimensions must be positive, got {width}x{height}")
+            if pixels.dtype != np.uint8:
+                raise ValueError(f"raw crop pixels must have dtype uint8, got {pixels.dtype}")
+            encoded.append({
+                "width": width,
+                "height": height,
+                "pixels": pixels.ravel().tolist(),
+            })
+
+        out = _run_bridge(
+            "warp-crops",
+            {"crops": encoded, "strategy": strategy, "size": size},
+        )
+        rows = out.get("crops")
+        if not isinstance(rows, list) or len(rows) != len(batch):
+            raise RuntimeError("ts-bridge --op warp-crops returned an invalid crop count")
+        if any(not isinstance(row, list) or len(row) != size * size for row in rows):
+            raise RuntimeError("ts-bridge --op warp-crops returned a non-square crop")
+        array = np.asarray(rows)
+        if np.any(array < 0) or np.any(array > 255):
+            raise RuntimeError("ts-bridge --op warp-crops returned pixels outside uint8 range")
+        chunks.append(array.astype(np.uint8).reshape(len(batch), size, size))
+
+    if not chunks:
+        return np.zeros((0, size, size), dtype=np.uint8)
+    return np.concatenate(chunks)
+
 
 def extract_features(
     crops: Sequence[npt.NDArray[np.uint8]],
 ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
-    payload = {"crops": [c.flatten().tolist() for c in crops]}
-    out = _run_bridge("extract-features", payload)
-    hog = np.array(out["hog"], dtype=np.float64)
-    hole = np.array(out["hole"], dtype=np.float64)
-    return hog, hole
+    hog_chunks: list[npt.NDArray[np.float64]] = []
+    hole_chunks: list[npt.NDArray[np.float64]] = []
+    for i in range(0, len(crops), _BATCH_SIZE):
+        batch = crops[i : i + _BATCH_SIZE]
+        payload = {"crops": [c.flatten().tolist() for c in batch]}
+        out = _run_bridge("extract-features", payload)
+        hog_chunks.append(np.array(out["hog"], dtype=np.float64))
+        hole_chunks.append(np.array(out["hole"], dtype=np.float64))
+    if not hog_chunks:
+        return np.zeros((0, 0), dtype=np.float64), np.zeros((0, 0), dtype=np.float64)
+    return np.concatenate(hog_chunks), np.concatenate(hole_chunks)
 
 
-def solve(spec: PuzzleSpec, given_digits: npt.NDArray[np.intp] | None = None) -> dict[str, Any]:
-    """Solves a spec by calling into the real TS engine instead of any Python solver.
-
-    spec.regions/spec.cage_totals are col-major ([col, row]) -- confirmed by
-    reading validate_cage_layout's union-find loop directly, not its (stale)
-    Args docstring -- so they're transposed here to the row-major shape
-    ts-bridge.ts's solve() expects (see ts-bridge.test.ts's own trivial-spec
-    test for the empirical proof of that expectation). border_x/border_y are
-    already col-first in both TS and Python by convention (see this repo's
-    CLAUDE.md "Exception -- border arrays") and pass through unchanged.
-    """
-    payload: dict[str, Any] = {
-        "regions": spec.regions.T.tolist(),
-        "cageTotals": spec.cage_totals.T.tolist(),
-        "borderX": spec.border_x.tolist(),
-        "borderY": spec.border_y.tolist(),
-    }
-    if given_digits is not None:
-        payload["givenDigits"] = given_digits.tolist()
-    return _run_bridge("solve", payload)
-
-
-def predict(
-    crops: Sequence[npt.NDArray[np.uint8]], model_bin: Path, model_json: Path,
-) -> list[dict[str, Any]]:
-    # Resolve relative to the repo root (not cwd) -- _run_bridge invokes the
-    # subprocess with cwd=web/, so a bare relative path like
-    # "web/public/num_recogniser.bin" would otherwise double up.
-    model_bin_abs = model_bin if model_bin.is_absolute() else (_REPO_ROOT / model_bin)
-    model_json_abs = model_json if model_json.is_absolute() else (_REPO_ROOT / model_json)
-    payload = {"crops": [c.flatten().tolist() for c in crops]}
-    out = _run_bridge(
-        "predict", payload,
-        extra_args=["--model-bin", str(model_bin_abs), "--model-json", str(model_json_abs)],
-    )
-    predictions: list[dict[str, Any]] = out["predictions"]
-    return predictions

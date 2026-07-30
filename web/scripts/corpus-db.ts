@@ -83,7 +83,13 @@ export function openDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
       predicted_label       INTEGER NOT NULL,
       confident             INTEGER NOT NULL, -- 0/1
       clashes_with          TEXT NOT NULL, -- JSON array of {row,col}, [] if none
-      crop_pixels           TEXT NOT NULL, -- JSON array, flattened 64x64
+      source_x              INTEGER,
+      source_y              INTEGER,
+      source_width          INTEGER,
+      source_height         INTEGER,
+      source_pixels         TEXT, -- JSON array, exact bounding-box pixels from warped grid
+      recognition_pixels    TEXT NOT NULL, -- JSON array, flattened deployed 64x64 input
+      warp_strategy         TEXT, -- 'stretch' | 'letterbox'; NULL only for historical rows
       hog_features          TEXT NOT NULL, -- JSON array, 1764 floats
       hole_features         TEXT NOT NULL, -- JSON array, 5 floats
       created_at            TEXT NOT NULL DEFAULT (datetime('now'))
@@ -98,8 +104,14 @@ export function openDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
   if (!evalCols.includes('spec_hash')) {
     db.exec('ALTER TABLE evaluations ADD COLUMN spec_hash TEXT');
   }
-  // Drop columns that no longer exist (populated by __detectPuzzleDebug which was removed)
-  for (const dead of ['cell_centroid_dist_sq', 'box_centroid_dist_sq'] as const) {
+  // Drop columns that no longer exist (populated by __detectPuzzleDebug and the
+  // retired contour-tree parallel-path experiment, which were removed)
+  const deadCols = [
+    'cell_centroid_dist_sq', 'box_centroid_dist_sq',
+    'ct_d1_count', 'ct_d2_count', 'ct_type', 'ct_orientation', 'quad_sum_orientation',
+    'ct_border_agreement', 'ct_border_fp', 'ct_border_fn', 'ct_digit_agreement',
+  ] as const;
+  for (const dead of deadCols) {
     if (evalCols.includes(dead)) {
       db.exec(`ALTER TABLE evaluations DROP COLUMN ${dead}`);
     }
@@ -109,15 +121,6 @@ export function openDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
     ['live_mats',            'INTEGER'],
     ['heap_bytes',           'INTEGER'],
     ['alloc_bytes',          'INTEGER'],
-    ['ct_d1_count',          'INTEGER'],
-    ['ct_d2_count',          'INTEGER'],
-    ['ct_type',              'TEXT'],
-    ['ct_orientation',       'REAL'],
-    ['quad_sum_orientation', 'REAL'],
-    ['ct_border_agreement',  'REAL'],
-    ['ct_border_fp',         'INTEGER'],
-    ['ct_border_fn',         'INTEGER'],
-    ['ct_digit_agreement',   'REAL'],
     ['detected_big_apple',   'INTEGER'],
     ['spec_error',           'TEXT'],
     ['fallback_used',        'INTEGER'],
@@ -132,6 +135,24 @@ export function openDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
   for (const [col, type] of [['border_x', 'TEXT'], ['border_y', 'TEXT'], ['cage_totals', 'TEXT']] as const) {
     if (!evalCols.includes(col)) {
       db.exec(`ALTER TABLE evaluations ADD COLUMN ${col} ${type}`);
+    }
+  }
+
+  const cellReadCols = (db.prepare('PRAGMA table_info(cell_reads)').all() as { name: string }[]).map(r => r.name);
+  if (cellReadCols.includes('crop_pixels') && !cellReadCols.includes('recognition_pixels')) {
+    db.exec('ALTER TABLE cell_reads RENAME COLUMN crop_pixels TO recognition_pixels');
+  }
+  const sourceCols = [
+    ['source_x', 'INTEGER'],
+    ['source_y', 'INTEGER'],
+    ['source_width', 'INTEGER'],
+    ['source_height', 'INTEGER'],
+    ['source_pixels', 'TEXT'],
+    ['warp_strategy', 'TEXT'],
+  ] as const;
+  for (const [col, type] of sourceCols) {
+    if (!cellReadCols.includes(col)) {
+      db.exec(`ALTER TABLE cell_reads ADD COLUMN ${col} ${type}`);
     }
   }
   return db;
@@ -180,7 +201,13 @@ export interface CellReadRow {
   confident: boolean;
   /** Other given-digit cells this one shares a digit with. Always empty for cage_total_digit rows. */
   clashesWith: ReadonlyArray<{ row: number; col: number }>;
-  cropPixels: number[];
+  sourceX: number;
+  sourceY: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  sourcePixels: number[];
+  recognitionPixels: number[];
+  warpStrategy: 'stretch' | 'letterbox';
   hogFeatures: number[];
   holeFeatures: number[];
 }
@@ -198,15 +225,32 @@ export function insertRetrainingSuggestion(db: Database.Database, s: RetrainingS
 }
 
 export function insertCellRead(db: Database.Database, r: CellReadRow): void {
+  if (r.sourceWidth <= 0 || r.sourceHeight <= 0) {
+    throw new Error(`cell_reads source dimensions must be positive, got ${r.sourceWidth}x${r.sourceHeight}`);
+  }
+  if (r.sourcePixels.length !== r.sourceWidth * r.sourceHeight) {
+    throw new Error(
+      `cell_reads source pixel length ${r.sourcePixels.length} does not match ${r.sourceWidth}x${r.sourceHeight}`,
+    );
+  }
+  if (r.recognitionPixels.length !== 64 * 64) {
+    throw new Error(`cell_reads recognition pixel length must be 4096, got ${r.recognitionPixels.length}`);
+  }
+  if (r.warpStrategy !== 'stretch' && r.warpStrategy !== 'letterbox') {
+    throw new Error(`cell_reads warp strategy is invalid: ${String(r.warpStrategy)}`);
+  }
+
   db.prepare(`
     INSERT INTO cell_reads
       (puzzle_hash, git_hash, cell_type, row, col, digit_index, predicted_label,
-       confident, clashes_with, crop_pixels, hog_features, hole_features)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       confident, clashes_with, source_x, source_y, source_width, source_height,
+       source_pixels, recognition_pixels, warp_strategy, hog_features, hole_features)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     r.puzzleHash, r.gitHash, r.cellType, r.row, r.col, r.digitIndex,
-    r.predictedLabel, r.confident ? 1 : 0,
-    JSON.stringify(r.clashesWith), JSON.stringify(r.cropPixels),
+    r.predictedLabel, r.confident ? 1 : 0, JSON.stringify(r.clashesWith),
+    r.sourceX, r.sourceY, r.sourceWidth, r.sourceHeight,
+    JSON.stringify(r.sourcePixels), JSON.stringify(r.recognitionPixels), r.warpStrategy,
     JSON.stringify(r.hogFeatures), JSON.stringify(r.holeFeatures),
   );
 }
@@ -229,6 +273,45 @@ export function getPuzzle(db: Database.Database, contentHash: string): PuzzleRow
     db.prepare('SELECT * FROM puzzles WHERE content_hash = ?').get(contentHash) as
       { content_hash: string; path: string; corpus: string; ground_truth: string } | undefined,
   );
+}
+
+
+export interface EvaluationOutcomeRow {
+  readonly puzzleHash: string;
+  readonly path: string;
+  readonly bucket: string | null;
+  readonly reason: string | null;
+  readonly specHash: string | null;
+}
+
+/** Return the latest persisted outcome per puzzle for one evaluation identity. */
+export function getEvaluationOutcomeRows(
+  db: Database.Database,
+  gitHash: string,
+): readonly EvaluationOutcomeRow[] {
+  const rows = db.prepare(`
+    SELECT p.content_hash AS puzzle_hash, p.path, e.bucket, e.reason, e.spec_hash
+    FROM puzzles p
+    JOIN evaluations e ON e.id = (
+      SELECT MAX(latest.id)
+      FROM evaluations latest
+      WHERE latest.puzzle_hash = p.content_hash AND latest.git_hash = ?
+    )
+    ORDER BY p.path, p.content_hash
+  `).all(gitHash) as Array<{
+    puzzle_hash: string;
+    path: string;
+    bucket: string | null;
+    reason: string | null;
+    spec_hash: string | null;
+  }>;
+  return rows.map(row => ({
+    puzzleHash: row.puzzle_hash,
+    path: row.path,
+    bucket: row.bucket,
+    reason: row.reason,
+    specHash: row.spec_hash,
+  }));
 }
 
 export function upsertCorpus(
@@ -275,16 +358,6 @@ export interface CtEvalExtras {
   readonly liveMats?: number | null;
   readonly heapBytes?: number | null;
   readonly allocBytes?: number | null;
-  // Contour-tree parallel-path diagnostics (Sprints 1–4; killer only for orientation/border/digit)
-  readonly ctD1Count?: number | null;
-  readonly ctD2Count?: number | null;
-  readonly ctType?: string | null;
-  readonly ctOrientation?: number | null;
-  readonly quadSumOrientation?: number | null;
-  readonly ctBorderAgreement?: number | null;
-  readonly ctBorderFp?: number | null;
-  readonly ctBorderFn?: number | null;
-  readonly ctDigitAgreement?: number | null;
   // Outcome flags
   readonly detectedBigApple?: boolean | null;
   readonly specError?: string | null;
@@ -311,10 +384,6 @@ export function completeEvaluation(
     SET status = ?, bucket = ?, reason = ?, detected_type = ?,
         elapsed_ms = ?, spec_hash = ?,
         live_mats = ?, heap_bytes = ?, alloc_bytes = ?,
-        ct_d1_count = ?, ct_d2_count = ?, ct_type = ?,
-        ct_orientation = ?, quad_sum_orientation = ?,
-        ct_border_agreement = ?, ct_border_fp = ?, ct_border_fn = ?,
-        ct_digit_agreement = ?,
         detected_big_apple = ?, spec_error = ?, fallback_used = ?,
         parse_elapsed_ms = ?, solve_elapsed_ms = ?,
         finished_at = datetime('now')
@@ -322,10 +391,6 @@ export function completeEvaluation(
   `).run(
     status, bucket, reason, detectedType, elapsedMs, specHash,
     e.liveMats ?? null, e.heapBytes ?? null, e.allocBytes ?? null,
-    e.ctD1Count ?? null, e.ctD2Count ?? null, e.ctType ?? null,
-    e.ctOrientation ?? null, e.quadSumOrientation ?? null,
-    e.ctBorderAgreement ?? null, e.ctBorderFp ?? null, e.ctBorderFn ?? null,
-    e.ctDigitAgreement ?? null,
     e.detectedBigApple == null ? null : (e.detectedBigApple ? 1 : 0),
     e.specError ?? null,
     e.fallbackUsed == null ? null : (e.fallbackUsed ? 1 : 0),

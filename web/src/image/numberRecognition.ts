@@ -1,11 +1,9 @@
 /**
  * Number recognition: Stage 3 (digit extraction) of the image pipeline.
  *
- * Mirrors Python's `killer_sudoku.image.number_recognition` module.
- *
  * Provides:
  *   - RBFClassifier: pure-TypeScript OvO RBF SVM inference (no sklearn).
- *   - NumRecogniser: PCA + two-stage classifier (template matching + SVM).
+ *   - NumRecogniser: HOG/hole-feature RBF-SVM recognition.
  *   - loadNumRecogniser(): loads the exported .bin + .json model files.
  *   - Contour hierarchy helpers used to extract digit bounding rects.
  *   - splitNum(): separates one- and two-digit cage totals.
@@ -23,8 +21,19 @@ type Cv = OpenCVModule;
 /** Bounding rect as [x, y, width, height]. */
 export type BRect = [number, number, number, number];
 
+/** Exact bounding-box pixels copied from the warped grid before any resize. */
+export interface RawDigitCrop {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly pixels: Uint8Array;
+}
+
+export type WarpStrategy = 'stretch' | 'letterbox';
+
 /** Node in the OpenCV contour hierarchy tree. */
-export type ContourInfo = [contour: number[][], br: BRect, area: number, children: ContourInfo[]];
+export type ContourInfo = [br: BRect, children: ContourInfo[]];
 
 // ---------------------------------------------------------------------------
 // RBFClassifier: pure-TypeScript OvO RBF SVM
@@ -33,8 +42,7 @@ export type ContourInfo = [contour: number[][], br: BRect, area: number, childre
 /**
  * Pure-TypeScript OvO RBF SVM classifier extracted from a fitted sklearn SVC.
  *
- * Mirrors Python's `RBFClassifier` dataclass.  At inference time only typed
- * arrays are used — no sklearn required.
+ * Inference uses only typed arrays; no sklearn runtime is required.
  */
 export interface HOGParams {
   winSize: number;      // 64
@@ -54,39 +62,6 @@ export interface HOGParams {
 export const DEFAULT_HOG_PARAMS: HOGParams = {
   winSize: 64, cellSize: 8, blockSize: 16, blockStride: 8, nbins: 9,
 };
-
-/**
- * PCA + template-matching + RBF-SVM classifier parameters.
- *
- * Mirrors Python's `CayenneNumber` (killer_sudoku/image/number_recognition.py):
- * two-stage inference — template matching (fast path) against per-digit mean
- * images, falling through to PCA-projected RBF-SVM classification when no
- * template scores above `templateThreshold`.
- */
-export interface PCAParams {
-  /** Thumbnail side length (64); image is winSize×winSize before PCA. */
-  winSize: number;
-  /** Number of PCA components to use (dims). */
-  dims: number;
-  /** (winSize*winSize,) per-pixel training mean. */
-  mean: Float64Array;
-  /** (dims * winSize*winSize,) component matrix, row-major. Row d is eigenvector d. */
-  components: Float64Array;
-  /** Per-digit mean template images (winSize*winSize each), keyed by digit label. */
-  templates: ReadonlyMap<number, Float32Array>;
-  /** Minimum TM_CCOEFF_NORMED score for the template fast path. */
-  templateThreshold: number;
-}
-
-export interface LinearClassifier {
-  kind: 'linear';
-  coef: Float64Array;       // (nClassifiers, nFeatures) row-major
-  intercept: Float64Array;  // (nClassifiers,)
-  classes: Int32Array;
-  nClasses: number;
-  nClassifiers: number;
-  nFeatures: number;
-}
 
 export interface RBFModel {
   /** (n_sv, n_features) support vectors. */
@@ -109,8 +84,6 @@ export interface RBFModel {
 export interface RBFClassifier extends RBFModel {
   kind: 'rbf';
 }
-
-export type Classifier = LinearClassifier | RBFClassifier;
 
 export interface Recognition {
   label: number;
@@ -174,20 +147,6 @@ function ovoVote(
   return result;
 }
 
-function linearPredict(clf: LinearClassifier, x: Float64Array, nSamples: number, threshold: number): Recognition[] {
-  const { coef, intercept, classes, nClasses, nClassifiers, nFeatures } = clf;
-  return ovoVote(nSamples, nClasses, nClassifiers,
-    (s, clfIdx) => {
-      const xi = x.subarray(s * nFeatures, (s + 1) * nFeatures);
-      const row = coef.subarray(clfIdx * nFeatures, (clfIdx + 1) * nFeatures);
-      let dec = intercept[clfIdx]!;
-      for (let f = 0; f < nFeatures; f++) dec += row[f]! * xi[f]!;
-      return dec;
-    },
-    classes, threshold,
-  );
-}
-
 function rbfPredictWithConfidence(clf: RBFClassifier, x: Float64Array, nSamples: number, threshold: number): Recognition[] {
   const { supportVectors, dualCoef, intercept, nSupport, gamma, classes, nClasses, nSv, nFeatures } = clf;
 
@@ -236,84 +195,20 @@ function rbfPredictWithConfidence(clf: RBFClassifier, x: Float64Array, nSamples:
 
 export abstract class NumRecogniser {
   constructor(readonly confidenceThreshold: number) {}
+  abstract readonly warpStrategy: WarpStrategy;
   abstract recognise(imgs: Uint8Array[]): Recognition[];
-  abstract warpForRecognition(cv: Cv, warpedBlk: OpenCVMat, br: BRect, targetSize: number): Uint8Array;
-}
 
-export class PcaRbfRecogniser extends NumRecogniser {
-  constructor(
-    private readonly pca: PCAParams,
-    private readonly classifier: RBFClassifier,
-    confidenceThreshold: number,
-  ) {
-    super(confidenceThreshold);
-  }
-
-  recognise(imgs: Uint8Array[]): Recognition[] {
-    const n = imgs.length;
-    const { pca, classifier, confidenceThreshold } = this;
-    const results: Recognition[] = new Array(n);
-    const fallbackIndices: number[] = [];
-    const fallbackImgs: Uint8Array[] = [];
-
-    // Template matching (fast path): compare each thumbnail to every stored
-    // per-digit mean template via TM_CCOEFF_NORMED; accept the best match
-    // directly if it clears templateThreshold, else fall through to PCA+RBF.
-    // Matches Python's CayenneNumber.get_sums exactly.
-    if (pca.templates.size > 0) {
-      for (let i = 0; i < n; i++) {
-        const img = imgs[i]!;
-        let bestScore = -2.0;
-        let bestDigit = 0;
-        let bestScore2 = -2.0;
-        let bestDigit2 = -1;
-        for (const [digit, tmpl] of pca.templates) {
-          const score = templateMatchNormed(img, tmpl);
-          if (score > bestScore) {
-            bestScore2 = bestScore; bestDigit2 = bestDigit;
-            bestScore = score; bestDigit = digit;
-          } else if (score > bestScore2) {
-            bestScore2 = score; bestDigit2 = digit;
-          }
-        }
-        if (bestScore >= pca.templateThreshold) {
-          results[i] = {
-            label: bestDigit,
-            confident: true,
-            ...(bestDigit2 !== -1 ? { runnerUp: { label: bestDigit2, score: bestScore2 } } : {}),
-          };
-        } else {
-          fallbackIndices.push(i);
-          fallbackImgs.push(img);
-        }
-      }
-    } else {
-      for (let i = 0; i < n; i++) { fallbackIndices.push(i); fallbackImgs.push(imgs[i]!); }
-    }
-
-    if (fallbackImgs.length > 0) {
-      const x = pcaExtract(fallbackImgs, pca);
-      const recs = rbfPredictWithConfidence(classifier, x, fallbackImgs.length, confidenceThreshold);
-      for (let k = 0; k < fallbackIndices.length; k++) {
-        results[fallbackIndices[k]!] = recs[k]!;
-      }
-    }
-
-    return results;
-  }
-
-  warpForRecognition(cv: Cv, warpedBlk: OpenCVMat, br: BRect, targetSize: number): Uint8Array {
-    const [x, y, w, h] = br;
-    const src = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
-    return getWarpFromRect(cv, src, warpedBlk, targetSize, targetSize);
+  warpForRecognition(cv: Cv, crop: RawDigitCrop, targetSize: number): Uint8Array {
+    return warpRawDigitCrop(cv, crop, this.warpStrategy, targetSize);
   }
 }
 
 export class HogRecogniser extends NumRecogniser {
   constructor(
     private readonly hog: HOGParams,
-    private readonly classifier: Classifier,
+    private readonly classifier: RBFClassifier,
     confidenceThreshold: number,
+    readonly warpStrategy: WarpStrategy,
   ) {
     super(confidenceThreshold);
   }
@@ -330,14 +225,9 @@ export class HogRecogniser extends NumRecogniser {
       x.set(hogFeat.subarray(i * nHog, (i + 1) * nHog), i * (nHog + nHole));
       x.set(hole.subarray(i * nHole, (i + 1) * nHole), i * (nHog + nHole) + nHog);
     }
-    if (classifier.kind === 'linear') return linearPredict(classifier, x, n, confidenceThreshold);
     return rbfPredictWithConfidence(classifier, x, n, confidenceThreshold);
   }
 
-  warpForRecognition(cv: Cv, warpedBlk: OpenCVMat, br: BRect, targetSize: number): Uint8Array {
-    const [x, y, w, h] = br;
-    return letterboxWarp(cv, x, y, w, h, warpedBlk, targetSize, targetSize);
-  }
 }
 
 /**
@@ -419,60 +309,6 @@ export function hogExtract(imgs: Uint8Array[], params: HOGParams): Float64Array 
   return result;
 }
 
-/**
- * Project winSize×winSize uint8 thumbnails into PCA space.
- *
- * Matches Python's `CayenneNumber._classify` exactly: centre (subtract the
- * training mean) then project onto each retained eigenvector — no sklearn
- * `PCA.transform` call, to avoid sklearn version skew (a bare `PCA()`
- * reconstructed from the .npz lacks `explained_variance_`).
- *
- * @param imgs - flat uint8 pixel data for each image, each of length winSize².
- * @returns Float64Array of shape [n × dims].
- */
-function pcaExtract(imgs: Uint8Array[], pca: PCAParams): Float64Array {
-  const { winSize, dims, mean, components } = pca;
-  const nPixels = winSize * winSize;
-  const n = imgs.length;
-  const result = new Float64Array(n * dims);
-  for (let i = 0; i < n; i++) {
-    const img = imgs[i]!;
-    for (let d = 0; d < dims; d++) {
-      let sum = 0;
-      const base = d * nPixels;
-      for (let p = 0; p < nPixels; p++) {
-        sum += (img[p]! - mean[p]!) * components[base + p]!;
-      }
-      result[i * dims + d] = sum;
-    }
-  }
-  return result;
-}
-
-/**
- * Normalised cross-correlation coefficient between two same-size images.
- *
- * Matches `cv2.matchTemplate(img, tmpl, cv2.TM_CCOEFF_NORMED)` for the
- * single-position case (image and template are the same size, so there is
- * exactly one overlap position — no sliding window needed).
- */
-function templateMatchNormed(img: ArrayLike<number>, tmpl: ArrayLike<number>): number {
-  const n = img.length;
-  let sumI = 0, sumT = 0;
-  for (let i = 0; i < n; i++) { sumI += img[i]!; sumT += tmpl[i]!; }
-  const meanI = sumI / n, meanT = sumT / n;
-  let num = 0, denI = 0, denT = 0;
-  for (let i = 0; i < n; i++) {
-    const di = img[i]! - meanI;
-    const dt = tmpl[i]! - meanT;
-    num += di * dt;
-    denI += di * di;
-    denT += dt * dt;
-  }
-  const denom = Math.sqrt(denI * denT);
-  return denom > 0 ? num / denom : 0;
-}
-
 // ---------------------------------------------------------------------------
 // Model loading from .bin + .json
 // ---------------------------------------------------------------------------
@@ -499,20 +335,27 @@ export function activeRecogniser(): NumRecogniser {
  */
 export function loadNumRecogniser(
   binBuffer: ArrayBuffer,
-  manifestJson: { classifier_type?: string; arrays: Record<string, { dtype: string; shape: number[]; offset: number; byteLength: number }> },
+  manifestJson: {
+    classifier_type?: string;
+    warp_strategy?: string;
+    arrays: Record<string, { dtype: string; shape: number[]; offset: number; byteLength: number }>;
+  },
 ): NumRecogniser {
+  const classifierType = manifestJson.classifier_type;
+  if (classifierType !== 'rbf') {
+    throw new Error(`Unsupported classifier type: ${String(classifierType)}`);
+  }
+  const warpStrategy = manifestJson.warp_strategy;
+  if (warpStrategy !== 'stretch' && warpStrategy !== 'letterbox') {
+    throw new Error(`Unsupported warp strategy: ${String(warpStrategy)}`);
+  }
+
   const arrays = manifestJson.arrays;
-  const classifierType = manifestJson.classifier_type ?? 'rbf';
 
   function getF64(name: string): Float64Array {
     const { offset, byteLength } = arrays[name]!;
     if (offset % 8 === 0) return new Float64Array(binBuffer, offset, byteLength / 8);
     return new Float64Array(binBuffer.slice(offset, offset + byteLength));
-  }
-  function getF32(name: string): Float32Array {
-    const { offset, byteLength } = arrays[name]!;
-    if (offset % 4 === 0) return new Float32Array(binBuffer, offset, byteLength / 4);
-    return new Float32Array(binBuffer.slice(offset, offset + byteLength));
   }
   function getI32(name: string): Int32Array {
     const { offset, byteLength } = arrays[name]!;
@@ -522,41 +365,7 @@ export function loadNumRecogniser(
   const scalarI32 = (name: string): number => getI32(name)[0]!;
   const scalarF64 = (name: string): number => getF64(name)[0]!;
 
-  const classesArr = getI32('classes');
-  const nClasses = classesArr.length;
-
-  if (classifierType === 'pca_rbf') {
-    const winSize = scalarI32('pca_win_size');
-    const dims = scalarI32('pca_dims');
-    const [nSv, nFeatures] = arrays['rbf_support_vectors']!.shape as [number, number];
-    const templates = new Map<number, Float32Array>();
-    for (const digit of classesArr) {
-      const key = `template_${digit}`;
-      if (key in arrays) templates.set(digit, getF32(key));
-    }
-    const pca: PCAParams = {
-      winSize,
-      dims,
-      mean:       getF64('pca_mean'),
-      components: getF64('pca_components'),
-      templates,
-      templateThreshold: scalarF64('template_threshold'),
-    };
-    const classifier: RBFClassifier = {
-      kind:           'rbf',
-      supportVectors: getF64('rbf_support_vectors'),
-      dualCoef:       getF64('rbf_dual_coef'),
-      intercept:      getF64('rbf_intercept'),
-      nSupport:       getI32('rbf_n_support'),
-      gamma:          scalarF64('rbf_gamma'),
-      classes:        classesArr,
-      nClasses,
-      nSv,
-      nFeatures,
-    };
-    return new PcaRbfRecogniser(pca, classifier, scalarF64('confidence_threshold'));
-  }
-
+  const classes = getI32('classes');
   const hog: HOGParams = {
     winSize:     scalarI32('hog_win_size'),
     cellSize:    scalarI32('hog_cell_size'),
@@ -564,36 +373,21 @@ export function loadNumRecogniser(
     blockStride: scalarI32('hog_block_stride'),
     nbins:       scalarI32('hog_nbins'),
   };
+  const [nSv, nFeatures] = arrays['rbf_support_vectors']!.shape as [number, number];
+  const classifier: RBFClassifier = {
+    kind:           'rbf',
+    supportVectors: getF64('rbf_support_vectors'),
+    dualCoef:       getF64('rbf_dual_coef'),
+    intercept:      getF64('rbf_intercept'),
+    nSupport:       getI32('rbf_n_support'),
+    gamma:          scalarF64('rbf_gamma'),
+    classes,
+    nClasses:       classes.length,
+    nSv,
+    nFeatures,
+  };
 
-  let classifier: Classifier;
-  if (classifierType === 'linear') {
-    const [nClassifiers, nFeatures] = arrays['linear_coef']!.shape as [number, number];
-    classifier = {
-      kind: 'linear',
-      coef:         getF64('linear_coef'),
-      intercept:    getF64('linear_intercept'),
-      classes:      classesArr,
-      nClasses,
-      nClassifiers,
-      nFeatures,
-    };
-  } else {
-    const [nSv, nFeatures] = arrays['rbf_support_vectors']!.shape as [number, number];
-    classifier = {
-      kind:           'rbf',
-      supportVectors: getF64('rbf_support_vectors'),
-      dualCoef:       getF64('rbf_dual_coef'),
-      intercept:      getF64('rbf_intercept'),
-      nSupport:       getI32('rbf_n_support'),
-      gamma:          scalarF64('rbf_gamma'),
-      classes:        classesArr,
-      nClasses,
-      nSv,
-      nFeatures,
-    };
-  }
-
-  return new HogRecogniser(hog, classifier, scalarF64('confidence_threshold'));
+  return new HogRecogniser(hog, classifier, scalarF64('confidence_threshold'), warpStrategy);
 }
 
 // ---------------------------------------------------------------------------
@@ -612,11 +406,9 @@ export function loadNumRecogniser(
  */
 /**
  * Width/height-only digit-glyph size gate (no vertical-position parity
- * check). Shared by contourIsNumber (board-wide live recognition, which also
- * needs the parity check to exclude centred solution digits) and the offline
- * training-data bridge (find-digit-blobs-server.ts), whose caller has
- * already scoped the search to a cage-total's own quadrant — there is no
- * solution-digit ambiguity left to resolve there.
+ * check). Shared by contourIsNumber and production digit extraction.
+ * contourIsNumber also applies the vertical-position check needed to exclude
+ * centred solution digits during board-wide live recognition.
  *
  * @param w - Contour bounding-rect width.
  * @param h - Contour bounding-rect height.
@@ -683,15 +475,9 @@ export function contourHier(
       const c = contours.get(i);
       const br = cv.boundingRect(c);
       const brTuple: BRect = [br.x, br.y, br.width, br.height];
-      const area = cv.contourArea(c);
       const children = contourHier(cv, contours, hierarchy, seen, child);
-      // Extract contour points as number[][].
-      const pts: number[][] = [];
-      for (let p = 0; p < c.rows; p++) {
-        pts.push([c.data32S[p * 2]!, c.data32S[p * 2 + 1]!]);
-      }
       c.delete();
-      ret.push([pts, brTuple, area, children]);
+      ret.push([brTuple, children]);
     }
     seen.add(i);
     i = next!;
@@ -733,9 +519,9 @@ export function contourHier(
  */
 export function getNumContours(chier: ContourInfo[], subres: number): ContourInfo[] {
   const ret: ContourInfo[] = [];
-  for (const [c, br, area, ds] of chier) {
+  for (const [br, ds] of chier) {
     if (contourIsNumber(br, subres)) {
-      ret.push([c, br, area, ds]);
+      ret.push([br, ds]);
     } else {
       ret.push(...getNumContours(ds, subres));
     }
@@ -777,6 +563,62 @@ export function getWarpFromRect(
   const data = new Uint8Array(out.data);
   out.delete();
   return data;
+}
+
+
+/** Copy an untouched digit bounding box from the already-warped puzzle grid. */
+export function extractRawDigitCrop(
+  cv: Cv,
+  warpedGrid: OpenCVMat,
+  rect: readonly [x: number, y: number, width: number, height: number],
+): RawDigitCrop {
+  const [x, y, width, height] = rect;
+  if (width <= 0 || height <= 0) {
+    throw new Error(`extractRawDigitCrop: dimensions must be positive, got [${rect.join(',')}]`);
+  }
+  if (x < 0 || y < 0 || x + width > warpedGrid.cols || y + height > warpedGrid.rows) {
+    throw new Error(
+      `extractRawDigitCrop: rectangle [${rect.join(',')}] is outside grid bounds ${warpedGrid.cols}x${warpedGrid.rows}`,
+    );
+  }
+
+  const roi = warpedGrid.roi(new cv.Rect(x, y, width, height));
+  const contiguous = roi.clone();
+  roi.delete();
+  const pixels = new Uint8Array(contiguous.data);
+  contiguous.delete();
+  return { x, y, width, height, pixels };
+}
+
+/** Apply one named production warp to a strategy-neutral raw digit crop. */
+export function warpRawDigitCrop(
+  cv: Cv,
+  crop: RawDigitCrop,
+  strategy: WarpStrategy,
+  targetSize: number = 64,
+): Uint8Array {
+  if (crop.width <= 0 || crop.height <= 0) {
+    throw new Error(`warpRawDigitCrop: crop dimensions must be positive, got ${crop.width}x${crop.height}`);
+  }
+  if (crop.pixels.length !== crop.width * crop.height) {
+    throw new Error(
+      `warpRawDigitCrop: expected ${crop.width * crop.height} pixels, got ${crop.pixels.length}`,
+    );
+  }
+  if (targetSize <= 0) {
+    throw new Error(`warpRawDigitCrop: target size must be positive, got ${targetSize}`);
+  }
+
+  const source = cv.matFromArray(crop.height, crop.width, cv.CV_8UC1, Array.from(crop.pixels));
+  try {
+    if (strategy === 'stretch') {
+      const src = [[0, 0], [crop.width, 0], [crop.width, crop.height], [0, crop.height]];
+      return getWarpFromRect(cv, src, source, targetSize, targetSize);
+    }
+    return letterboxWarp(cv, 0, 0, crop.width, crop.height, source, targetSize, targetSize);
+  } finally {
+    source.delete();
+  }
 }
 
 /**
@@ -887,14 +729,8 @@ export function splitNum(
   br: BRect,
   warpedBlk: OpenCVMat,
   subres: number,
-): [Uint8Array[], Uint8Array, number, number] {
+): [Uint8Array[], RawDigitCrop[], number, number] {
   const [x, y, w, h] = br;
-
-  // Always warp the full bounding rect to 64×64 — returned as the merged
-  // thumbnail for training export (not used for the split decision itself,
-  // unlike the earlier classifier-based approach this replaces).
-  const fullSrc = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
-  const mergedThumb = getWarpFromRect(cv, fullSrc, warpedBlk);
 
   // Peak detection on the column-wise topmost-ink-row profile: a gap between
   // two digit glyphs shows up as a peak (the profile dips down — less ink
@@ -919,11 +755,12 @@ export function splitNum(
 
   const halfRes = subres >> 1;
   const rec = activeRecogniser();
-  const thumbs = rects.map(([yt, yb, xl, xr]) =>
-    rec.warpForRecognition(cv, warpedBlk, [xl, yt, xr - xl, yb - yt], halfRes),
+  const sourceCrops = rects.map(([yt, yb, xl, xr]) =>
+    extractRawDigitCrop(cv, warpedBlk, [xl, yt, xr - xl, yb - yt]),
   );
+  const thumbs = sourceCrops.map(crop => rec.warpForRecognition(cv, crop, halfRes));
 
-  return [thumbs, mergedThumb, x, y];
+  return [thumbs, sourceCrops, x, y];
 }
 
 /**
@@ -949,12 +786,18 @@ export function readClassicDigits(
   warpedBlk: OpenCVMat,
   subres: number,
   classicConf: number[][],
-): { digits: number[][]; thumbs: Map<string, Uint8Array[]>; recognitions: Map<string, Recognition> } {
+): {
+  digits: number[][];
+  thumbs: Map<string, Uint8Array[]>;
+  sourceCrops: Map<string, RawDigitCrop[]>;
+  recognitions: Map<string, Recognition>;
+} {
   const rec = activeRecogniser();
   const half = subres >> 1;
   const margin = subres >> 2;
   const digits: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
   const thumbs = new Map<string, Uint8Array[]>();
+  const sourceCrops = new Map<string, RawDigitCrop[]>();
   const recognitions = new Map<string, Recognition>();
 
   for (let r = 0; r < 9; r++) {
@@ -994,16 +837,19 @@ export function readClassicDigits(
 
       const ax = x0 + br.x;
       const ay = y0 + br.y;
-      const thumb = rec.warpForRecognition(cv, warpedBlk, [ax, ay, br.width, br.height], half);
+      const sourceCrop = extractRawDigitCrop(cv, warpedBlk, [ax, ay, br.width, br.height]);
+      const thumb = rec.warpForRecognition(cv, sourceCrop, half);
       const [rec0] = rec.recognise([thumb]);
       const d = rec0!.label;
       if (d > 0) {
+        const key = `${r},${c}`;
         digits[r]![c] = d;
-        thumbs.set(`${r},${c}`, [thumb]);
-        recognitions.set(`${r},${c}`, rec0!);
+        thumbs.set(key, [thumb]);
+        sourceCrops.set(key, [sourceCrop]);
+        recognitions.set(key, rec0!);
       }
     }
   }
 
-  return { digits, thumbs, recognitions };
+  return { digits, thumbs, sourceCrops, recognitions };
 }

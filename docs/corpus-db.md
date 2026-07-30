@@ -89,23 +89,31 @@ Set by `installCvMonitors()` in `store.ts`. NULL before that initialises.
 |--------|------|---------|
 | `fallback_used` | INTEGER | `1` if border-calibration fell back to the rough adaptive-threshold path; `0` for the normal path; NULL for classic puzzles |
 
-#### Contour-tree parallel path (Sprints 1–4)
+### `cell_reads`
 
-These columns hold signals from the experimental contour-tree pipeline, compared
-against the existing pipeline. All are NULL for classic puzzles except
-`ct_d1_count`, `ct_d2_count`, and `ct_type`.
+One row per digit read produced by the deployed TypeScript pipeline, for both
+classic givens and killer cage totals. New rows retain both the strategy-neutral
+bounding-box crop and the exact derived input presented to the recogniser. The source
+crop comes directly from TypeScript's fixed bounding-box selection on the warped grid;
+switching between `stretch` and `letterbox` changes only the derived warp, never cropping.
 
 | Column | Type | Meaning |
 |--------|------|---------|
-| `ct_d1_count` | INTEGER | Depth-1 contour count — one per grid cell interior; ~81 for a clean grid |
-| `ct_d2_count` | INTEGER | Depth-2 contour count — digit/cage fragments; >55 heuristic → killer |
-| `ct_type` | TEXT | Type signal from contour tree: `killer` or `classic` |
-| `ct_orientation` | REAL | Cage-label orientation in degrees from contour quadrant vote: 0, 90, 180, or 270 (killer only) |
-| `quad_sum_orientation` | REAL | Orientation from existing quadrant-sum method, same scale (killer only) |
-| `ct_border_agreement` | REAL | Fraction of 144 wall slots (9×8 + 8×9) where CT agrees with existing pipeline (0–1; killer only) |
-| `ct_border_fp` | INTEGER | Walls CT detects that existing pipeline does not (killer only) |
-| `ct_border_fn` | INTEGER | Walls existing pipeline detects that CT does not (killer only) |
-| `ct_digit_agreement` | REAL | Fraction of non-zero cage total cells where CT value equals existing OCR value (0–1; killer only) |
+| `puzzle_hash`, `git_hash` | TEXT | Puzzle and evaluation identity |
+| `cell_type` | TEXT | `given_digit` or `cage_total_digit` |
+| `row`, `col`, `digit_index` | INTEGER | 0-indexed cell and the digit within a one- or two-digit read |
+| `predicted_label`, `confident`, `clashes_with` | mixed | Deployed recognition result and validation evidence |
+| `source_x`, `source_y` | INTEGER | Bounding-box origin in the warped grid |
+| `source_width`, `source_height` | INTEGER | Variable-sized raw crop dimensions |
+| `source_pixels` | TEXT | Row-major JSON uint8 array of length `source_width * source_height`; no recognition warp has been applied |
+| `recognition_pixels` | TEXT | Row-major JSON uint8 array of length 4096; the exact deployed 64×64 recogniser input |
+| `warp_strategy` | TEXT | `stretch` or `letterbox`, describing how `recognition_pixels` was derived |
+| `hog_features`, `hole_features` | TEXT | JSON feature arrays produced from `recognition_pixels` |
+
+Opening an older database renames legacy `crop_pixels` to
+`recognition_pixels`. Its newly added source fields remain NULL: historical
+64×64 thumbnails are audit evidence, not raw crops, and must not be re-labelled
+or re-warped as though they were strategy-neutral.
 
 ### `retraining_suggestions`
 
@@ -137,7 +145,6 @@ Never auto-applied — `status` starts `pending` and only changes via
 | `--workers N` | `worker_id` (1…N) |
 | `--limit N` | Stops after N total evaluations; no column |
 | `--filter SQL` | Restricts which puzzles are claimed; no column |
-| `--dump-contours DIR` | Writes per-puzzle JSON to disk; no column |
 
 The `--diag-path` flag has been removed. All diagnostics are stored in the DB.
 
@@ -165,18 +172,6 @@ FROM evaluations
 WHERE live_mats IS NOT NULL
 GROUP BY git_hash
 ORDER BY rowid DESC;
-```
-
-**Contour-tree border agreement distribution for a run:**
-```sql
-SELECT
-  ROUND(ct_border_agreement, 1) AS bucket,
-  COUNT(*) AS n
-FROM evaluations
-WHERE git_hash = 'feature-diag'
-  AND ct_border_agreement IS NOT NULL
-GROUP BY ROUND(ct_border_agreement, 1)
-ORDER BY bucket;
 ```
 
 **Clean puzzles that needed cage-total repair:**

@@ -1,5 +1,6 @@
 {
   "classifier_type": "rbf",
+  "warp_strategy": "letterbox",
   "arrays": {
     "hog_win_size": {
       "dtype": "int32",

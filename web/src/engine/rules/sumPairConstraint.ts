@@ -1,8 +1,6 @@
 /**
  * SumPairConstraint — R7b: narrow candidates using linear sum constraints.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.incomplete.sum_pair_constraint` module.
- *
  * When cells a and b satisfy a + b = total (a sum pair from complementary RREF
  * rows), any candidate d for a is invalid if (total − d) is not in b's
  * candidate set, and vice versa.
