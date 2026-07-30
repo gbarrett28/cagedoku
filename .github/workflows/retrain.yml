@@ -1,8 +1,13 @@
 name: Retrain digit recogniser
 
 on:
-  schedule:
-    - cron: '0 */8 * * *'  # every 8 hours
+  # Schedule disabled 2026-07-30: an unmonitored scheduled run (0c860c8)
+  # shipped a broken model that regressed real-world solve rate from ~97%
+  # to well below that, undetected for weeks. Re-enable only once the
+  # bronze/silver gates independently verify corpus-eval regressions on
+  # every commit/merge, not just this workflow's own eval-fixtures check.
+  # schedule:
+  #   - cron: '0 */8 * * *'  # every 8 hours
   workflow_dispatch:
 
 permissions:
