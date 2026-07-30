@@ -14,7 +14,6 @@ export type Grid9x9 = number[][];
 /**
  * Raised when image-processing produces an inconsistent cage layout.
  *
- * Mirrors Python's `ProcessingError` from `killer_sudoku.solver.grid`.
  */
 export class ProcessingError extends Error {
   /** Human-readable description of the inconsistency. */

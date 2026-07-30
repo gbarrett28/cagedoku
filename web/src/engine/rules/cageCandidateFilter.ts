@@ -1,8 +1,6 @@
 /**
  * CageCandidateFilter — R2: eliminate digits absent from all cage solutions.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.cage_candidate_filter` module.
- *
  * Fires on SOLUTION_PRUNED for cage units. Takes the union of all remaining
  * solutions; any candidate digit not in that union cannot be placed and is
  * eliminated.

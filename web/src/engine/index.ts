@@ -1,5 +1,5 @@
 /**
- * Engine entry point — mirrors Python's `killer_sudoku.solver.engine` module.
+ * Engine entry point for rule-based and backtracking solution.
  *
  * `solve()` constructs a KillerBoardState, seeds given digits, runs the rule engine,
  * and falls back to MRV backtracking if the engine stalls.
@@ -161,12 +161,10 @@ function runWithBacktrack(board: BoardState, stalled: boolean): SolveResult {
 /**
  * Run the full solver engine on a validated PuzzleSpec.
  *
- * Constructs KillerBoardState with virtual cages (required by LinearElimination
- * to prune via other cage rules; matches Python's batch-solve
- * killer_sudoku.solver.engine.solve(), which uses include_virtual_cages=True --
- * as opposed to the interactive-coaching path (getHints/_build_engine), which
- * deliberately omits them so algebraically-derived cages surface as opt-in
- * hints rather than silently narrowing candidates during play).
+ * Constructs KillerBoardState with virtual cages so LinearElimination can prune
+ * via other cage rules. The interactive-coaching path (`getHints`/`buildEngine`)
+ * deliberately omits them so algebraically derived cages surface as opt-in hints
+ * rather than silently narrowing candidates during play.
  *
  * Falls back to MRV backtracking if the rule engine stalls.
  * When backtracking is used, `stalledCandidates` in the result holds the

@@ -1,8 +1,6 @@
 /**
  * CageConfinement — pigeonhole elimination when n cages fill n same-type units.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.cage_confinement` module.
- *
  * For n cages C₁…Cₙ and n distinct same-type units U₁…Uₙ: if digit d is
  * essential to every cage and every d-candidate cell lies within ⋃Uⱼ, then by
  * pigeonhole d is eliminated from (⋃Uⱼ) \ (⋃Cᵢ).

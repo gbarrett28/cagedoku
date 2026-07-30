@@ -1,8 +1,6 @@
 /**
  * PointingPairs — R10: digit confined to one row/col within a box → eliminate from rest.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.pointing_pairs` module.
- *
  * When all candidates for digit d within a box share the same row (or column),
  * d can be eliminated from the rest of that row (or column) outside the box.
  */

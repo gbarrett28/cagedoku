@@ -1,8 +1,7 @@
 /**
  * Image pipeline orchestrator: parses a puzzle image into a PuzzleSpec.
  *
- * Mirrors Python's `InpImage` class from `killer_sudoku.image.inp_image`,
- * adapted for the browser:
+ * Runs entirely in the browser:
  *   - Input is an HTML File (from <input type="file">) instead of a file path.
  *   - No .jpk cache (stateless browser session).
  *   - Returns a plain result object instead of storing state on self.
@@ -253,8 +252,8 @@ export async function parsePuzzleImage(
   }
 
   // --- Killer path: Stage 4 anchored border clustering ---
-  // Mirrors Python's InpImage._identify_borders: cell scan (Stage 3, pure
-  // bounding-box size check, no fill-ratio threshold) feeds anchored border
+  // Cell scan (Stage 3, pure bounding-box size check with no fill-ratio
+  // threshold) feeds anchored border
   // clustering (Stage 4) directly — no per-image threshold calibration.
   const gryImg: GrayImage = { data: new Uint8Array(warpedGryMat.data), size: dstSize };
   const cageConf = cageConfFromSize(contourMetrics);

@@ -1,7 +1,6 @@
 /**
  * HiddenPair — R8: two digits locked to the same two cells, restrict those cells.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.incomplete.hidden_pair`.
  */
 
 import type { HintResult } from '../hint.js';

@@ -1,8 +1,6 @@
 /**
  * Number recognition: Stage 3 (digit extraction) of the image pipeline.
  *
- * Mirrors Python's `killer_sudoku.image.number_recognition` module.
- *
  * Provides:
  *   - RBFClassifier: pure-TypeScript OvO RBF SVM inference (no sklearn).
  *   - NumRecogniser: HOG/hole-feature RBF-SVM recognition.
@@ -44,8 +42,7 @@ export type ContourInfo = [br: BRect, children: ContourInfo[]];
 /**
  * Pure-TypeScript OvO RBF SVM classifier extracted from a fitted sklearn SVC.
  *
- * Mirrors Python's `RBFClassifier` dataclass.  At inference time only typed
- * arrays are used — no sklearn required.
+ * Inference uses only typed arrays; no sklearn runtime is required.
  */
 export interface HOGParams {
   winSize: number;      // 64

@@ -1,10 +1,4 @@
-/**
- * Utility functions for converting between PuzzleSpec, PuzzleSpecData, and CageState[].
- *
- * Mirrors Python helpers in api/routers/puzzle.py:
- *   _cage_label, _virtual_cage_key, _spec_to_data, _data_to_spec,
- *   _spec_to_cage_states, _cage_states_to_spec
- */
+/** Utility functions for converting between PuzzleSpec, PuzzleSpecData, and CageState[]. */
 
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import type { CageState, CellPosition, PuzzleSpecData } from './types.js';
@@ -113,7 +107,7 @@ export function cageStatesToSpec(cages: readonly CageState[], base: PuzzleSpecDa
   const cageTotals: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
 
   for (const cage of cages) {
-    // Find the first cell alphabetically to place the total (matches Python's head-cell convention)
+    // Place the total in the first cell in row-major order.
     const sorted = [...cage.cells].sort((a, b) => a.row - b.row || a.col - b.col);
     const head = sorted[0]!;
     cageTotals[head.row - 1]![head.col - 1] = cage.total;

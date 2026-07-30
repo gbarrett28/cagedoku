@@ -1,8 +1,6 @@
 /**
  * Cell scanning: Stage 3 of the image pipeline.
  *
- * Mirrors Python's `killer_sudoku.image.cell_scan` module.
- *
  * Classifies each of the 81 cells for cage-total digits (small contour in
  * the top-left quadrant) and classic pre-filled digits (large centred
  * contour). Also detects puzzle rotation and puzzle type (killer vs classic).
@@ -51,8 +49,7 @@ export interface ContourMetrics {
 
 /**
  * Per-cell cage-total confidence: pure bounding-box size check, no fill-ratio
- * threshold. Mirrors Python's `scan_cells` (killer_sudoku.image.cell_scan)
- * exactly — any size-valid contour in a cell's top-left quadrant marks it as
+ * threshold. Any size-valid contour in a cell's top-left quadrant marks it as
  * a cage-total cell.
  *
  * @param contours - (9, 9) array [row][col] of size-valid contour metrics,

@@ -2,10 +2,8 @@
  * BoardState — plain row/col/box sudoku skeleton shared by classic and killer
  * boards. KillerBoardState (below) extends it with cage modelling.
  *
- * Mirrors the row/col/box half of Python's
- * `killer_sudoku.solver.engine.board_state` module — that module has no
- * classic/killer split; the split here exists purely to keep classic boards
- * free of cage machinery (see `docs/superpowers/specs/2026-06-07-cage-free-board-state-for-classic.md`).
+ * The classic/killer split keeps classic boards free of cage machinery (see
+ * `docs/superpowers/specs/2026-06-07-cage-free-board-state-for-classic.md`).
  *
  * Rules read from this object but must never mutate it directly.
  * All mutations go through removeCandidate() (or, on KillerBoardState,

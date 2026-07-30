@@ -23,7 +23,7 @@ describe('isDigitSizedContour', () => {
   });
 });
 
-describe('contourIsNumber (matches Python contour_is_number exactly)', () => {
+describe('contourIsNumber', () => {
   it('accepts a digit-sized contour at even x/y parity', () => {
     // xx = floor(2*(x + w/2) / subres), yy = floor(2*(y + h/2) / subres); both must be even.
     const br: BRect = [0, 0, 10, 20];
@@ -52,14 +52,14 @@ describe('contourIsNumber (matches Python contour_is_number exactly)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// getNumContours -- matches Python get_num_contours exactly (no depth requirement)
+// getNumContours -- no hierarchy-depth requirement
 // ---------------------------------------------------------------------------
 
 function makeNode(br: BRect, children: ContourInfo[] = []): ContourInfo {
   return [br, children];
 }
 
-describe('getNumContours (matches Python — no hierarchy-depth requirement)', () => {
+describe('getNumContours (no hierarchy-depth requirement)', () => {
   it('accepts a digit-sized contour nested at depth 2 inside a cell frame', () => {
     // guardian/killer_sudoku_0.jpg r8c0's real total digit, br=[30,1024,15,32].
     const digit = makeNode([30, 1024, 15, 32]);

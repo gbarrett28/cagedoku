@@ -1,8 +1,6 @@
 /**
  * DeltaConstraint — R6: narrow candidates using linear difference constraints.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.incomplete.delta_constraint` module.
- *
  * When cells p and q satisfy p − q = delta (derived from overlapping cage-sum
  * equations by the linear system), restricts both cells' candidates to valid
  * pairs consistent with the constraint.

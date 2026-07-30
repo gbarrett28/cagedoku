@@ -1,7 +1,6 @@
 /**
  * Union-find cage validation: Stage 2 of the image pipeline.
  *
- * Mirrors Python's `killer_sudoku.image.validation.validate_cage_layout`.
  * Takes raw border arrays from the clustering stage and produces a validated
  * PuzzleSpec, or throws if the cage layout is inconsistent.
  */

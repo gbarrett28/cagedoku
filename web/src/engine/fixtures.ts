@@ -1,8 +1,6 @@
 /**
  * Shared test fixtures for engine unit tests.
  *
- * Mirrors Python's `tests/fixtures/minimal_puzzle.py`.
- *
  * Constructs a valid 9×9 killer sudoku where every cell is its own single-cell
  * cage. This is the simplest possible puzzle: each cage has exactly one cell
  * and its total equals the digit that must go there.
@@ -184,10 +182,10 @@ export function makeBigAppleMisreadGivenDigits(): number[][] {
 }
 
 // ---------------------------------------------------------------------------
-// Lower-level helpers (mirrors Python's make_trivial_cage_totals etc.)
+// Lower-level fixture helpers
 // ---------------------------------------------------------------------------
 
-/** Return a mutable copy of the KNOWN_SOLUTION array as cageTotals[col][row]. */
+/** Return a mutable row-major copy of KNOWN_SOLUTION as cageTotals[row][col]. */
 export function makeTrivialCageTotals(): number[][] {
   return KNOWN_SOLUTION.map(row => [...row]);
 }

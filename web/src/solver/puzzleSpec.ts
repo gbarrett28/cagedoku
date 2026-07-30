@@ -1,10 +1,8 @@
 /**
  * Validated puzzle contract passed from image processing to the solver.
  *
- * Mirrors Python's `PuzzleSpec` from `killer_sudoku.solver.puzzle_spec`.
- *
  * Array conventions:
- *   regions / cageTotals: [col][row], both 9×9.
+ *   regions / cageTotals: [row][col], both 9×9.
  *   borderX: [col][rowGap], shape 9×8. borderX[col][rowGap] = wall between
  *     rows rowGap and rowGap+1 in column col.
  *   borderY: [colGap][row], shape 8×9. borderY[colGap][row] = wall between

@@ -1,7 +1,6 @@
 /**
  * HintResult: rich output from a solver rule in coach/hint mode.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.hint` module.
  */
 
 import type { Cell, Elimination } from './types.js';

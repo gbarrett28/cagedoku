@@ -1,8 +1,6 @@
 /**
  * WorkItem and SolverQueue — priority queue with deduplication and version tracking.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.work_queue` module.
- *
  * WorkItem has three forms:
  *  - Unit-scoped: carries unitId and unitVersion for staleness detection.
  *  - Cell-scoped (CELL_DETERMINED, CELL_SOLVED): carries cell; never stale.

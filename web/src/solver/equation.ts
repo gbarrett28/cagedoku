@@ -1,10 +1,8 @@
 /**
- * Cage equation utilities: Phase 2 of the solver.
+ * Cage combination utilities for the solver.
  *
- * Mirrors Python's `killer_sudoku.solver.equation` module (sol_sums only).
- * The Equation class is not ported — only the rule engine uses sol_sums at
- * inference time; the old Grid/Equation batch-solver path is not used in the
- * browser build.
+ * The rule engine uses `solSums` to enumerate distinct digit combinations for a
+ * cell count and total; no separate equation-based batch solver is retained.
  */
 
 /** One valid digit assignment for a difference virtual cage. */
@@ -18,8 +16,8 @@ export interface DiffSolution {
 /**
  * Enumerate all sets of n distinct digits > m whose elements sum to v.
  *
- * Mirrors Python's sol_sums(). Used by KillerBoardState to populate cage_solns and
- * by the LinearSystem for virtual cage derivation.
+ * Used by KillerBoardState to populate cage solutions and by LinearSystem for
+ * virtual-cage derivation.
  *
  * @param n    Number of cells in the cage.
  * @param m    Lower bound: digits must be strictly greater than m.

@@ -1,8 +1,6 @@
 /**
  * MustContainOutie — R4b: single external cell with candidates ⊆ must-contain restricts outie.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.must_contain_outie` module.
- *
  * When exactly one cage cell lies outside a unit (the outie) and exactly one
  * external cell in the unit has candidates ⊆ must-contain set of the cage,
  * the outie's candidates are restricted to that external cell's candidates.

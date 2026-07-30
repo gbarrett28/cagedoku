@@ -1,7 +1,6 @@
 /**
  * UniqueRectangle — R16: Unique Rectangle types 1 and 2.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.incomplete.unique_rectangle`.
  */
 
 import type { HintResult } from '../hint.js';

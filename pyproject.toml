@@ -13,7 +13,6 @@ dependencies = [
     "matplotlib",
     "numba",
     "numpy",
-    "opencv-python-headless",
     "Pillow",
     "scikit-learn",
 ]

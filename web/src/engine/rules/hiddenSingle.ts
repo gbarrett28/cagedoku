@@ -1,8 +1,6 @@
 /**
  * HiddenSingle — R2: digit with exactly one possible cell in a unit → place it there.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.incomplete.hidden_single` module.
- *
  * For ROW/COL/BOX: count=1 forces the sole remaining cell to hold d.
  * For CAGE: count=1 is necessary but not sufficient — d must appear in EVERY
  * feasible cage solution. If any solution omits d, d is not required.

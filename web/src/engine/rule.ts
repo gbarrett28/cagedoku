@@ -1,8 +1,6 @@
 /**
  * SolverRule interface, RuleContext, and RuleStats.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rule` module.
- *
  * SolverRule is a structural interface — any object with the required
  * fields and an apply() method qualifies. Rules are stateless; all mutable
  * state lives in KillerBoardState.

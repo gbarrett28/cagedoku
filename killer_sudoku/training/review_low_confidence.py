@@ -13,11 +13,12 @@ import dataclasses
 import json
 import sqlite3
 import subprocess
+from io import BytesIO
 from pathlib import Path
 
-import cv2
 import numpy as np
 import numpy.typing as npt
+from PIL import Image
 
 DEFAULT_DB_PATH = Path("corpus.db")
 
@@ -193,8 +194,9 @@ def build_review_items(
 
 
 def _encode_png_b64(img: npt.NDArray[np.uint8]) -> str:
-    _ok, buf = cv2.imencode(".png", img)
-    return base64.b64encode(buf.tobytes()).decode("ascii")
+    buffer = BytesIO()
+    Image.fromarray(img).save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
 def render_tick_sheet(items: list[ReviewItem]) -> str:

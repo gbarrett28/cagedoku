@@ -458,17 +458,17 @@ bash scripts/run-silver-gate.sh
 
 ## Final state checklist
 
-- [ ] Every implementation sprint stayed within the three-hour agent budget and ended bronze-green.
-- [ ] Split-recogniser startup work and assets are gone.
-- [ ] `corpus.db` stores raw variable-sized digit bounding-box pixels/dimensions from the warped grid.
-- [ ] Cropping remains fixed in TypeScript; training can vary only the TypeScript stretch/letterbox warp.
-- [ ] Derived recognition pixels remain available separately for deployed-prediction audits.
-- [ ] Review and overrides preserve raw crops without warping.
-- [ ] Python evaluator/status and agreement architecture are gone.
-- [ ] PCA, historical loaders/converters/checkpoints, Python image/solver packages, and obsolete OCR utilities are gone.
-- [ ] TS bridge exposes only batched production warping and feature extraction.
-- [ ] Python contains no production crop, warp, feature, inference, or solver reimplementation.
-- [ ] Retrain CI evaluates candidate models through the production browser.
-- [ ] Python entry points match the six-file whitelist above.
-- [ ] Current docs, tests, packaging, and shipped HOG/RBF model agree.
-- [ ] Bronze and silver gates pass.
+- [x] Every implementation sprint stayed within the three-hour agent budget and ended bronze-green.
+- [x] Split-recogniser startup work and assets are gone.
+- [x] `corpus.db` stores raw variable-sized digit bounding-box pixels/dimensions from the warped grid.
+- [x] Cropping remains fixed in TypeScript; training can vary only the TypeScript stretch/letterbox warp.
+- [x] Derived recognition pixels remain available separately for deployed-prediction audits.
+- [x] Review and overrides preserve raw crops without warping.
+- [x] Python evaluator/status and agreement architecture are gone.
+- [x] PCA, historical loaders/converters/checkpoints, Python image/solver packages, and obsolete OCR utilities are gone.
+- [x] TS bridge exposes only batched production warping and feature extraction.
+- [x] Python contains no production crop, warp, feature, inference, or solver reimplementation.
+- [x] Retrain CI evaluates candidate models through the production browser.
+- [x] Python entry points match the six-file whitelist above.
+- [x] Current docs, tests, packaging, and shipped HOG/RBF model agree.
+- [x] Bronze and silver gates pass.

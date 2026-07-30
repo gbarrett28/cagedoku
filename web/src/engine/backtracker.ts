@@ -1,8 +1,6 @@
 /**
  * MRV backtracker fallback for the solver engine.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.backtracker` module.
- *
  * Called when the rule-based engine stalls. Applies MRV (Minimum Remaining
  * Values) cell ordering with forward checking (peer elimination + naked-single
  * cascade) to search for a solution.

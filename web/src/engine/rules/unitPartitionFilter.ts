@@ -1,8 +1,6 @@
 /**
  * UnitPartitionFilter — R12: cross-cage compatibility filter for partitioned units.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.unit_partition_filter` module.
- *
  * When cages partition a row, column, or box into known-sum groups, eliminates
  * cage solutions inconsistent with those groups. Uses DFS + propagation with a
  * node budget to avoid exponential blowup.

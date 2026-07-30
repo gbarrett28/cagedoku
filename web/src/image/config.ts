@@ -1,8 +1,7 @@
 /**
  * Configuration interfaces for the image processing pipeline.
  *
- * Mirrors Python's `killer_sudoku.image.config` module. All interfaces are
- * readonly (frozen) with default factory functions. Computed properties
+ * All interfaces are readonly, with default factory functions. Computed properties
  * are provided as plain functions rather than class getters to stay idiomatic
  * TypeScript.
  */

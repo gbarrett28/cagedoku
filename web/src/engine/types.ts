@@ -1,7 +1,6 @@
 /**
  * Core value types for the solver engine.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.types` module.
  * Pure data — no logic, no imports from the rest of the engine.
  */
 

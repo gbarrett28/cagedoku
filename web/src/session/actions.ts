@@ -1,10 +1,8 @@
 /**
- * Session actions — replaces all Python `fetch('/api/puzzle/...')` calls.
+ * Session actions for the entirely in-browser app.
  *
- * Each function reads/writes the in-memory store directly and calls the
- * TS engine helpers instead of making network requests. The function
- * signatures and return shapes mirror the Python API so that the adapted
- * main.ts can call them as drop-in replacements.
+ * Each function reads or writes the in-memory store and calls TypeScript engine
+ * helpers directly; no puzzle API or network round-trip is involved.
  */
 
 import { solve, solveBigApple, detectBigApple, BoardState, KillerBoardState, intersectAll, SolveResult } from '../engine/index.js';

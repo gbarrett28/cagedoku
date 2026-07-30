@@ -8,7 +8,6 @@ import type { Cell, Elimination } from '../types.js';
 
 /**
  * Return true if (r1,c1) and (r2,c2) share a row, column, or 3×3 box.
- * Mirrors Python's _sees() used in xy_wing, simple_colouring, unique_rectangle.
  */
 export function sees(r1: number, c1: number, r2: number, c2: number): boolean {
   if (r1 === r2 || c1 === c2) return true;
@@ -17,7 +16,6 @@ export function sees(r1: number, c1: number, r2: number, c2: number): boolean {
 
 /**
  * Return all k-element subsets of arr.
- * Mirrors Python's itertools.combinations(arr, k).
  */
 export function combinations<T>(arr: readonly T[], k: number): T[][] {
   if (k === 0) return [[]];
@@ -31,7 +29,6 @@ export function combinations<T>(arr: readonly T[], k: number): T[][] {
 
 /**
  * Remove duplicate eliminations (same cell + digit), preserving order.
- * Mirrors Python's list(dict.fromkeys(elims)).
  */
 export function dedupElims(elims: Elimination[]): Elimination[] {
   const seen = new Set<string>();

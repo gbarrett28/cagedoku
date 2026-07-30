@@ -1,8 +1,6 @@
 /**
  * LockedCandidates — R10b: digit in a unit confined to one cage or box.
  *
- * Mirrors Python's `killer_sudoku.solver.engine.rules.locked_candidates` module.
- *
  * Two patterns:
  *  - unit→cage (cage-line reduction): row/col/box d-candidates all in same cage → eliminate from cage outside unit
  *  - unit→box (box-line reduction): row/col d-candidates all in same box → eliminate from box outside row/col
