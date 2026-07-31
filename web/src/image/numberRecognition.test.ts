@@ -37,8 +37,11 @@ beforeAll(() => {
   const manifest = JSON.parse(readFileSync(join(pub, 'num_recogniser.json'), 'utf-8'));
   rec = loadNumRecogniser(bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength), manifest);
 
+  const hashesFile = rec instanceof HogRecogniser
+    ? 'known-model-failure-hashes-hog.json'
+    : 'known-model-failure-hashes-pca_rbf.json';
   KNOWN_FAILURE_SAMPLE_HASHES = new Set(
-    JSON.parse(readFileSync(join(process.cwd(), 'known-model-failure-hashes-hog.json'), 'utf-8')) as string[],
+    JSON.parse(readFileSync(join(process.cwd(), hashesFile), 'utf-8')) as string[],
   );
 
   const trainFile: TrainingFile = JSON.parse(
@@ -123,15 +126,10 @@ function unexpectedFailures(subset: TrainingSample[]): string[] {
 // this one is "whatever the currently-shipped model happens to fail on" and
 // must be regenerated whenever the shipped model changes. Conflating the two
 // previously meant updating one silently changed the other's meaning.
-// Skipped during the HOG -> cluster-mean-PCA recogniser redesign (see
-// docs/superpowers/specs/2026-07-31-cluster-mean-pca-recogniser-design.md).
-// HOG+aspect repeatedly failed to separate 1-vs-7 in full retrains; the
-// deployed model is a placeholder (b649063) being kept live for other
-// digits while the new recogniser is built, so its accuracy floor is not
-// meaningful right now. Re-enable once the new recogniser lands.
-describe.skip('digit recogniser — bundled model inference on training data', () => {
+// ---------------------------------------------------------------------------
+describe('digit recogniser — bundled model inference on training data', () => {
   it('loads model without error', () => {
-    expect(rec).toBeInstanceOf(HogRecogniser);
+    expect(rec instanceof HogRecogniser || rec instanceof PcaRecogniser).toBe(true);
   });
 
   it('achieves at least total - knownFailures.size accuracy, with no unexpected failures', () => {

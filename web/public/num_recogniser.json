@@ -1,1 +1,99 @@
-{"classifier_type":"rbf","arrays":{"hog_win_size":{"dtype":"int32","shape":[1],"offset":0,"byteLength":4},"hog_cell_size":{"dtype":"int32","shape":[1],"offset":4,"byteLength":4},"hog_block_size":{"dtype":"int32","shape":[1],"offset":8,"byteLength":4},"hog_block_stride":{"dtype":"int32","shape":[1],"offset":12,"byteLength":4},"hog_nbins":{"dtype":"int32","shape":[1],"offset":16,"byteLength":4},"rbf_support_vectors":{"dtype":"float64","shape":[1384,1769],"offset":20,"byteLength":19586368},"rbf_dual_coef":{"dtype":"float64","shape":[9,1384],"offset":19586388,"byteLength":99648},"rbf_intercept":{"dtype":"float64","shape":[45],"offset":19686036,"byteLength":360},"rbf_n_support":{"dtype":"int32","shape":[10],"offset":19686396,"byteLength":40},"rbf_gamma":{"dtype":"float64","shape":[1],"offset":19686436,"byteLength":8},"classes":{"dtype":"int32","shape":[10],"offset":19686444,"byteLength":40},"confidence_threshold":{"dtype":"float64","shape":[1],"offset":19686484,"byteLength":8}},"warp_strategy":"letterbox"}
+{
+  "classifier_type": "rbf",
+  "recogniser_type": "pca",
+  "warp_strategy": "letterbox-centered",
+  "arrays": {
+    "rbf_support_vectors": {
+      "dtype": "float64",
+      "shape": [
+        4218,
+        39
+      ],
+      "offset": 0,
+      "byteLength": 1316016
+    },
+    "rbf_dual_coef": {
+      "dtype": "float64",
+      "shape": [
+        9,
+        4218
+      ],
+      "offset": 1316016,
+      "byteLength": 303696
+    },
+    "rbf_intercept": {
+      "dtype": "float64",
+      "shape": [
+        45
+      ],
+      "offset": 1619712,
+      "byteLength": 360
+    },
+    "rbf_n_support": {
+      "dtype": "int32",
+      "shape": [
+        10
+      ],
+      "offset": 1620072,
+      "byteLength": 40
+    },
+    "rbf_gamma": {
+      "dtype": "float64",
+      "shape": [
+        1
+      ],
+      "offset": 1620112,
+      "byteLength": 8
+    },
+    "classes": {
+      "dtype": "int32",
+      "shape": [
+        10
+      ],
+      "offset": 1620120,
+      "byteLength": 40
+    },
+    "confidence_threshold": {
+      "dtype": "float64",
+      "shape": [
+        1
+      ],
+      "offset": 1620160,
+      "byteLength": 8
+    },
+    "cm_mean_of_means": {
+      "dtype": "float64",
+      "shape": [
+        4096
+      ],
+      "offset": 1620168,
+      "byteLength": 32768
+    },
+    "cm_between_components": {
+      "dtype": "float64",
+      "shape": [
+        39,
+        4096
+      ],
+      "offset": 1652936,
+      "byteLength": 1277952
+    },
+    "template_pixels": {
+      "dtype": "float64",
+      "shape": [
+        40,
+        4096
+      ],
+      "offset": 2930888,
+      "byteLength": 1310720
+    },
+    "template_labels": {
+      "dtype": "int32",
+      "shape": [
+        40
+      ],
+      "offset": 4241608,
+      "byteLength": 160
+    }
+  }
+}

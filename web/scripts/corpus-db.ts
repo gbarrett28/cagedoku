@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { WarpStrategy } from '../src/image/numberRecognition.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_DB_PATH = path.resolve(__dirname, '../../corpus.db');
@@ -89,7 +90,7 @@ export function openDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
       source_height         INTEGER,
       source_pixels         TEXT, -- JSON array, exact bounding-box pixels from warped grid
       recognition_pixels    TEXT NOT NULL, -- JSON array, flattened deployed 64x64 input
-      warp_strategy         TEXT, -- 'stretch' | 'letterbox'; NULL only for historical rows
+      warp_strategy         TEXT, -- 'stretch' | 'letterbox' | 'letterbox-centered'; NULL only for historical rows
       hog_features          TEXT NOT NULL, -- JSON array, 1764 floats
       hole_features         TEXT NOT NULL, -- JSON array, 5 floats
       created_at            TEXT NOT NULL DEFAULT (datetime('now'))
@@ -207,7 +208,7 @@ export interface CellReadRow {
   sourceHeight: number;
   sourcePixels: number[];
   recognitionPixels: number[];
-  warpStrategy: 'stretch' | 'letterbox';
+  warpStrategy: WarpStrategy;
   hogFeatures: number[];
   holeFeatures: number[];
 }
@@ -236,7 +237,7 @@ export function insertCellRead(db: Database.Database, r: CellReadRow): void {
   if (r.recognitionPixels.length !== 64 * 64) {
     throw new Error(`cell_reads recognition pixel length must be 4096, got ${r.recognitionPixels.length}`);
   }
-  if (r.warpStrategy !== 'stretch' && r.warpStrategy !== 'letterbox') {
+  if (r.warpStrategy !== 'stretch' && r.warpStrategy !== 'letterbox' && r.warpStrategy !== 'letterbox-centered') {
     throw new Error(`cell_reads warp strategy is invalid: ${String(r.warpStrategy)}`);
   }
 

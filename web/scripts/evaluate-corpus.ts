@@ -93,7 +93,7 @@ interface UploadOutcomeJson {
     readonly sourceHeight: number;
     readonly sourcePixels: number[];
     readonly recognitionPixels: number[];
-    readonly warpStrategy: 'stretch' | 'letterbox';
+    readonly warpStrategy: 'stretch' | 'letterbox' | 'letterbox-centered';
     readonly hogFeatures?: number[];
     readonly holeFeatures?: number[];
   }>;
@@ -109,7 +109,7 @@ interface UploadOutcomeJson {
     readonly sourceHeight: number;
     readonly sourcePixels: number[];
     readonly recognitionPixels: number[];
-    readonly warpStrategy: 'stretch' | 'letterbox';
+    readonly warpStrategy: 'stretch' | 'letterbox' | 'letterbox-centered';
     readonly hogFeatures?: number[];
     readonly holeFeatures?: number[];
   }>;
