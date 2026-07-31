@@ -25,7 +25,7 @@ npx tsc -p tsconfig.node.json --noEmit || fail "tsc -p tsconfig.node.json --noEm
 
 echo ""
 echo "--- npm test --reporter=verbose ---"
-npm test -- --reporter=verbose || fail "npm test"
+RUN_SLOW_TESTS=1 npm test -- --reporter=verbose || fail "npm test"
 
 echo ""
 echo "--- npm run build (required for playwright production tests) ---"

@@ -111,12 +111,13 @@ describe('session fuzz — random operation sequences', () => {
     state = makeConfirmedState();
   });
 
-  // Skipped for now: each invariant check re-runs the full rule-deduction
+  // Silver-gate only: each invariant check re-runs the full rule-deduction
   // cascade (applyRuleSteps) plus computeCandidates from scratch, and with
   // fuzzed operations likely also auto-applying rules internally, 10 seeds
-  // x 60 steps adds up to ~48s. Worth revisiting (incremental invariant
-  // checks, or fewer steps/seeds) but not blocking on it right now.
-  it.skip.each([1, 2, 3, 4, 5, 42, 137, 999, 1234, 9999])(
+  // x 60 steps adds up to ~48s -- too long for every bronze-gate commit,
+  // and it doesn't exercise anything bronze-gate changes typically touch.
+  // RUN_SLOW_TESTS=1 (set by scripts/run-silver-gate.sh) re-enables it.
+  it.skipIf(process.env['RUN_SLOW_TESTS'] !== '1').each([1, 2, 3, 4, 5, 42, 137, 999, 1234, 9999])(
     'seed %i: 60 random operations remain structurally consistent',
     (seed) => {
       const rng = makePrng(seed);
