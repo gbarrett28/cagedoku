@@ -28,7 +28,7 @@
 **Interfaces:**
 - Produces: `centerByCentroid(img: Uint8Array, size: number): Uint8Array` — exported pure function. `WarpStrategy` type grows to `'stretch' | 'letterbox' | 'letterbox-centered'`.
 
-- [ ] **Step 1: Write the failing test for `centerByCentroid`**
+- [x] **Step 1: Write the failing test for `centerByCentroid`**
 
 Add to `web/src/image/numberRecognition.test.ts` (new top-level describe block, e.g. after the existing `pcaProject`/`classMeanProject` blocks):
 
@@ -80,12 +80,12 @@ describe('centerByCentroid', () => {
 
 Also add the import at the top of the test file (find the existing `import { ... } from './numberRecognition.js'` line and add `centerByCentroid` to it).
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run (from `web/`): `npx vitest run src/image/numberRecognition.test.ts -t centerByCentroid`
 Expected: FAIL — `centerByCentroid is not defined` / import error, since the function doesn't exist yet.
 
-- [ ] **Step 3: Implement `centerByCentroid`**
+- [x] **Step 3: Implement `centerByCentroid`**
 
 Add to `web/src/image/numberRecognition.ts`, near `letterboxWarp` (e.g. directly after it, around line 778):
 
@@ -127,12 +127,12 @@ export function centerByCentroid(img: Uint8Array, size: number): Uint8Array {
 }
 ```
 
-- [ ] **Step 4: Run test to verify `centerByCentroid` tests pass**
+- [x] **Step 4: Run test to verify `centerByCentroid` tests pass**
 
 Run: `npx vitest run src/image/numberRecognition.test.ts -t centerByCentroid`
 Expected: PASS (3 tests).
 
-- [ ] **Step 5: Write the failing test for the new warp strategy**
+- [x] **Step 5: Write the failing test for the new warp strategy**
 
 Add to the same test file, near existing `warpRawDigitCrop`/`letterboxWarp`-adjacent tests (check `web/src/image/numberRecognition.crop.test.ts` first — that's the existing crop/warp test file per the codebase map; add there instead if that's where warp-strategy tests live):
 
@@ -153,12 +153,12 @@ it('letterbox-centered strategy centers the ink after letterbox scaling', () => 
 existing synthetic-crop construction pattern rather than inventing a new
 one.)
 
-- [ ] **Step 6: Run test to verify it fails**
+- [x] **Step 6: Run test to verify it fails**
 
 Run: `npx vitest run src/image/numberRecognition.crop.test.ts -t letterbox-centered`
 Expected: FAIL — `warpRawDigitCrop` doesn't accept `'letterbox-centered'` yet (TS type error at compile time, or runtime fallthrough to the `letterbox` branch since the current `if (strategy === 'stretch')` / else-letterbox structure has no third branch).
 
-- [ ] **Step 7: Extend `WarpStrategy` and `warpRawDigitCrop`**
+- [x] **Step 7: Extend `WarpStrategy` and `warpRawDigitCrop`**
 
 In `web/src/image/numberRecognition.ts`:
 
@@ -201,12 +201,12 @@ export function warpRawDigitCrop(
 }
 ```
 
-- [ ] **Step 8: Run tests to verify they pass**
+- [x] **Step 8: Run tests to verify they pass**
 
 Run: `npx vitest run src/image/numberRecognition.test.ts src/image/numberRecognition.crop.test.ts`
 Expected: PASS, all tests including the new ones.
 
-- [ ] **Step 9: Run bronze gate and commit**
+- [x] **Step 9: Run bronze gate and commit**
 
 ```bash
 bash scripts/run-bronze-gate.sh
@@ -228,7 +228,7 @@ git commit -m "feat: add letterbox-centered warp strategy with centroid centerin
 - Consumes: `centerByCentroid`/extended `WarpStrategy` from Task 1.
 - Produces: bridge and Python callers can now pass `strategy='letterbox-centered'` end-to-end.
 
-- [ ] **Step 1: Write the failing bridge test**
+- [x] **Step 1: Write the failing bridge test**
 
 In `web/scripts/ts-bridge.test.ts`, find the existing `describe('ts-bridge --op warp-crops', ...)` block and add (mirroring its existing `'stretch'`/`'letterbox'` cases — inspect the file first via serena to match its exact crop-fixture/assertion style):
 
@@ -240,12 +240,12 @@ it('matches direct production letterbox-centered warping byte-for-byte', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run (from `web/`): `npx vitest run scripts/ts-bridge.test.ts -t letterbox-centered`
 Expected: FAIL — `parseWarpCropsPayload` rejects `'letterbox-centered'` with "warp-crops strategy must be stretch or letterbox".
 
-- [ ] **Step 3: Update `ts-bridge.ts`'s strategy validation**
+- [x] **Step 3: Update `ts-bridge.ts`'s strategy validation**
 
 In `web/scripts/ts-bridge.ts`, change line 558:
 ```ts
@@ -254,21 +254,21 @@ if (payload.strategy !== 'stretch' && payload.strategy !== 'letterbox' && payloa
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run scripts/ts-bridge.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Write the failing Python bridge test**
+- [x] **Step 5: Write the failing Python bridge test**
 
 In `tests/test_ts_bridge.py`, find the existing test(s) exercising `warp_crops()` with different strategies and add a `'letterbox-centered'` case following the same pattern (check the file's exact fixture-building helpers via serena before writing — likely a mocked `subprocess.run` per the file's established pattern for these tests, given the earlier `fake_run_bridge` mention in this session's history).
 
-- [ ] **Step 6: Run test to verify it fails**
+- [x] **Step 6: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_ts_bridge.py -k letterbox_centered -v`
 Expected: FAIL — `ValueError: unsupported warp strategy: letterbox-centered`.
 
-- [ ] **Step 7: Update `ts_bridge.py`'s `warp_crops()`**
+- [x] **Step 7: Update `ts_bridge.py`'s `warp_crops()`**
 
 In `killer_sudoku/training/ts_bridge.py`, change:
 ```python
@@ -282,7 +282,7 @@ def warp_crops(
         raise ValueError(f"unsupported warp strategy: {strategy}")
 ```
 
-- [ ] **Step 8: Update `train_recogniser.py`'s `WarpStrategy` and `deployed_warp_strategy()`**
+- [x] **Step 8: Update `train_recogniser.py`'s `WarpStrategy` and `deployed_warp_strategy()`**
 
 Change the type alias:
 ```python
@@ -318,12 +318,12 @@ parser.add_argument(
 )
 ```
 
-- [ ] **Step 9: Run tests to verify they pass**
+- [x] **Step 9: Run tests to verify they pass**
 
 Run: `python -m pytest tests/test_ts_bridge.py tests/test_train_recogniser.py -v`
 Expected: PASS.
 
-- [ ] **Step 10: Run bronze gate and commit**
+- [x] **Step 10: Run bronze gate and commit**
 
 ```bash
 bash scripts/run-bronze-gate.sh
@@ -342,7 +342,7 @@ git commit -m "feat: propagate letterbox-centered warp strategy through bridge a
 - Consumes: `ts_bridge.warp_crops(crops, strategy='letterbox-centered')`, `ts_bridge.extract_features()` (both from Task 2).
 - Produces: `web/corpus_train.json` rebuilt from `source_pixels`, centered-warped, schema unchanged (`{digit, recognitionPixels, warpStrategy}` — `warpStrategy` will now read `"letterbox-centered"`).
 
-- [ ] **Step 1: Update `fetch_digit_rows()` to select `source_pixels` and dimensions**
+- [x] **Step 1: Update `fetch_digit_rows()` to select `source_pixels` and dimensions**
 
 In `scripts/_export_corpus_training_data.py`, change the SQL query:
 ```python
@@ -365,7 +365,7 @@ def fetch_digit_rows(
 
 (The `source_pixels IS NOT NULL` filter excludes historical rows predating that column, per the schema comment "NULL only for historical rows" — this session's `revert-b649063` evaluation run populates it for every row, so in practice this filter changes nothing for the current data, but guards against silently warping `None`.)
 
-- [ ] **Step 2: Add a warp-then-cluster helper, replacing direct `recognition_pixels` use**
+- [x] **Step 2: Add a warp-then-cluster helper, replacing direct `recognition_pixels` use**
 
 Add a new function, and change `cluster_ids_for()` to accept warped images instead of reading precomputed features from the row:
 
@@ -394,7 +394,7 @@ def cluster_ids_for(warped: NDArray[np.uint8]) -> NDArray[np.int64]:
 
 Add the import at the top of the file: `from killer_sudoku.training import ts_bridge` (matches the pattern already used in `train_recogniser.py`).
 
-- [ ] **Step 3: Update `main()`'s per-digit loop to warp before clustering, and store warped pixels instead of `recognition_pixels`**
+- [x] **Step 3: Update `main()`'s per-digit loop to warp before clustering, and store warped pixels instead of `recognition_pixels`**
 
 Replace the loop body:
 ```python
@@ -420,7 +420,7 @@ Replace the loop body:
         print(f"raw_digit {raw_digit}: {len(rows)} rows, {n_corrected} corrected, {n_excluded} excluded")
 ```
 
-- [ ] **Step 4: Update the final sample-building loop (drop `warp_strategy` DB lookup, it's now always the CLI-fixed strategy)**
+- [x] **Step 4: Update the final sample-building loop (drop `warp_strategy` DB lookup, it's now always the CLI-fixed strategy)**
 
 Replace:
 ```python
@@ -438,7 +438,7 @@ Replace:
             })
 ```
 
-- [ ] **Step 5: Run the script against the real corpus.db to verify it works end-to-end**
+- [x] **Step 5: Run the script against the real corpus.db to verify it works end-to-end**
 
 Run (from repo root):
 ```bash
@@ -454,7 +454,7 @@ print(d['sampleCount'], d['samples'][0]['warpStrategy'])
 ```
 Expected: `4000 letterbox-centered` (or whatever `--samples-per-digit` total was requested).
 
-- [ ] **Step 6: Run bronze gate and commit**
+- [x] **Step 6: Run bronze gate and commit**
 
 ```bash
 bash scripts/run-bronze-gate.sh
@@ -474,7 +474,7 @@ git commit -m "feat: rebuild corpus_train.json from source_pixels with centered 
 - Consumes: `compute_label_means()`, `fit_class_mean_pca()`, `ClassMeanReduction` (all existing, unchanged), `ts_bridge.extract_features()`.
 - Produces: `PcaRecogniser` class with `extract_features()`, `fit()`, `save()` matching `HogRecogniser`'s shape, plus a new `cluster_pseudo_labels()` helper other tasks/tests can call directly.
 
-- [ ] **Step 1: Write the failing test for cluster pseudo-labeling**
+- [x] **Step 1: Write the failing test for cluster pseudo-labeling**
 
 Add to `tests/test_train_recogniser.py`:
 ```python
@@ -491,12 +491,12 @@ def test_cluster_pseudo_labels_groups_by_digit_and_cluster() -> None:
     assert (pseudo[40:] // 10 == 1).all()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_train_recogniser.py -k cluster_pseudo_labels -v`
 Expected: FAIL — `NameError: name 'cluster_pseudo_labels' is not defined`.
 
-- [ ] **Step 3: Implement `cluster_pseudo_labels()`**
+- [x] **Step 3: Implement `cluster_pseudo_labels()`**
 
 Add to `web/train_recogniser.py`, near `compute_label_means`/`fit_class_mean_pca` (after `fit_class_mean_pca`'s definition, before the "Production HOG/RBF trainer" section header):
 
@@ -533,12 +533,12 @@ def cluster_pseudo_labels(
     return pseudo
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_train_recogniser.py -k cluster_pseudo_labels -v`
 Expected: PASS.
 
-- [ ] **Step 5: Write the failing test for `PcaRecogniser.extract_features`**
+- [x] **Step 5: Write the failing test for `PcaRecogniser.extract_features`**
 
 ```python
 def test_pca_recogniser_extract_features_is_raw_pixel_flatten() -> None:
@@ -549,12 +549,12 @@ def test_pca_recogniser_extract_features_is_raw_pixel_flatten() -> None:
     np.testing.assert_array_equal(X[0], imgs[0].flatten())
 ```
 
-- [ ] **Step 6: Run test to verify it fails**
+- [x] **Step 6: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_train_recogniser.py -k pca_recogniser_extract_features -v`
 Expected: FAIL — `NameError: name 'PcaRecogniser' is not defined`.
 
-- [ ] **Step 7: Write the failing test for `PcaRecogniser.fit`'s template extraction**
+- [x] **Step 7: Write the failing test for `PcaRecogniser.fit`'s template extraction**
 
 ```python
 def test_pca_recogniser_fit_produces_one_template_per_pseudo_label() -> None:
@@ -575,12 +575,12 @@ def test_pca_recogniser_fit_produces_one_template_per_pseudo_label() -> None:
     assert model["template_pixels"].shape[1] == 64  # 8x8 flattened
 ```
 
-- [ ] **Step 8: Run test to verify it fails**
+- [x] **Step 8: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_train_recogniser.py -k pca_recogniser_fit_produces -v`
 Expected: FAIL — `NameError: name 'PcaRecogniser' is not defined`.
 
-- [ ] **Step 9: Implement `PcaRecogniser`**
+- [x] **Step 9: Implement `PcaRecogniser`**
 
 Add to `web/train_recogniser.py`, directly after `HogRecogniser`'s class body (before `ACTIVE_RECOGNISER = HogRecogniser()`):
 
@@ -680,12 +680,12 @@ class PcaRecogniser:
 
 Note the new `"recogniser_type": "pca"` manifest field — `HogRecogniser.save()` is unchanged and so never writes this key; `loadNumRecogniser()` (Task 6) treats its absence as `"hog"` for backward compatibility with every already-committed manifest.
 
-- [ ] **Step 10: Run tests to verify they pass**
+- [x] **Step 10: Run tests to verify they pass**
 
 Run: `python -m pytest tests/test_train_recogniser.py -k "pca_recogniser or cluster_pseudo_labels" -v`
 Expected: PASS (3 tests).
 
-- [ ] **Step 11: Run bronze gate and commit**
+- [x] **Step 11: Run bronze gate and commit**
 
 ```bash
 bash scripts/run-bronze-gate.sh
@@ -705,7 +705,7 @@ git commit -m "feat: add PcaRecogniser with cluster-mean-seeded PCA fit and temp
 - Consumes: nothing new.
 - Produces: `build_dataset(samples, n_dither, sample_weights, translate=True)` — new keyword, default `True` preserves existing `HogRecogniser` behavior exactly.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `tests/test_train_recogniser.py` (find the existing `test_build_dataset_shape` test first via serena and match its fixture style):
 ```python
@@ -720,12 +720,12 @@ def test_build_dataset_translate_false_keeps_dx_dy_zero() -> None:
 
 (This is a shape/acceptance test, not a pixel-level translation-disabled test, since verifying "no shift happened" needs a non-trivial source image and reaching into `dither_batch`'s internals — if a stronger assertion is wanted, extend this using a single off-center pixel and asserting its position is unchanged across all variants when `translate=False`, vs how it can move when `translate=True`.)
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_train_recogniser.py -k translate_false -v`
 Expected: FAIL — `build_dataset() got an unexpected keyword argument 'translate'`.
 
-- [ ] **Step 3: Thread `translate` through `dither_batch`/`_dither_numba`/`build_dataset`**
+- [x] **Step 3: Thread `translate` through `dither_batch`/`_dither_numba`/`build_dataset`**
 
 In `web/train_recogniser.py`, modify `dither_batch`:
 ```python
@@ -801,12 +801,12 @@ def build_dataset(
     return aug_imgs, np.array(aug_labels, dtype=np.int64), np.array(aug_weights, dtype=np.float64)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_train_recogniser.py -k "translate_false or build_dataset_shape" -v`
 Expected: PASS — both the new test and the pre-existing `test_build_dataset_shape` (default `translate=True`, unaffected).
 
-- [ ] **Step 5: Run bronze gate and commit**
+- [x] **Step 5: Run bronze gate and commit**
 
 ```bash
 bash scripts/run-bronze-gate.sh
@@ -825,7 +825,7 @@ git commit -m "feat: add translate flag to dither_batch/build_dataset for center
 - Consumes: `PcaRecogniser`, `HogRecogniser` (both existing after Task 4), `build_dataset(..., translate=...)` (Task 5).
 - Produces: `--recogniser {hog,pca}` CLI flag selecting `ACTIVE_RECOGNISER` at runtime (replacing the current hardcoded module-level singleton).
 
-- [ ] **Step 1: Change `ACTIVE_RECOGNISER` from a module constant to a CLI-selected local**
+- [x] **Step 1: Change `ACTIVE_RECOGNISER` from a module constant to a CLI-selected local**
 
 In `web/train_recogniser.py`, remove the module-level line:
 ```python
@@ -879,7 +879,7 @@ Replace every `ACTIVE_RECOGNISER` reference in `main()` (the feature-extraction,
     )
 ```
 
-- [ ] **Step 2: Thread `translate=False` for the PCA path into the `build_dataset` call**
+- [x] **Step 2: Thread `translate=False` for the PCA path into the `build_dataset` call**
 
 Change the existing `build_dataset` call:
 ```python
@@ -890,7 +890,7 @@ Change the existing `build_dataset` call:
     )
 ```
 
-- [ ] **Step 3: Update `test_active_recogniser_is_hog_by_default`**
+- [x] **Step 3: Update `test_active_recogniser_is_hog_by_default`**
 
 This test currently asserts `isinstance(ACTIVE_RECOGNISER, HogRecogniser)` against the removed module constant. Change it in `tests/test_train_recogniser.py` to test the CLI default instead:
 ```python
@@ -901,7 +901,7 @@ def test_recogniser_cli_defaults_to_hog() -> None:
 
 (This is a thin, honest test of the documented default rather than importing/re-parsing `main()`'s full argparse — if the codebase has an existing pattern for testing CLI defaults more directly elsewhere in this test file, check via serena and match it instead.)
 
-- [ ] **Step 4: Run a real end-to-end smoke test of the new CLI flag**
+- [x] **Step 4: Run a real end-to-end smoke test of the new CLI flag**
 
 Run (from repo root; this exercises the full `PcaRecogniser` path against real data for the first time):
 ```bash
@@ -909,7 +909,7 @@ python web/train_recogniser.py --recogniser pca --out /tmp/pca-smoke-test --brow
 ```
 Expected: completes without error, prints `Saved to /tmp/pca-smoke-test/ [pca/rbf]` with support-vector/template/class-mean-PCA summary lines. This is a smoke test only (small `--max-fit-samples`, `--no-synthetic` for speed) — the real training run with synthetic fonts included happens in Task 8.
 
-- [ ] **Step 5: Run bronze gate and commit**
+- [x] **Step 5: Run bronze gate and commit**
 
 ```bash
 bash scripts/run-bronze-gate.sh
@@ -929,7 +929,7 @@ git commit -m "feat: wire PcaRecogniser into train_recogniser.py's --recogniser 
 - Consumes: `classMeanProject`, `ClassMeanReduction`, `RBFClassifier`, `ovoVote`/`rbfPredictWithConfidence`, `centerByCentroid` (all existing/Task 1).
 - Produces: `PcaRecogniser` class; `loadNumRecogniser()` dispatches on a new `recogniser_type` manifest field (`'hog' | 'pca'`, defaulting to `'hog'` when absent, matching every already-committed manifest).
 
-- [ ] **Step 1: Write the failing test for template matching**
+- [x] **Step 1: Write the failing test for template matching**
 
 Add to `web/src/image/numberRecognition.test.ts`, a new describe block:
 ```ts
@@ -954,12 +954,12 @@ describe('PcaRecogniser', () => {
 
 (This test's fixture-construction body is intentionally left to be filled in against whatever manifest-building helper `numberRecognition.test.ts` already has — the `loadNumRecogniser class dispatch` block loads real committed files rather than building one from scratch in-memory, so check whether a synthetic-manifest helper already exists elsewhere in the test suite (Python's `test_hog_recogniser_save_keys*` tests build real ones via `HogRecogniser.save()` — the TS side may need a small one added here, in which case add it as a local helper in this describe block, not exported.)
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/image/numberRecognition.test.ts -t PcaRecogniser`
 Expected: FAIL — `PcaRecogniser is not defined`.
 
-- [ ] **Step 3: Implement `PcaRecogniser`**
+- [x] **Step 3: Implement `PcaRecogniser`**
 
 Add to `web/src/image/numberRecognition.ts`, after `HogRecogniser`'s class body:
 
@@ -1039,7 +1039,7 @@ export class PcaRecogniser extends NumRecogniser {
 }
 ```
 
-- [ ] **Step 4: Extend `loadNumRecogniser()` to dispatch on `recogniser_type`**
+- [x] **Step 4: Extend `loadNumRecogniser()` to dispatch on `recogniser_type`**
 
 In `web/src/image/numberRecognition.ts`, change the `loadNumRecogniser` signature and body (lines 439-526):
 
@@ -1167,16 +1167,16 @@ export function loadNumRecogniser(
 }
 ```
 
-- [ ] **Step 5: Fill in the Step 1 test's fixture-building and assertion, now that `PcaRecogniser` exists**
+- [x] **Step 5: Fill in the Step 1 test's fixture-building and assertion, now that `PcaRecogniser` exists**
 
 Complete the `buildManifest` helper and test body from Step 1 using `loadNumRecogniser` with a hand-built `arrays` map (2 templates, e.g. digit `1` = all-zero image, digit `7` = all-255 image, matching test-crop inputs exactly so the normalized cross-correlation score is `1.0` and unambiguously exceeds the `0.9` threshold).
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `npx vitest run src/image/numberRecognition.test.ts`
 Expected: PASS, including the existing `loadNumRecogniser class dispatch` block (still exercising only `HogRecogniser` manifests, unaffected since `recogniser_type` defaults to `'hog'`).
 
-- [ ] **Step 7: Run bronze gate and commit**
+- [x] **Step 7: Run bronze gate and commit**
 
 ```bash
 bash scripts/run-bronze-gate.sh
@@ -1193,7 +1193,7 @@ git commit -m "feat: add PcaRecogniser TS class with template-match fast path"
 **Interfaces:**
 - Consumes: `--recogniser pca` CLI flag (Task 6), rebuilt `web/corpus_train.json` (Task 3).
 
-- [ ] **Step 1: Train the full PCA candidate**
+- [x] **Step 1: Train the full PCA candidate**
 
 Run (from repo root):
 ```bash
@@ -1202,7 +1202,7 @@ python web/train_recogniser.py --recogniser pca --out /tmp/pca-candidate
 ```
 Expected: completes (synthetic fonts included by default, matching the design spec's decision 4), prints final `Saved to /tmp/pca-candidate/ [pca/rbf]` summary.
 
-- [ ] **Step 2: Swap into `web/public/` for validation (back up the currently-deployed model first)**
+- [x] **Step 2: Swap into `web/public/` for validation (back up the currently-deployed model first)**
 
 ```bash
 mkdir -p /tmp/deployed-backup
@@ -1210,13 +1210,13 @@ cp web/public/num_recogniser.bin web/public/num_recogniser.json /tmp/deployed-ba
 cp /tmp/pca-candidate/num_recogniser.bin /tmp/pca-candidate/num_recogniser.json web/public/
 ```
 
-- [ ] **Step 3: Regenerate the failure-hash baseline for the new candidate**
+- [x] **Step 3: Regenerate the failure-hash baseline for the new candidate**
 
 ```bash
 cd web && npx vite-node --script scripts/regen-failure-hashes.ts && cd ..
 ```
 
-- [ ] **Step 4: Un-skip the accuracy-floor test and run it**
+- [x] **Step 4: Un-skip the accuracy-floor test and run it**
 
 In `web/src/image/numberRecognition.test.ts`, remove the `.skip` added earlier (revert to plain `describe('digit recogniser — bundled model inference on training data', ...)`) and delete the now-obsolete comment block above it explaining the skip. Run:
 ```bash
