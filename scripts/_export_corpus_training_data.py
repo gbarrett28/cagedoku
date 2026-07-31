@@ -34,6 +34,8 @@ from numpy.typing import NDArray
 from sklearn.decomposition import PCA
 from sklearn.mixture import GaussianMixture
 
+from killer_sudoku.training import ts_bridge
+
 THUMBNAIL_SIZE = 64
 N_CLUSTERS = 4
 PCA_COMPONENTS = 20
@@ -59,20 +61,33 @@ def fetch_digit_rows(
     cur = conn.execute(
         """
         SELECT puzzle_hash, cell_type, row, col, digit_index,
-               hog_features, hole_features, recognition_pixels, warp_strategy
+               source_pixels, source_width, source_height
         FROM cell_reads
         WHERE git_hash = ? AND predicted_label = ?
           AND cell_type IN ('given_digit', 'cage_total_digit')
+          AND source_pixels IS NOT NULL
         """,
         (git_hash, digit),
     )
     return cur.fetchall()
 
 
-def cluster_ids_for(rows: list[sqlite3.Row]) -> NDArray[np.int64]:
-    hog = np.array([json.loads(r["hog_features"]) for r in rows])
-    hole = np.array([json.loads(r["hole_features"]) for r in rows])
-    features = np.hstack([hog, hole])
+def warp_rows(rows: list[sqlite3.Row]) -> NDArray[np.uint8]:
+    """Warp raw source_pixels through the centered strategy via the TS bridge."""
+    crops = [
+        ts_bridge.RawDigitCrop(
+            pixels=np.array(json.loads(r["source_pixels"]), dtype=np.uint8).reshape(
+                r["source_height"], r["source_width"],
+            )
+        )
+        for r in rows
+    ]
+    return ts_bridge.warp_crops(crops, strategy="letterbox-centered", size=THUMBNAIL_SIZE)
+
+
+def cluster_ids_for(warped: NDArray[np.uint8]) -> NDArray[np.int64]:
+    hog, hole, aspect = ts_bridge.extract_features(list(warped))
+    features = np.hstack([hog, hole, aspect.reshape(-1, 1)])
     reduced = PCA(n_components=min(PCA_COMPONENTS, features.shape[1]), random_state=0).fit_transform(features)
     gmm = GaussianMixture(n_components=N_CLUSTERS, random_state=0, n_init=5)
     result: NDArray[np.int64] = gmm.fit_predict(reduced)
@@ -130,10 +145,11 @@ def main() -> None:
         rows = fetch_digit_rows(conn, git_hash, raw_digit)
         if not rows:
             continue
-        cluster_ids = cluster_ids_for(rows)
+        warped = warp_rows(rows)
+        cluster_ids = cluster_ids_for(warped)
         n_corrected = 0
         n_excluded = 0
-        for row, cid in zip(rows, cluster_ids, strict=True):
+        for row, img, cid in zip(rows, warped, cluster_ids, strict=True):
             key = (row["puzzle_hash"], row["cell_type"], row["row"], row["col"], row["digit_index"])
             if key in excluded:
                 n_excluded += 1
@@ -142,8 +158,7 @@ def main() -> None:
             if corrected_label != raw_digit:
                 n_corrected += 1
             strata_by_digit[corrected_label][(raw_digit, int(cid))].append({
-                "recognition_pixels": row["recognition_pixels"],
-                "warp_strategy": row["warp_strategy"],
+                "recognition_pixels": img.flatten().tolist(),
             })
         print(f"raw_digit {raw_digit}: {len(rows)} rows, {n_corrected} corrected, {n_excluded} excluded")
 
@@ -154,14 +169,10 @@ def main() -> None:
         picked = stratified_sample(strata, args.samples_per_digit, rng)
         print(f"digit {digit}: {len(strata)} strata -> sampled {len(picked)}")
         for p in picked:
-            pixels = json.loads(p["recognition_pixels"])
-            warp_strategy = p["warp_strategy"]
-            if warp_strategy not in ("stretch", "letterbox"):
-                raise ValueError(f"unexpected warp_strategy {warp_strategy!r} for digit {digit}")
             samples.append({
                 "digit": digit,
-                "recognitionPixels": pixels,
-                "warpStrategy": warp_strategy,
+                "recognitionPixels": p["recognition_pixels"],
+                "warpStrategy": "letterbox-centered",
             })
 
     conn.close()
