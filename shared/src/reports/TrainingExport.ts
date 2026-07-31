@@ -7,7 +7,7 @@ export interface TrainingSample {
   readonly sourceHeight: number;
   readonly sourcePixels: readonly number[];
   readonly recognitionPixels: readonly number[];
-  readonly warpStrategy: 'stretch' | 'letterbox';
+  readonly warpStrategy: 'stretch' | 'letterbox' | 'letterbox-centered';
 }
 
 export interface TrainingExport {
@@ -58,7 +58,7 @@ export namespace TrainingExport {
     if (rectWidth !== sourceWidth || rectHeight !== sourceHeight) return false;
     if (!isByteArray(s['sourcePixels'], sourceWidth * sourceHeight)) return false;
     if (!isByteArray(s['recognitionPixels'], 64 * 64)) return false;
-    if (s['warpStrategy'] !== 'stretch' && s['warpStrategy'] !== 'letterbox') return false;
+    if (s['warpStrategy'] !== 'stretch' && s['warpStrategy'] !== 'letterbox' && s['warpStrategy'] !== 'letterbox-centered') return false;
     return true;
   }
 

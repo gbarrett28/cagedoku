@@ -109,14 +109,14 @@ type ReportOutcomeFn = (o: {
     row: number; col: number; predictedLabel: number; confident: boolean;
     clashesWith: { row: number; col: number }[];
     sourceX: number; sourceY: number; sourceWidth: number; sourceHeight: number;
-    sourcePixels: number[]; recognitionPixels: number[]; warpStrategy: 'stretch' | 'letterbox';
+    sourcePixels: number[]; recognitionPixels: number[]; warpStrategy: WarpStrategy;
     hogFeatures: number[]; holeFeatures: number[];
   }> | undefined;
   /** Ground-truth crop+label for every cage-total digit cell of a killer puzzle upload. */
   cageTotalReads?: ReadonlyArray<{
     row: number; col: number; digitIndex: number; predictedLabel: number; confident: boolean;
     sourceX: number; sourceY: number; sourceWidth: number; sourceHeight: number;
-    sourcePixels: number[]; recognitionPixels: number[]; warpStrategy: 'stretch' | 'letterbox';
+    sourcePixels: number[]; recognitionPixels: number[]; warpStrategy: WarpStrategy;
     hogFeatures: number[]; holeFeatures: number[];
   }> | undefined;
 }) => void;
@@ -1399,7 +1399,7 @@ async function handleProcess(file?: File): Promise<void> {
       const buildCageTotalReadsPayload = (): ReadonlyArray<{
         row: number; col: number; digitIndex: number; predictedLabel: number; confident: boolean;
         sourceX: number; sourceY: number; sourceWidth: number; sourceHeight: number;
-        sourcePixels: number[]; recognitionPixels: number[]; warpStrategy: 'stretch' | 'letterbox';
+        sourcePixels: number[]; recognitionPixels: number[]; warpStrategy: WarpStrategy;
         hogFeatures: number[]; holeFeatures: number[];
       }> =>
         uploadResult.cageTotalRecognitions !== undefined

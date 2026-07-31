@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  centerByCentroid,
   extractRawDigitCrop,
   getWarpFromRect,
   warpRawDigitCrop,
@@ -170,5 +171,21 @@ describe('raw digit crop warping', () => {
     const crop = extractRawDigitCrop(cv, warpedGrid, rect);
 
     expect(warpRawDigitCrop(cv, crop, 'letterbox', 8)).toEqual(expected);
+  });
+
+  it('applies centerByCentroid on top of the letterbox result for letterbox-centered', () => {
+    const cv = makeCv();
+    const warpedGrid = grid();
+    const rect = [2, 1, 3, 2] as const;
+    const scale = 7 / 3;
+    const destHeight = 2 * scale;
+    const offsetY = (7 - destHeight) / 2;
+    const source = [[2, 1], [5, 1], [5, 3], [2, 3]];
+    const destination = [[0, offsetY], [7, offsetY], [7, offsetY + destHeight], [0, offsetY + destHeight]];
+    const letterboxResult = getWarpFromRect(cv, source, warpedGrid, 8, 8, destination);
+    const expected = centerByCentroid(letterboxResult, 8);
+    const crop = extractRawDigitCrop(cv, warpedGrid, rect);
+
+    expect(warpRawDigitCrop(cv, crop, 'letterbox-centered', 8)).toEqual(expected);
   });
 });

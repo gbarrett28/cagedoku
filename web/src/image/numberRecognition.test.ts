@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { activeRecogniser, HogRecogniser, loadNumRecogniser, pcaProject, classMeanProject } from './numberRecognition.js';
+import { activeRecogniser, HogRecogniser, loadNumRecogniser, pcaProject, classMeanProject, centerByCentroid } from './numberRecognition.js';
 import type { NumRecogniser, PcaProjection, ClassMeanReduction } from './numberRecognition.js';
 
 // ---------------------------------------------------------------------------
@@ -332,5 +332,48 @@ describe('classMeanProject', () => {
     };
     const x = Float64Array.from([5, 7, 9]); // between: 5; residual after removing feature 0: [0,7,9] -> reads 7
     expect(Array.from(classMeanProject(x, 1, reduction))).toEqual([5, 7]);
+  });
+});
+
+describe('centerByCentroid', () => {
+  it('shifts an off-center ink blob to the canvas center', () => {
+    const size = 8;
+    const img = new Uint8Array(size * size);
+    // A single 2x2 ink block in the top-left corner (centroid at roughly (0.5,0.5)).
+    img[0 * size + 0] = 255; img[0 * size + 1] = 255;
+    img[1 * size + 0] = 255; img[1 * size + 1] = 255;
+
+    const centered = centerByCentroid(img, size);
+
+    let sx = 0, sy = 0, mass = 0;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const v = centered[y * size + x]!;
+        if (v > 0) { sx += x * v; sy += y * v; mass += v; }
+      }
+    }
+    expect(mass).toBeGreaterThan(0);
+    const cx = sx / mass, cy = sy / mass;
+    const canvasCenter = (size - 1) / 2;
+    expect(Math.abs(cx - canvasCenter)).toBeLessThanOrEqual(1);
+    expect(Math.abs(cy - canvasCenter)).toBeLessThanOrEqual(1);
+  });
+
+  it('leaves total ink mass unchanged for an already-centered blob', () => {
+    const size = 8;
+    const img = new Uint8Array(size * size);
+    img[3 * size + 3] = 255; img[3 * size + 4] = 255;
+    img[4 * size + 3] = 255; img[4 * size + 4] = 255;
+    const centered = centerByCentroid(img, size);
+    const totalBefore = img.reduce((a, b) => a + b, 0);
+    const totalAfter = centered.reduce((a, b) => a + b, 0);
+    expect(totalAfter).toBe(totalBefore);
+  });
+
+  it('returns an all-zero image unchanged (no ink, no centroid)', () => {
+    const size = 8;
+    const img = new Uint8Array(size * size);
+    const centered = centerByCentroid(img, size);
+    expect(centered.every(v => v === 0)).toBe(true);
   });
 });

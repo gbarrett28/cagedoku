@@ -31,7 +31,7 @@ export interface RawDigitCrop {
   readonly pixels: Uint8Array;
 }
 
-export type WarpStrategy = 'stretch' | 'letterbox';
+export type WarpStrategy = 'stretch' | 'letterbox' | 'letterbox-centered';
 
 /** Node in the OpenCV contour hierarchy tree. */
 export type ContourInfo = [br: BRect, children: ContourInfo[]];
@@ -751,7 +751,11 @@ export function warpRawDigitCrop(
       const src = [[0, 0], [crop.width, 0], [crop.width, crop.height], [0, crop.height]];
       return getWarpFromRect(cv, src, source, targetSize, targetSize);
     }
-    return letterboxWarp(cv, 0, 0, crop.width, crop.height, source, targetSize, targetSize);
+    const letterboxed = letterboxWarp(cv, 0, 0, crop.width, crop.height, source, targetSize, targetSize);
+    if (strategy === 'letterbox-centered') {
+      return centerByCentroid(letterboxed, targetSize);
+    }
+    return letterboxed;
   } finally {
     source.delete();
   }
@@ -775,6 +779,42 @@ function letterboxWarp(
   const src = [[ax, ay], [ax + bw, ay], [ax + bw, ay + bh], [ax, ay + bh]];
   const dst = [[offX, offY], [offX + destW, offY], [offX + destW, offY + destH], [offX, offY + destH]];
   return getWarpFromRect(cv, src, gry, resH, resW, dst);
+}
+
+/**
+ * Shift a square grayscale image so its ink center of mass lands at the
+ * canvas center, via integer pixel translation (no interpolation, no
+ * resampling — avoids introducing new blur/aliasing). Pixels shifted off
+ * the edge are dropped; pixels shifted in from off-canvas are filled with 0.
+ * A no-ink image (all zero) is returned unchanged (no centroid to align to).
+ */
+export function centerByCentroid(img: Uint8Array, size: number): Uint8Array {
+  let sx = 0, sy = 0, mass = 0;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const v = img[y * size + x]!;
+      if (v > 0) { sx += x * v; sy += y * v; mass += v; }
+    }
+  }
+  if (mass === 0) return img;
+
+  const cx = sx / mass, cy = sy / mass;
+  const canvasCenter = (size - 1) / 2;
+  const dx = Math.round(canvasCenter - cx);
+  const dy = Math.round(canvasCenter - cy);
+  if (dx === 0 && dy === 0) return img;
+
+  const out = new Uint8Array(size * size);
+  for (let y = 0; y < size; y++) {
+    const sy2 = y - dy;
+    if (sy2 < 0 || sy2 >= size) continue;
+    for (let x = 0; x < size; x++) {
+      const sx2 = x - dx;
+      if (sx2 < 0 || sx2 >= size) continue;
+      out[y * size + x] = img[sy2 * size + sx2]!;
+    }
+  }
+  return out;
 }
 
 /**
