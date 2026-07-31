@@ -31,12 +31,32 @@ OvO RBF-SVM (`HogRecogniser` in `web/src/image/numberRecognition.ts` and
 
 ## Decisions from brainstorming
 
-1. **Architecture: PCA + RBF-SVM only.** The historical `PcaRbfRecogniser`
-   (commit `ab8d94b`, since removed) was a two-stage classifier — template
-   matching against per-digit mean images as a fast path, falling back to
-   PCA-projected RBF-SVM. The template-matching stage is not being revived;
-   it was a speed optimization, not an accuracy contributor, and today's
-   RBF-SVM is fast enough without it.
+1. **Architecture: two-stage, template match against cluster means first,
+   PCA+RBF-SVM fallback.** Revisits an earlier call in this same brainstorm:
+   initially decided to drop the historical `PcaRbfRecogniser`
+   (commit `ab8d94b`, since removed) two-stage shape (per-digit template
+   match, falling back to PCA-projected RBF-SVM) as "a speed optimization,
+   not an accuracy contributor." That reasoning doesn't hold once the
+   templates are per-**(digit, cluster)** instead of per-digit: the
+   historical version matched against 10 blended, blurry per-digit averages;
+   this design's ~40 per-cluster templates are crisp, single-style images
+   (directly visible in this session's labeled contact sheet — each cluster
+   mean is a clean digit shape, not a blend of every font style for that
+   digit). A nearest-template match against 40 clean, style-specific
+   templates is a materially stronger standalone signal than against 10
+   blended ones, not just a speed shortcut.
+   - The 40 templates are already being computed as the PCA basis seed (see
+     decision 2) — reusing them as match targets costs nothing extra in
+     training, only a small inference-time step.
+   - Template-match-vs-RBF agreement is a free internal cross-check:
+     disagreement is a natural low-confidence signal, in the same spirit as
+     how disagreement analysis found the digit-3 mislabeling this session.
+   - Open decision, not yet settled: matching metric (historical precedent
+     is OpenCV's `TM_CCOEFF_NORMED` normalized cross-correlation; a simpler
+     cosine-similarity or normalized-Euclidean-distance metric is also
+     viable) and the confidence threshold above which a template match is
+     trusted outright — both to be tuned empirically once results are in,
+     the same way the residual-PCA coverage target is deferred.
 
 2. **PCA basis construction: cluster-means-first, residual-filled.**
    Rather than ordinary (unsupervised, variance-maximizing) PCA or the
@@ -91,12 +111,18 @@ OvO RBF-SVM (`HogRecogniser` in `web/src/image/numberRecognition.ts` and
   a raw-pixel flatten (no HOG/hole/aspect call) and `fit()`/`save()` using
   the cluster-mean-PCA path instead of the current PCA/class-mean-PCA
   branches built for HOG-derived features.
+- The 40 per-(digit, cluster) raw-pixel mean vectors computed in the
+  clustering step (above) are retained and exported as match templates —
+  no separate computation needed, they're the same means SVD'd for the PCA
+  basis.
 - Manifest schema: reuses the existing `cm_mean_of_means`,
   `cm_between_components`, `cm_residual_mean`, `cm_residual_components`
   array names — already implemented and already round-trips through
-  `loadNumRecogniser`. `classifier_type` stays `"rbf"`; a new field
-  distinguishes feature-extraction mode (HOG vs raw-pixel) so
-  `loadNumRecogniser` knows which recogniser class to construct.
+  `loadNumRecogniser`. New arrays: `template_pixels` (the 40 raw-pixel
+  templates, flattened) and `template_labels` (the digit each template maps
+  to). `classifier_type` stays `"rbf"`; a new field distinguishes
+  feature-extraction mode (HOG vs raw-pixel) so `loadNumRecogniser` knows
+  which recogniser class to construct.
 
 ### TypeScript (`web/src/image/numberRecognition.ts`)
 
@@ -105,11 +131,14 @@ OvO RBF-SVM (`HogRecogniser` in `web/src/image/numberRecognition.ts` and
   what the input feature vector represents.
 - New `PcaRecogniser` class (naming: `HogRecogniser` doing no HOG would be
   confusing, so this is a new sibling class, not a mode flag on the
-  existing one) implementing the `NumRecogniser` abstract base:
-  `extractFeatures()` returns the flattened raw pixel array; `recognise()`
-  mean-subtracts, projects via `classMeanProject`, and feeds the existing
-  `RBFClassifier`/`ovoVote`/`rbfPredictWithConfidence` inference path
-  unchanged.
+  existing one) implementing the `NumRecogniser` abstract base. Its
+  `recognise()` is two-stage:
+  1. Compare the raw pixel vector against each of the `template_pixels`
+     entries (matching metric TBD — see open questions). If the best match
+     scores above threshold, return that template's label directly.
+  2. Otherwise, mean-subtract, project via `classMeanProject`, and feed the
+     existing `RBFClassifier`/`ovoVote`/`rbfPredictWithConfidence`
+     inference path unchanged.
 - `loadNumRecogniser()` picks `HogRecogniser` vs `PcaRecogniser` based on
   the new manifest field.
 
@@ -125,7 +154,10 @@ OvO RBF-SVM (`HogRecogniser` in `web/src/image/numberRecognition.ts` and
   `test_compute_label_means_returns_one_row_per_unique_label` /
   `test_fit_class_mean_pca_rank_is_at_most_n_labels_minus_one` tests.
 - New TS unit tests for `PcaRecogniser` construction and inference, mirroring
-  `HogRecogniser`'s existing test coverage.
+  `HogRecogniser`'s existing test coverage, plus specific coverage for both
+  branches of the two-stage `recognise()`: a template-confident hit (stage 1
+  wins, stage 2 never runs) and a template-ambiguous case (falls through to
+  PCA+RBF).
 - Validation gate before considering deployment: same methodology already
   used for the HOG candidate — stratified-sample-and-check-disagreement
   against raw `predicted_label` across the full corpus.db population, plus
@@ -135,6 +167,9 @@ OvO RBF-SVM (`HogRecogniser` in `web/src/image/numberRecognition.ts` and
 
 - **Residual-component count** is not fixed by this spec — determined
   empirically from the first fit's explained-variance coverage.
+- **Template-match metric and confidence threshold** are not fixed by this
+  spec — start with `TM_CCOEFF_NORMED` (historical precedent) unless a
+  simpler metric proves equally good, tune the threshold empirically.
 - **Naming**: `PcaRecogniser` is a placeholder; final name TBD at
   implementation time if a clearer one emerges.
 - **Speed**: RBF-SVM fit cost depends on feature dimensionality; raw-pixel
