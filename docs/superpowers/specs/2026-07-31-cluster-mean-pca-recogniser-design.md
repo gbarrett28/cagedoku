@@ -109,7 +109,15 @@ OvO RBF-SVM (`HogRecogniser` in `web/src/image/numberRecognition.ts` and
      exactly this failure mode:** centering changes what the warp function
      outputs, so `corpus_train.json`'s currently-stored `recognitionPixels`
      (warped without centering) cannot be reused as-is for this recogniser
-     -- crops need re-extraction through the centered warp path. The
+     -- crops need re-extraction through the centered warp path. That
+     re-extraction must run the current production pipeline on the
+     *original source images* (guardian/observer directories), not
+     post-process `corpus.db`'s `cell_reads.source_pixels`: `source_pixels`
+     is the raw, pre-per-cell-warp bounding-box crop, with no
+     `warp_strategy`-style consistency guarantee across capture-time
+     pipeline versions -- untrusted for anything but debugging, same
+     failure mode as `browser_train.json`. See
+     `project_corpus_db_source_pixels_untrusted` in project memory. The
      existing `warpStrategy` tag (`'stretch' | 'letterbox'`) must be
      extended (a third value, or a companion boolean) so centered and
      uncentered crops are never silently mixed the way untagged
