@@ -77,7 +77,52 @@ OvO RBF-SVM (`HogRecogniser` in `web/src/image/numberRecognition.ts` and
      threshold is not fixed upfront — tune empirically once results are in,
      since the mechanism already supports an arbitrary residual count.
 
-3. **Training pool: corpus + synthetic, combined, from the start.** The
+3. **Crop normalization: centroid (center-of-mass) alignment, translation
+   jitter dropped from dithering.** PCA on raw pixels is far more sensitive
+   to positional variance than HOG (HOG's per-cell binning gives it a degree
+   of built-in translation tolerance; raw-pixel PCA has none). Rather than
+   relying on translate-dithering to teach robustness to that variance
+   stochastically, remove it at the source: compute each crop's ink
+   center of mass and shift it to a fixed canonical position (crop center)
+   as a deterministic normalization step, applied identically at training
+   and inference time.
+   - This is a pure geometric transform (image -> shifted image), so per
+     CLAUDE.md's single-source-of-truth rule it lives in TS and is called
+     from Python via the bridge -- never reimplemented in Python. Likely
+     folded into the existing warp step (`letterboxWarp`/
+     `warpForRecognition`) rather than a separate pipeline stage, since
+     warping already places content within the 64x64 canvas; open
+     implementation question, not settled here.
+   - With centering handling translation deterministically, the `dx`/`dy`
+     translate-jitter component of `dither_batch`'s augmentation is dropped
+     for the PCA recogniser's training (redundant once position is
+     normalized). The erode/dilate/pixel-noise variants stay -- they target
+     stroke-width and print-quality variance, not position, and remain
+     relevant regardless of centering. `HogRecogniser`'s training is
+     unaffected (still not modified by this design).
+   - Direct benefit to decision 1's template match: the 40 cluster-mean
+     templates are currently plain pixel-wise averages. Averaging
+     misaligned crops blurs out fine detail (the same reason eigenfaces
+     aligns faces before averaging); centering first makes these templates
+     crisper for free, strengthening the fast path.
+   - **Risk, flagged explicitly given this session's repeated pain from
+     exactly this failure mode:** centering changes what the warp function
+     outputs, so `corpus_train.json`'s currently-stored `recognitionPixels`
+     (warped without centering) cannot be reused as-is for this recogniser
+     -- crops need re-extraction through the centered warp path. The
+     existing `warpStrategy` tag (`'stretch' | 'letterbox'`) must be
+     extended (a third value, or a companion boolean) so centered and
+     uncentered crops are never silently mixed the way untagged
+     `browser_train.json` samples were.
+   - **Deliberately not doing**: full moment-based scale/slant
+     normalization (normalizing 2nd-order image moments to a canonical
+     ellipse). That would risk washing out the aspect-ratio signal the
+     HOG-era work added specifically to separate 1 from 7. Centering only
+     touches position, not shape or aspect ratio, so it's safe by
+     construction; scale/slant normalization is a different, riskier lever
+     left alone unless centering alone proves insufficient.
+
+4. **Training pool: corpus + synthetic, combined, from the start.** The
    clustering step (and therefore the cluster means) operates on the
    combined pool of `corpus_train.json`'s cluster-reviewed crops (given +
    cage-total digits unified, 4000 samples) and the ~9045 synthetic
@@ -167,6 +212,13 @@ OvO RBF-SVM (`HogRecogniser` in `web/src/image/numberRecognition.ts` and
 
 - **Residual-component count** is not fixed by this spec — determined
   empirically from the first fit's explained-variance coverage.
+- **Centering implementation location and warp-strategy tagging** are not
+  fixed by this spec — whether centering is folded into `letterboxWarp`
+  itself or a distinct post-warp step, and the exact name/shape of the new
+  tag distinguishing centered from uncentered `recognitionPixels`, are
+  implementation-time decisions. Whatever the shape, corpus_train.json's
+  existing samples need re-extraction through the centered path before
+  training this recogniser — they cannot be reused as-is.
 - **Template-match metric and confidence threshold** are not fixed by this
   spec — start with `TM_CCOEFF_NORMED` (historical precedent) unless a
   simpler metric proves equally good, tune the threshold empirically.
