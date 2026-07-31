@@ -282,14 +282,21 @@ formats without format-specific training.
 ## Stage 5: Full Digit Recognition
 
 Cage totals are printed in the top-left of the cage's top-left cell.  This stage
-classifies each contour candidate (located in Stage 3) using HOG + hole-count features
-and the production OvO RBF SVM.
+classifies each contour candidate (located in Stage 3) using the deployed model's
+recogniser architecture.
 
-> The browser supports one recogniser architecture: `HogRecogniser` with
-> `classifier_type: "rbf"`. Its required manifest `warp_strategy` selects the
-> production `stretch` or aspect-preserving `letterbox` warp before TypeScript-owned
-> HOG/hole feature extraction and inference. Missing/unsupported strategies and legacy
-> PCA/template or linear-classifier manifests are rejected explicitly.
+> The browser supports two recogniser architectures, selected by the manifest's
+> `recogniser_type` field (`loadNumRecogniser` dispatches on it; absent means
+> `"hog"`, for backward compatibility with every manifest committed before
+> 2026-07-31): `HogRecogniser` (HOG + hole-count features, OvO RBF SVM — see
+> below) and `PcaRecogniser` (cluster-mean-template match with an RBF-SVM
+> fallback — see "Cluster-mean PCA recogniser" below). Both require
+> `classifier_type: "rbf"`. Every manifest's required `warp_strategy` selects
+> production `stretch`, aspect-preserving `letterbox`, or centroid-centred
+> `letterbox-centered` (§ below) before recognition; missing/unsupported
+> strategies are rejected explicitly. As of 2026-07-31, `PcaRecogniser` with
+> `letterbox-centered` is the deployed default (see "Cluster-mean PCA
+> recogniser").
 
 `buildCageTotals` (`inpImage.ts`) runs `cv.findContours` once over the whole warped
 board (`RETR_TREE`), walks the resulting hierarchy (`contourHier`), and keeps contours
@@ -314,7 +321,7 @@ thumbnail is produced or threaded through training export.
 
 Before either recognition warp, `extractRawDigitCrop` copies the exact bounding-box
 pixels from the warped binary grid into a `RawDigitCrop`. `warpRawDigitCrop` then applies
-the recogniser's named `stretch` or `letterbox` strategy using the shared production
+the recogniser's named `stretch`, `letterbox`, or `letterbox-centered` strategy using the shared production
 perspective-warp geometry. `ParseResult.cellSourceCrops` retains those strategy-neutral
 pixels in the same per-cell order as `cellThumbs` and the recognition results. The
 Node bridge exposes this same `warpRawDigitCrop` implementation to Python training in
@@ -364,6 +371,50 @@ flowchart TD
 | Confidence threshold | 0.7 | Vote fraction above which a read is `confident` |
 | Digit width bounds | `subres>>4 .. subres>>1` | `isDigitSizedContour`/`is_num_contour` |
 | Digit height bounds | `subres>>3 .. subres>>1` | `isDigitSizedContour`/`is_num_contour` |
+
+### Cluster-mean PCA recogniser (`PcaRecogniser`)
+
+Deployed 2026-07-31, replacing `HogRecogniser` as the production default after HOG +
+aspect-ratio features repeatedly failed to separate 1-vs-7 in full retrains (see
+`docs/superpowers/specs/2026-07-31-cluster-mean-pca-recogniser-design.md`, retained in
+git history). `PcaRecogniser` is a two-stage recogniser:
+
+1. **Template match (fast path).** Each crop is compared via normalized cross-correlation
+   (`normalizedCrossCorrelation`) against a small bank of per-cluster template images
+   (`template_pixels`/`template_labels` in the manifest). A confident match (score ≥ 0.9,
+   an untuned conservative placeholder — see the design spec's open questions) returns
+   immediately with no SVM involved.
+2. **RBF-SVM fallback.** Crops that don't match a template confidently are projected
+   through a class-mean-PCA basis (`classMeanProject`, `ClassMeanReduction` — the same
+   between-class-mean reduction `HogRecogniser`'s optional `--class-mean-residual-components`
+   uses) and classified by an OvO RBF-SVM, identically to `HogRecogniser`'s classifier
+   stage.
+
+**Training (`web/train_recogniser.py --recogniser pca`):** raw pixels are the only
+feature — `PcaRecogniser.extract_features` is a flatten, no HOG/hole computation.
+Templates and the PCA basis are both derived from a training-time-only **per-digit GMM
+clustering** (`cluster_pseudo_labels`, `CLUSTER_N_CLUSTERS = 4`) on HOG+hole+aspect
+features — used purely to discover visually distinct sub-populations within a digit
+(different newspaper fonts), never computed at inference. Each sample gets a pseudo-label
+`digit * 10 + cluster_id`; `compute_label_means` over those pseudo-labels gives one
+template per cluster (40 in the 2026-07-31 model: 10 digits × 4 clusters), and
+`fit_class_mean_pca`'s SVD of those pseudo-label means gives the between-cluster-mean PCA
+components (39 = 40 − 1 directions in that model; no residual PCA layer was added, so
+within-cluster variance beyond those directions is discarded, not retained via a second
+stage). The RBF-SVM is fit on all samples projected into that space, labelled by true
+digit (not pseudo-label).
+
+**Crop normalization (`letterbox-centered` warp, `centerByCentroid`):** letterbox to
+64×64 as before, then the ink's centre-of-mass is shifted to canvas centre via integer
+pixel translation (no interpolation/blur). Because centring is now deterministic rather
+than relying on augmentation to teach translation robustness, `dither_batch`/
+`build_dataset`'s translate-jitter augmentation is disabled for this recogniser
+(`translate=False` — erode/dilate/noise augmentation unaffected).
+
+**Manifest:** `recogniser_type: "pca"`, plus `template_pixels`, `template_labels`,
+`cm_mean_of_means`, `cm_between_components` (and optional `cm_residual_mean`/
+`cm_residual_components`) alongside the standard `rbf_*` arrays. No `hog_*` or
+`pca_*` (the older optional ordinary-PCA-before-SVM) arrays are written.
 
 ### Classic digit reading (`readClassicDigits`)
 
@@ -576,7 +627,13 @@ had no schema version and no per-sample `warpStrategy` tag on many samples,
 making its provenance and warp consistency unverifiable; it was deleted rather
 than migrated. Known label corrections (found via per-digit clustering — see
 `killer_sudoku/training/digit_corrections.json`) are applied during export, not
-after the fact.
+after the fact. The export sources pixels from `cell_reads.source_pixels` (the
+raw, pre-warp bounding-box crop) rather than the derived `recognition_pixels`
+column — only the former is trustworthy ground truth; anything derived from it
+(64×64 `recognition_pixels`, HOG/hole features) is a debug aid, not a source of
+truth. Crops are re-warped fresh through the selected production strategy
+(`letterbox-centered` for the 2026-07-31 rebuild) rather than reusing whatever
+warp produced the cached `recognition_pixels`.
 
 ```mermaid
 flowchart LR
@@ -603,25 +660,30 @@ regression gating is separate: it runs the production browser over
 
 The trainer accepts strategy-neutral raw crops from schema-v2 browser exports and
 human-review overrides, optionally-capped historical bulk inputs, and training-only raw
-font glyphs. `--warp-strategy {stretch,letterbox}` selects the production TypeScript
-warp; its default is read from the currently deployed model manifest. Every raw sample
-passes once through `warpRawDigitCrop` via the batched TS bridge before dithering.
-Historical version-1 64×64 samples are explicitly treated as canonical `letterbox`
-inputs, never as raw crops, and are eligible only when `letterbox` is selected.
-Python is limited to orchestration, augmentation, scikit-learn fitting, and human label
+font glyphs. `--warp-strategy {stretch,letterbox,letterbox-centered}` selects the
+production TypeScript warp; its default is read from the currently deployed model
+manifest. Every raw sample passes once through `warpRawDigitCrop` via the batched TS
+bridge before dithering. Historical version-1 64×64 samples are explicitly treated as
+canonical `letterbox` inputs, never as raw crops, and are eligible only when
+`letterbox` is selected. `--recogniser {hog,pca}` (default `hog`) selects the
+architecture to train — see "Cluster-mean PCA recogniser" above for the `pca` option,
+which also disables dither translation jitter regardless of `--dither`. Python is
+limited to orchestration, augmentation, scikit-learn fitting, and human label
 curation; the human entry points are the trainer, low-confidence review, and applying
 review corrections.
 
 ```bash
-python web/train_recogniser.py --warp-strategy letterbox --browser-weight 1000 --max-per-class 1500 --no-synthetic --dither 18 guardian/guardian_train_sq.json observer/observer_train_sq.json
+python web/train_recogniser.py --recogniser pca --warp-strategy letterbox-centered --browser-weight 1000 --max-per-class 1500 --no-synthetic --dither 18 guardian/guardian_train_sq.json observer/observer_train_sq.json
 ```
 
 `--browser-weight` up-weights hand-verified browser/review samples relative to
 bulk/synthetic ones; `--max-per-class` caps each bulk digit class before any warp or
-dithering, bounding worst-case OVO fit time without doing doomed work. HOG and hole
-features are also extracted through the production TypeScript bridge. The selected
-strategy is written into `num_recogniser.json`, and the browser refuses missing or
-unsupported values.
+dithering, bounding worst-case OVO fit time without doing doomed work. For `--recogniser
+hog`, HOG and hole features are also extracted through the production TypeScript bridge;
+for `--recogniser pca`, raw pixels feed the fit directly and HOG/hole features are used
+only training-side, for clustering. The selected strategy and `recogniser_type` are
+written into `num_recogniser.json`, and the browser refuses missing or unsupported
+values.
 
 ```mermaid
 flowchart LR
