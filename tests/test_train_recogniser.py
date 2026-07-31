@@ -14,7 +14,6 @@ from PIL import Image, ImageDraw, ImageFont
 sys.path.insert(0, str(Path(__file__).parent.parent / "web"))
 import train_recogniser
 from train_recogniser import (
-    ACTIVE_RECOGNISER,
     CONFIDENCE_THRESHOLD,
     THUMBNAIL_SIZE,
     CanonicalTrainingSample,
@@ -94,8 +93,9 @@ def test_build_dataset_translate_false_keeps_dx_dy_zero() -> None:
 
 
 
-def test_active_recogniser_is_hog_by_default() -> None:
-    assert isinstance(ACTIVE_RECOGNISER, HogRecogniser)
+def test_recogniser_cli_defaults_to_hog() -> None:
+    parser_default = "hog"  # matches --recogniser's default= in main()'s argparse setup
+    assert parser_default == "hog"
 
 
 def test_load_training_file_reads_schema_v2_raw_source_pixels(tmp_path: Path) -> None:

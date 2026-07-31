@@ -493,9 +493,6 @@ class PcaRecogniser:
         print(f"  Bin size: {len(blob):,} bytes", flush=True)
 
 
-ACTIVE_RECOGNISER = HogRecogniser()
-
-
 # ---------------------------------------------------------------------------
 # I/O -- loading
 # ---------------------------------------------------------------------------
@@ -565,6 +562,8 @@ def load_training_file(
                 strategy = "stretch"
             elif stored_strategy == "letterbox":
                 strategy = "letterbox"
+            elif stored_strategy == "letterbox-centered":
+                strategy = "letterbox-centered"
             else:
                 raise ValueError(
                     f"{source}: canonical sample has unsupported warp strategy "
@@ -1083,7 +1082,18 @@ def main() -> None:
              "residual PCA components for general variance. Overrides --pca-components "
              "when set. -1 (default) disables it; 0 keeps only the between-class directions.",
     )
+    parser.add_argument(
+        "--recogniser", choices=("hog", "pca"), default="hog",
+        help="Recogniser architecture to train (default: hog, the current "
+             "production classifier). 'pca' trains the cluster-mean-seeded "
+             "PCA+RBF recogniser instead -- see "
+             "docs/superpowers/specs/2026-07-31-cluster-mean-pca-recogniser-design.md.",
+    )
     args = parser.parse_args()
+
+    active_recogniser: HogRecogniser | PcaRecogniser = (
+        PcaRecogniser() if args.recogniser == "pca" else HogRecogniser()
+    )
 
     t_start = time.time()
 
@@ -1177,7 +1187,10 @@ def main() -> None:
               f"{n_bulk} bulk, {n_synth} synthetic)", flush=True)
 
     print(f"{_elapsed()} Augmenting...", flush=True)
-    aug_imgs, y, weights = build_dataset(all_samples, args.dither, sample_weights)
+    aug_imgs, y, weights = build_dataset(
+        all_samples, args.dither, sample_weights,
+        translate=(args.recogniser != "pca"),
+    )
     print(f"{_elapsed()} Dataset: {aug_imgs.shape[0]} augmented images", flush=True)
     dataset_size_post_dither = aug_imgs.shape[0]
 
@@ -1190,20 +1203,27 @@ def main() -> None:
         print(f"{_elapsed()} Subsampled fit set (RBF-SVM cost backstop): "
               f"{before_n} -> {aug_imgs.shape[0]} rows (--max-fit-samples={args.max_fit_samples})", flush=True)
 
-    print(f"{_elapsed()} Extracting features ({type(ACTIVE_RECOGNISER).__name__})...", flush=True)
-    X = ACTIVE_RECOGNISER.extract_features(aug_imgs)
+    print(f"{_elapsed()} Extracting features ({type(active_recogniser).__name__})...", flush=True)
+    X = active_recogniser.extract_features(aug_imgs)
     print(f"{_elapsed()} Dataset: {X.shape[0]} samples x {X.shape[1]} features", flush=True)
 
-    print(f"{_elapsed()} Fitting ({type(ACTIVE_RECOGNISER).__name__})...", flush=True)
-    model = ACTIVE_RECOGNISER.fit(
-        X, y, weights,
-        pca_components=args.pca_components,
-        class_mean_residual_components=args.class_mean_residual_components,
-    )
+    print(f"{_elapsed()} Fitting ({type(active_recogniser).__name__})...", flush=True)
+    if isinstance(active_recogniser, PcaRecogniser):
+        model = active_recogniser.fit(
+            X, y, weights,
+            imgs_for_clustering=aug_imgs,
+            class_mean_residual_components=max(args.class_mean_residual_components, 0),
+        )
+    else:
+        model = active_recogniser.fit(
+            X, y, weights,
+            pca_components=args.pca_components,
+            class_mean_residual_components=args.class_mean_residual_components,
+        )
 
     print(f"{_elapsed()} Saving model...", flush=True)
     out_dir = Path(args.out)
-    ACTIVE_RECOGNISER.save(
+    active_recogniser.save(
         model, out_dir,
         confidence_threshold=args.confidence_threshold,
         warp_strategy=strategy,
