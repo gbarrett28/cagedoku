@@ -561,21 +561,32 @@ labelled digit's raw, variable-sized bounding-box crop (`sourceRect`,
 audit input (`recognitionPixels`) and its named `warpStrategy`. The raw pixels
 are copied from the warped grid before any stretch or letterbox operation, so
 training can later compare those strategies without changing the crop.
-Multiple export files are merged into `web/browser_train.json` over time.
-Because nothing previously deduplicated these merges, the file accumulated many exact
-byte-identical repeats of the same crop (up to 65% of its 8362 samples, in one
-clean-up pass). `web/train_recogniser.py` now deduplicates all merged inputs before
-production warping, weighting, or dithering. The key includes label, raw/canonical kind,
-geometry, pixels, and (for canonical samples) warp strategy; the first occurrence wins,
-so a later duplicate cannot be multiply-counted under `--browser-weight`.
+Multiple export files are merged into `web/corpus_train.json` over time.
+`web/train_recogniser.py` deduplicates all merged inputs before production warping,
+weighting, or dithering. The key includes label, raw/canonical kind, geometry, pixels,
+and (for canonical samples) warp strategy; the first occurrence wins, so a later
+duplicate cannot be multiply-counted under `--browser-weight`.
+
+As of 2026-07-31, `web/corpus_train.json` was rebuilt from scratch via
+`scripts/_export_corpus_training_data.py`, which pulls given-digit and
+cage-total-digit crops directly from `corpus.db`'s `cell_reads` (all from a
+single evaluation run, so every sample shares a known, uniform `warpStrategy`)
+rather than from accumulated browser exports. The prior `browser_train.json`
+had no schema version and no per-sample `warpStrategy` tag on many samples,
+making its provenance and warp consistency unverifiable; it was deleted rather
+than migrated. Known label corrections (found via per-digit clustering — see
+`killer_sudoku/training/digit_corrections.json`) are applied during export, not
+after the fact.
 
 ```mermaid
 flowchart LR
     A[user scans puzzle\nin browser] --> B[OCR pipeline\nextracts digit thumbnails]
     B --> C[user reviews +\ncorrects labels]
-    C --> D[Export Training button\n-> browser_train.json]
-    D --> E[merge into\nweb/browser_train.json]
+    C --> D[Export Training button\n-> training JSON]
+    D --> E[merge into\nweb/corpus_train.json]
     E --> F[train_recogniser.py\ndedupe merged inputs before warp]
+    G[corpus.db cell_reads] --> H[_export_corpus_training_data.py\ncluster + apply corrections]
+    H --> E
 ```
 
 **Historical bulk exports.** The archived Python newspaper extractor and pickle-cache

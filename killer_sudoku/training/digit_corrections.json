@@ -1,0 +1,3584 @@
+{
+  "gitHash": "revert-b649063",
+  "description": "Corrections and exclusions found via full-corpus clustering + stratified-training disagreement analysis (2026-07-30/31). See docs/superpowers/specs for methodology.",
+  "corrections": [
+    {
+      "puzzleHash": "002283fed768b84065fc835ebd925c1e2236460175f58e870fdbfacfdd1744fb",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "00989757e3ab80ce3b06f67c1c8479c5d73a443f79fecee34c2e9e4d2241afc6",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "013676287dfd71b5de11dc3f16c8258f6137c468bd02f2cc81bb5220f9c73b7c",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "01b39a6f3ffc33855c9acb57a79ae98cd659e2120ddec5fbcb8cfedc97124fec",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "0305515298f698071660cd947e6833b9c9015e135fd08f0af0fc92944b986aaa",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "03db7c54407e6a00e36492fdd12379db3e84654ba711962a9235d289cbf1e257",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "0766452de06d05ff7610fa9f9099649b671e00a3a413b0897737f366a75d2c1c",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "0766452de06d05ff7610fa9f9099649b671e00a3a413b0897737f366a75d2c1c",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "077a6a00e7e5495b706cc37732cebcc1e6d4f191a65f91a1810781d81061c7bf",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "07cef03304d7d2aead3cee12349c698da76345e86eff26540d4aab229e3eaddc",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "07cef03304d7d2aead3cee12349c698da76345e86eff26540d4aab229e3eaddc",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "08ee5393b09886f7442c133f29114eddb32d475941b353182d3c44279ad0c1c2",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "09311916cf485c0c40f7c08c7c19dc07001459714fed2ae605cc71c22aa3fedb",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "09b37d5305e54e1bf765c60d90e7399d189d971561005b965266fb2f43f4c6ba",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "09b37d5305e54e1bf765c60d90e7399d189d971561005b965266fb2f43f4c6ba",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "09d8206094db16b58e630413c7bcc61b814e0399a609e5d238c2074614f912c9",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "0ad1063b24536b862f3a1fc42513781ab424f1e36472f6141f24c64a0f8d9b7c",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "0afc577664174adc968e7f39d9474715d96f541051965903583974f9d68ca2fc",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "0c1366ab1e5f1d4b0619244cbdf233d3c6331bc22946197e6a2412669f49f7cf",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "0c31dc1fbff36c77e9f5d45503b0fb8cf7b1d6864ee341fc2faaa058f3064a4b",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "0dc1a4943fdb50c464d8726165060775cb82f503a1733f03f0de382ff97a0bac",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "0deb5ab6b3dd044be481af87fdf29a035b40aedbdbcabf3ca5308a01772d9e2e",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "0e9df47fa4b04162c9f3658398935b9ce64f9efe344eeee16edcd5713af2b8a1",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "0ec80aad51fb5f4e9f073bcb69d9dc6b628741d8e3a2077747b959fb414c2f2d",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "0f12b384a433d32d043afc95c53cdbd9be682f4f9c8d490e3e0e39f67773b4da",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "0f358c9ee35cc42786323d133e2ef3421876e9c5ebb2bbe28ee6aab2fbbc2673",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "10b5a099cbab1114537272cdde572c3d499f5b67e675e1611d66b162dd806726",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "10d2faba6174b0f1af33c9424a677d98d8043fa13640567b8896f3030bb2fd50",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "10d2faba6174b0f1af33c9424a677d98d8043fa13640567b8896f3030bb2fd50",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "1185249cc8ff0325dab24ff8d843da3f659823ea76e8c2ab8a0f3125c3c22392",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 2,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "11e7d7d4250e97244759f20adfbe99f04dc6662ffe44bd24d89df23b457b86ac",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "1278801d94ec6d57762e5350eaf342f8a3473f7ecba6b9ca8d547696ce278a54",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "12dac71a72ee6a24ba0141d463859a9a5008ce03ed00915aa188458b7d164c0a",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "14a1e4fb65ea0899e0dc1e58fc965327427a3aab6ea5c4273e46b43a0e1b7a54",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "14a9475957b983122dc4cb7696bdb58e9e20ee9568a15a1f9a760fe63e09af96",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "14ebe9aff47bb33af7018414d029b87ffc05d0115763622b602cc33aa779e19f",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "15365804ef46bb7706cb1d857b0ff0016095fb35eec63c8cf54337abdd229a52",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "158421447f2e114eea910011a3601092c47ec178dbaafb8712d625301bc9d0bc",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "165f270f00fba38895bc1f204ed902e83ec13d80f58d9dba4a0dcb18836e192e",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "16935a91efefbe12cce64fce9e659bd0d3cfb6377c9736303cd24ad269d687a9",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "17738d256a38f4570b5efdc89f81013a7089d5acc4f00b17e8bd1798756df5f1",
+      "cellType": "given_digit",
+      "row": 4,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "182e3f86d2204693d13a631104265aed5c4c1d26f2b363a976d32735fd0bff80",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "184b951efd73729a5c56f93df06b97aecf6abecfa20fda0992a7560882d85610",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "186b25f990431d89ca75c97b1bd85ebe060c24c03c1395c0f779a8fd10797af5",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "1923e755ccb49685c10e96b34df115773bfeaae60b66cbd2c9590983203915cf",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "19d8bb8dc5f46db8607e99a45d03c753fb8743d8d1c89e892fc42dba6838cc34",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "1a5d09127c511cc86c41ec57d0e6cc8437d4c00cd53d667f1ba7fefc0f201c54",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "1af25d788b5f88eabf5085c660469ca9a101e4929d3211ab4ecf272b135b4d94",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "1b3de3ec6265e49a6319cc3c4548b818f7e739a5300285ba1ee9a475c878876d",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "1cba4c633251e5de35c9c124cd5b3231de9fc65cb533ed5c49b82cc0736637d3",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "1e2274a72a3dff8d52d8cbf661d216ee632a5a26b570b1dcee6ae187f796f063",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "1eff1b9b946706c27ef9c285db3b26c623f79d3664e3cc08d7b9f95b61818f42",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "1f7f533a02f230a51b895b888cbe4e06367b23d6910715f36eaff16138af32c9",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "201c702721b0337d66359644f71be4efa5a5ca7c71a7e33dffdc908b82a6f611",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "20226edc91140b83f620687726bd40edb3fc9f7de1c7aa8b07b712720098bd67",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "209f5b463444336b43459939af2d38bab66f5cb3e587de0e97e11a7b8910a7be",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "20a26c8cb6c8a24c2b21c82d877babebff30356498b4ca916f1d6b9aa92b8c38",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "20c406c0874dffa32408c3bcf0e28a3a6d294c7c94177b40e649208dffab7286",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "20ebd267772a909f718fc95c5d1374c72b6bc641c733192a45dfd64bf51cb37f",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "2385fe4bf07f3785354e46450e02d4cd0d4af05f9b78dd83c899ae59be24a86b",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "247ee379b2acb1617bf15fc72dcb6505f2e830494f846b2f6aee5c58c57162fe",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "252a35908457ae0067f88112a9b75ff7669a7b673e8dd10ef8a63e2d269a6289",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "25448884ff791bb36e65017a21f1ad84e721b3f783a4cb5c432fa97cf9517172",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "25668e79986ab5fac3c1037ad2da0f54724f29a5efa706e9075e804f4ae49197",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "25856add0ef640532616878129a96fe14b82f75ec13cc298caf8048e2f181d3c",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "26a399f3a4a44455f0ba5676a1b6f2e021b4a55482cd994d490bacd7e9da4526",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "26c143e31b85cae4e13edc01c8a5173e20d8c1b240bd2ab3b00ff00176350be3",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "27069818fd91bc2bee7a4847995e563c3b9653952c889eb251c74fd1039c1838",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "27707129808e3f181c8e72751df5171a02925c9513b4a50c23191871d05f4dfa",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "2913889286b01e9df8451733145de4eb85e3cbf47c6c1546715612774ac41e74",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "2964e867e21bad7fa4dca165904d3adbcc709d25070fe5d255d42fc3e23e25b1",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "2a74c8e1dce452b05e9a7514d58f58f844214fe5cbd1fea0b97e40d8b7d8dc8f",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "2a96c8307c3bbd691912fadeec68137ebfdeef0bf3dfe14cdd6438e32a832c3e",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "2b8e1e430526e9f458ed6151312e003191a1c72a73209c439848aebfb6e6af5c",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "2ba0e8a7edf819635c52828f8cc02d9d3e590369773a74b91db78def9690d499",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "2c5daf70de34a5f65cdc60e19fcf8628b85174b0e4625a058b69d4fc51afeadc",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "2cacf72a8da9dfee1e1514bd3606915417e3877f1177e9cba853b9d0ca56cea4",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "2d58eb349cb0936b3aed2b6d57483da403c8b4760c413997e4f40fed092e910c",
+      "cellType": "given_digit",
+      "row": 4,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "2e4afad8b154ed88f1af61b2a5441774dd44fb34bda5efa94ec8a29a20317d91",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "2fb1039b50cd1600feb21b95629e568f1d9a1518293fa22db51b313491c0a4d8",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "2feaaab519c5fe082843cf9d643a73852247c2eca18b04dc76784d0f89123a60",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "2feaaab519c5fe082843cf9d643a73852247c2eca18b04dc76784d0f89123a60",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "30f85da34509c77b7b1fdb0b6ee6b8cb6a0d37ab8db8aa6b62971d8d08fae897",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "31d375d1bd7c85ec7a2ccb77a6176a11c4a40f80ca5b29f8b3201f52643a1621",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "32f195bbfa14719bcc34b7e61722ba89f116d769dd0693092f19fa69c1608158",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "348b9a45c4e0be3e49fc96bf0c7c4dcda02a1ac0d521f9db723c2d5d6816e532",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "35e33d62d42bbf3f088bd71148aea2f57f872e0c59d95abf198e356867ac2d43",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "36b52f2a4dcb816e68a498cae406fed5e0a2fb16ee45cc1a0540b46a2f51e9e3",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "36b52f2a4dcb816e68a498cae406fed5e0a2fb16ee45cc1a0540b46a2f51e9e3",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "36f6c29a2359efc73cd050d10c6bfccc32c78a753c7c1901c38ae1046da3a02d",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "373d5beea17cb6407636c04a30e619d20a192027312cac0ed577b6c01f8c7401",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "37a58dbfb3526a22a660216df79f6b4ec4e80b43eeb622416608493e939052c1",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "3832067de5b19fb7f3a844e8d765355abf3af2c651d8e74cb587225da87143d1",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "3832067de5b19fb7f3a844e8d765355abf3af2c651d8e74cb587225da87143d1",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "38446cf0c0b7a8b11eb059f3a2d8cb15c24c2e7559a797f587fd511a74559e2e",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "3861fa6d957fdac513f4f7c470e23d3cd0bb2b40cd19c212c3befe9438385524",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "390c8a3336d048c0f0a936b00e3f004765d96251cef3bda3919f75cfc72d94b1",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "39518e1c624fcbe709ff87a0536a1bfef701123b6976fd5f7365d3efa0164928",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "3ace274a9cf38322ebcd06572725a2db517c8251b00fbfb8f450ec6edade2da0",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "3ace274a9cf38322ebcd06572725a2db517c8251b00fbfb8f450ec6edade2da0",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 6,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "3bd0d26a00fe10d4564935218e0c4519fcd2ceab41eacbdb86663ee5a20ef95f",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "3c249ce720cd7501b7d565b9374295593aa2d032a90e176285f0c8371cdb4e6a",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "3d32666833febb885842691a8526056c4d8daa35e2ee83417a38dd18961a053b",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "3da46789718a3297956ee173d430d7da150d990aca74a1fc7917116b3f291175",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "3db98f6411d9a859eae07fbb25d428244c9366e460f4ee1ed3f4fba829cbaeb3",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "3de110b3859f0927f5915ae36de1af06f8cd75877eb9b54c3b546c52c37cda13",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "417a2b891e87304b7cdf121eccb3bf848c478cf4da0167662429361935a1a1fc",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "41c89694073f67ce8e7f4c5fd45e921445798dfdab85eb4e25973e502117c78d",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "443138420f7389f3b20274ea8361d3abaadd387442e2a71a6914ae4c2cd75d82",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "44b960ebfe55e4d30baf25ce06678da64130fbae5e7f55fb9da49ba4338637f5",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "45672ff0006e28ef80b0b944b52513d22d2974189fcc31ddaf92afa91f5368b3",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "45aa7efa7cf1ba09ff84a90d8546403f22041ad94b76c209fc946a2f29e9499e",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "4661ea67a3d7d3e33326916ccd1dc7da80f9f4614b3a0ca843635c555726e476",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "46a139b3fcca1af792c51c2f25d220b0c25e04f9c3555f68cee7ecab1bde1cc7",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "47952f328dc2536d33b6ba10cba889608fe00f146b9c2f1028eabda5f381cf71",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "488976ca583f31043de3f4fd4180c5f3e84c8ea54f1dd0800f5ef63722d13948",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "48d4a0279a7dd4fc1f19a59b05c4f9a194270fcf98505c60e653d6a9eafda207",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "48e4e5cc7d5959994ae2d727e3d6ec1903e44a3d79d9a526352b8715b336b950",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "496ad727ffd8e13b9efca52b0da1bbbcb76bfa572769ab39a59ec045fdb06c9f",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "4a7c9594fbc156154e712f34a2c06c9d552caeda6330dc5b973c75eaff169012",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "4acd91a724a9205cdb653de7cedfb880bdff3002e0ef6ce5a5189b1212ae18ad",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "4ac31379b96e444d060ed3a7e859440243b81cd5ceebabc091042580c40bf558",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "4b179eeb0059afbc7d3b06b984021d0683f4d70db9694542aa3594a55367afa5",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "4b7bb5e59aa03ca06e053e83c7c2504855ad47e8a2be64f988bad8d027d2682c",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "4b7bb5e59aa03ca06e053e83c7c2504855ad47e8a2be64f988bad8d027d2682c",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "4c4ce2e113f0eeddfd889668e0b43e6a6a81574ee282a2a657cee53dfcc5b73f",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "4d1a7ecb875a4bf404e4ab82e089c6a9c79be75487d427678ff5469bcc103b5f",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "4d6cc26f88a097dde87cd346574ae460ed82261c5ad90d7ca6daa6bf6fffb90f",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "4e233e3957a3ece4ab20fea9c129a893f24ff31cc79d0607d54c4f370fb15530",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "50d4779c129b0cd280ae1597fd88247565b8d2108ed1382c236200f48ba7db65",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "50f7c1bc05c0bd4545d10a3ebf704cd446966e8bd5a7509f71a7ac22c78a7d70",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "51407f73482865dc2b2ab499ef1c744bf2223881106ebfb0917d469102aa0765",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "51af92cfd193b46ecffa41087f2c82b89f284df8cc72c70eca1b2d94e7db48f6",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "539ac74de32fe86063d07c829182abc74a6b1ece6331d1d4c87cc8582941245e",
+      "cellType": "given_digit",
+      "row": 4,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "53a1cef5cc5a7e11ed063bef4a35093d81c46988dfd81c6a0630167116d79e68",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "54c9d242032eb4cbe1e8e42a1575145749ead86a0489be874870390b438ecf8c",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "54c9d242032eb4cbe1e8e42a1575145749ead86a0489be874870390b438ecf8c",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "550e501141d4cc7e891bd0a1a3f0705ae35f00b3de8c9c99f1239787ca5fe795",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "5593f04a5a905d9fa2a3a40d6cbef45347dcd0ff9aa782cf573f29fd0ced5900",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "562868c3f5e066bb5936676ede375c97383a21404be30b1b2e534c03e36dd729",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "56d9476536ff1620213bfa3a822cdabc2a8f642b7f7bebab6962ea808bcfe55c",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "56e9de1a2b4efde9bfc7ea8f430e8a0c373f82f683dcd8a8d713330fb61236d0",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "581aedc5e0053816fd1112aaec8bb94ab7476d8eaeb2f38fb604c4b65c75b557",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "586d9066ad907b5e92d128869517261b36e4e3c56e8a4df17eca9346398f129c",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "597683d59244a9810ee57dad7b7e0842d0d19bc15e61bfdb552544826369a01b",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "5a1e30d31dbca7aaebaa853b8650b2d652057cdecccaa0b187a77f452a19d528",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "5a605bdbeb42f8a7a9a528e4c153660db5cb17b3f3fa22733d230e24681fc415",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "5a605bdbeb42f8a7a9a528e4c153660db5cb17b3f3fa22733d230e24681fc415",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "5a5ed9261347e1617f34f15b7fa35bfc63d5a8295aba3534e4b8ca62c685f692",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "5a82059b4ab75e2bf3b0c218781420d3509ae0c0c45caa051c93bd6bdbda1fbb",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "5abeae347b0cf6583ad1f77796f8dcb4ef98f4577470a1464130eb9d2cba8cd1",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "5bb4a2afb8e0407221a0a7c051697a0a4819ac59c23a262e55baae89ced651b1",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "5c7f37522ead262a6e72af1337a6218a55bd1299ab8cff8302267119467d68db",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "5de8a92a9fc62b16c6c52164375844ab2ea5d8c1a6f1f531a47133d7b223f275",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "5ef5927e23a6bb86c8da77bd1d912488bb6d167851183150d482412922fc2c60",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "5f18ea70796a1594e0706515b2f04da2bc82ca8bf68d6dfca4021caabfff7a08",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "5f626021e4d6605aa18ae9c2b1ff9e29fef4d7c3ab59c29800c989c5d5f9ac28",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "609a25f1ef1c8044e584ccd334a08d2ab4b508f557ac65bf7cd1ae6f2a20c011",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "610bcb08b9ce5f9ac7f6b8557339def97a8559891eda4669bd6d51d39b813e71",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "618546ffc16d5ea428315c224714ab43f81e81f8eb63f30ba12128aadfb030b5",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "634787b3d81e1ae5f0ee287ed12fdfdb3158fed7fe26b0a1c6072e10f95831de",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "6376c8a59534ef4388763e552abfa426b0b00df09ec399b81a071a3545e1fda1",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "63e821959d9268a4ba9d32645e959e3d458b8ee799bc863fec2d16ffdbe0c86b",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "645809cd2463620f8c5b7791f455bac02fdb70a284bc9e895f1ab06ce14ca96f",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "64d47b693e4f7a45eddd50047d08b30e534b01c5a2cc818c6822d2f1d1545b5c",
+      "cellType": "given_digit",
+      "row": 4,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "64d47b693e4f7a45eddd50047d08b30e534b01c5a2cc818c6822d2f1d1545b5c",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 6,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "6556ba937b80b78a215b1142b91c6f39e529f1b4ba80dd503c720e0ad5d06195",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "6655ba7f384fc245d9525813d817623e74b664b177d7c1798701e9d2474fb3e6",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "6676bd915beaceed429352f9079b30850e7459d6d54c92e8686c612dc55192d2",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "66dc58df5c093b7df5735642a4d3642f7787b0c3c5a6683b2c33a68fef3604b5",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "67230dedf993c8775b4dc11503bc46316d1aa90147913a740563b94533d2abd7",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "67ffa090d7279c2def0cce57ed4feeef29f773d6c1f92f57c72be41322e66950",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "693eaf369f7bc8abe5c531cc8b5b37061cf1fbc730ba47afd66eaf59bc32d1d9",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "6960c6da1db7ed654a1f7f1ed8f65d8348ff1b6546898f6d717ffbd3288cc538",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "6af0231cd9a9e017e52e0ffb9410bf15ae01c3cf83ff3e5b61ced68f9f5000fa",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "6b913bc3f0eca720b6ce51aca0ca5e90d837cdab0eadea0a93f5206c6e01d262",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "6c96d580cc792aa43f9c62ca4d9f34b3d01710031365b99ce8448606a0cd81ae",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "6d30779770e82e5d557d0552e9ea4099603ab77cdde29a811a9b3b420638ee3c",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "6eb57981f4667044882aa42adbc3bfaf018b176d35767d12ae15002a5c347965",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "6eed5e87145cda815273f483b21f0032006fb39bda7e4849b614bcca00f9e5e4",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "6fa81c2273ff60237db78b8528f9b07e3477e3b0eff6cc7e464d960d30052be7",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "6fd51714a0d0e5aa3323eae9809fe19f0f7e85961d7b3c370dc341863a0acd9d",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "70865dbdade3e9d67b2112a3075e83ffc1be2a9e9d3711c1100f22679464d66f",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "720e4b7961915cb9c3d3ad9620e76594284932b0831cac9e5b2be83c8aa2c1ad",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "732f653238310c704228a2c9d95e52949ec25e860d4e7c9d2b7e53dc6ba1f92a",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7574a431db2ae8c943a18203cf9c1c40a52cbdc8ce533e3a4f94b1cba0b2be96",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 6,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "763979bf22b3b34ba7550e85fcc853c1ac410fc503da9f9a88328a2928624a62",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "763979bf22b3b34ba7550e85fcc853c1ac410fc503da9f9a88328a2928624a62",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7647835d83adb2b9fb99c11073cf3d62e56d0fd79b1910df49f101c98d99f1da",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7827d84b0a296183559c7844d20546d4a90914b451360f1475696f55a6974cf6",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7970301fa039897a26eca75eef805abc611ba9ee6ba7ff5ab14a7b228e62384b",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "799de57797af7839801f3e0c84fea75be68bbb3e4479c167d4ac4ac85ef5ff32",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7ac71791c47be1497b31e2483446327e83916be514cf8f9d86b8ed0aa7f3fcbd",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7b3fcd8c4ad214e1fc54bee7d60c7bc3181681309fbf1bd7797c05a4047e1b79",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7bdef09807dd89caf298ca60e3ac8dd5f13a13f557473836a0e3e909983591b3",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7c08b7b9854c3928a4247774a884a8cef257c66258879deaedbead59777bcb16",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7cbdf98ce13f749adf7979197ff4efd5adcda76615ee1484334860be237a579f",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7cf66f9b361128eb368c74e9274c121d4d6cb861762ad89daf8ca6e8996c97f0",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7d2ecd02bd1a888681b1e7924ffa4bace05deb7f4b996f2f84c7d1e39da4bf31",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7d5e7b1326f266e23639bca962938d235425401ec75fb521b63fbc66455e8ced",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7e1e71d04aff62f891034b07eaefe6e863813357e2cf5b3006c48d98b7984bd7",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7eb497bc2bdd8e8fb70f43d998e5a47af0cef638ab24dd64765b7299c322d6b3",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7ecb783d0787971cc32620b5da3d72c4006749f52683c9adc181ec97ac5d686a",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7eea96ac5be0eb43b64dcea641c5296c88808da5d0df86e6026315a06992a52b",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7f22c171e0cfc4dc299698c4fb625cd7b16bdd63f73ceb5fddfbd14cdad9b0ea",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7f601a7af8f2815fcbe7cf785fe4631f787c51822bf21e63ef49250f8dffe3e4",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "7fc269f99b902c9e55accecd4f4148d47d96548f655e1b5761b2c86a582bee40",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "8191e602d70e7819954c89c5c64f68e5ad3f7e8c6ed39ab6cd2a2ef0f0d0d548",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "81c9af91a0a7792dca96bc616a480460a1c69eb37e2dcfe4947ed8abda42117f",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "81c9af91a0a7792dca96bc616a480460a1c69eb37e2dcfe4947ed8abda42117f",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "8224c020cf357217f534f48374f0d41753edbc570d7c27266a0b1989e82463ee",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "824069ce32432a86bffaab6e6ad32fcc9ff551e594c595f922dc1b0261ccd399",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "82b89d2f7a4386b6682b4adccaecac18470b0719e45aa6b98053aa0f2384e3b7",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "83ae96215369f657a5c8371ca5e6d63fc8fce1079db878ac0eb989bb5b599b84",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "85f6ba857ab12ac154a8aa6cdabf4b3a65f10736535ce7196045c2feaa357983",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "86251b3566f3dc7fd1e20a40ffa22c6da4b1fcdd119c770816a7aa553cd7f670",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "871d541cba0a8c2c6ed4855b301c757238fd53244c306bfae32aa1ea2137fc7d",
+      "cellType": "given_digit",
+      "row": 4,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "8a4827d5b07618d8dee0572c7ac20849df46a5290640926f17c1254facda9dad",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "8a5ec05368ca8262595ea3a236a281a43fe06e869ece9afe364f1c3843ccabe5",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "8b082454c38a3bd81502ba9e8597f4f3aef252dbaa8dae798b93abe179bed034",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "8b47f2bdc8302c6cd75710f714435050d99a1cac8e90b561c11ca95cd88cbc34",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "8bae2279d2bfdadea50de647bfe56dc83c0f2a8fda951707d4dda870fe826fbb",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "8cdc2793ede34bc7499d4c6c4bb7872bc60782637295f1c80dd71d5770a7e80c",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "8d891c5c513c3e0308735e850259884e1f2676052c3778265ec9fc2bafcfef27",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "8dd4006884006b99730560cb013f793431d2ceef673ab1b73ac7281a92185c4f",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "8e15130eaaa6bdf9fbd12743d645ee4819cadd17aa408a7c70f874e1d7a61413",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "8e06c8f416d61ce88d3e4338b3456babe1956689e633da424d0a952de58c7dd6",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "8efda0438feda5b8c8c25f50ac7f8054219471c682b5c97ee6b855586d70d1b6",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "8ed5c92aaeac6077df5b08c713e4217bf142fbab38323e5b67c39eb659094866",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "8fa715309e36e9c4f4dbe5a23bfb9b45baa4af1b13eaa10f5bc5061e437ce8c0",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "915785f7837330bc233a6b49d91d8f63a5693edc0e6255ca12f7d6266e6bd649",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "92019d55f91fb306698c68490d0e97a90724669d1dfbcfb8a0a86034d06514f5",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "9392e4ff9d80a5c22153ed6a4d229afb2a947015c97655766aed92895ca08eb8",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "9392e4ff9d80a5c22153ed6a4d229afb2a947015c97655766aed92895ca08eb8",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "93fad211fc6fe638dea13867d1478de70d88713542830ec9f5c6acfb1655d074",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "95061428cac786bdb123475ad2fe53c803475a239b9c8f41de494ddf0758a778",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "95145fda17842e59cb83fbdf45d5fc89151b4d6d07e1cb7c40e4b5634f23b568",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "9621ad9e294919ec85ef67e25fca825b8a810f9277ccbaef712b47998dfe399e",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "96fec9a49d63fd39c69d9ff4c3cd0cbe4fb778037bc00d62a92ab05cd7d08ec9",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "977647cc98db74d6c4f566139d56d0f2681d9c980b6d49517172df6f65c6a166",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "9850ca4834b7f0b40c0a77990be444b1483222fbb91c240f51568433c0143fb0",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "987205285f31255185019a8519ff348841f052b5e088bea4ab89f4744219c628",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "9a1e39c96b8cfbfd2759942afbf09a33d4f99f390ab2415962f294fde3e36f59",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "9b0d0a471f1845c9956eb4393fc7a29fc48fa83ffe3edd8b08578f98d2febcb1",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "9b17eb8f2733d9f4b2220ba80ab7cfc49a5bf292d0a99ae5ca7f8d2d8f3248a9",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "9b6d72ad0ccb316708be92d12f91609b480bc401b74d1f0db54881a6ff1f665b",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "9bc9d9f1153323675d8c9cd734684c6be25dd1e3593d166e7fdc3d31259371f3",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "9e8953e28fd858192003c2bbfdcad882386ada575b44f540d6a337d641687b51",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "9ee15d5747fabbfd645aaf56767fa19444c6586f4dd95b6c29699d752453dd73",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "9ff68eca792f2fcd333bff4242dc9367fffdc5fae8a4e24ec98b8eb285156461",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a0405894dc68842fe47d35ae04e498369a9bdd7eef39a179480271d177311620",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a1483d9df101ef2c233015efec83c8309c06c4ac4830cf2d2b9bda5ed9927eca",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a1896680b1526b039f7105c339e70adf261950786416c98a1ee9fbbf040f5722",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a1c6420b071af95cf972747561b6118221563053b90e72bc46d3b38b13352f8e",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a1b74033254124d1ebd66e08a6ff7fa89bb423f786aee90a1836c053a5424460",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a2bfd3895bb0c5db26b783504a00cfdb6ea240475f6e44ba58f8d43b685abcc0",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a2b216757243cd8da03d07596c1860f63b318c79d2cb80ae5cf20e6d72113c20",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a2ea6d38f27b6f859cab9e2dbbf8f54b828116c904beb6b86e1f6385983f8e77",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a327de3b44ad7bbaee6c6e620d292617508d57e1af64f2693846c038b7d87c60",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a384bdbb65987c530c95328a89ff70b66e8a11be27cdf8f1b8c8d9a6549350de",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a567e00350bca3ec5c38a5253381e1bc0451eb8e66fc0b292593d0fa618ec5c5",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a56de71ce3a8955fddf9b0b3a4f96f883d8e5c91f5a83c4dea5c5e928e409f31",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a5b6b3863dd601889a99d60d6f2e0eb47c3704c021c7e80c4fa65628ac97d416",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a5c3f62bc5a27a69b4aaf0778ee0911cf993c2de6865a41fd2adddf81b8e9293",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a5cd36dd5724d57eee718315a3b591e26b09dfe4b91e507fc42c5ede5c3ef1df",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a6a202acad46c277d092be9c00831afe778b487dca1d1e03e2e3d179958d85ef",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a76ac2ea05df4c1bf4ad49f82c37e5b68b10799747dd23767e15feba8458dc27",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a7e4f9564328e148a1412d4e09557f229d81251000a47173e9a8e2354106a382",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a7e4f9564328e148a1412d4e09557f229d81251000a47173e9a8e2354106a382",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "a8b24663c53eab5e316cd67737e3f0cbfa7f854d119f010d3b54545d42026083",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "aa06a6f1e7a31bb5ca4abf6481b586d0ff0e8debbf1934c164e36f157d87eaab",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "aa13be008dea66305cb2028ae45cc88a6bc96c354bf755639e29869187326fe0",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "ab0ce23e44d821ab5beb810e3fd4324837cd3f21d1aed39b170b31b027b25457",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "ab5da70abf89dd9efe2c99a37ddb0c039ffad5b71d2d66246b6f420b285297fe",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "abdb9de2feef26a29114bbf3eb3de7e408bc0509738bfac28a382f09ae154f3a",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "abea422328881de9e7b6d054cc08dc28491f8333e1bfe18d8815efd41651b94a",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "ae371af4049503962d6587e45b479a0393b6b97a660a41a78858d02d84728a6e",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "ae67b0be80d7cedecf9f75272ee0412cfd0e489bf9798650138871c8899cf4a9",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "ae7127926c5000d231bfa902dc65bdeeb4f74b22a0d4c786ea51bee7722791aa",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "b019170a9f4b83f3c6c5e0e5ce4e01b6bcd00bd1cce42dcc267ce7ebd397a957",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "b023b7c618759b04c3af368666cfddb5cf1a13c7e109198b283150b9c6d71f26",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "b4583a82bd79338e52afca9ec2f56ca9069660035365bb89b4f58b36573ae2c2",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "b4583a82bd79338e52afca9ec2f56ca9069660035365bb89b4f58b36573ae2c2",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "b5129de495d20caea209485e70294097bc78467aa2a39fb9994f421d9ce0e769",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "b5843ab202a52e49f8305e87c56345aea3840e97ed67e190900979d2a63ba030",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "b6d1a83af65f572b871fd1e897eca210d2e57623160b8e0c9770767b0e8544bd",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "b783872963afcde443ed2b93a99503fdc3a89f9f6485f5a79f8b0c31c295a14a",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "b783872963afcde443ed2b93a99503fdc3a89f9f6485f5a79f8b0c31c295a14a",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "b81e279a40ef3e9f349dd4067b740066cd386d57d55e75d4bd3d05ba7d954eae",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "b895c2228470332ab57c61b80064b74d3a713b30f97304ac1483efb8c9c99b3b",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "b979efefdf2f9f167e01dd19b40c9ad36ca4680013fdf76bf9c5ce2030ab7a54",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "b9b5d183ed1f85b0ab29b2594081e7f24d0c5855348017ce6fc1ab1decd35c2e",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "b9b4bb696d71c7717417d9a1a16414e4dd632f0fc6c5fdef0861c8de2ced0d27",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "ba6a30f2a82cf809bafb19ca1e50478e40694bec5240cc3567043dacfa9f3916",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "ba93080ac8bbd77bb96edfedabc428b358144751e504b461ce52058e8b727283",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "bab06bcfdc22cf3b3cf4d1397551632de835bc9a31b24f200e1d6f3eab31353a",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "bab590df4a4d1fce5c813fe58c2491bc7a0b3198ad51b8768a62d139c27581fd",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "bb1301e2a50b38c9132ca48e1b47d4adac1b079cb13f5d8aa2b8a3c9ea0558d6",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "bb1adffe96526d2334672ac5a70368ba6242f14a2de546a2377fe7652852aa82",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "bb39c68961761e1c7da35482bfa42a2a0ea1062cfd9b86c6a216e076cc16ace6",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "bb6723edf63aab7b4431eeab4572e3de8a9a183274f8b57a59f97550dd17c3d3",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "bbe1305619f2e25cbce4a3c293ce2ea4273770aa6ff81f588ef82abe6ebda7a1",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "bbfcff243d6491426da16f244496de7a30a2308dd6090a175c25ff46c366ddf2",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "bd5f02cb6b6bc5c1a1ca97b02843bfb37b10c006e52aabb11f65b4d394f80d0c",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "bfcd78f8d11fee47fd97dea3d0dab9ef6c033361966ddb0befb4f75c550b6227",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "c06f2644cde282dc2db9ac5a0339e9a9e6cf9d98fcc06453b42d38a200550e58",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "c071e2add88b9a037057b2f4033d114f81c4f09febc311ed6f2b24c3dae7172c",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "c223dd4b61a745de76bff6f5fc942f7e09d9cac8507aa0f897e1c22e86b3cad8",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "c223dd4b61a745de76bff6f5fc942f7e09d9cac8507aa0f897e1c22e86b3cad8",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "c343461d22e340a3dc5267cf5a4f6453f7fe9a10de287e95f2fb03f3f2db0564",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "c4ba512838c93a4deab5735de236ae277954e6fc86d2601479ec29a007634fae",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "c5e118305c9085b3bfeb1fec0ac59de6f2d5a5d4aa83b6896be5edc183b93da0",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "c65e47c63c5b18eedd25af634f4f99bbcf6d3c807d17158ce1793ebcb41bd382",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "c7cb28617cd9eef30648fd6aba7452818ee67c93e702ef053d59ce10cb850106",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "c890bc7602fdff7e53c0cc2e4e5ad29e19a75d5fb03747c1d044290e215eb85b",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "c9a2451c71dc7e7d6e20b50e3a5ff8353a4668822d3ecc2b386022a8f0040f8e",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "c9c8d6e41777876bc5dc1fa88e0eb34f31970492696f6fa43951b93e3706adb6",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "ca50f0028bf9c8b042fbe413dd176eed09366dcaa0969261d9f765ff833f091a",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "cb3883e13d342ffaa9ef92269aae19945d8c790baca110a12f9119d0c67642d5",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "cb9864c8b9eca6abf996cedcc9481247ca0303b21b60e402a89b3b41fd10ae28",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "cf6ac32616accb99327c54aea662a12d6a2c4ffbf9fc992849212ff5e8a62f2b",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "cf6ac32616accb99327c54aea662a12d6a2c4ffbf9fc992849212ff5e8a62f2b",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "cfd1a54b18bc30e5786639c8df3beb96bd30c63c0da102083fe5ff1ea5acf88c",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d00f575a56067fa4b55287019a88ba06299dd20f6051ad7f441092bd5192c88e",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d054308621a76e8576f861671e4458ec5fe7289bcb93120cafbe27c38dc97e09",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d111037e5b63c4f371e082590ea042ac3f5b172619a22faf3ef5e37fe95a8a90",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d1c6142d11f10ee15e8eeb9abbef7214283ad517967eb3a59fa89d5658048d3b",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d2366ecaadaa9ae8a8c5e57315e515f4899119bc67f335a83f20c4547502405f",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d22e443551de5958142dd9c2d8d09d3bf7c246dc17dbd2ca276bf857805e14d0",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d222e7497a1fdcc20f6db12ed6fb56bd2b78a047b991310719d2dd81d639bdff",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d2a4440facf1e5d391d50cc3a5cd0d38d3f8ed831f13d3859b85af3ced53a528",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d3e14717fb6987c936685ad22f786962b3188dfcf3533d262f08b3794cc8d08a",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d4871b4f6b5b5cb9b9e298cfe5f1ab53de80eee0c848acc2b535d954d9a98458",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 2,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d48912f54c29b24732e539b177cdb34fe6b144f923b0f34747f4a9650dccec47",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d5901c3d5c56ecb2be83aa6640588734d0109499a3654a69e083f0a42b2d4954",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d6474dc96d721f13e615c749fa5ddcb6f0b4645f82ee38254174700cf3ca1677",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d652dd48f1b70202710cb50aa8f7c651a3abea7e6d8244d9eee53fe2bac1be75",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 2,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d694364e62aa10bdebeb053adffe0855d4cc8ba89c3e7e84d73bf34ef029eaf4",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d6d1688a68fda291b4e22e8bed2c4f485f2b0ce9d491f2041b393c7e197fc545",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d6d1688a68fda291b4e22e8bed2c4f485f2b0ce9d491f2041b393c7e197fc545",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d738c9dbf9f8a0ca5bc3b324f913a433d051af2466e2e2afc11297cbdb980394",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d76ebdea1a7477fb611caaebfedf60e062f5b4da7c26ac6d80c30209f50cf597",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "d9258f5f56ebc404bb8337bf66175ae57151cd53d3ead90af7dfa3c0f7867871",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "daaa77196150e106bccd348d13da36e700f53cc49c8ce31fe0ba3f343f66b67c",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "dc150e65328cb9b045e7e94b12ba932f9111e597644dc3f784bc1c6ef015b5b8",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "dd09c4f8eb3ca057192e3475cb675d58c1c58881a827aa1e1b31ef10cc4b93b8",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "dd00005381e63c2638696083e6ebe7c030e73f7bcb731d0fcfa5a5702b3b5f0a",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "ddcb661b4830a4f15ad410f75439b671b9f5715fa0351755fc213608d186fa01",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "df8a420e266bf6dfe4fe901aa8023e5eca0160ab7ed44e40dbc96bf0bc5c4225",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "df8a420e266bf6dfe4fe901aa8023e5eca0160ab7ed44e40dbc96bf0bc5c4225",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "e025344526f9fbf210f3e08550b718a7c601fb77790e7853bcd9c5926da33389",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "e0e8251e28651b258fde177cb960552bf6d825155f8e55048b6dd19108f5d7fa",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "e15a9532817a2f8c61ade1a906c03c50a243a6a2dbfa0a54f6e44b3680165331",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "e2bdef0271c5f252cb2cb098afa6b325555a8deac077e9a3a438e4f9511acd28",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "e4019f1b37e9dabe0a7a6fe0740a67637b18c8af5edeb32240c6171f3e92b8ad",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "e5b55b1e753c9474903960b00f8ae721b3e3e996b5d5573684c3cdebf6b82f5c",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "e6e8d6c98b31a1a55122b88c9d9e771d9273d0832569d33910a00f4295b073c1",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "e70aecb7293a40c95aa63a0e196d85c97aab2713f98633602763532e1f9af562",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "e7abcdf9bd3caa7eb7e6546cb2526880f2b8d797599e73ec2d7a12b16c147b73",
+      "cellType": "given_digit",
+      "row": 4,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "e7f3af3afa699ae22c1e98ec8e71a3407216e0bed8d015dd0d0aa5d1e8fafcaf",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "e8046ebc19a3b5a2851e91f217440b154c91d487255cb90d46ea78e04c596a24",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "e8287e18fba905ec3f6535a4209a9dd9ccaff00337e576131a3b6a353ed07f3e",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "e82fe0e04a1fbc047786001e0976ba7017434ce5645a65489d050b5cd2f67a99",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "e973e205cc92873d31e03c916e098bac689c998ea7f72c326c33973d8eda9352",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "eac25bc32482716b6bec47067841ab9fefad2a443ab12e9ed71c019365237284",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "eb01ade61e6a25e2b3ac9f40da53b5e7f08ca410153d81175f083b9c36590cce",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "eb573b9e70ce6606a4735211f88db178acdbb5f3baced782bba60c1efc2389ba",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "eb82eed883dea6c1fd9d746889a47ada69cd5e111df8e9450e457c5337242aff",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "ebd0b610ceef3d8dfbe117ca886eaff06ddaced1d18c9d9ee0bcc0e1993a1b9f",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "ecc26fc4fdec17317e77685d741cd4131bba149f14eb86568d77c4a3e308bb8d",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "ed983d0eb99a6cdb6b6cadc88f197620c133cd00f481a13810481e99cd986cb3",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "ef6718762d29097073bdc260664583a268e957fe747f0986d041e69f67c6c7dd",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 4,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "efff45aac8d300f833d50914b6112e73bed98190278f44e20c3839ce106ec1d4",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "f1085de9de5513c49803cd7e9db57e597cc62c093716fa4d97b493f4be49da55",
+      "cellType": "given_digit",
+      "row": 4,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "f1d2008893dbcf8ef7ee40ce9328b87d300e81589f61a5943f80441c069af8cc",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "f24d735a1da4501cbf7fe9e07d1f35aa9148c0d25a717901efdfde5359961be7",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "f2ee395beb6cf8bc4374f6cf14e74eaf4308e4b97c4c3133d0a426358c31fb9c",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 1,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "f2ee395beb6cf8bc4374f6cf14e74eaf4308e4b97c4c3133d0a426358c31fb9c",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "f3a8d6dc4f4b096c97adda1a0b928694881fdb6508f4088fa9dabd605d2faa89",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "f4ba9774eaac8901b87e479344086c132369bae8c9ffc9d0258b4a1e62235f79",
+      "cellType": "given_digit",
+      "row": 7,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "f5472a12737ae066389806a873f1910f110a843967170733410e4b804c6eb738",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "f5a8a764bf54b58bd0c971f25da5c552bf2e60a522e79f3851bc406e3409a7db",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "f6f105918220743691d35b04619bdc8b97250705dc11e11b3260900e9d1e9369",
+      "cellType": "given_digit",
+      "row": 4,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "f7077bc25a423fdcfdff168aa6911e2e3f401941eec6ee825e15bd0c083e876c",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "f717803c65383892810f75ef4f2fd27540b94f524e92e8359719abf2b0427845",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "f7cf660c35319738c97eb33d0dd28ba37d2ab8481a2db44261757fe4886f4784",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "f8a4e2b922a13b3c49428e8001477a8809acda5e8b17865e84ae79087bc91ec4",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "f958db6f08f93dbfb4102eb6094c04ae776e7ab453e8a5b4b2e164c5a2354d22",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "f958db6f08f93dbfb4102eb6094c04ae776e7ab453e8a5b4b2e164c5a2354d22",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "fa1ae52216b2d9b09fe30b36a367ddc549c3ea81b601e5993afdaf96f10b35ef",
+      "cellType": "given_digit",
+      "row": 6,
+      "col": 3,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "fc5e8f40ea4401f599f99d6829d097337faaa8ba8aed421a37386c0d0faaccf8",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "fc1aa759da9766320b28358587486ff69ff9da9b70023789d61aa586a131246f",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 8,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "fd2cce490d43651428ae7cd7dcb9aab2b1e394f98970b3fb7ee59a7a958aecc8",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 7,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "fdbfc457df2a30dfcfcd9c4a74ad201d245fa806e8af3bcd7865c2375a4266ab",
+      "cellType": "given_digit",
+      "row": 8,
+      "col": 0,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    },
+    {
+      "puzzleHash": "fe31489a0cd8ec8d22368883fcde215ad2cb615125f8f934be226f77e7c04ddb",
+      "cellType": "given_digit",
+      "row": 5,
+      "col": 5,
+      "digitIndex": 0,
+      "fromLabel": 3,
+      "toLabel": 7
+    }
+  ],
+  "excludeGarbled": [
+    {
+      "puzzleHash": "a3b6cd951dcd2c029154b25644064c0ac64bc6756e3114ab57d53db3dc3444f7",
+      "cellType": "cage_total_digit",
+      "row": 6,
+      "col": 0,
+      "digitIndex": 2
+    },
+    {
+      "puzzleHash": "a3b6cd951dcd2c029154b25644064c0ac64bc6756e3114ab57d53db3dc3444f7",
+      "cellType": "cage_total_digit",
+      "row": 0,
+      "col": 2,
+      "digitIndex": 1
+    },
+    {
+      "puzzleHash": "a3b6cd951dcd2c029154b25644064c0ac64bc6756e3114ab57d53db3dc3444f7",
+      "cellType": "cage_total_digit",
+      "row": 6,
+      "col": 0,
+      "digitIndex": 0
+    }
+  ]
+}

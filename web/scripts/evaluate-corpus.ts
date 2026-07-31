@@ -242,12 +242,22 @@ async function runWorker(
       const outcomePromise = new Promise<UploadOutcomeJson>(r => {
         resolveOutcome = r;
       });
-      const timeoutPromise = new Promise<never>((_, rej) =>
-        setTimeout(() => rej(new Error('outcome timeout')), DEFAULT_TIMEOUT_MS),
-      );
+      // Promise.race doesn't cancel the losing side -- if outcomePromise wins,
+      // this timer keeps running in the background and later fires a rejection
+      // nothing is listening for anymore, crashing the whole worker process
+      // with an unhandled rejection once enough of these accumulate. Must be
+      // cleared explicitly once the race settles, whichever side won.
+      let timeoutHandle: ReturnType<typeof setTimeout>;
+      const timeoutPromise = new Promise<never>((_, rej) => {
+        timeoutHandle = setTimeout(() => rej(new Error('outcome timeout')), DEFAULT_TIMEOUT_MS);
+      });
 
       await page.locator('#file-input').setInputFiles(puzzle.path);
-      outcome = await Promise.race([outcomePromise, timeoutPromise]);
+      try {
+        outcome = await Promise.race([outcomePromise, timeoutPromise]);
+      } finally {
+        clearTimeout(timeoutHandle!);
+      }
 
       bucket = outcome.bucket;
       reason = outcome.reason;

@@ -12,6 +12,7 @@
 
 import type { OpenCVModule, OpenCVMat, OpenCVMatVector } from './opencv.js';
 import { extractHoleFeatures } from './holeFeatures.js';
+import { extractAspectFeatures } from './aspectFeatures.js';
 type Cv = OpenCVModule;
 
 // ---------------------------------------------------------------------------
@@ -83,6 +84,101 @@ export interface RBFModel {
 
 export interface RBFClassifier extends RBFModel {
   kind: 'rbf';
+}
+
+/**
+ * Linear dimensionality reduction applied to HOG+hole features before the
+ * RBF-SVM, matching sklearn's `PCA.transform`: `(x - mean) @ components.T`.
+ * Optional — models trained without `--pca-components` omit it entirely and
+ * the raw feature vector is passed to the classifier unchanged.
+ */
+export interface PcaProjection {
+  /** (n_features,) per-feature mean subtracted before projection. */
+  mean: Float64Array;
+  /** (n_components, n_features) row-major principal component vectors. */
+  components: Float64Array;
+  nComponents: number;
+  nFeatures: number;
+}
+
+/** Project raw feature vectors through a fitted PCA basis: (x - mean) @ components.T. */
+export function pcaProject(x: Float64Array, nSamples: number, pca: PcaProjection): Float64Array {
+  const { mean, components, nComponents, nFeatures } = pca;
+  const out = new Float64Array(nSamples * nComponents);
+  for (let i = 0; i < nSamples; i++) {
+    const xi = x.subarray(i * nFeatures, (i + 1) * nFeatures);
+    for (let c = 0; c < nComponents; c++) {
+      const comp = components.subarray(c * nFeatures, (c + 1) * nFeatures);
+      let dot = 0;
+      for (let f = 0; f < nFeatures; f++) dot += (xi[f]! - mean[f]!) * comp[f]!;
+      out[i * nComponents + c] = dot;
+    }
+  }
+  return out;
+}
+
+/**
+ * Between-class-mean reduction: projects onto the directions where digit-class
+ * means differ most (rank <= n_classes - 1, equivalent to the between-class
+ * scatter matrix used in LDA), optionally followed by ordinary PCA on the
+ * residual (orthogonal-complement) variance. Mirrors Python's
+ * `fit_class_mean_pca` exactly — `mean_of_means`/`between_components` come
+ * from an SVD of the (small) matrix of per-label mean feature vectors, not
+ * from the raw per-sample data.
+ */
+export interface ClassMeanReduction {
+  meanOfMeans: Float64Array;          // (n_features,)
+  betweenComponents: Float64Array;    // (n_between, n_features) row-major
+  nBetween: number;
+  nFeatures: number;
+  /** Present only when trained with residual components > 0. */
+  residualMean?: Float64Array;        // (n_features,)
+  residualComponents?: Float64Array;  // (n_residual, n_features) row-major
+  nResidual?: number;
+}
+
+export function classMeanProject(
+  x: Float64Array, nSamples: number, reduction: ClassMeanReduction,
+): Float64Array {
+  const {
+    meanOfMeans, betweenComponents, nBetween, nFeatures,
+    residualMean, residualComponents, nResidual,
+  } = reduction;
+  const hasResidual = residualMean !== undefined && residualComponents !== undefined && nResidual !== undefined;
+  const nOut = nBetween + (hasResidual ? nResidual : 0);
+  const out = new Float64Array(nSamples * nOut);
+  const centered = new Float64Array(nFeatures);
+  const residual = new Float64Array(nFeatures);
+
+  for (let i = 0; i < nSamples; i++) {
+    const xi = x.subarray(i * nFeatures, (i + 1) * nFeatures);
+    for (let f = 0; f < nFeatures; f++) centered[f] = xi[f]! - meanOfMeans[f]!;
+
+    for (let c = 0; c < nBetween; c++) {
+      const comp = betweenComponents.subarray(c * nFeatures, (c + 1) * nFeatures);
+      let dot = 0;
+      for (let f = 0; f < nFeatures; f++) dot += centered[f]! * comp[f]!;
+      out[i * nOut + c] = dot;
+    }
+
+    if (!hasResidual) continue;
+
+    // residual = centered - reconstruction(betweenProj) -- subtract each
+    // between-class component's contribution back out before the second stage.
+    residual.set(centered);
+    for (let c = 0; c < nBetween; c++) {
+      const comp = betweenComponents.subarray(c * nFeatures, (c + 1) * nFeatures);
+      const coeff = out[i * nOut + c]!;
+      for (let f = 0; f < nFeatures; f++) residual[f] = residual[f]! - coeff * comp[f]!;
+    }
+    for (let r = 0; r < nResidual; r++) {
+      const comp = residualComponents.subarray(r * nFeatures, (r + 1) * nFeatures);
+      let dot = 0;
+      for (let f = 0; f < nFeatures; f++) dot += (residual[f]! - residualMean[f]!) * comp[f]!;
+      out[i * nOut + nBetween + r] = dot;
+    }
+  }
+  return out;
 }
 
 export interface Recognition {
@@ -209,22 +305,30 @@ export class HogRecogniser extends NumRecogniser {
     private readonly classifier: RBFClassifier,
     confidenceThreshold: number,
     readonly warpStrategy: WarpStrategy,
+    private readonly pca?: PcaProjection,
+    private readonly useAspectFeature: boolean = false,
+    private readonly classMean?: ClassMeanReduction,
   ) {
     super(confidenceThreshold);
   }
 
   recognise(imgs: Uint8Array[]): Recognition[] {
     const n = imgs.length;
-    const { hog, classifier, confidenceThreshold } = this;
+    const { hog, classifier, confidenceThreshold, pca, useAspectFeature, classMean } = this;
     const hogFeat = hogExtract(imgs, hog);
     const hole = extractHoleFeatures(imgs, hog.winSize);
     const nHog = hogFeat.length / n;
     const nHole = hole.length / n;
-    const x = new Float64Array(n * (nHog + nHole));
+    const nAspect = useAspectFeature ? 1 : 0;
+    const aspect = useAspectFeature ? extractAspectFeatures(imgs, hog.winSize) : undefined;
+    let x: Float64Array<ArrayBufferLike> = new Float64Array(n * (nHog + nHole + nAspect));
     for (let i = 0; i < n; i++) {
-      x.set(hogFeat.subarray(i * nHog, (i + 1) * nHog), i * (nHog + nHole));
-      x.set(hole.subarray(i * nHole, (i + 1) * nHole), i * (nHog + nHole) + nHog);
+      x.set(hogFeat.subarray(i * nHog, (i + 1) * nHog), i * (nHog + nHole + nAspect));
+      x.set(hole.subarray(i * nHole, (i + 1) * nHole), i * (nHog + nHole + nAspect) + nHog);
+      if (aspect !== undefined) x[i * (nHog + nHole + nAspect) + nHog + nHole] = aspect[i]!;
     }
+    if (classMean !== undefined) x = classMeanProject(x, n, classMean);
+    else if (pca !== undefined) x = pcaProject(x, n, pca);
     return rbfPredictWithConfidence(classifier, x, n, confidenceThreshold);
   }
 
@@ -387,7 +491,39 @@ export function loadNumRecogniser(
     nFeatures,
   };
 
-  return new HogRecogniser(hog, classifier, scalarF64('confidence_threshold'), warpStrategy);
+  let pca: PcaProjection | undefined;
+  if (arrays['pca_components'] !== undefined) {
+    const [nComponents, pcaNFeatures] = arrays['pca_components']!.shape as [number, number];
+    pca = {
+      mean:       getF64('pca_mean'),
+      components: getF64('pca_components'),
+      nComponents,
+      nFeatures:  pcaNFeatures,
+    };
+  }
+
+  let classMean: ClassMeanReduction | undefined;
+  if (arrays['cm_between_components'] !== undefined) {
+    const [nBetween, cmNFeatures] = arrays['cm_between_components']!.shape as [number, number];
+    classMean = {
+      meanOfMeans:       getF64('cm_mean_of_means'),
+      betweenComponents: getF64('cm_between_components'),
+      nBetween,
+      nFeatures:         cmNFeatures,
+    };
+    if (arrays['cm_residual_components'] !== undefined) {
+      const [nResidual] = arrays['cm_residual_components']!.shape as [number, number];
+      classMean.residualMean = getF64('cm_residual_mean');
+      classMean.residualComponents = getF64('cm_residual_components');
+      classMean.nResidual = nResidual;
+    }
+  }
+
+  const useAspectFeature = arrays['use_aspect_feature'] !== undefined && scalarI32('use_aspect_feature') === 1;
+
+  return new HogRecogniser(
+    hog, classifier, scalarF64('confidence_threshold'), warpStrategy, pca, useAspectFeature, classMean,
+  );
 }
 
 // ---------------------------------------------------------------------------

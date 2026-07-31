@@ -31,7 +31,7 @@ no_gutter.py
 
 # Generated training data conversion artifacts (keep the canonical accumulated set)
 *_train.json
-!web/browser_train.json
+!web/corpus_train.json
 
 # Runtime artifacts
 sessions/

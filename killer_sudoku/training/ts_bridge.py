@@ -109,17 +109,20 @@ def warp_crops(
 
 def extract_features(
     crops: Sequence[npt.NDArray[np.uint8]],
-) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     hog_chunks: list[npt.NDArray[np.float64]] = []
     hole_chunks: list[npt.NDArray[np.float64]] = []
+    aspect_chunks: list[npt.NDArray[np.float64]] = []
     for i in range(0, len(crops), _BATCH_SIZE):
         batch = crops[i : i + _BATCH_SIZE]
         payload = {"crops": [c.flatten().tolist() for c in batch]}
         out = _run_bridge("extract-features", payload)
         hog_chunks.append(np.array(out["hog"], dtype=np.float64))
         hole_chunks.append(np.array(out["hole"], dtype=np.float64))
+        aspect_chunks.append(np.array(out["aspect"], dtype=np.float64))
     if not hog_chunks:
-        return np.zeros((0, 0), dtype=np.float64), np.zeros((0, 0), dtype=np.float64)
-    return np.concatenate(hog_chunks), np.concatenate(hole_chunks)
+        empty = np.zeros((0, 0), dtype=np.float64)
+        return empty, empty, np.zeros((0,), dtype=np.float64)
+    return np.concatenate(hog_chunks), np.concatenate(hole_chunks), np.concatenate(aspect_chunks)
 
 

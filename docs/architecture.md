@@ -204,9 +204,13 @@ collection and HOG/RBF model fitting in detail.
 The production digit recogniser lives in `web/src/image/numberRecognition.ts`.
 `loadNumRecogniser` accepts one manifest type, `classifier_type: "rbf"`, and requires
 its `warp_strategy` to be `stretch` or `letterbox`. The resulting 64×64 inputs are
-represented by HOG plus hole-count features and classified by an OvO RBF SVM.
-PCA/template matching and the linear-classifier branch have been retired; unsupported
-or incomplete manifests fail explicitly instead of silently taking a fallback path.
+represented by HOG plus hole-count features, optionally reduced by a linear PCA
+projection (`pca_mean`/`pca_components`, if present in the manifest), and classified
+by an OvO RBF SVM. The PCA step is a pure dimensionality-reduction stage bolted onto
+the HOG/hole pipeline — not a return to the retired PCA/template-matching recogniser
+architecture, which classified on the projected pixels directly. PCA/template matching
+and the linear-classifier branch have been retired; unsupported or incomplete manifests
+fail explicitly instead of silently taking a fallback path.
 
 TypeScript owns image acquisition through `PuzzleSpec`, digit bounding-box selection,
 both crop-warp strategies, HOG/hole features, RBF inference, corpus evaluation, and
@@ -315,8 +319,12 @@ bash scripts/mark_processed.sh /tmp/training
 4. Calls the selected production TypeScript `stretch` or `letterbox` warp once per raw input
 5. Applies Python-only dithering (translation ±2 px, morphological step, 1% pixel noise)
 6. Calls TypeScript HOG and hole-feature extraction
-7. Fits the sole shipped recogniser: an OvO RBF SVM (45 binary SVMs for digits 0–9)
-8. Saves the model and warp strategy; the web app picks them up on next page reload
+7. Optionally reduces those features with a fitted PCA (`--pca-components N`, default
+   100; `0` disables it) to shrink the exported model and speed up inference
+8. Fits the sole shipped recogniser: an OvO RBF SVM (45 binary SVMs for digits 0–9)
+9. Saves the model, warp strategy, and PCA basis (if used); the web app picks them up
+   on next page reload; a `training_manifest.json` alongside the model records the
+   input sources, digit distribution, and dataset sizes for that checkin
 
 `--browser-weight 1000` up-weights real samples over synthetic fonts.
 For purely synthetic training (no real data), omit the flag.

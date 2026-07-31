@@ -6,7 +6,8 @@ import { readCanonicalCrops, validateModel } from './validate-model.js';
 
 interface LegacyTrainingSample {
   readonly digit: number;
-  readonly pixels: readonly number[];
+  readonly pixels?: readonly number[];
+  readonly recognitionPixels?: readonly number[];
 }
 
 interface LegacyTrainingFile {
@@ -31,11 +32,11 @@ describe('validateModel', () => {
   it('loads the committed HOG/RBF model and classifies two canonical samples', () => {
     const pub = join(process.cwd(), 'public');
     const training = JSON.parse(
-      readFileSync(join(process.cwd(), 'browser_train.json'), 'utf8'),
+      readFileSync(join(process.cwd(), 'corpus_train.json'), 'utf8'),
     ) as LegacyTrainingFile;
     const samples = training.samples.slice(0, 2).map(sample => ({
       digit: sample.digit,
-      recognitionPixels: sample.pixels,
+      recognitionPixels: sample.recognitionPixels ?? sample.pixels,
     }));
 
     expect(validateModel(

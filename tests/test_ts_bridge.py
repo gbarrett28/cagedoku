@@ -13,9 +13,10 @@ from killer_sudoku.training.ts_bridge import (
 
 def test_extract_features_returns_correct_shapes() -> None:
     crops = [np.zeros((64, 64), dtype=np.uint8), np.zeros((64, 64), dtype=np.uint8)]
-    hog, hole = extract_features(crops)
+    hog, hole, aspect = extract_features(crops)
     assert hog.shape == (2, 1764)
     assert hole.shape == (2, 5)
+    assert aspect.shape == (2,)
 
 
 def test_extract_features_chunks_large_inputs_across_multiple_bridge_calls(monkeypatch: Any) -> None:
@@ -33,16 +34,18 @@ def test_extract_features_chunks_large_inputs_across_multiple_bridge_calls(monke
         return {
             "hog": [[float(i)] for i in range(n)],
             "hole": [[float(i) * 10] for i in range(n)],
+            "aspect": [float(i) * 100 for i in range(n)],
         }
 
     monkeypatch.setattr(ts_bridge, "_run_bridge", fake_run_bridge)
     crops = [np.full((64, 64), i, dtype=np.uint8) for i in range(5)]
 
-    hog, hole = extract_features(crops)
+    hog, hole, aspect = extract_features(crops)
 
     assert calls == [2, 2, 1]
     assert hog[:, 0].tolist() == [0.0, 1.0, 0.0, 1.0, 0.0]
     assert hole[:, 0].tolist() == [0.0, 10.0, 0.0, 10.0, 0.0]
+    assert aspect.tolist() == [0.0, 100.0, 0.0, 100.0, 0.0]
 
 
 def test_warp_crops_chunks_large_inputs_and_preserves_order(monkeypatch: Any) -> None:

@@ -84,7 +84,7 @@ dummy-variable-rgx = "^_.*$"
 # CLI training scripts: print() is the output mechanism
 "killer_sudoku/training/*.py" = ["T20"]
 # CLI utility scripts: print() is the output mechanism
-"scripts/_r2_*.py" = ["T20"]
+"scripts/_*.py" = ["T20"]
 # Tests: sys.path manipulation before imports is standard pytest pattern.
 # N806: X is a standard feature-matrix variable (sklearn convention).
 # D205: test docstrings describe the scenario as a flowing paragraph, not summary+description.

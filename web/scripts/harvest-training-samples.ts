@@ -6,10 +6,10 @@
  * compares the OCR's digit reading against the user-provided ground-truth grid,
  * and collects the 64×64 cell thumbnails for every misread cell.
  *
- * Outputs a file in the same format as browser_train.json so it can be merged
+ * Outputs a file in the same format as corpus_train.json so it can be merged
  * directly:
  *   python web/train_recogniser.py --browser-weight 1000 --svm-c 100 \
- *     web/browser_train.json web/harvested_samples.json
+ *     web/corpus_train.json web/harvested_samples.json
  *
  * Usage:
  *   cd web
@@ -186,7 +186,7 @@ async function main(): Promise<void> {
 
   fs.writeFileSync(out, JSON.stringify(exportData, null, 2), 'utf-8');
   console.log(`\nWrote ${allSamples.length} sample(s) to ${out}`);
-  console.log(`\nTo retrain: python web/train_recogniser.py --browser-weight 1000 --svm-c 100 web/browser_train.json ${out}`);
+  console.log(`\nTo retrain: python web/train_recogniser.py --browser-weight 1000 --svm-c 100 web/corpus_train.json ${out}`);
 }
 
 main().catch(err => { console.error(err); process.exit(1); });

@@ -36,15 +36,18 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import time
 from collections import Counter
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
 from numba import njit, prange
 from numpy.typing import NDArray
+from sklearn.decomposition import PCA
 from sklearn.svm import SVC
 
 from killer_sudoku.training import ts_bridge
@@ -61,6 +64,12 @@ CONFIDENCE_THRESHOLD = 0.7 # OVO vote fraction to mark a read as confident
 SVM_C = 5.0
 SVM_GAMMA = "scale"
 DITHER_BATCH_SIZE = 4096
+PCA_COMPONENTS = 0         # optional dimensionality reduction applied to HOG+hole+aspect features
+                           # before the SVM fit, via --pca-components; shrinks the exported model
+                           # and speeds up inference. Disabled by default -- PCA is unsupervised
+                           # and has no reason to preserve low-variance-but-highly-discriminative
+                           # directions (e.g. the 1-vs-7 aspect-ratio signal) over bulk-appearance
+                           # variance, so it's opt-in until a labelled reduction (LDA/NCA) replaces it.
 
 # HOG descriptor parameters exported with the active model. The browser reads these
 # values and uses the matching cv.HOGDescriptor configuration for inference.
@@ -174,23 +183,111 @@ def _canonical_training_sample(
 
 
 # ---------------------------------------------------------------------------
+# Between-class-mean PCA: an alternative to plain (unsupervised) PCA that
+# targets directions where the class means differ, rather than directions of
+# maximum total variance. Equivalent to eigendecomposing the between-class
+# scatter matrix used in LDA, without needing to invert a within-class
+# covariance matrix (which is ill-conditioned in high dimensions relative to
+# per-class sample counts).
+# ---------------------------------------------------------------------------
+
+
+def compute_label_means(X: NDArray[np.float64], y: NDArray[np.int64]) -> NDArray[np.float64]:
+    """One representative mean vector per unique label, in sorted label order.
+
+    Extension point: this assumes each label's samples form a single cluster.
+    If a label turns out to be multi-modal (e.g. two visually distinct font
+    styles collapsed under one digit), replace this with a version that fits
+    a per-label GaussianMixture (comparing BIC across n_components) and
+    returns one row per discovered sub-cluster instead of collapsing the
+    label to a single overall mean. The caller (fit_class_mean_pca) only
+    requires a matrix of "representative" mean vectors -- it does not require
+    exactly one row per label.
+    """
+    labels = np.unique(y)
+    return np.stack([X[y == label].mean(axis=0) for label in labels])
+
+
+@dataclass(frozen=True)
+class ClassMeanReduction:
+    mean_of_means: NDArray[np.float64]
+    between_components: NDArray[np.float64]           # (n_between, n_features)
+    residual_mean: NDArray[np.float64] | None          # (n_features,)
+    residual_components: NDArray[np.float64] | None    # (n_residual, n_features)
+
+
+def fit_class_mean_pca(
+    X: NDArray[np.float64], y: NDArray[np.int64], n_residual_components: int,
+) -> tuple[NDArray[np.float64], ClassMeanReduction]:
+    """Reduce X to the directions where label means differ most.
+
+    Optionally supplemented by ordinary PCA on the residual (orthogonal-
+    complement) variance so the reduced space isn't limited to purely-
+    discriminative directions.
+    """
+    means = compute_label_means(X, y)
+    n_labels = means.shape[0]
+    mean_of_means = means.mean(axis=0)
+    centered_means = means - mean_of_means
+    # SVD on the (small: n_labels rows) centered means matrix. Centering makes
+    # this rank-deficient by exactly one row, so the true rank is n_labels - 1
+    # -- the same ceiling LDA has, reached without inverting a within-class
+    # scatter matrix. full_matrices=False still returns min(n_labels,
+    # n_features) rows regardless (the last one pairs with a ~zero singular
+    # value), so it must be truncated explicitly rather than trusted as-is.
+    _, _, vt = np.linalg.svd(centered_means, full_matrices=False)
+    between_components = vt[: n_labels - 1]
+
+    centered_X = X - mean_of_means
+    between_proj = centered_X @ between_components.T
+
+    if n_residual_components <= 0:
+        return between_proj, ClassMeanReduction(mean_of_means, between_components, None, None)
+
+    reconstruction = between_proj @ between_components
+    residual = centered_X - reconstruction
+    residual_pca = PCA(n_components=n_residual_components, random_state=0)
+    residual_proj = residual_pca.fit_transform(residual)
+
+    reduced = np.hstack([between_proj, residual_proj])
+    return reduced, ClassMeanReduction(
+        mean_of_means,
+        between_components,
+        residual_pca.mean_.astype(np.float64),
+        residual_pca.components_.astype(np.float64),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Production HOG/RBF trainer.
 # ---------------------------------------------------------------------------
 
 
 class HogRecogniser:
     def extract_features(self, imgs: NDArray[np.uint8]) -> NDArray[np.float64]:
-        hog, hole = ts_bridge.extract_features(list(imgs))
-        return np.hstack([hog, hole])
+        hog, hole, aspect = ts_bridge.extract_features(list(imgs))
+        return np.hstack([hog, hole, aspect.reshape(-1, 1)])
 
     def fit(
         self, X: NDArray[np.float64], y: NDArray[np.int64],
         sample_weights: NDArray[np.float64] | None,
+        pca_components: int = PCA_COMPONENTS,
+        class_mean_residual_components: int = -1,
     ) -> dict[str, Any]:
         # Fit the sole production classifier architecture.
+        pca: PCA | None = None
+        class_mean: ClassMeanReduction | None = None
+        if class_mean_residual_components >= 0:
+            X, class_mean = fit_class_mean_pca(X, y, class_mean_residual_components)
+        elif pca_components > 0:
+            pca = PCA(n_components=pca_components, random_state=0)
+            X = pca.fit_transform(X)
         svc = SVC(kernel="rbf", C=SVM_C, gamma=SVM_GAMMA, decision_function_shape="ovo")
         svc.fit(X, y, sample_weight=sample_weights)
-        return {"kind": "rbf", "clf": svc, "classes": svc.classes_}
+        return {
+            "kind": "rbf", "clf": svc, "classes": svc.classes_,
+            "pca": pca, "class_mean": class_mean,
+        }
 
     def save(
         self, model: dict[str, Any], out_dir: Path,
@@ -216,7 +313,22 @@ class HogRecogniser:
             ("rbf_gamma",            np.array([gamma], dtype=np.float64),          "float64"),
             ("classes",              svc.classes_.astype(np.int32),                "int32"),
             ("confidence_threshold", np.array([confidence_threshold], dtype=np.float64), "float64"),
+            ("use_aspect_feature",   np.array([1], dtype=np.int32),                "int32"),
         ]
+        pca: PCA | None = model.get("pca")
+        if pca is not None:
+            named.append(("pca_mean", pca.mean_.astype(np.float64), "float64"))
+            named.append(("pca_components", pca.components_.astype(np.float64), "float64"))
+
+        class_mean: ClassMeanReduction | None = model.get("class_mean")
+        if class_mean is not None:
+            named.append(("cm_mean_of_means", class_mean.mean_of_means.astype(np.float64), "float64"))
+            named.append(("cm_between_components", class_mean.between_components.astype(np.float64), "float64"))
+            if class_mean.residual_components is not None:
+                assert class_mean.residual_mean is not None
+                named.append(("cm_residual_mean", class_mean.residual_mean.astype(np.float64), "float64"))
+                named.append(("cm_residual_components", class_mean.residual_components.astype(np.float64), "float64"))
+
         blob = bytearray()
         manifest_arrays: dict[str, dict[str, Any]] = {}
         for name, arr, dtype_str in named:
@@ -244,6 +356,12 @@ class HogRecogniser:
         n_sv = svc.support_vectors_.shape[0]
         print(f"\nSaved to {out_dir}/ [hog/rbf]", flush=True)
         print(f"  SVM: {n_sv} support vectors, classes {svc.classes_.tolist()}", flush=True)
+        if pca is not None:
+            print(f"  PCA: {pca.n_components_} components ({pca.explained_variance_ratio_.sum():.1%} variance retained)", flush=True)
+        if class_mean is not None:
+            n_between = class_mean.between_components.shape[0]
+            n_residual = 0 if class_mean.residual_components is None else class_mean.residual_components.shape[0]
+            print(f"  Class-mean PCA: {n_between} between-class + {n_residual} residual components", flush=True)
         print(f"  Bin size: {len(blob):,} bytes", flush=True)
 
 
@@ -692,6 +810,54 @@ def build_dataset(
     return aug_imgs, np.array(aug_labels, dtype=np.int64), np.array(aug_weights, dtype=np.float64)
 
 
+def _git_commit() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=True,
+        )
+        return result.stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def write_training_manifest(
+    out_dir: Path,
+    *,
+    sources: dict[str, Any],
+    digit_distribution: dict[int, int],
+    warp_strategy: WarpStrategy,
+    dither: int,
+    pca_components: int,
+    class_mean_residual_components: int,
+    confidence_threshold: float,
+    dataset_size_post_dither: int,
+    dataset_size_fit: int,
+) -> None:
+    """Record what a checked-in model was trained on, alongside the model itself.
+
+    Written every run so `git log -- web/public/training_manifest.json` gives a
+    per-checkin history of input sources and dataset composition -- the model
+    binary alone doesn't say what produced it.
+    """
+    manifest = {
+        "trained_at": datetime.now(UTC).isoformat(),
+        "git_commit": _git_commit(),
+        "warp_strategy": warp_strategy,
+        "dither": dither,
+        "pca_components": pca_components,
+        "class_mean_residual_components": class_mean_residual_components,
+        "confidence_threshold": confidence_threshold,
+        "sources": sources,
+        "digit_distribution": {str(k): v for k, v in sorted(digit_distribution.items())},
+        "dataset_size_post_dither": dataset_size_post_dither,
+        "dataset_size_fit": dataset_size_fit,
+    }
+    (out_dir / "training_manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8",
+    )
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -707,8 +873,8 @@ def main() -> None:
              "Subject to --max-per-class capping. Optional if synthetic is enabled.",
     )
     parser.add_argument(
-        "--browser-file", type=Path, default=Path("web/browser_train.json"),
-        help="Hand/app-verified browser-exported training JSON (default: web/browser_train.json). "
+        "--browser-file", type=Path, default=Path("web/corpus_train.json"),
+        help="Hand/app-verified training JSON, corpus.db-sourced (default: web/corpus_train.json). "
              "Always loaded in full (minus known-stale-geometry samples) and NEVER subject to "
              "--max-per-class capping. Pass a nonexistent path or --no-browser-file to skip.",
     )
@@ -764,7 +930,21 @@ def main() -> None:
         help="Hard cap on rows passed to SVC.fit, applied by random subsampling after "
              f"dithering (default: {MAX_FIT_SAMPLES}). RBF-SVM fit cost scales worse than "
              "linearly with sample count -- this bounds worst-case fit time regardless of "
-             "--dither or how large browser_train.json grows.",
+             "--dither or how large corpus_train.json grows.",
+    )
+    parser.add_argument(
+        "--pca-components", type=int, default=PCA_COMPONENTS, metavar="N",
+        help="Reduce HOG+hole features to N components via PCA before the SVM fit, "
+             f"shrinking the exported model and speeding up inference (default: {PCA_COMPONENTS}; "
+             "0 disables PCA and fits on raw features).",
+    )
+    parser.add_argument(
+        "--class-mean-residual-components", type=int, default=-1, metavar="N",
+        help="Reduce features to the directions where digit-class means differ most "
+             "(at most n_classes-1 dimensions, equivalent to the between-class scatter "
+             "used in LDA, without inverting a within-class covariance matrix), plus N "
+             "residual PCA components for general variance. Overrides --pca-components "
+             "when set. -1 (default) disables it; 0 keeps only the between-class directions.",
     )
     args = parser.parse_args()
 
@@ -862,6 +1042,7 @@ def main() -> None:
     print(f"{_elapsed()} Augmenting...", flush=True)
     aug_imgs, y, weights = build_dataset(all_samples, args.dither, sample_weights)
     print(f"{_elapsed()} Dataset: {aug_imgs.shape[0]} augmented images", flush=True)
+    dataset_size_post_dither = aug_imgs.shape[0]
 
     if aug_imgs.shape[0] > args.max_fit_samples:
         rng_fit = np.random.default_rng(0)
@@ -877,13 +1058,43 @@ def main() -> None:
     print(f"{_elapsed()} Dataset: {X.shape[0]} samples x {X.shape[1]} features", flush=True)
 
     print(f"{_elapsed()} Fitting ({type(ACTIVE_RECOGNISER).__name__})...", flush=True)
-    model = ACTIVE_RECOGNISER.fit(X, y, weights)
+    model = ACTIVE_RECOGNISER.fit(
+        X, y, weights,
+        pca_components=args.pca_components,
+        class_mean_residual_components=args.class_mean_residual_components,
+    )
 
     print(f"{_elapsed()} Saving model...", flush=True)
+    out_dir = Path(args.out)
     ACTIVE_RECOGNISER.save(
-        model, Path(args.out),
+        model, out_dir,
         confidence_threshold=args.confidence_threshold,
         warp_strategy=strategy,
+    )
+    write_training_manifest(
+        out_dir,
+        sources={
+            "browser_file": (
+                None if args.no_browser_file or not args.browser_file.exists()
+                else str(args.browser_file)
+            ),
+            "overrides_file": (
+                None if args.no_overrides_file or not args.overrides_file.exists()
+                else str(args.overrides_file)
+            ),
+            "bulk_files": [str(p) for p in args.training_json],
+            "n_browser": n_browser,
+            "n_bulk": n_bulk,
+            "n_synthetic": n_synth,
+        },
+        digit_distribution=dist,
+        warp_strategy=strategy,
+        dither=args.dither,
+        pca_components=args.pca_components,
+        class_mean_residual_components=args.class_mean_residual_components,
+        confidence_threshold=args.confidence_threshold,
+        dataset_size_post_dither=dataset_size_post_dither,
+        dataset_size_fit=aug_imgs.shape[0],
     )
     print(f"{_elapsed()} Done.", flush=True)
 

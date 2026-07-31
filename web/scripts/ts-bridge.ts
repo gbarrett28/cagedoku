@@ -6,6 +6,7 @@ import {
 } from '../src/image/numberRecognition.js';
 import type { RawDigitCrop, WarpStrategy } from '../src/image/numberRecognition.js';
 import { extractHoleFeatures } from '../src/image/holeFeatures.js';
+import { extractAspectFeatures } from '../src/image/aspectFeatures.js';
 import { loadNodeOpenCv } from './node-opencv.js';
 
 const HOG_PARAMS = DEFAULT_HOG_PARAMS;
@@ -59,15 +60,18 @@ function runExtractFeatures(payload: { crops: number[][] }): string {
   const imgs = toUint8Crops(payload.crops);
   const hogFeat = hogExtract(imgs, HOG_PARAMS);
   const holeFeat = extractHoleFeatures(imgs, HOG_PARAMS.winSize);
+  const aspectFeat = extractAspectFeatures(imgs, HOG_PARAMS.winSize);
   const nHog = hogFeat.length / imgs.length;
   const nHole = holeFeat.length / imgs.length;
   const hog: number[][] = [];
   const hole: number[][] = [];
+  const aspect: number[] = [];
   for (let i = 0; i < imgs.length; i++) {
     hog.push(Array.from(hogFeat.subarray(i * nHog, (i + 1) * nHog)));
     hole.push(Array.from(holeFeat.subarray(i * nHole, (i + 1) * nHole)));
+    aspect.push(aspectFeat[i]!);
   }
-  return JSON.stringify({ hog, hole });
+  return JSON.stringify({ hog, hole, aspect });
 }
 
 function parseWarpCropsPayload(value: unknown): WarpCropsPayload {

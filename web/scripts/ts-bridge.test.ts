@@ -22,11 +22,14 @@ describe('ts-bridge --op extract-features', () => {
     const blank = new Array(64 * 64).fill(0);
     const payload = JSON.stringify({ crops: [blank, blank] });
     const out = runBridge(['--op', 'extract-features'], payload);
-    const parsed = JSON.parse(out) as { hog: number[][]; hole: number[][] };
+    const parsed = JSON.parse(out) as { hog: number[][]; hole: number[][]; aspect: number[] };
     expect(parsed.hog).toHaveLength(2);
     expect(parsed.hog[0]).toHaveLength(1764);
     expect(parsed.hole).toHaveLength(2);
     expect(parsed.hole[0]).toHaveLength(5);
+    expect(parsed.aspect).toHaveLength(2);
+    // A blank crop has no ink bounding box -- aspect ratio is defined as 0.
+    expect(parsed.aspect[0]).toBe(0);
   });
 });
 

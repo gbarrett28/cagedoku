@@ -22,7 +22,9 @@ from train_recogniser import (
     RawTrainingSample,
     build_dataset,
     canonicalize_samples,
+    compute_label_means,
     deduplicate_training_samples,
+    fit_class_mean_pca,
     generate_synthetic_samples,
     load_overrides_file,
     load_training_file,
@@ -268,7 +270,7 @@ def test_deduplicate_training_samples_uses_label_kind_geometry_and_strategy() ->
 _EXPECTED_HOG_KEYS = {
     "hog_win_size", "hog_cell_size", "hog_block_size", "hog_block_stride", "hog_nbins",
     "rbf_support_vectors", "rbf_dual_coef", "rbf_intercept", "rbf_n_support", "rbf_gamma",
-    "classes", "confidence_threshold",
+    "classes", "confidence_threshold", "use_aspect_feature",
 }
 
 
@@ -277,7 +279,7 @@ def test_hog_recogniser_save_keys() -> None:
     samples = _make_samples()
     aug_imgs, y, _w = build_dataset(samples, n_dither=1)
     X = hog.extract_features(aug_imgs)
-    model = hog.fit(X, y, None)
+    model = hog.fit(X, y, None, pca_components=0)
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
         hog.save(
@@ -291,8 +293,94 @@ def test_hog_recogniser_save_keys() -> None:
     assert manifest["classifier_type"] == "rbf"
     assert manifest["warp_strategy"] == "stretch"
     assert set(manifest["arrays"].keys()) == _EXPECTED_HOG_KEYS
-    # No PCA/template keys on a HOG manifest.
+    # No PCA/template keys when pca_components=0 explicitly disables the reduction step.
     assert not any(k.startswith("pca") or k.startswith("template") for k in manifest["arrays"])
+
+
+def test_hog_recogniser_save_keys_with_pca() -> None:
+    hog = HogRecogniser()
+    samples = _make_samples()
+    aug_imgs, y, _w = build_dataset(samples, n_dither=1)
+    X = hog.extract_features(aug_imgs)
+    n_features = X.shape[1]
+    model = hog.fit(X, y, None, pca_components=5)
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        hog.save(
+            model,
+            out,
+            confidence_threshold=CONFIDENCE_THRESHOLD,
+            warp_strategy="letterbox",
+        )
+        manifest: dict[str, Any] = json.loads((out / "num_recogniser.json").read_text())
+
+    assert set(manifest["arrays"].keys()) == _EXPECTED_HOG_KEYS | {"pca_mean", "pca_components"}
+    assert manifest["arrays"]["pca_mean"]["shape"] == [n_features]
+    assert manifest["arrays"]["pca_components"]["shape"] == [5, n_features]
+    # The SVM itself was fit on PCA-reduced features, not the raw HOG+hole vector.
+    assert manifest["arrays"]["rbf_support_vectors"]["shape"][1] == 5
+
+
+def test_compute_label_means_returns_one_row_per_unique_label() -> None:
+    X = np.array([[1.0, 1.0], [3.0, 3.0], [10.0, 0.0], [20.0, 0.0]])
+    y = np.array([0, 0, 1, 1])
+    means = compute_label_means(X, y)
+    assert means.shape == (2, 2)
+    np.testing.assert_allclose(means[0], [2.0, 2.0])
+    np.testing.assert_allclose(means[1], [15.0, 0.0])
+
+
+def test_fit_class_mean_pca_rank_is_at_most_n_labels_minus_one() -> None:
+    rng = np.random.default_rng(0)
+    # 4 labels, tight clusters -> between-class directions span at most 3 dims,
+    # regardless of the ambient (10) feature dimensionality.
+    X = np.concatenate([rng.normal(loc=label * 5.0, scale=0.1, size=(20, 10)) for label in range(4)])
+    y = np.concatenate([np.full(20, label) for label in range(4)])
+    reduced, reduction = fit_class_mean_pca(X, y, n_residual_components=0)
+    assert reduced.shape == (80, 3)
+    assert reduction.between_components.shape == (3, 10)
+    assert reduction.residual_components is None
+
+
+def test_fit_class_mean_pca_appends_residual_components() -> None:
+    rng = np.random.default_rng(0)
+    X = np.concatenate([rng.normal(loc=label * 5.0, scale=0.1, size=(20, 10)) for label in range(4)])
+    y = np.concatenate([np.full(20, label) for label in range(4)])
+    reduced, reduction = fit_class_mean_pca(X, y, n_residual_components=2)
+    assert reduced.shape == (80, 5)  # 3 between-class + 2 residual
+    assert reduction.residual_components is not None
+    assert reduction.residual_components.shape == (2, 10)
+    assert reduction.residual_mean is not None
+    assert reduction.residual_mean.shape == (10,)
+
+
+def test_hog_recogniser_save_keys_with_class_mean_pca() -> None:
+    hog = HogRecogniser()
+    samples = _make_samples()  # 9 samples, one per digit 1-9
+    aug_imgs, y, _w = build_dataset(samples, n_dither=1)
+    X = hog.extract_features(aug_imgs)
+    n_features = X.shape[1]
+    model = hog.fit(X, y, None, pca_components=6, class_mean_residual_components=2)
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        hog.save(
+            model,
+            out,
+            confidence_threshold=CONFIDENCE_THRESHOLD,
+            warp_strategy="letterbox",
+        )
+        manifest: dict[str, Any] = json.loads((out / "num_recogniser.json").read_text())
+
+    expected_keys = _EXPECTED_HOG_KEYS | {
+        "cm_mean_of_means", "cm_between_components", "cm_residual_mean", "cm_residual_components",
+    }
+    assert set(manifest["arrays"].keys()) == expected_keys
+    # 9 unique digit labels -> at most 8 between-class directions.
+    assert manifest["arrays"]["cm_between_components"]["shape"] == [8, n_features]
+    assert manifest["arrays"]["cm_residual_components"]["shape"] == [2, n_features]
+    assert manifest["arrays"]["rbf_support_vectors"]["shape"][1] == 10  # 8 between + 2 residual
+    # class_mean takes priority over pca_components when both are set.
+    assert "pca_mean" not in manifest["arrays"]
 
 
 def _make_override_png_b64(w: int, h: int) -> str:

@@ -112,7 +112,7 @@ type ReportOutcomeFn = (o: {
     sourcePixels: number[]; recognitionPixels: number[]; warpStrategy: 'stretch' | 'letterbox';
     hogFeatures: number[]; holeFeatures: number[];
   }> | undefined;
-  /** Ground-truth crop+label for every cage-total digit cell of a non-clean killer puzzle. */
+  /** Ground-truth crop+label for every cage-total digit cell of a killer puzzle upload. */
   cageTotalReads?: ReadonlyArray<{
     row: number; col: number; digitIndex: number; predictedLabel: number; confident: boolean;
     sourceX: number; sourceY: number; sourceWidth: number; sourceHeight: number;
@@ -1447,6 +1447,7 @@ async function handleProcess(file?: File): Promise<void> {
             specHash,
             ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
             ...metricsPayload(),
+            cageTotalReads: buildCageTotalReadsPayload(),
           });
           const playing = confirmPuzzle(board);
           renderPlayingMode(playing);
