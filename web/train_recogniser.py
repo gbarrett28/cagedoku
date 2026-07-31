@@ -870,6 +870,7 @@ def dither_batch(
     samples: list[tuple[int, NDArray[np.uint8], float]],
     n_variants: int,
     rng: np.random.Generator,
+    translate: bool = True,
 ) -> tuple[NDArray[np.uint8], list[int], list[float]]:
     """Dither (digit, img, weight) samples into a stacked (n*(n_variants+1), 64, 64) uint8 array.
 
@@ -877,6 +878,12 @@ def dither_batch(
     the precomputed per-variant randomness arrays. All randomness is drawn
     sequentially from rng before each batch's kernel call, so the output is
     deterministic for a given rng draw order regardless of batch size.
+
+    translate=False zeroes the dx/dy shift range (still applies
+    erode/dilate/noise) -- for recognisers whose crop normalization already
+    handles translation deterministically (see centerByCentroid), so the
+    jitter augmentation doesn't need to re-teach that robustness
+    stochastically.
     """
     n_samples = len(samples)
     out_imgs = np.empty(
@@ -889,8 +896,9 @@ def dither_batch(
         batch = samples[start:start + DITHER_BATCH_SIZE]
         bn = len(batch)
         stacked = np.stack([img for _, img, _ in batch])
-        dx = rng.integers(-2, 3, size=(bn, n_variants)).astype(np.int32)
-        dy = rng.integers(-2, 3, size=(bn, n_variants)).astype(np.int32)
+        shift_lo, shift_hi = (-2, 3) if translate else (0, 1)
+        dx = rng.integers(shift_lo, shift_hi, size=(bn, n_variants)).astype(np.int32)
+        dy = rng.integers(shift_lo, shift_hi, size=(bn, n_variants)).astype(np.int32)
         op = rng.integers(0, 3, size=(bn, n_variants)).astype(np.int8)
         noise = rng.random((bn, n_variants, THUMBNAIL_SIZE, THUMBNAIL_SIZE)) < 0.01
         batch_out = np.empty(
@@ -912,6 +920,7 @@ def build_dataset(
     samples: list[tuple[int, NDArray[np.uint8]]],
     n_dither: int,
     sample_weights: list[float] | None = None,
+    translate: bool = True,
 ) -> tuple[NDArray[np.uint8], NDArray[np.int64], NDArray[np.float64]]:
     """Augment samples with dithering, returning the stacked image array.
 
@@ -931,7 +940,7 @@ def build_dataset(
 
     print(f"  Dithering {n_samples} samples ({n_dither} variants each, numba)...", flush=True)
     rng = np.random.default_rng(0)
-    aug_imgs, aug_labels, aug_weights = dither_batch(triples, n_dither, rng)
+    aug_imgs, aug_labels, aug_weights = dither_batch(triples, n_dither, rng, translate=translate)
     print(f"  [+{time.time() - t0:.0f}s] Dithering done", flush=True)
 
     assert len(aug_labels) == len(aug_imgs)  # sanity: dither_batch's own invariant, not re-derived here
