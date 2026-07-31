@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { activeRecogniser, HogRecogniser, loadNumRecogniser, pcaProject, classMeanProject, centerByCentroid } from './numberRecognition.js';
+import { activeRecogniser, HogRecogniser, PcaRecogniser, loadNumRecogniser, pcaProject, classMeanProject, centerByCentroid } from './numberRecognition.js';
 import type { NumRecogniser, PcaProjection, ClassMeanReduction } from './numberRecognition.js';
 
 // ---------------------------------------------------------------------------
@@ -239,6 +239,63 @@ describe('loadNumRecogniser class dispatch', () => {
     // (see the plan's note on Playwright covering that instead); this only verifies
     // the guard message itself.
     expect(() => activeRecogniser()).toThrow('No recogniser loaded');
+  });
+});
+
+
+describe('PcaRecogniser', () => {
+  function buildManifest(templatePixels: number[][], templateLabels: number[]): { buf: ArrayBuffer; manifest: unknown } {
+    const arrays: Record<string, { dtype: string; shape: number[]; offset: number; byteLength: number }> = {};
+    const chunks: ArrayBufferView[] = [];
+    let offset = 0;
+    const push = (name: string, arr: Float64Array | Int32Array, shape: number[]): void => {
+      arrays[name] = {
+        dtype: arr instanceof Int32Array ? 'int32' : 'float64',
+        shape, offset, byteLength: arr.byteLength,
+      };
+      chunks.push(arr);
+      offset += arr.byteLength;
+    };
+
+    const nFeatures = templatePixels[0]!.length;
+    push('rbf_support_vectors', Float64Array.from([0]), [1, 1]);
+    push('rbf_dual_coef', Float64Array.from([1]), [1, 1]);
+    push('rbf_intercept', Float64Array.from([0]), [1]);
+    push('rbf_n_support', Int32Array.from([1]), [1]);
+    push('rbf_gamma', Float64Array.from([1]), [1]);
+    push('classes', Int32Array.from(templateLabels), [templateLabels.length]);
+    push('confidence_threshold', Float64Array.from([0.7]), [1]);
+    push('cm_mean_of_means', new Float64Array(nFeatures), [nFeatures]);
+    push('cm_between_components', Float64Array.from([1, ...new Array<number>(nFeatures - 1).fill(0)]), [1, nFeatures]);
+    push('template_pixels', Float64Array.from(templatePixels.flat()), [templatePixels.length, nFeatures]);
+    push('template_labels', Int32Array.from(templateLabels), [templateLabels.length]);
+
+    const buf = new ArrayBuffer(offset);
+    const bytes = new Uint8Array(buf);
+    let cursor = 0;
+    for (const arr of chunks) {
+      bytes.set(new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength), cursor);
+      cursor += arr.byteLength;
+    }
+    return {
+      buf,
+      manifest: { classifier_type: 'rbf', recogniser_type: 'pca', warp_strategy: 'letterbox-centered', arrays },
+    };
+  }
+
+  it('returns a template label directly when a crop matches confidently', () => {
+    // Non-constant template patterns so normalized cross-correlation is
+    // defined (a constant vector has zero variance, forcing score to 0).
+    const { buf, manifest } = buildManifest(
+      [[0, 10, 0, 10], [10, 0, 10, 0]],
+      [1, 7],
+    );
+    const loaded = loadNumRecogniser(buf, manifest as Parameters<typeof loadNumRecogniser>[1]);
+
+    expect(loaded).toBeInstanceOf(PcaRecogniser);
+    const [result] = loaded.recognise([Uint8Array.from([0, 10, 0, 10])]);
+
+    expect(result).toEqual(expect.objectContaining({ label: 1, confident: true }));
   });
 });
 

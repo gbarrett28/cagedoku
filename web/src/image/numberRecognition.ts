@@ -334,6 +334,81 @@ export class HogRecogniser extends NumRecogniser {
 
 }
 
+
+export interface TemplateMatch {
+  templatePixels: Float64Array;   // (nTemplates * nFeatures,) row-major
+  templateLabels: Int32Array;     // (nTemplates,)
+  nTemplates: number;
+  nFeatures: number;
+}
+
+/** Normalized cross-correlation between two equal-length pixel vectors. */
+function normalizedCrossCorrelation(a: Float64Array, b: ArrayLike<number>, offset: number, len: number): number {
+  let meanA = 0, meanB = 0;
+  for (let i = 0; i < len; i++) { meanA += a[i]!; meanB += b[offset + i]!; }
+  meanA /= len; meanB /= len;
+  let num = 0, denomA = 0, denomB = 0;
+  for (let i = 0; i < len; i++) {
+    const da = a[i]! - meanA, db = b[offset + i]! - meanB;
+    num += da * db; denomA += da * da; denomB += db * db;
+  }
+  const denom = Math.sqrt(denomA * denomB);
+  return denom === 0 ? 0 : num / denom;
+}
+
+export class PcaRecogniser extends NumRecogniser {
+  constructor(
+    private readonly classifier: RBFClassifier,
+    confidenceThreshold: number,
+    readonly warpStrategy: WarpStrategy,
+    private readonly classMean: ClassMeanReduction,
+    private readonly templates: TemplateMatch,
+    private readonly templateThreshold: number,
+  ) {
+    super(confidenceThreshold);
+  }
+
+  recognise(imgs: Uint8Array[]): Recognition[] {
+    const n = imgs.length;
+    const nFeatures = this.templates.nFeatures;
+    const x = new Float64Array(n * nFeatures);
+    for (let i = 0; i < n; i++) {
+      for (let f = 0; f < nFeatures; f++) x[i * nFeatures + f] = imgs[i]![f]!;
+    }
+
+    const results: Recognition[] = [];
+    const rbfNeeded: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const xi = x.subarray(i * nFeatures, (i + 1) * nFeatures);
+      let best = -1, bestScore = -Infinity;
+      for (let t = 0; t < this.templates.nTemplates; t++) {
+        const score = normalizedCrossCorrelation(xi, this.templates.templatePixels, t * nFeatures, nFeatures);
+        if (score > bestScore) { bestScore = score; best = t; }
+      }
+      if (bestScore >= this.templateThreshold) {
+        results.push({ label: this.templates.templateLabels[best]!, confident: true });
+      } else {
+        results.push({ label: -1, confident: false }); // placeholder, replaced below
+        rbfNeeded.push(i);
+      }
+    }
+
+    if (rbfNeeded.length > 0) {
+      const xRbf = new Float64Array(rbfNeeded.length * nFeatures);
+      for (let k = 0; k < rbfNeeded.length; k++) {
+        xRbf.set(x.subarray(rbfNeeded[k]! * nFeatures, (rbfNeeded[k]! + 1) * nFeatures), k * nFeatures);
+      }
+      const projected = classMeanProject(xRbf, rbfNeeded.length, this.classMean);
+      const rbfResults = rbfPredictWithConfidence(this.classifier, projected, rbfNeeded.length, this.confidenceThreshold);
+      for (let k = 0; k < rbfNeeded.length; k++) {
+        results[rbfNeeded[k]!] = rbfResults[k]!;
+      }
+    }
+
+    return results;
+  }
+}
+
 /**
  * Extract HOG feature vectors from winSize×winSize uint8 images.
  *
@@ -441,6 +516,7 @@ export function loadNumRecogniser(
   binBuffer: ArrayBuffer,
   manifestJson: {
     classifier_type?: string;
+    recogniser_type?: string;
     warp_strategy?: string;
     arrays: Record<string, { dtype: string; shape: number[]; offset: number; byteLength: number }>;
   },
@@ -450,7 +526,7 @@ export function loadNumRecogniser(
     throw new Error(`Unsupported classifier type: ${String(classifierType)}`);
   }
   const warpStrategy = manifestJson.warp_strategy;
-  if (warpStrategy !== 'stretch' && warpStrategy !== 'letterbox') {
+  if (warpStrategy !== 'stretch' && warpStrategy !== 'letterbox' && warpStrategy !== 'letterbox-centered') {
     throw new Error(`Unsupported warp strategy: ${String(warpStrategy)}`);
   }
 
@@ -470,13 +546,6 @@ export function loadNumRecogniser(
   const scalarF64 = (name: string): number => getF64(name)[0]!;
 
   const classes = getI32('classes');
-  const hog: HOGParams = {
-    winSize:     scalarI32('hog_win_size'),
-    cellSize:    scalarI32('hog_cell_size'),
-    blockSize:   scalarI32('hog_block_size'),
-    blockStride: scalarI32('hog_block_stride'),
-    nbins:       scalarI32('hog_nbins'),
-  };
   const [nSv, nFeatures] = arrays['rbf_support_vectors']!.shape as [number, number];
   const classifier: RBFClassifier = {
     kind:           'rbf',
@@ -489,6 +558,45 @@ export function loadNumRecogniser(
     nClasses:       classes.length,
     nSv,
     nFeatures,
+  };
+  const confidenceThreshold = scalarF64('confidence_threshold');
+
+  const recogniserType = manifestJson.recogniser_type ?? 'hog';
+
+  if (recogniserType === 'pca') {
+    const [nBetween, cmNFeatures] = arrays['cm_between_components']!.shape as [number, number];
+    const classMean: ClassMeanReduction = {
+      meanOfMeans:       getF64('cm_mean_of_means'),
+      betweenComponents: getF64('cm_between_components'),
+      nBetween,
+      nFeatures:         cmNFeatures,
+    };
+    if (arrays['cm_residual_components'] !== undefined) {
+      const [nResidual] = arrays['cm_residual_components']!.shape as [number, number];
+      classMean.residualMean = getF64('cm_residual_mean');
+      classMean.residualComponents = getF64('cm_residual_components');
+      classMean.nResidual = nResidual;
+    }
+    const [nTemplates, templateNFeatures] = arrays['template_pixels']!.shape as [number, number];
+    const templates: TemplateMatch = {
+      templatePixels: getF64('template_pixels'),
+      templateLabels: getI32('template_labels'),
+      nTemplates,
+      nFeatures: templateNFeatures,
+    };
+    // Threshold not yet tuned empirically (see design spec's open questions);
+    // 0.9 is a conservative placeholder requiring a strong match before
+    // skipping the RBF fallback.
+    const templateThreshold = 0.9;
+    return new PcaRecogniser(classifier, confidenceThreshold, warpStrategy, classMean, templates, templateThreshold);
+  }
+
+  const hog: HOGParams = {
+    winSize:     scalarI32('hog_win_size'),
+    cellSize:    scalarI32('hog_cell_size'),
+    blockSize:   scalarI32('hog_block_size'),
+    blockStride: scalarI32('hog_block_stride'),
+    nbins:       scalarI32('hog_nbins'),
   };
 
   let pca: PcaProjection | undefined;
@@ -522,7 +630,7 @@ export function loadNumRecogniser(
   const useAspectFeature = arrays['use_aspect_feature'] !== undefined && scalarI32('use_aspect_feature') === 1;
 
   return new HogRecogniser(
-    hog, classifier, scalarF64('confidence_threshold'), warpStrategy, pca, useAspectFeature, classMean,
+    hog, classifier, confidenceThreshold, warpStrategy, pca, useAspectFeature, classMean,
   );
 }
 
