@@ -19,9 +19,11 @@ from train_recogniser import (
     THUMBNAIL_SIZE,
     CanonicalTrainingSample,
     HogRecogniser,
+    PcaRecogniser,
     RawTrainingSample,
     build_dataset,
     canonicalize_samples,
+    cluster_pseudo_labels,
     compute_label_means,
     deduplicate_training_samples,
     fit_class_mean_pca,
@@ -381,6 +383,39 @@ def test_hog_recogniser_save_keys_with_class_mean_pca() -> None:
     assert manifest["arrays"]["rbf_support_vectors"]["shape"][1] == 10  # 8 between + 2 residual
     # class_mean takes priority over pca_components when both are set.
     assert "pca_mean" not in manifest["arrays"]
+
+
+def test_cluster_pseudo_labels_groups_by_digit_and_cluster() -> None:
+    imgs = np.zeros((80, 8, 8), dtype=np.uint8)
+    y = np.array([0] * 40 + [1] * 40)
+    pseudo = cluster_pseudo_labels(imgs, y, n_clusters=2)
+    assert pseudo.shape == (80,)
+    assert set(pseudo // 10) == {0, 1}
+    assert (pseudo[:40] // 10 == 0).all()
+    assert (pseudo[40:] // 10 == 1).all()
+
+
+def test_pca_recogniser_extract_features_is_raw_pixel_flatten() -> None:
+    imgs = np.arange(2 * 4 * 4, dtype=np.uint8).reshape(2, 4, 4)
+    rec = PcaRecogniser()
+    X = rec.extract_features(imgs)
+    assert X.shape == (2, 16)
+    np.testing.assert_array_equal(X[0], imgs[0].flatten())
+
+
+def test_pca_recogniser_fit_produces_one_template_per_pseudo_label() -> None:
+    imgs = np.zeros((80, 8, 8), dtype=np.uint8)
+    imgs[:20, 0, 0] = 255   # digit 0, cluster A marker
+    imgs[20:40, 7, 7] = 255  # digit 0, cluster B marker
+    imgs[40:60, 0, 7] = 255  # digit 1, cluster A marker
+    imgs[60:80, 7, 0] = 255  # digit 1, cluster B marker
+    y = np.array([0] * 40 + [1] * 40)
+    rec = PcaRecogniser()
+    X = rec.extract_features(imgs)
+    model = rec.fit(X, y, sample_weights=None, imgs_for_clustering=imgs, n_clusters=2)
+    assert model["template_pixels"].shape[0] == model["template_labels"].shape[0]
+    assert set(model["template_labels"].tolist()) <= {0, 1}
+    assert model["template_pixels"].shape[1] == 64  # 8x8 flattened
 
 
 def _make_override_png_b64(w: int, h: int) -> str:

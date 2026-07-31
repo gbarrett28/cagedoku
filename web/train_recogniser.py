@@ -48,6 +48,7 @@ import numpy as np
 from numba import njit, prange
 from numpy.typing import NDArray
 from sklearn.decomposition import PCA
+from sklearn.mixture import GaussianMixture
 from sklearn.svm import SVC
 
 from killer_sudoku.training import ts_bridge
@@ -260,6 +261,38 @@ def fit_class_mean_pca(
     )
 
 
+CLUSTER_N_COMPONENTS = 20
+CLUSTER_N_CLUSTERS = 4
+
+
+def cluster_pseudo_labels(
+    imgs: NDArray[np.uint8], y: NDArray[np.int64], n_clusters: int = CLUSTER_N_CLUSTERS,
+) -> NDArray[np.int64]:
+    """Per-digit GMM clustering on HOG+hole+aspect features, training-time only.
+
+    Returns pseudo_label = digit * 10 + cluster_id, so downstream code can
+    recover the true digit via integer division by 10. Never reaches
+    production inference -- production PcaRecogniser never computes HOG.
+    """
+    hog, hole, aspect = ts_bridge.extract_features(list(imgs))
+    cluster_features = np.hstack([hog, hole, aspect.reshape(-1, 1)])
+    pseudo = np.zeros(len(y), dtype=np.int64)
+    for digit in np.unique(y):
+        mask = y == digit
+        digit_features = cluster_features[mask]
+        k = min(n_clusters, mask.sum())
+        if k <= 1:
+            pseudo[mask] = digit * 10
+            continue
+        reduced = PCA(
+            n_components=min(CLUSTER_N_COMPONENTS, digit_features.shape[1]), random_state=0,
+        ).fit_transform(digit_features)
+        gmm = GaussianMixture(n_components=k, random_state=0, n_init=5)
+        cluster_ids = gmm.fit_predict(reduced)
+        pseudo[mask] = digit * 10 + cluster_ids
+    return pseudo
+
+
 # ---------------------------------------------------------------------------
 # Production HOG/RBF trainer.
 # ---------------------------------------------------------------------------
@@ -364,6 +397,99 @@ class HogRecogniser:
             n_between = class_mean.between_components.shape[0]
             n_residual = 0 if class_mean.residual_components is None else class_mean.residual_components.shape[0]
             print(f"  Class-mean PCA: {n_between} between-class + {n_residual} residual components", flush=True)
+        print(f"  Bin size: {len(blob):,} bytes", flush=True)
+
+
+class PcaRecogniser:
+    def extract_features(self, imgs: NDArray[np.uint8]) -> NDArray[np.float64]:
+        return imgs.reshape(imgs.shape[0], -1).astype(np.float64)
+
+    def fit(
+        self, X: NDArray[np.float64], y: NDArray[np.int64],
+        sample_weights: NDArray[np.float64] | None,
+        imgs_for_clustering: NDArray[np.uint8],
+        n_clusters: int = CLUSTER_N_CLUSTERS,
+        class_mean_residual_components: int = 0,
+    ) -> dict[str, Any]:
+        pseudo_y = cluster_pseudo_labels(imgs_for_clustering, y, n_clusters=n_clusters)
+        template_pixels = compute_label_means(X, pseudo_y)
+        template_labels = np.array(
+            [label // 10 for label in np.unique(pseudo_y)], dtype=np.int64,
+        )
+
+        reduced, class_mean = fit_class_mean_pca(X, pseudo_y, class_mean_residual_components)
+        svc = SVC(kernel="rbf", C=SVM_C, gamma=SVM_GAMMA, decision_function_shape="ovo")
+        svc.fit(reduced, y, sample_weight=sample_weights)
+        return {
+            "kind": "rbf", "clf": svc, "classes": svc.classes_,
+            "class_mean": class_mean,
+            "template_pixels": template_pixels,
+            "template_labels": template_labels,
+        }
+
+    def save(
+        self, model: dict[str, Any], out_dir: Path,
+        warp_strategy: WarpStrategy,
+        confidence_threshold: float = CONFIDENCE_THRESHOLD,
+    ) -> None:
+        svc: SVC = model["clf"]
+        try:
+            gamma = float(svc._gamma)
+        except AttributeError:
+            gamma = 1.0
+
+        class_mean: ClassMeanReduction = model["class_mean"]
+        named: list[tuple[str, np.ndarray[Any, Any], str]] = [
+            ("rbf_support_vectors",  svc.support_vectors_.astype(np.float64),      "float64"),
+            ("rbf_dual_coef",        svc.dual_coef_.astype(np.float64),            "float64"),
+            ("rbf_intercept",        svc.intercept_.astype(np.float64),            "float64"),
+            ("rbf_n_support",        svc.n_support_.astype(np.int32),              "int32"),
+            ("rbf_gamma",            np.array([gamma], dtype=np.float64),          "float64"),
+            ("classes",              svc.classes_.astype(np.int32),                "int32"),
+            ("confidence_threshold", np.array([confidence_threshold], dtype=np.float64), "float64"),
+            ("cm_mean_of_means",       class_mean.mean_of_means.astype(np.float64), "float64"),
+            ("cm_between_components", class_mean.between_components.astype(np.float64), "float64"),
+            ("template_pixels", model["template_pixels"].astype(np.float64), "float64"),
+            ("template_labels", model["template_labels"].astype(np.int32), "int32"),
+        ]
+        if class_mean.residual_components is not None:
+            assert class_mean.residual_mean is not None
+            named.append(("cm_residual_mean", class_mean.residual_mean.astype(np.float64), "float64"))
+            named.append(("cm_residual_components", class_mean.residual_components.astype(np.float64), "float64"))
+
+        blob = bytearray()
+        manifest_arrays: dict[str, dict[str, Any]] = {}
+        for name, arr, dtype_str in named:
+            arr = np.asarray(arr)
+            data = arr.tobytes()
+            manifest_arrays[name] = {
+                "dtype": dtype_str, "shape": list(arr.shape),
+                "offset": len(blob), "byteLength": len(data),
+            }
+            blob.extend(data)
+
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "num_recogniser.bin").write_bytes(bytes(blob))
+        (out_dir / "num_recogniser.json").write_text(
+            json.dumps(
+                {
+                    "classifier_type": "rbf",
+                    "recogniser_type": "pca",
+                    "warp_strategy": warp_strategy,
+                    "arrays": manifest_arrays,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        n_sv = svc.support_vectors_.shape[0]
+        n_templates = model["template_pixels"].shape[0]
+        print(f"\nSaved to {out_dir}/ [pca/rbf]", flush=True)
+        print(f"  SVM: {n_sv} support vectors, classes {svc.classes_.tolist()}", flush=True)
+        print(f"  Templates: {n_templates}", flush=True)
+        n_between = class_mean.between_components.shape[0]
+        n_residual = 0 if class_mean.residual_components is None else class_mean.residual_components.shape[0]
+        print(f"  Class-mean PCA: {n_between} between-cluster + {n_residual} residual components", flush=True)
         print(f"  Bin size: {len(blob):,} bytes", flush=True)
 
 
