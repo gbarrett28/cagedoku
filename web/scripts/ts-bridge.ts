@@ -79,8 +79,8 @@ function parseWarpCropsPayload(value: unknown): WarpCropsPayload {
     throw new Error('warp-crops payload must be an object');
   }
   const payload = value as Partial<WarpCropsPayload>;
-  if (payload.strategy !== 'stretch' && payload.strategy !== 'letterbox') {
-    throw new Error(`warp-crops strategy must be stretch or letterbox, got ${String(payload.strategy)}`);
+  if (payload.strategy !== 'stretch' && payload.strategy !== 'letterbox' && payload.strategy !== 'letterbox-centered') {
+    throw new Error(`warp-crops strategy must be stretch, letterbox, or letterbox-centered, got ${String(payload.strategy)}`);
   }
   if (!Number.isInteger(payload.size) || (payload.size ?? 0) <= 0) {
     throw new Error(`warp-crops size must be a positive integer, got ${String(payload.size)}`);

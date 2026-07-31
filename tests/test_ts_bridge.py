@@ -69,6 +69,27 @@ def test_warp_crops_chunks_large_inputs_and_preserves_order(monkeypatch: Any) ->
     assert warped[:, 0, 0].tolist() == [0, 1, 2, 3, 4]
 
 
+def test_warp_crops_accepts_letterbox_centered_strategy(monkeypatch: Any) -> None:
+    def fake_run_bridge(_op: str, payload: dict[str, Any], _extra_args: list[str] | None = None) -> dict[str, Any]:
+        assert payload["strategy"] == "letterbox-centered"
+        batch = payload["crops"]
+        return {"crops": [[crop["pixels"][0]] * 4 for crop in batch]}
+
+    monkeypatch.setattr(ts_bridge, "_run_bridge", fake_run_bridge)
+    crops = [RawDigitCrop(np.full((2, 3), 7, dtype=np.uint8))]
+
+    warped = warp_crops(crops, "letterbox-centered", size=2)
+
+    assert warped.shape == (1, 2, 2)
+
+
+def test_warp_crops_rejects_unsupported_strategy() -> None:
+    crops = [RawDigitCrop(np.full((2, 3), 7, dtype=np.uint8))]
+
+    with pytest.raises(ValueError, match="unsupported warp strategy"):
+        warp_crops(crops, "nonsense", size=2)  # type: ignore[arg-type]
+
+
 def test_warp_crops_rejects_invalid_crop_shapes() -> None:
     with pytest.raises(ValueError, match="two-dimensional"):
         warp_crops([RawDigitCrop(np.zeros((2, 3, 1), dtype=np.uint8))], "stretch")

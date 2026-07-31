@@ -60,11 +60,11 @@ def _run_bridge(op: str, payload: dict[str, Any]) -> dict[str, Any]:
 
 def warp_crops(
     crops: Sequence[RawDigitCrop],
-    strategy: Literal["stretch", "letterbox"],
+    strategy: Literal["stretch", "letterbox", "letterbox-centered"],
     size: int = 64,
 ) -> npt.NDArray[np.uint8]:
     """Warp raw crops in batches using the production TypeScript implementation."""
-    if strategy not in ("stretch", "letterbox"):
+    if strategy not in ("stretch", "letterbox", "letterbox-centered"):
         raise ValueError(f"unsupported warp strategy: {strategy}")
     if size <= 0:
         raise ValueError(f"warp size must be positive, got {size}")

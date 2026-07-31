@@ -83,7 +83,7 @@ _STALE_HASHES_PATH = Path(__file__).parent / "known-stale-training-hashes.json"
 DEFAULT_OVERRIDES_PATH = Path("killer_sudoku/training/manual_label_overrides.json")
 
 
-type WarpStrategy = Literal["stretch", "letterbox"]
+type WarpStrategy = Literal["stretch", "letterbox", "letterbox-centered"]
 
 
 @dataclass(frozen=True)
@@ -118,6 +118,8 @@ def deployed_warp_strategy(
         return "stretch"
     if strategy == "letterbox":
         return "letterbox"
+    if strategy == "letterbox-centered":
+        return "letterbox-centered"
     raise ValueError(
         f"{manifest_path}: unsupported deployed warp strategy {strategy!r}"
     )
@@ -906,7 +908,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--warp-strategy",
-        choices=("stretch", "letterbox"),
+        choices=("stretch", "letterbox", "letterbox-centered"),
         default=deployed_warp_strategy(),
         help="Production TypeScript crop warp used for raw training inputs "
              "(default: strategy in the deployed model manifest)",

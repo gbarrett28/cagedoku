@@ -40,7 +40,7 @@ describe('ts-bridge --op warp-crops', () => {
     cv = await loadNodeOpenCv();
   });
 
-  it.each(['stretch', 'letterbox'] as const)(
+  it.each(['stretch', 'letterbox', 'letterbox-centered'] as const)(
     'matches direct production %s warping byte-for-byte',
     strategy => {
       const width = 5;
