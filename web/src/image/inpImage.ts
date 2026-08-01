@@ -27,10 +27,10 @@ import {
 } from './cellScan.js';
 import type { GrayImage } from './borderClustering.js';
 import {
-  splitNum, contourHier, getNumContours, readClassicDigits, activeRecogniser,
+  splitNum, contourHier, getNumContours, readClassicDigits, activeRecogniser, allowedDigitsForPosition,
 } from './numberRecognition.js';
 import type { RawDigitCrop, Recognition } from './numberRecognition.js';
-import { validateCageLayout, buildLenientCageLayout } from './validation.js';
+import { validateCageLayout, buildLenientCageLayout, computeCageSizes } from './validation.js';
 import { buildBrdrs } from '../solver/puzzleSpec.js';
 import type { PuzzleSpec } from '../solver/puzzleSpec.js';
 import { ProcessingError } from '../solver/errors.js';
@@ -272,8 +272,9 @@ export async function parsePuzzleImage(
   let fallbackUsed = false;
   try {
     const brdrs = buildBrdrs(initialBorderX, initialBorderY);
+    const cageSizes = computeCageSizes(initialBorderX, initialBorderY);
     lastCageTotalsResult = buildCageTotals(
-      cv, warpedBlkMat, subres, brdrs,
+      cv, warpedBlkMat, subres, brdrs, cageSizes,
     );
     ({ cageTotals, cellThumbs, cellSourceCrops, cellRecognitions } = lastCageTotalsResult);
   } catch (e) {
@@ -316,8 +317,9 @@ export async function parsePuzzleImage(
     // Retry cage total extraction with best borders.
     try {
       const brdrs2 = buildBrdrs(bestBorderX, bestBorderY);
+      const cageSizes2 = computeCageSizes(bestBorderX, bestBorderY);
       lastCageTotalsResult = buildCageTotals(
-        cv, warpedBlkMat, subres, brdrs2,
+        cv, warpedBlkMat, subres, brdrs2, cageSizes2,
       );
       ({ cageTotals, cellThumbs, cellSourceCrops, cellRecognitions } = lastCageTotalsResult);
 
@@ -332,7 +334,7 @@ export async function parsePuzzleImage(
         );
         try {
           lastCageTotalsResult = buildCageTotals(
-            cv, adaptiveBlk, subres, brdrs2,
+            cv, adaptiveBlk, subres, brdrs2, cageSizes2,
           );
           ({ cageTotals, cellThumbs, cellSourceCrops, cellRecognitions } = lastCageTotalsResult);
           fallbackUsed = true;
@@ -432,6 +434,7 @@ export function buildCageTotals(
   warpedBlk: OpenCVMat,
   subres: number,
   brdrs: Brdrs,
+  cageSizes: number[][],
 ): CageTotalsResult {
   const numPixels: Array<Array<Uint8Array[] | null>> = Array.from(
     { length: 9 }, () => new Array<Uint8Array[] | null>(9).fill(null),
@@ -488,7 +491,10 @@ export function buildCageTotals(
       const sums = numPixels[row]![col]!;
       if (sums !== null) {
         const crops = sourceCrops[row]![col] ?? null;
-        const ntrs = activeRecogniser().recognise(sums);
+        const cageSize = cageSizes[row]![col]!;
+        const allowedLabels = sums.map((_, digitIndex) =>
+          allowedDigitsForPosition(cageSize, digitIndex, sums.length));
+        const ntrs = activeRecogniser().recognise(sums, allowedLabels);
         const key = `${row},${col}`;
         if (crops === null || crops.length !== sums.length || ntrs.length !== sums.length) {
           throw new Error(
