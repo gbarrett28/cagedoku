@@ -1190,6 +1190,8 @@ export function splitNum(
  */
 
 
+const GIVEN_DIGIT_ALLOWED_LABELS: ReadonlySet<number> = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
 export function readClassicDigits(
   cv: Cv,
   warpedBlk: OpenCVMat,
@@ -1248,7 +1250,7 @@ export function readClassicDigits(
       const ay = y0 + br.y;
       const sourceCrop = extractRawDigitCrop(cv, warpedBlk, [ax, ay, br.width, br.height]);
       const thumb = rec.warpForRecognition(cv, sourceCrop, half);
-      const [rec0] = rec.recognise([thumb]);
+      const [rec0] = rec.recognise([thumb], [GIVEN_DIGIT_ALLOWED_LABELS]);
       const d = rec0!.label;
       if (d > 0) {
         const key = `${r},${c}`;
