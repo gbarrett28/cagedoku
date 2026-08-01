@@ -1083,11 +1083,12 @@ def main() -> None:
              "when set. -1 (default) disables it; 0 keeps only the between-class directions.",
     )
     parser.add_argument(
-        "--recogniser", choices=("hog", "pca"), default="hog",
-        help="Recogniser architecture to train (default: hog, the current "
-             "production classifier). 'pca' trains the cluster-mean-seeded "
-             "PCA+RBF recogniser instead -- see "
-             "docs/superpowers/specs/2026-07-31-cluster-mean-pca-recogniser-design.md.",
+        "--recogniser", choices=("hog", "pca"), default="pca",
+        help="Recogniser architecture to train (default: pca, the current "
+             "production classifier, deployed 2026-07-31 -- see "
+             "docs/image-pipeline.md's 'Cluster-mean PCA recogniser' section). "
+             "'hog' trains the earlier HOG+hole-feature RBF recogniser instead "
+             "(superseded, kept for comparison/rollback only).",
     )
     args = parser.parse_args()
 

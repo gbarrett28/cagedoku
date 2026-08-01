@@ -43,7 +43,6 @@ def _run_bridge(op: str, payload: dict[str, Any]) -> dict[str, Any]:
         capture_output=True,
         text=True,
         cwd=_REPO_ROOT / "web",
-        shell=True,
         check=False,
     )
     if result.returncode != 0:

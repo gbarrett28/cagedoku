@@ -3,9 +3,13 @@ name: Retrain digit recogniser
 on:
   # Schedule disabled 2026-07-30: an unmonitored scheduled run (0c860c8)
   # shipped a broken model that regressed real-world solve rate from ~97%
-  # to well below that, undetected for weeks. Re-enable only once the
-  # bronze/silver gates independently verify corpus-eval regressions on
-  # every commit/merge, not just this workflow's own eval-fixtures check.
+  # to well below that, undetected for weeks. 2026-08-01: the workflow no
+  # longer pushes directly to master (see "Push branch and open PR" below --
+  # every retrain now lands as a PR for human review before merge), which
+  # closes the specific failure mode that caused that incident. Still left
+  # off pending a decision on unattended/scheduled operation in general --
+  # re-enabling the schedule means unreviewed PRs can pile up unattended,
+  # which is a separate question from whether a single run is safe.
   # schedule:
   #   - cron: '0 */8 * * *'  # every 8 hours
   workflow_dispatch:
@@ -13,6 +17,7 @@ on:
 permissions:
   contents: write
   issues: write
+  pull-requests: write
 
 jobs:
   retrain:
@@ -30,6 +35,15 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create retrain branch
+        # Every commit this run makes lands on this branch, never master
+        # directly -- see "Push branch and open PR" below.
+        id: branch
+        run: |
+          BRANCH="retrain/${{ github.run_id }}"
+          git checkout -b "$BRANCH"
+          echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -99,6 +113,7 @@ jobs:
         # never actually got the up-weighting this flag exists to provide.
         run: |
           python web/train_recogniser.py \
+            --recogniser pca \
             --browser-weight 1000
 
       - name: Evaluate accuracy
@@ -154,9 +169,26 @@ jobs:
           git diff --cached --quiet && echo "No model changes." || \
             git commit -m "chore: retrain digit recogniser with new browser samples"
 
-      - name: Push commits
+      - name: Push branch and open PR
+        # Never pushes to master directly. A regression that clears the
+        # eval-fixtures check (a small, non-exhaustive fixture set -- see the
+        # "Schedule disabled" note above) still lands as a PR, not a direct
+        # commit, so a human reviews the corpus-eval comparison before any
+        # model change reaches production.
         if: steps.list.outputs.count != '0'
-        run: git pull --rebase && git push
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet origin/master HEAD; then
+            echo "No changes relative to master; nothing to open a PR for."
+            exit 0
+          fi
+          git push -u origin "${{ steps.branch.outputs.name }}"
+          gh pr create \
+            --title "chore: retrain digit recogniser $(date -u +%Y-%m-%d)" \
+            --body "Automated retrain from new browser training samples (run ${{ github.run_id }}). Corpus-eval comparison against eval-baseline.json passed -- see this run's \"Evaluate accuracy\" step for the full report. Review before merging; this workflow never pushes to master directly." \
+            --base master \
+            --head "${{ steps.branch.outputs.name }}"
 
       - name: Delete processed R2 objects
         if: steps.list.outputs.count != '0'

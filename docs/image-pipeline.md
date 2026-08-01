@@ -745,9 +745,10 @@ production TypeScript warp; its default is read from the currently deployed mode
 manifest. Every raw sample passes once through `warpRawDigitCrop` via the batched TS
 bridge before dithering. Historical version-1 64×64 samples are explicitly treated as
 canonical `letterbox` inputs, never as raw crops, and are eligible only when
-`letterbox` is selected. `--recogniser {hog,pca}` (default `hog`) selects the
-architecture to train — see "Cluster-mean PCA recogniser" above for the `pca` option,
-which also disables dither translation jitter regardless of `--dither`. Python is
+`letterbox` is selected. `--recogniser {hog,pca}` (default `pca`, the current
+production classifier) selects the architecture to train — see "Cluster-mean PCA
+recogniser" above; `pca` also disables dither translation jitter regardless of
+`--dither`. Python is
 limited to orchestration, augmentation, scikit-learn fitting, and human label
 curation; the human entry points are the trainer, low-confidence review, and applying
 review corrections.
