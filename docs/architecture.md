@@ -1007,10 +1007,13 @@ and `getHints()` in `web/src/engine/index.ts` both filter `defaultRules()` by
 `DISABLED_RULES` before constructing a `SolverEngine`. The spec validator (`solve()`)
 is intentionally **not** filtered so corrupted-spec detection still uses all rules.
 
-A rule is added to `DISABLED_RULES` only as a deliberate product decision (e.g.
-`UniqueRectangle`, whose Type 1/2 proofs depend on "the puzzle has a unique
-solution" — a meta-assumption no other active rule makes). Its regression-fixture
-tests (see below) use the same `it.skip` convention while disabled.
+A rule is added to `DISABLED_RULES` only as a deliberate product decision — e.g. a
+proof that depends on "the puzzle has a unique solution", a meta-assumption no other
+active rule makes. (`UniqueRectangle` was the sole past example; it was removed
+entirely, not just disabled, once it had no other path back to being enabled — see
+git history for its removal.) The list is currently empty. Any regression-fixture
+tests for a disabled rule should use the same `it.skip` convention while it remains
+disabled.
 
 ### Rule-bug fixture pipeline (for debugging stalls)
 
