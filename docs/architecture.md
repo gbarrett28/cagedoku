@@ -70,7 +70,12 @@ deliberate exception):
   - `protected _onCellDetermined(cell, val)` on `SolverEngine` — a no-op hook;
     `KillerSolverEngine` overrides it to call `board.linearSystem.substituteLiveRows(cell,
     val)`, which is now **bookkeeping-only**: it returns derived `[cells, total,
-    distinct]` constraints without mutating the board. For each `distinct` constraint,
+    distinct]` constraints without mutating the board. (It *does* have one side effect
+    beyond the return value: a freshly-reduced two-term row with coefficients `+1`/`-1`
+    is recorded as a new delta pair directly on
+    `board.linearSystem.deltaPairs`/`_pairsByCell`, mirroring the constructor's own
+    setup-time dispatch for the same row shape — `DeltaConstraint` reads these live via
+    `pairsForCell()`, so no further engine-side plumbing is needed.) For each `distinct` constraint,
     a single-cell result is golden-checked immediately via
     `_checkAgainstGolden('DerivedVirtualCage', cell, total)` (catches a determined cell
     whose value contradicts the golden solution as soon as it's derived, rather than
@@ -482,6 +487,18 @@ rule result), then calls `board.addVirtualCage(cells, total, [])`, shifts the en
 `pendingVirtualCages`, and seeds `COUNT_DECREASED`/`SOLUTION_PRUNED` for the new CAGE
 unit so cage rules (`SumPairConstraint`, `CageCandidateFilter`, etc.) react to it
 within the same pass.
+
+**Delta pairs also re-derive live, unlike `pendingVirtualCages`'s one-time-vs-live
+split might suggest.** `deltaPairs` (read by `DeltaConstraint` via `pairsForCell()`)
+used to be populated only once, during the constructor's initial RREF pass — genuinely
+stale, since a `p - q = delta` relationship that only becomes derivable after some
+cells are solved could never be surfaced. `substituteLiveRows` now also detects a
+freshly-reduced two-term row with coefficients `+1`/`-1` (the same shape the
+constructor's own dispatch already recognises for pairs present at *setup* time) and
+records it via the same private `_addDeltaPair` helper the constructor uses. Unlike
+virtual cages, a new delta pair needs no unit-level engine bookkeeping — there is no
+`pendingDeltaPairs` queue; `DeltaConstraint` already reads `pairsForCell()` fresh on
+every trigger, so it sees new pairs immediately.
 
 ---
 
