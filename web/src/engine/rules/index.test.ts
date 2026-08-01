@@ -36,7 +36,6 @@ describe('defaultRules', () => {
     'Swordfish',
     'Jellyfish',
     'XYWing',
-    'UniqueRectangle',
     'SimpleColouring',
     'XYZWing',
     'WWing',

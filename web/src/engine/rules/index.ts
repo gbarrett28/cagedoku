@@ -27,7 +27,6 @@
  * 17  Swordfish               — GLOBAL
  * 18  Jellyfish               — GLOBAL
  * 19  XYWing                  — GLOBAL
- * 20  UniqueRectangle         — GLOBAL
  * 21  SimpleColouring         — GLOBAL
  * 22  XYZWing                 — GLOBAL
  * 23  WWing                   — COUNT_HIT_TWO
@@ -59,7 +58,6 @@ import { SimpleColouring } from './simpleColouring.js';
 import { SolutionMapFilter } from './solutionMapFilter.js';
 import { SumPairConstraint } from './sumPairConstraint.js';
 import { Swordfish } from './swordfish.js';
-import { UniqueRectangle } from './uniqueRectangle.js';
 import { UnitPartitionFilter } from './unitPartitionFilter.js';
 import { XWing } from './xWing.js';
 import { XYWing } from './xyWing.js';
@@ -92,7 +90,6 @@ export {
   SolutionMapFilter,
   SumPairConstraint,
   Swordfish,
-  UniqueRectangle,
   UnitPartitionFilter,
   XWing,
   XYWing,
@@ -134,7 +131,6 @@ export function defaultRules(): SolverRule[] {
     new Swordfish(),
     new Jellyfish(),
     new XYWing(),
-    new UniqueRectangle(),
     new SimpleColouring(),
     new XYZWing(),
     new WWing(),

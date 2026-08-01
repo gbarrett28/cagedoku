@@ -11,7 +11,6 @@ import { SolverEngine } from '../src/engine/solverEngine.js';
 import { NakedSingle } from '../src/engine/rules/nakedSingle.js';
 import { HiddenSingle } from '../src/engine/rules/hiddenSingle.js';
 import { PointingPairs } from '../src/engine/rules/pointingPairs.js';
-import { UniqueRectangle } from '../src/engine/rules/uniqueRectangle.js';
 import { NakedPair } from '../src/engine/rules/nakedPair.js';
 import { HiddenQuad } from '../src/engine/rules/hiddenQuad.js';
 import { XWing } from '../src/engine/rules/xWing.js';
@@ -108,52 +107,7 @@ function checkAllHintRules(board: KillerBoardState, golden: number[][] | null, h
   }
 }
 
-// ---------------------------------------------------------------------------
-// Bug #139 — Unique Rectangle — exact userGrid from bug report
-// ---------------------------------------------------------------------------
-console.log('\n====== Bug #139 — Unique Rectangle ======');
-{
-  // userGrid from bug report (has more solved cells than givenDigits)
-  const userGrid = [[0,0,0,0,0,0,0,0,0],[7,0,6,4,5,0,0,3,0],[3,5,1,0,0,2,0,4,0],[0,0,2,6,1,0,4,0,0],[0,8,0,7,9,3,0,1,0],[0,0,0,0,2,4,0,0,0],[0,4,0,0,0,7,3,2,0],[0,0,3,0,4,0,1,0,0],[0,0,0,0,0,0,8,5,4]];
-  const board = new KillerBoardState(makeClassicSpec(), { includeVirtualCages: false });
-  const engine = makeEngine(board, new NakedSingle());
-  seedDigits(engine, board, userGrid);
-  engine.solve();
-  console.log(`\nAfter NakedSingle with userGrid: ${countUnsolved(board)} unsolved`);
-  const golden = getGolden(board);
-
-  // Apply the Hidden Quad hint (as in session trace)
-  const ctx = { board, unit: null, cell: null, hint: Trigger.GLOBAL, hintDigit: null };
-  let quadApplied = false;
-  for (const unit of board.units) {
-    const uCtx = { board, unit, cell: null, hint: Trigger.GLOBAL, hintDigit: null };
-    const quad = new HiddenQuad();
-    const res = quad.apply(uCtx);
-    if (res.eliminations.length > 0) {
-      const hints = quad.asHints(uCtx, res.eliminations);
-      if (hints.length > 0) {
-        console.log(`Applied HiddenQuad: ${hints[0]!.explanation}`);
-        engine.applyEliminations(hints[0]!.eliminations);
-        engine.solve();
-        quadApplied = true;
-        break;
-      }
-    }
-  }
-  if (!quadApplied) console.log('HiddenQuad: not found');
-
-  console.log(`After quad: ${countUnsolved(board)} unsolved`);
-  console.log('Checking UR:');
-  checkAllHintRules(board, golden, [new UniqueRectangle()]);
-
-  // Check the UR description field (which the user complained about)
-  const ur = new UniqueRectangle();
-  console.log('\nUR description (first 300 chars):');
-  console.log(ur.description.slice(0, 300));
-}
-
-// ---------------------------------------------------------------------------
-// Bug #141 — Naked Pair — exact userGrid from bug report
+// ---------------------------------------------------------------------------\n// Bug #141 — Naked Pair — exact userGrid from bug report
 // ---------------------------------------------------------------------------
 console.log('\n====== Bug #141 — Naked Pair ======');
 {
