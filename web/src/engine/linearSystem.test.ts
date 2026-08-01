@@ -86,3 +86,66 @@ describe('LinearSystem.substituteLiveRows — delta-pair derivation', () => {
     expect(result).toContainEqual([[[1, 2], [1, 3]], KNOWN_SOLUTION[1]![2]! + KNOWN_SOLUTION[1]![3]!, true]);
   });
 });
+
+describe('LinearSystem._deriveTailEliminations', () => {
+  // killer_sudoku_293.jpg (observer corpus) -- the puzzle whose rule-based solve
+  // stalls after only 3 cells and falls back to backtracking. Two live rows
+  // produced by the constructor's own RREF pass -- one for cage M+N+O+P+Q's
+  // combination, one for cage M+N+O+P+S's -- share an identical three-cell tail
+  // (R8C7, R9C7, R9C8, i.e. (7,6),(8,6),(8,7)) with matching coefficients.
+  // Subtracting one from the other cancels the tail and reveals
+  // R7C4 - R6C7 = 8, a delta pair the single-pass RREF didn't produce as one of
+  // its own basis rows (RREF guarantees independence across pivot columns, not
+  // that every such pairwise cancellation has already been found).
+  const spec293: PuzzleSpec = {
+    regions: [
+      [1, 2, 2, 2, 3, 3, 4, 5, 5],
+      [1, 6, 6, 2, 7, 7, 4, 8, 8],
+      [6, 6, 9, 9, 9, 7, 4, 10, 10],
+      [11, 11, 12, 9, 13, 14, 14, 15, 16],
+      [12, 12, 12, 17, 13, 14, 14, 15, 16],
+      [18, 18, 17, 17, 13, 13, 19, 15, 16],
+      [18, 20, 20, 17, 21, 21, 19, 19, 22],
+      [23, 23, 20, 24, 24, 21, 21, 19, 22],
+      [25, 25, 20, 24, 24, 26, 26, 26, 22],
+    ],
+    cageTotals: [
+      [9, 20, 0, 0, 7, 0, 22, 11, 0],
+      [0, 20, 0, 0, 18, 0, 0, 5, 0],
+      [0, 0, 19, 0, 0, 0, 0, 7, 0],
+      [9, 0, 24, 0, 23, 16, 0, 16, 19],
+      [0, 0, 0, 25, 0, 0, 0, 0, 0],
+      [10, 0, 0, 0, 0, 0, 23, 0, 0],
+      [0, 16, 0, 0, 12, 0, 0, 0, 14],
+      [12, 0, 0, 19, 0, 0, 0, 0, 0],
+      [15, 0, 0, 0, 0, 14, 0, 0, 0],
+    ],
+    borderX: [
+      [false, true, true, true, true, false, true, true],
+      [true, false, true, true, true, true, true, true],
+      [true, true, true, false, true, true, false, false],
+      [false, true, false, true, false, false, true, false],
+      [true, true, true, false, false, true, true, false],
+      [true, false, true, false, true, true, false, true],
+      [false, false, true, false, true, false, true, true],
+      [true, true, true, false, false, true, false, true],
+      [true, true, true, false, false, true, false, false],
+    ],
+    borderY: [
+      [true, true, false, false, false, false, true, false, false],
+      [false, false, true, true, false, true, false, true, true],
+      [false, true, false, true, true, false, true, true, true],
+      [true, true, false, true, true, true, true, false, false],
+      [false, false, true, true, true, false, false, true, true],
+      [true, true, true, false, false, true, true, false, false],
+      [true, true, true, true, true, true, false, true, false],
+      [false, false, false, true, true, true, true, true, true],
+    ],
+  };
+
+  it('derives R7C4 - R6C7 = 8 at construction, with no cell substitutions needed', () => {
+    const ls = new LinearSystem(spec293);
+    expect(ls.pairsForCell([6, 3] as Cell)).toContainEqual([[5, 6], [6, 3], -8]);
+    expect(ls.pairsForCell([5, 6] as Cell)).toContainEqual([[5, 6], [6, 3], -8]);
+  });
+});

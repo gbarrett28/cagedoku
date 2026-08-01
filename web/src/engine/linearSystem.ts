@@ -232,6 +232,7 @@ export class LinearSystem {
       }
     }
 
+    this._deriveTailEliminations();
     this._deriveSumPairs();
 
     if (deriveVirtualCages) {
@@ -350,6 +351,51 @@ export class LinearSystem {
       this._addDeltaPair(keyToCell(p), keyToCell(q), delta);
     }
     return true;
+  }
+
+
+  /**
+   * Scans all live rows pairwise for two that share an identical coefficient
+   * pattern on some subset of cells (e.g. two cage/box combinations that both
+   * happen to reduce to "... - X - Y - Z = const", differing only in one other
+   * cell and the constant). Subtracting (or adding, for opposite-signed shared
+   * cells) one row from the other cancels that shared subset exactly, and if
+   * what's left is a clean two-term +1/-1 row, it's a delta pair the single-pass
+   * RREF in the constructor above didn't happen to produce as one of its own
+   * basis rows -- RREF guarantees linear independence across pivot columns, not
+   * that every such pairwise cancellation has already been found. Only runs
+   * once, at construction; unlike substituteLiveRows this isn't about cells
+   * becoming known over time, it's about combinations the initial reduction
+   * left undone.
+   */
+  private _deriveTailEliminations(): void {
+    const seen = new Set<string>();
+    for (const [p, q] of this.deltaPairs) {
+      seen.add(`delta:${[cellKey(p), cellKey(q)].sort().join('|')}`);
+    }
+
+    const rids = [...this._liveRows.keys()];
+    for (let i = 0; i < rids.length; i++) {
+      const ri = this._liveRows.get(rids[i]!)!;
+      const rhsI = this._liveRhs.get(rids[i]!)!;
+      for (let j = i + 1; j < rids.length; j++) {
+        const rj = this._liveRows.get(rids[j]!)!;
+        const rhsJ = this._liveRhs.get(rids[j]!)!;
+
+        for (const sign of [1, -1] as const) {
+          const combined: SparseRow = new Map(ri);
+          for (const [k, cj] of rj) {
+            const scaled = sign === 1 ? cj : cj.mul(new Frac(-1));
+            const next = (combined.get(k) ?? Frac.ZERO).sub(scaled);
+            if (next.isZero()) combined.delete(k);
+            else combined.set(k, next);
+          }
+          if (combined.size !== 2 || combined.size >= Math.min(ri.size, rj.size)) continue;
+          const rhsCombined = sign === 1 ? rhsI.sub(rhsJ) : rhsI.add(rhsJ);
+          this._maybeAddLiveDeltaPair(combined, rhsCombined, seen);
+        }
+      }
+    }
   }
 
   private _addSumPair(a: Cell, b: Cell, total: number): void {
