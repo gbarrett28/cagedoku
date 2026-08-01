@@ -447,6 +447,55 @@ than relying on augmentation to teach translation robustness, `dither_batch`/
 `cm_residual_components`) alongside the standard `rbf_*` arrays. No `hog_*` or
 `pca_*` (the older optional ordinary-PCA-before-SVM) arrays are written.
 
+### Constrained digit candidates
+
+Deployed 2026-08-01. Both `recognise()` call sites narrow the set of digit labels the
+recogniser is allowed to output *before* classification runs, using structural
+constraints already known at that point in the pipeline, rather than relying solely on
+post-hoc spec validation (`validateCageLayout`'s cage-sum range check) to catch
+impossible results after the fact:
+
+- **Given digits** (`readClassicDigits`): always restricted to `1-9` — a classic clue is
+  never 0.
+- **Cage-total digits** (`buildCageTotals`): restricted per digit position via
+  `allowedDigitsForPosition(cageSize, digitIndex, digitCount)`, which enumerates every
+  valid total in `cageSumRange(cageSize)` with exactly `digitCount` digits and collects
+  which digit can appear at `digitIndex`. Cage size comes from `computeCageSizes`
+  (`validation.ts`, shared with `validateCageLayout` so cage-size computation has exactly
+  one implementation) — border detection already precedes cage-total reading in
+  `parsePuzzleImage`, so this needs no new pipeline stage, just passing the already-derived
+  sizes through. `digitCount` is simply the crop count for that cell, already known from
+  contour geometry. If no valid total has exactly `digitCount` digits (a symptom of
+  upstream detection being wrong), the restriction falls back to unrestricted (0-9) rather
+  than an impossible-to-satisfy empty set — the true answer is always inside a
+  correctly-computed restriction, since a cage's real total structurally must fall in
+  `cageSumRange`, but a wrong cage size could otherwise exclude it.
+
+`PcaRecogniser.recognise()` takes an optional `allowedLabels` parameter (parallel to
+`imgs`, `undefined` meaning unrestricted) and applies it at both stages:
+
+- **Template match**: templates whose label isn't allowed are skipped in both the
+  best-match and margin/runner-up search — cheaper (fewer NCC comparisons) and more
+  correct (an excluded digit's template can no longer win the margin/ambiguity check
+  against a genuinely possible one).
+- **RBF fallback** (`ovoVote`/`rbfPredictWithConfidence`): the classifier is restricted to
+  the allowed classes from the start — kernel evaluations skip disallowed classes'
+  support vectors, and pairwise comparisons only run between pairs of allowed classes,
+  rather than computing the full unrestricted classifier and filtering the winner
+  afterward. A singleton allowed set (common for cage sizes with a narrow total range,
+  e.g. size-9 must total exactly 45) short-circuits entirely — no kernel/vote computation
+  needed. `HogRecogniser` accepts the same `allowedLabels` parameter (required by the
+  shared `NumRecogniser` signature) but ignores it — it isn't deployed, so it doesn't
+  warrant restriction-logic investment.
+
+Full corpus eval (2968 puzzles) confirmed no accuracy change (99.87% clean, identical to
+the pre-restriction baseline, zero regressions) alongside a real speedup: average parse
+time dropped from 5318.5ms to 4037.8ms (~24%) and average total pipeline time from
+9415.9ms to 7221.0ms (~23%) — most crops in this killer-heavy corpus are cage-total
+digits, where restriction often narrows the candidate set to 1-3 digits per position
+instead of 10, cutting both template comparisons and RBF kernel/pairwise work
+substantially.
+
 ### Classic digit reading (`readClassicDigits`)
 
 For classic puzzles (and as a fallback for type-switching on killer puzzles),
