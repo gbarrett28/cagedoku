@@ -203,38 +203,44 @@ export interface Recognition {
  * class can receive, not total classifiers); samples below `threshold` are flagged
  * as not confident.
  */
-function ovoVote(
+/** @internal exported for unit tests only. */
+export function ovoVote(
   nSamples: number,
   nClasses: number,
-  _nClassifiers: number,
-  scoreForPair: (s: number, clfIdx: number) => number,
+  scoreForPair: (s: number, i: number, j: number) => number,
   classes: Int32Array,
   threshold: number,
+  allowedClassIndices?: ReadonlySet<number>,
 ): Recognition[] {
   const votes = new Int32Array(nSamples * nClasses);
-  let clfIdx = 0;
   for (let i = 0; i < nClasses; i++) {
+    if (allowedClassIndices !== undefined && !allowedClassIndices.has(i)) continue;
     for (let j = i + 1; j < nClasses; j++) {
+      if (allowedClassIndices !== undefined && !allowedClassIndices.has(j)) continue;
       for (let s = 0; s < nSamples; s++) {
-        if (scoreForPair(s, clfIdx) > 0) votes[s * nClasses + i]!++;
+        if (scoreForPair(s, i, j) > 0) votes[s * nClasses + i]!++;
         else votes[s * nClasses + j]!++;
       }
-      clfIdx++;
     }
   }
+  const maxVotes = allowedClassIndices !== undefined ? allowedClassIndices.size - 1 : nClasses - 1;
   const result: Recognition[] = [];
   for (let s = 0; s < nSamples; s++) {
-    let best = 0;
-    for (let c = 1; c < nClasses; c++) {
-      if (votes[s * nClasses + c]! > votes[s * nClasses + best]!) best = c;
+    let best = -1;
+    for (let c = 0; c < nClasses; c++) {
+      if (allowedClassIndices !== undefined && !allowedClassIndices.has(c)) continue;
+      if (best === -1 || votes[s * nClasses + c]! > votes[s * nClasses + best]!) best = c;
     }
     let best2 = -1;
     for (let c = 0; c < nClasses; c++) {
       if (c === best) continue;
+      if (allowedClassIndices !== undefined && !allowedClassIndices.has(c)) continue;
       if (best2 === -1 || votes[s * nClasses + c]! > votes[s * nClasses + best2]!) best2 = c;
     }
-    // Normalise by (nClasses-1): max votes any class can receive in OVO, not total classifiers.
-    const confident = votes[s * nClasses + best]! / (nClasses - 1) >= threshold;
+    // Normalise by maxVotes: max votes any class can receive given how many
+    // classes are actually in contention (nClasses-1 unrestricted, or
+    // |allowedClassIndices|-1 when restricted).
+    const confident = maxVotes > 0 && votes[s * nClasses + best]! / maxVotes >= threshold;
     result.push({
       label: classes[best]!,
       confident,
@@ -244,45 +250,70 @@ function ovoVote(
   return result;
 }
 
-function rbfPredictWithConfidence(clf: RBFClassifier, x: Float64Array, nSamples: number, threshold: number): Recognition[] {
+/** @internal exported for unit tests only. */
+export function rbfPredictWithConfidence(
+  clf: RBFClassifier, x: Float64Array, nSamples: number, threshold: number,
+  allowedLabels?: ReadonlySet<number>,
+): Recognition[] {
   const { supportVectors, dualCoef, intercept, nSupport, gamma, classes, nClasses, nSv, nFeatures } = clf;
+
+  let allowedIdx: Set<number> | undefined;
+  if (allowedLabels !== undefined) {
+    allowedIdx = new Set<number>();
+    for (let c = 0; c < nClasses; c++) {
+      if (allowedLabels.has(classes[c]!)) allowedIdx.add(c);
+    }
+    if (allowedIdx.size === 0) allowedIdx = undefined; // empty restriction -> unrestricted
+  }
+
+  if (allowedIdx !== undefined && allowedIdx.size === 1) {
+    const [only] = allowedIdx;
+    const label = classes[only!]!;
+    return Array.from({ length: nSamples }, () => ({ label, confident: true }));
+  }
+
+  const svEnd = new Int32Array(nClasses);
+  svEnd[0] = nSupport[0]!;
+  for (let c = 1; c < nClasses; c++) svEnd[c] = svEnd[c - 1]! + nSupport[c]!;
+  const svStart = new Int32Array(nClasses);
+  for (let c = 1; c < nClasses; c++) svStart[c] = svEnd[c - 1]!;
 
   const k = new Float64Array(nSamples * nSv);
   for (let i = 0; i < nSamples; i++) {
     const xi = x.subarray(i * nFeatures, (i + 1) * nFeatures);
     let xsq = 0;
     for (let f = 0; f < nFeatures; f++) xsq += xi[f]! * xi[f]!;
-    for (let j = 0; j < nSv; j++) {
-      const sv = supportVectors.subarray(j * nFeatures, (j + 1) * nFeatures);
-      let svsq = 0, dot = 0;
-      for (let f = 0; f < nFeatures; f++) { svsq += sv[f]! * sv[f]!; dot += xi[f]! * sv[f]!; }
-      k[i * nSv + j] = Math.exp(-gamma * (xsq + svsq - 2 * dot));
+    for (let c = 0; c < nClasses; c++) {
+      if (allowedIdx !== undefined && !allowedIdx.has(c)) continue;
+      for (let j = svStart[c]!; j < svEnd[c]!; j++) {
+        const sv = supportVectors.subarray(j * nFeatures, (j + 1) * nFeatures);
+        let svsq = 0, dot = 0;
+        for (let f = 0; f < nFeatures; f++) { svsq += sv[f]! * sv[f]!; dot += xi[f]! * sv[f]!; }
+        k[i * nSv + j] = Math.exp(-gamma * (xsq + svsq - 2 * dot));
+      }
     }
   }
-  const svEnd = new Int32Array(nClasses);
-  svEnd[0] = nSupport[0]!;
-  for (let c = 1; c < nClasses; c++) svEnd[c] = svEnd[c - 1]! + nSupport[c]!;
-  const svStart = new Int32Array(nClasses);
-  for (let c = 1; c < nClasses; c++) svStart[c] = svEnd[c - 1]!;
-  const nClassifiers = (nClasses * (nClasses - 1)) / 2;
 
-  return ovoVote(nSamples, nClasses, nClassifiers,
-    (s, clfIdx) => {
-      // Reconstruct i,j from clfIdx — same order as training loop.
-      let idx = 0, ii = 0, jj = 1;
-      outer: for (let i = 0; i < nClasses; i++) {
-        for (let j = i + 1; j < nClasses; j++) {
-          if (idx++ === clfIdx) { ii = i; jj = j; break outer; }
+  return ovoVote(nSamples, nClasses,
+    (s, i, j) => {
+      const si = svStart[i]!, ei = svEnd[i]!;
+      const sj = svStart[j]!, ej = svEnd[j]!;
+      // dualCoef/intercept are laid out by the model's fixed training-time
+      // pairwise order (i<j over ALL classes) regardless of any runtime
+      // restriction -- reconstruct that serial index for this (i,j) pair.
+      let idx = 0;
+      outer: for (let a = 0; a < nClasses; a++) {
+        for (let b = a + 1; b < nClasses; b++) {
+          if (a === i && b === j) break outer;
+          idx++;
         }
       }
-      const si = svStart[ii]!, ei = svEnd[ii]!;
-      const sj = svStart[jj]!, ej = svEnd[jj]!;
-      let dec = intercept[clfIdx]!;
-      for (let sv = si; sv < ei; sv++) dec += dualCoef[(jj - 1) * nSv + sv]! * k[s * nSv + sv]!;
-      for (let sv = sj; sv < ej; sv++) dec += dualCoef[ii * nSv + sv]! * k[s * nSv + sv]!;
+      let dec = intercept[idx]!;
+      for (let sv = si; sv < ei; sv++) dec += dualCoef[(j - 1) * nSv + sv]! * k[s * nSv + sv]!;
+      for (let sv = sj; sv < ej; sv++) dec += dualCoef[i * nSv + sv]! * k[s * nSv + sv]!;
       return dec;
     },
-    classes, threshold,
+    classes, threshold, allowedIdx,
   );
 }
 

@@ -10,8 +10,8 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { activeRecogniser, HogRecogniser, PcaRecogniser, loadNumRecogniser, pcaProject, classMeanProject, centerByCentroid, allowedDigitsForPosition } from './numberRecognition.js';
-import type { NumRecogniser, PcaProjection, ClassMeanReduction } from './numberRecognition.js';
+import { activeRecogniser, HogRecogniser, PcaRecogniser, loadNumRecogniser, pcaProject, classMeanProject, centerByCentroid, allowedDigitsForPosition, rbfPredictWithConfidence } from './numberRecognition.js';
+import type { NumRecogniser, PcaProjection, ClassMeanReduction, RBFClassifier } from './numberRecognition.js';
 
 // ---------------------------------------------------------------------------
 // Load model and training data once for the suite
@@ -238,6 +238,31 @@ describe('PcaRecogniser template-match candidate restriction', () => {
     const withParam = rec.recognise([img]);
     const withoutParam = rec.recognise([img]);
     expect(withParam).toEqual(withoutParam);
+  });
+});
+
+describe('ovoVote / rbfPredictWithConfidence candidate restriction', () => {
+  let classifier: RBFClassifier;
+
+  beforeAll(() => {
+    if (!(rec instanceof PcaRecogniser)) throw new Error('expected PCA model in public/');
+    classifier = (rec as unknown as { classifier: RBFClassifier }).classifier;
+  });
+
+  it('restricting to a singleton class returns it directly with full confidence, no vote computation needed', () => {
+    const nFeatures = classifier.nFeatures;
+    const x = new Float64Array(nFeatures); // arbitrary all-zero input -- singleton shortcut shouldn't even look at it
+    const result = rbfPredictWithConfidence(classifier, x, 1, 0.5, new Set([7]));
+    expect(result[0]!.label).toBe(7);
+    expect(result[0]!.confident).toBe(true);
+  });
+
+  it('an empty allowed set (defensive case) is treated as unrestricted', () => {
+    const nFeatures = classifier.nFeatures;
+    const x = new Float64Array(nFeatures);
+    const restricted = rbfPredictWithConfidence(classifier, x, 1, 0.5, new Set());
+    const unrestricted = rbfPredictWithConfidence(classifier, x, 1, 0.5);
+    expect(restricted[0]!.label).toBe(unrestricted[0]!.label);
   });
 });
 
