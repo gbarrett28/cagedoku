@@ -77,14 +77,14 @@ functional benefit.
 - Modify: `web/src/engine/rules/index.test.ts`
 - Modify: `web/scripts/repro-bugs.ts`
 
-- [ ] **Step 1: Delete the two UniqueRectangle files**
+- [x] **Step 1: Delete the two UniqueRectangle files**
 
 Use serena's `safe_delete_symbol` or plain file deletion (these are whole-file
 deletions, not symbol edits) for:
 - `web/src/engine/rules/uniqueRectangle.ts`
 - `web/src/engine/rules/uniqueRectangle.test.ts`
 
-- [ ] **Step 2: Remove UniqueRectangle from `index.ts`**
+- [x] **Step 2: Remove UniqueRectangle from `index.ts`**
 
 In `web/src/engine/rules/index.ts`:
 - Remove the ` * 20  UniqueRectangle         — GLOBAL` line from the priority-order
@@ -94,12 +94,12 @@ In `web/src/engine/rules/index.ts`:
 - Remove `UniqueRectangle,` from the `export { ... }` block.
 - Remove `new UniqueRectangle(),` from the `defaultRules()` array.
 
-- [ ] **Step 3: Remove UniqueRectangle from the registry smoke test**
+- [x] **Step 3: Remove UniqueRectangle from the registry smoke test**
 
 In `web/src/engine/rules/index.test.ts`, remove `'UniqueRectangle',` from
 `EXPECTED_RULES`.
 
-- [ ] **Step 4: Remove the dead import and Bug #139 block from `repro-bugs.ts`**
+- [x] **Step 4: Remove the dead import and Bug #139 block from `repro-bugs.ts`**
 
 In `web/scripts/repro-bugs.ts`:
 - Remove `import { UniqueRectangle } from '../src/engine/rules/uniqueRectangle.js';`
@@ -108,14 +108,14 @@ In `web/scripts/repro-bugs.ts`:
   `}` right before the `// Bug #141 — Naked Pair` section header comment). Bug #141 and
   #144's blocks are unrelated and stay untouched.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run: `cd web && npx tsc --noEmit && npx tsc -p tsconfig.node.json --noEmit && npx vitest run src/engine/rules/index.test.ts`
 Expected: no `TS2307`/`TS6133` errors (confirms nothing else imports the deleted
 files), `index.test.ts` passes with `UniqueRectangle` gone from both the expected list
 and the actual `defaultRules()` output.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 bash scripts/run-bronze-gate.sh
@@ -138,7 +138,7 @@ deleted. The file already mocks `./needs-triage.js` for its `NEEDS_TRIAGE_FIXTUR
 case (`vi.mock('./needs-triage.js', () => ({ NEEDS_TRIAGE_FIXTURES: [...] }))`) — apply
 the same pattern to `../disabled-rules.js` so the test is self-contained.
 
-- [ ] **Step 1: Empty out `disabled-rules.ts`**
+- [x] **Step 1: Empty out `disabled-rules.ts`**
 
 Replace the body of `web/src/engine/rules/disabled-rules.ts` with:
 
@@ -150,7 +150,7 @@ Replace the body of `web/src/engine/rules/disabled-rules.ts` with:
 export const DISABLED_RULES: readonly string[] = [];
 ```
 
-- [ ] **Step 2: Write the (currently passing, soon-to-be-decoupled) mock for `skipPolicy.test.ts`**
+- [x] **Step 2: Write the (currently passing, soon-to-be-decoupled) mock for `skipPolicy.test.ts`**
 
 In `web/src/engine/rules/__fixtures__/skipPolicy.test.ts`, add a mock for
 `../disabled-rules.js` alongside the existing `./needs-triage.js` mock:
@@ -172,13 +172,13 @@ it('skips a fixture for a globally disabled rule', () => {
 });
 ```
 
-- [ ] **Step 3: Run the test to verify it still passes**
+- [x] **Step 3: Run the test to verify it still passes**
 
 Run: `cd web && npx vitest run src/engine/rules/__fixtures__/skipPolicy.test.ts`
 Expected: PASS — the test now exercises the same `DISABLED_RULES.includes(...)` branch
 in `shouldSkipFixture`, but against a mocked list instead of production data.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 bash scripts/run-bronze-gate.sh
@@ -191,7 +191,7 @@ git commit -m "chore: empty DISABLED_RULES, decouple skipPolicy test from a real
 **Files:**
 - Modify: `docs/architecture.md` (around line 1002-1013, "### Disabled rules")
 
-- [ ] **Step 1: Rewrite the section**
+- [x] **Step 1: Rewrite the section**
 
 Replace the paragraph that names `UniqueRectangle` as the current example:
 
@@ -214,7 +214,7 @@ tests for a disabled rule should use the same `it.skip` convention while it rema
 disabled.
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add docs/architecture.md
@@ -269,7 +269,7 @@ changes needed, since `pairsForCell()` already reads live off `_pairsByCell`.
 **Files:**
 - Modify: `web/src/engine/linearSystem.test.ts`
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
 Add a new `describe` block using the verified repro spec above (built inline with
 `validateCageLayout`/`makeTrivialBorderX`/`makeTrivialBorderY`/`KNOWN_SOLUTION`, the
@@ -333,7 +333,7 @@ describe('LinearSystem.substituteLiveRows — delta-pair derivation', () => {
 Also add `import type { PuzzleSpec } from '../solver/puzzleSpec.js';` to the existing
 import block if not already present.
 
-- [ ] **Step 2: Confirm the first two new tests fail against the current (unfixed) `substituteLiveRows`**
+- [x] **Step 2: Confirm the first two new tests fail against the current (unfixed) `substituteLiveRows`**
 
 Run: `cd web && npx vitest run src/engine/linearSystem.test.ts`
 Expected: the "has no delta pair... at construction" test PASSES (this part is already
@@ -354,7 +354,7 @@ untouched behaviour, not something the fix needs to change.
   `pairsForCell`/`deltaPairs` fields `DeltaConstraint` already reads are unchanged in
   shape; only their *contents* grow.
 
-- [ ] **Step 1: Add the `_maybeAddLiveDeltaPair` helper right after `_addDeltaPair`**
+- [x] **Step 1: Add the `_maybeAddLiveDeltaPair` helper right after `_addDeltaPair`**
 
 ```ts
   /**
@@ -380,7 +380,7 @@ untouched behaviour, not something the fix needs to change.
   }
 ```
 
-- [ ] **Step 2: Call it from `substituteLiveRows`, between the single-cell and uniform-coefficient branches**
+- [x] **Step 2: Call it from `substituteLiveRows`, between the single-cell and uniform-coefficient branches**
 
 In `substituteLiveRows`, change:
 
@@ -404,19 +404,19 @@ to:
 
 (leaving the rest of that branch's body untouched).
 
-- [ ] **Step 3: Run the new tests to verify they pass**
+- [x] **Step 3: Run the new tests to verify they pass**
 
 Run: `cd web && npx vitest run src/engine/linearSystem.test.ts`
 Expected: all tests PASS, including "derives a fresh delta pair...".
 
-- [ ] **Step 4: Run the full existing suite for touched modules to check for regressions**
+- [x] **Step 4: Run the full existing suite for touched modules to check for regressions**
 
 Run: `cd web && npx vitest run src/engine/linearSystem.test.ts src/engine/solverEngine.test.ts src/engine/rules/deltaConstraint.test.ts src/engine/rules/derivedVirtualCage.test.ts`
 Expected: all PASS unchanged — `solverEngine.test.ts`'s `substituteLiveRows` tests
 mock the method directly so they're unaffected by the real implementation; this run
 is a regression check, not expected to need any edits.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 bash scripts/run-bronze-gate.sh
@@ -434,7 +434,7 @@ git commit -m "fix: derive delta pairs live as substituteLiveRows reduces rows, 
 "without mutating the board" — both need a line added, not rewritten, since the rest
 of what they say remains accurate.
 
-- [ ] **Step 1: Update the `_onCellDetermined` paragraph (around line 70-87)**
+- [x] **Step 1: Update the `_onCellDetermined` paragraph (around line 70-87)**
 
 After the sentence ending `...distinct]` constraints without mutating the board.`, add:
 
@@ -446,7 +446,7 @@ After the sentence ending `...distinct]` constraints without mutating the board.
   reads these live via `pairsForCell()`, so no further engine-side plumbing is needed.
 ```
 
-- [ ] **Step 2: Update the `pendingVirtualCages` section (around line 468-484)**
+- [x] **Step 2: Update the `pendingVirtualCages` section (around line 468-484)**
 
 After the existing paragraph (ending `...within the same pass.`), add a new paragraph:
 
@@ -464,7 +464,7 @@ virtual cages, a new delta pair needs no unit-level engine bookkeeping — there
 every trigger, so it sees new pairs immediately.
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add docs/architecture.md
