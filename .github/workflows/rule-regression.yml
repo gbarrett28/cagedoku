@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   sync-rule-fixtures:
@@ -17,8 +18,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Push back to master; needs a token with write access
+          # Needs a token with write access to push the branch below.
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity and create sync branch
+        # Every commit this run makes lands on this branch, never master
+        # directly -- see "Push branch and open PR" below.
+        id: branch
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          BRANCH="sync-rule-fixtures/${{ github.run_id }}"
+          git checkout -b "$BRANCH"
+          echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -54,17 +66,28 @@ jobs:
           npx tsc -p tsconfig.node.json --noEmit
           npm test
 
-      - name: Commit and push
+      - name: Commit fixtures
         run: |
-          git config user.email "actions@github.com"
-          git config user.name "GitHub Actions"
           git add web/src/engine/rules/__fixtures__/index.ts web/src/engine/rules/__fixtures__/needs-triage.ts
-          if git diff --cached --quiet; then
-            echo "Nothing to commit."
-          else
+          git diff --cached --quiet && echo "No fixture changes." || \
             git commit -m "chore: sync rule-bug fixtures"
-            git push
+
+      - name: Push branch and open PR
+        # Never pushes to master directly -- new fixtures go through normal
+        # review like any other change, rather than landing unattended.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet origin/master HEAD; then
+            echo "No changes relative to master; nothing to open a PR for."
+            exit 0
           fi
+          git push -u origin "${{ steps.branch.outputs.name }}"
+          gh pr create \
+            --title "chore: sync rule-bug fixtures $(date -u +%Y-%m-%d)" \
+            --body "Automated fixture sync from the rule-bug training worker (run ${{ github.run_id }}). New fixtures land in needs-triage.ts pending manual review -- see docs/architecture.md's Rule Contract for the triage process." \
+            --base master \
+            --head "${{ steps.branch.outputs.name }}"
 
       - name: Set up Python
         if: success()
