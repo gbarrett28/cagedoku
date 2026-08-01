@@ -239,6 +239,24 @@ describe('PcaRecogniser template-match candidate restriction', () => {
     const withoutParam = rec.recognise([img]);
     expect(withParam).toEqual(withoutParam);
   });
+
+  it('a crop that needs RBF fallback also respects the restriction end-to-end', () => {
+    if (!(rec instanceof PcaRecogniser)) return;
+    const nineSample = samples.find(s => s.digit === 9)!;
+    const img = new Uint8Array(canonicalPixels(nineSample));
+    const restricted = rec.recognise([img], [new Set([0, 1, 2])]);
+    expect([0, 1, 2]).toContain(restricted[0]!.label);
+  });
+
+  it('a batch with mixed restricted/unrestricted crops resolves each independently', () => {
+    if (!(rec instanceof PcaRecogniser)) return;
+    const zero = samples.find(s => s.digit === 0)!;
+    const one = samples.find(s => s.digit === 1)!;
+    const imgs = [new Uint8Array(canonicalPixels(zero)), new Uint8Array(canonicalPixels(one))];
+    const results = rec.recognise(imgs, [new Set([5, 6, 7]), undefined]);
+    expect([5, 6, 7]).toContain(results[0]!.label);
+    expect(results[1]!.label).toBe(1); // unrestricted crop unaffected
+  });
 });
 
 describe('ovoVote / rbfPredictWithConfidence candidate restriction', () => {

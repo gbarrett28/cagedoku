@@ -476,14 +476,32 @@ export class PcaRecogniser extends NumRecogniser {
     }
 
     if (rbfNeeded.length > 0) {
-      const xRbf = new Float64Array(rbfNeeded.length * nFeatures);
-      for (let k = 0; k < rbfNeeded.length; k++) {
-        xRbf.set(x.subarray(rbfNeeded[k]! * nFeatures, (rbfNeeded[k]! + 1) * nFeatures), k * nFeatures);
-      }
-      const projected = classMeanProject(xRbf, rbfNeeded.length, this.classMean);
-      const rbfResults = rbfPredictWithConfidence(this.classifier, projected, rbfNeeded.length, this.confidenceThreshold);
-      for (let k = 0; k < rbfNeeded.length; k++) {
-        results[rbfNeeded[k]!] = rbfResults[k]!;
+      const anyRestricted = rbfNeeded.some(i => allowedLabels?.[i] !== undefined);
+      if (!anyRestricted) {
+        // Unrestricted: keep the original fully-batched fast path unchanged.
+        const xRbf = new Float64Array(rbfNeeded.length * nFeatures);
+        for (let k = 0; k < rbfNeeded.length; k++) {
+          xRbf.set(x.subarray(rbfNeeded[k]! * nFeatures, (rbfNeeded[k]! + 1) * nFeatures), k * nFeatures);
+        }
+        const projected = classMeanProject(xRbf, rbfNeeded.length, this.classMean);
+        const rbfResults = rbfPredictWithConfidence(this.classifier, projected, rbfNeeded.length, this.confidenceThreshold);
+        for (let k = 0; k < rbfNeeded.length; k++) {
+          results[rbfNeeded[k]!] = rbfResults[k]!;
+        }
+      } else {
+        // At least one crop in this batch carries a restriction: classify each
+        // rbfNeeded crop individually so it gets its own reduced classifier
+        // (ovoVote/rbfPredictWithConfidence only accept one restriction per
+        // call). RBF-fallback batches in this codebase are always small (0-2
+        // crops per cell), so this loses no meaningful batching efficiency.
+        for (const i of rbfNeeded) {
+          const xi = x.subarray(i * nFeatures, (i + 1) * nFeatures);
+          const projected = classMeanProject(xi, 1, this.classMean);
+          const [rbfResult] = rbfPredictWithConfidence(
+            this.classifier, projected, 1, this.confidenceThreshold, allowedLabels?.[i],
+          );
+          results[i] = rbfResult!;
+        }
       }
     }
 
