@@ -32,9 +32,20 @@ jobs:
         run: npm ci
 
       - name: Fetch new fixtures from worker
+        # Must run with working-directory: web (like every other step here)
+        # so npx resolves the vite-node already installed by npm ci (a
+        # vitest transitive dependency, never a direct one -- see
+        # package.json). Run from the repo root, npx can't see that local
+        # install and instead downloads a fresh, unpinned "latest" vite-node
+        # from the registry every time; vite-node@6.0.0 did that and blew
+        # through the default ~4GB heap on this script (JS heap OOM, exit
+        # 134), while the locally-resolved version (used by every other
+        # `npx vite-node` invocation in this project, including this same
+        # script run manually) has never shown this failure.
+        working-directory: web
         env:
           TRAINING_WORKER_URL: ${{ secrets.TRAINING_WORKER_URL }}
-        run: npx vite-node web/scripts/sync-rule-fixtures.ts
+        run: npx vite-node scripts/sync-rule-fixtures.ts
 
       - name: Bronze gate
         working-directory: web
