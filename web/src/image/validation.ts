@@ -76,6 +76,23 @@ function buildUnionFind(
   return { find, members };
 }
 
+/**
+ * (9×9) grid of cage sizes (member-cell count), one per cell, derived from
+ * cage-wall borders via union-find. Shared by validateCageLayout (range
+ * checking) and buildCageTotals (candidate-digit restriction) so cage-size
+ * computation has exactly one implementation.
+ */
+export function computeCageSizes(borderX: boolean[][], borderY: boolean[][]): number[][] {
+  const { find, members } = buildUnionFind(borderX, borderY);
+  const sizes: number[][] = Array.from({ length: 9 }, () => new Array<number>(9).fill(0));
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      sizes[r]![c] = members.get(find(cellKey([r, c])))!.size;
+    }
+  }
+  return sizes;
+}
+
 
 /**
  * Returns a human-readable error string if any cage region contains more than
@@ -142,6 +159,7 @@ export function validateCageLayout(
   borderY: boolean[][],
 ): PuzzleSpec {
   const { find, members } = buildUnionFind(borderX, borderY);
+  const cageSizes = computeCageSizes(borderX, borderY);
 
   const brdrs = buildBrdrs(borderX, borderY);
 
@@ -164,7 +182,7 @@ export function validateCageLayout(
         }
 
         reg += 1;
-        const n = component.size;
+        const n = cageSizes[row]![col]!;
         const [lo, hi] = cageSumRange(n);
         const total = cageTotals[row]![col]!;
         if (total < lo || total > hi) {

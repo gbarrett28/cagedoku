@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { validateCageLayout, buildLenientCageLayout } from './validation.js';
+import { validateCageLayout, buildLenientCageLayout, computeCageSizes } from './validation.js';
 import { ProcessingError } from '../solver/errors.js';
 
 // ---------------------------------------------------------------------------
@@ -28,6 +28,41 @@ function allWallsBorderY(): boolean[][] {
 function trivialCageTotals(): number[][] {
   return Array.from({ length: 9 }, () => new Array<number>(9).fill(5));
 }
+
+describe('computeCageSizes', () => {
+  it('gives every cell size 1 when every wall is present (all singleton cages)', () => {
+    // allWallsBorderX/Y (already defined in this file) return all-true, i.e.
+    // every wall present -- every cell is its own cage.
+    const sizes = computeCageSizes(allWallsBorderX(), allWallsBorderY());
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        expect(sizes[r]![c]).toBe(1);
+      }
+    }
+  });
+
+  it('gives every cell the same size when there are no internal walls (one big cage)', () => {
+    const openBorderX: boolean[][] = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(false));
+    const openBorderY: boolean[][] = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(false));
+    const sizes = computeCageSizes(openBorderX, openBorderY);
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        expect(sizes[r]![c]).toBe(81);
+      }
+    }
+  });
+
+  it('matches the cage size validateCageLayout computes internally', () => {
+    // A 2-cell cage at (0,0)-(0,1): open the vertical wall between them.
+    const borderX: boolean[][] = Array.from({ length: 9 }, () => new Array<boolean>(8).fill(true));
+    const borderY: boolean[][] = Array.from({ length: 8 }, () => new Array<boolean>(9).fill(true));
+    borderY[0]![0] = false; // open the wall between col 0 and col 1, row 0
+    const sizes = computeCageSizes(borderX, borderY);
+    expect(sizes[0]![0]).toBe(2);
+    expect(sizes[0]![1]).toBe(2);
+    expect(sizes[1]![0]).toBe(1);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Happy-path tests
