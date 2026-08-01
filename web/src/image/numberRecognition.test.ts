@@ -202,6 +202,45 @@ describe('Recognition.runnerUp', () => {
 // committed, corpus.db-sourced ground truth this suite holds to 100% minus
 // KNOWN_FAILURE_SAMPLE_HASHES above.
 
+describe('PcaRecogniser template-match candidate restriction', () => {
+  // Note: a test asserting that excluding the true digit forces the *final*
+  // result into the allowed set belongs in Task 5, not here -- until the RBF
+  // fallback also respects allowedLabels, a crop the (correctly, per this
+  // task) restricted template stage rejects can still fall through to an
+  // unrestricted RBF call that predicts the excluded label anyway. This task
+  // only covers the template stage in isolation.
+  it('restricting to a singleton set containing only the true digit still confidently resolves it via the template fast path', () => {
+    if (!(rec instanceof PcaRecogniser)) return; // this suite is PCA-model-specific
+    const zeroSample = samples.find(s => s.digit === 0);
+    if (!zeroSample) throw new Error('expected at least one digit-0 sample in corpus_train.json');
+    const img = new Uint8Array(canonicalPixels(zeroSample));
+
+    const unrestricted = rec.recognise([img]);
+    expect(unrestricted[0]!.label).toBe(0);
+    expect(unrestricted[0]!.confident).toBe(true);
+
+    const restricted = rec.recognise([img], [new Set([0])]);
+    expect(restricted[0]!.label).toBe(0);
+    expect(restricted[0]!.confident).toBe(true);
+  });
+
+  it('an undefined entry in allowedLabels leaves that crop unrestricted', () => {
+    if (!(rec instanceof PcaRecogniser)) return;
+    const zeroSample = samples.find(s => s.digit === 0)!;
+    const img = new Uint8Array(canonicalPixels(zeroSample));
+    const result = rec.recognise([img], [undefined]);
+    expect(result[0]!.label).toBe(0);
+  });
+
+  it('recognise() is deterministic when allowedLabels is omitted', () => {
+    const zeroSample = samples.find(s => s.digit === 0)!;
+    const img = new Uint8Array(canonicalPixels(zeroSample));
+    const withParam = rec.recognise([img]);
+    const withoutParam = rec.recognise([img]);
+    expect(withParam).toEqual(withoutParam);
+  });
+});
+
 describe('allowedDigitsForPosition', () => {
   it('single-digit total: cage size 2 (range [3,17]) restricts to 3-9', () => {
     const allowed = allowedDigitsForPosition(2, 0, 1);

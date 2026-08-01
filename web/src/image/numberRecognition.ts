@@ -293,7 +293,7 @@ function rbfPredictWithConfidence(clf: RBFClassifier, x: Float64Array, nSamples:
 export abstract class NumRecogniser {
   constructor(readonly confidenceThreshold: number) {}
   abstract readonly warpStrategy: WarpStrategy;
-  abstract recognise(imgs: Uint8Array[]): Recognition[];
+  abstract recognise(imgs: Uint8Array[], allowedLabels?: (ReadonlySet<number> | undefined)[]): Recognition[];
 
   warpForRecognition(cv: Cv, crop: RawDigitCrop, targetSize: number): Uint8Array {
     return warpRawDigitCrop(cv, crop, this.warpStrategy, targetSize);
@@ -395,7 +395,7 @@ export class PcaRecogniser extends NumRecogniser {
     super(confidenceThreshold);
   }
 
-  recognise(imgs: Uint8Array[]): Recognition[] {
+  recognise(imgs: Uint8Array[], allowedLabels?: (ReadonlySet<number> | undefined)[]): Recognition[] {
     const n = imgs.length;
     const nFeatures = this.templates.nFeatures;
     const x = new Float64Array(n * nFeatures);
@@ -407,12 +407,22 @@ export class PcaRecogniser extends NumRecogniser {
     const rbfNeeded: number[] = [];
     const scores = new Float64Array(this.templates.nTemplates);
     for (let i = 0; i < n; i++) {
+      const allowed = allowedLabels?.[i];
       const xi = x.subarray(i * nFeatures, (i + 1) * nFeatures);
       let best = -1, bestScore = -Infinity;
       for (let t = 0; t < this.templates.nTemplates; t++) {
+        if (allowed !== undefined && !allowed.has(this.templates.templateLabels[t]!)) continue;
         const score = normalizedCrossCorrelation(xi, this.templates.templatePixels, t * nFeatures, nFeatures);
         scores[t] = score;
         if (score > bestScore) { bestScore = score; best = t; }
+      }
+      if (best === -1) {
+        // Every template excluded -- shouldn't happen given
+        // allowedDigitsForPosition's own empty-set fallback, but stay safe by
+        // deferring to the (unrestricted) RBF fallback rather than crashing.
+        results.push({ label: -1, confident: false });
+        rbfNeeded.push(i);
+        continue;
       }
       // Reject the fast path if a template from a *different* digit came
       // close to the winner -- a high raw score alone doesn't rule out a
@@ -423,6 +433,7 @@ export class PcaRecogniser extends NumRecogniser {
       let runnerUpScore = -Infinity;
       for (let t = 0; t < this.templates.nTemplates; t++) {
         if (this.templates.templateLabels[t] === bestLabel) continue;
+        if (allowed !== undefined && !allowed.has(this.templates.templateLabels[t]!)) continue;
         if (scores[t]! > runnerUpScore) runnerUpScore = scores[t]!;
       }
       if (bestScore >= this.templateThreshold && bestScore - runnerUpScore >= this.templateMargin) {

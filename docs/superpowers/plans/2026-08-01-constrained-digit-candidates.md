@@ -284,23 +284,28 @@ Add to `web/src/image/numberRecognition.test.ts`. This uses real samples from
 `corpus_train.json` (already loaded as `samples` in this test file's `beforeAll`) so the
 test exercises the actual deployed templates, not synthetic data:
 
+Discovered while implementing: a test asserting that excluding the true digit
+forces the *final* result into the allowed set belongs in Task 5, not here --
+until the RBF fallback also respects `allowedLabels`, a crop the (correctly,
+per this task) restricted template stage rejects can still fall through to an
+unrestricted RBF call that predicts the excluded label anyway. This task's
+tests only cover the template stage in isolation:
+
 ```ts
 describe('PcaRecogniser template-match candidate restriction', () => {
-  it('restricting to a set that excludes the true digit changes the winner to something within the set', () => {
+  it('restricting to a singleton set containing only the true digit still confidently resolves it via the template fast path', () => {
     if (!(rec instanceof PcaRecogniser)) return; // this suite is PCA-model-specific
-    // Find a sample the unrestricted recogniser gets right and whose template
-    // score alone (not RBF) resolves it, so restricting away its true label
-    // forces a different, verifiably-in-restriction-set answer.
     const zeroSample = samples.find(s => s.digit === 0);
     if (!zeroSample) throw new Error('expected at least one digit-0 sample in corpus_train.json');
     const img = new Uint8Array(canonicalPixels(zeroSample));
 
     const unrestricted = rec.recognise([img]);
     expect(unrestricted[0]!.label).toBe(0);
+    expect(unrestricted[0]!.confident).toBe(true);
 
-    const restricted = rec.recognise([img], [new Set([1, 2, 3])]);
-    expect(restricted[0]!.label).not.toBe(0);
-    expect([1, 2, 3]).toContain(restricted[0]!.label);
+    const restricted = rec.recognise([img], [new Set([0])]);
+    expect(restricted[0]!.label).toBe(0);
+    expect(restricted[0]!.confident).toBe(true);
   });
 
   it('an undefined entry in allowedLabels leaves that crop unrestricted', () => {
