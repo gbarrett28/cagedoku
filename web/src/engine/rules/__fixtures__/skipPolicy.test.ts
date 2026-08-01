@@ -10,6 +10,10 @@ vi.mock('./needs-triage.js', () => ({
   NEEDS_TRIAGE_FIXTURES: ['Triage-r2-2026-01-01T00-00-00-000Z'],
 }));
 
+vi.mock('../disabled-rules.js', () => ({
+  DISABLED_RULES: ['SomeDisabledRule'],
+}));
+
 import { shouldSkipFixture } from './skipPolicy.js';
 
 function makeFixture(overrides: Partial<RuleBugFixture> = {}): RuleBugFixture {
@@ -42,8 +46,8 @@ describe('shouldSkipFixture', () => {
   });
 
   it('skips a fixture for a globally disabled rule', () => {
-    const fixture = makeFixture({ ruleName: 'UniqueRectangle' });
-    const rule = { name: 'UniqueRectangle' } as SolverRule;
+    const fixture = makeFixture({ ruleName: 'SomeDisabledRule' });
+    const rule = { name: 'SomeDisabledRule' } as SolverRule;
     expect(shouldSkipFixture(fixture, rule, [])).toBe(true);
   });
 
