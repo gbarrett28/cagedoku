@@ -177,7 +177,13 @@ describe('digit recogniser — bundled model inference on training data', () => 
 
 describe('Recognition.runnerUp', () => {
   it('is present and distinct from the winning label whenever the classifier saw more than one class', () => {
-    const imgs = samples.slice(0, 30).map(s => new Uint8Array(canonicalPixels(s)));
+    // Stratified across all 10 digit classes (400 samples/digit, in order)
+    // rather than the first 30 -- those are all digit 0, and the PCA
+    // recogniser's template fast-path now resolves nearly all of them
+    // without falling back to the RBF/runnerUp path, which would make this
+    // assertion flaky against future threshold/margin tuning.
+    const stratified = Array.from({ length: 10 }, (_, d) => samples.slice(d * 400, d * 400 + 3)).flat();
+    const imgs = stratified.map(s => new Uint8Array(canonicalPixels(s)));
     const results = rec.recognise(imgs);
     let sawRunnerUp = false;
     for (const r of results) {

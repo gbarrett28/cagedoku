@@ -364,6 +364,7 @@ export class PcaRecogniser extends NumRecogniser {
     private readonly classMean: ClassMeanReduction,
     private readonly templates: TemplateMatch,
     private readonly templateThreshold: number,
+    private readonly templateMargin: number,
   ) {
     super(confidenceThreshold);
   }
@@ -378,15 +379,28 @@ export class PcaRecogniser extends NumRecogniser {
 
     const results: Recognition[] = [];
     const rbfNeeded: number[] = [];
+    const scores = new Float64Array(this.templates.nTemplates);
     for (let i = 0; i < n; i++) {
       const xi = x.subarray(i * nFeatures, (i + 1) * nFeatures);
       let best = -1, bestScore = -Infinity;
       for (let t = 0; t < this.templates.nTemplates; t++) {
         const score = normalizedCrossCorrelation(xi, this.templates.templatePixels, t * nFeatures, nFeatures);
+        scores[t] = score;
         if (score > bestScore) { bestScore = score; best = t; }
       }
-      if (bestScore >= this.templateThreshold) {
-        results.push({ label: this.templates.templateLabels[best]!, confident: true });
+      // Reject the fast path if a template from a *different* digit came
+      // close to the winner -- a high raw score alone doesn't rule out a
+      // near-tie against the wrong digit's template (e.g. an ambiguous "6"
+      // scoring higher against digit 8's template than any digit-6 template).
+      // See docs/image-pipeline.md's template-threshold note.
+      const bestLabel = this.templates.templateLabels[best]!;
+      let runnerUpScore = -Infinity;
+      for (let t = 0; t < this.templates.nTemplates; t++) {
+        if (this.templates.templateLabels[t] === bestLabel) continue;
+        if (scores[t]! > runnerUpScore) runnerUpScore = scores[t]!;
+      }
+      if (bestScore >= this.templateThreshold && bestScore - runnerUpScore >= this.templateMargin) {
+        results.push({ label: bestLabel, confident: true });
       } else {
         results.push({ label: -1, confident: false }); // placeholder, replaced below
         rbfNeeded.push(i);
@@ -584,11 +598,36 @@ export function loadNumRecogniser(
       nTemplates,
       nFeatures: templateNFeatures,
     };
-    // Threshold not yet tuned empirically (see design spec's open questions);
-    // 0.9 is a conservative placeholder requiring a strong match before
-    // skipping the RBF fallback.
-    const templateThreshold = 0.9;
-    return new PcaRecogniser(classifier, confidenceThreshold, warpStrategy, classMean, templates, templateThreshold);
+    // Empirically tuned (2026-08-01). A flat score threshold can't
+    // distinguish "confidently right" from "confidently matches the wrong
+    // digit's template" -- an earlier flat-threshold-only candidate (0.83,
+    // no margin) passed its own sweep but a full corpus eval found 26 cells
+    // (19 puzzles) of real "6" crops scoring higher against digit 8's
+    // template than any digit-6 template. So acceptance also requires the
+    // winning template's score to beat the best score from any *other*
+    // digit's templates by templateMargin (a Lowe's-ratio-style ambiguity
+    // check). (threshold, margin) was swept jointly against four sources:
+    // corpus_train.json (4000 labeled samples, in-sample -- these generated
+    // the templates), the 26 known digit-6/8 regressions, 103 hard cases of
+    // a narrow-oval "0" font the RBF fallback used to mis-predict as
+    // 6/8/9/3, and -- for real statistical power -- ~92k crops pulled from
+    // every cell of every corpus puzzle that solved cleanly under a prior
+    // run (a misread cage-total or given digit almost never lets a killer
+    // sudoku solve to a unique, consistent grid, so a clean solve is strong
+    // evidence every digit in it was read correctly; this set is disjoint
+    // from the training data that built the templates, but structurally
+    // excludes the exact hard boundary cases since those broke their
+    // puzzle's solve -- it validates precision at scale, not recall).
+    // 0.74/0.04 has zero errors across all four sources (0/~84k weak-labeled
+    // accepts, 0/26 regressions, 0/4000 in-sample) while recovering 101/103
+    // (98%) of the digit-0 fix, and sits right at the edge of the
+    // zero-error frontier -- 0.72/0.04 already shows 108 weak-labeled
+    // errors, so this isn't a fluke of a narrow window. See
+    // docs/image-pipeline.md's template-threshold note for the full
+    // analysis.
+    const templateThreshold = 0.74;
+    const templateMargin = 0.04;
+    return new PcaRecogniser(classifier, confidenceThreshold, warpStrategy, classMean, templates, templateThreshold, templateMargin);
   }
 
   const hog: HOGParams = {
