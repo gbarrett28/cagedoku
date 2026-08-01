@@ -80,7 +80,7 @@ export function submitStallReport(
   const payload: StallStateExport = {
     reportType: 'stall',
     reportedAt: new Date().toISOString(),
-    appVersion: __BUILD_TIME__,
+    appVersion: __GIT_HASH__,
     userAgent: navigator.userAgent,
     ...report,
   };
@@ -98,7 +98,7 @@ export function submitRuleBugReport(
   const payload: RuleBugReport = {
     reportType: 'rule-bug',
     reportedAt: new Date().toISOString(),
-    appVersion: __BUILD_TIME__,
+    appVersion: __GIT_HASH__,
     userAgent: navigator.userAgent,
     ...report,
   };
@@ -116,7 +116,7 @@ export function submitTriggerMissReport(
   const payload: TriggerMissReport = {
     reportType: 'trigger-miss',
     reportedAt: new Date().toISOString(),
-    appVersion: __BUILD_TIME__,
+    appVersion: __GIT_HASH__,
     userAgent: navigator.userAgent,
     ...report,
   };
@@ -131,7 +131,7 @@ export function submitCageThresholdCalibrationReport(
   const payload: CageThresholdCalibrationReport = {
     reportType: 'cage-threshold-calibration',
     reportedAt: new Date().toISOString(),
-    appVersion: __BUILD_TIME__,
+    appVersion: __GIT_HASH__,
     userAgent: navigator.userAgent,
     ...report,
   };

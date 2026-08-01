@@ -2038,7 +2038,7 @@ async function handleFeedbackSubmit(): Promise<void> {
     puzzleSpec,
     viewport: `${window.innerWidth}×${window.innerHeight}`,
     config: { alwaysApplyRules: settings.alwaysApplyRules, autoPlacementDelay: settings.autoPlacementDelay },
-    appVersion: __BUILD_TIME__,
+    appVersion: __GIT_HASH__,
     userAgent: navigator.userAgent,
     ...(bugCategory !== undefined && { bugCategory }),
     ...(expected !== undefined && { expected }),
@@ -2246,7 +2246,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Startup: load OpenCV (with download progress bar) and digit recogniser in parallel
   el<HTMLElement>('version-banner').textContent =
-    `${import.meta.env.DEV ? 'dev' : 'prod'} ${__BUILD_TIME__}`;
+    `${import.meta.env.DEV ? 'dev' : 'prod'} ${__GIT_HASH__} ${__BUILD_TIME__}`;
 
   const cvRow = el<HTMLElement>('cv-loading-row');
   const cvLabel = el<HTMLElement>('cv-loading-label');
@@ -3053,7 +3053,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         reportType: 'training-export',
         schemaVersion: 2,
         exportedAt: new Date().toISOString(),
-        appVersion: __BUILD_TIME__,
+        appVersion: __GIT_HASH__,
         puzzleType: 'killer',
         subres: 128,
         thumbnailSize: 64,

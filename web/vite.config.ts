@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { defineConfig } from 'vite';
@@ -156,8 +157,23 @@ const devShareTargetPlugin: Plugin = {
 export default defineConfig({
   plugins: [devSwPoisonPill, devShareTargetPlugin, stallFixturesPlugin],
   define: {
-    // Injected at dev-server start / build time; displayed in the version banner
-    // so it's always clear which code revision is running in the browser.
+    // Anchors the running code to an exact commit, unlike a build-process
+    // timestamp -- which reflects whenever the CI "build" step happened to
+    // run (after checkout/install/test), not the code's actual revision, and
+    // has caused real confusion diagnosing which model a live report came
+    // from. Falls back to 'unknown' outside a git checkout (e.g. some CI
+    // artifact contexts).
+    __GIT_HASH__: JSON.stringify(
+      (() => {
+        try {
+          return execSync('git rev-parse --short HEAD').toString().trim();
+        } catch {
+          return 'unknown';
+        }
+      })()
+    ),
+    // Injected at dev-server start / build time; displayed alongside the git
+    // hash in the version banner as a coarse human-readable freshness signal.
     __BUILD_TIME__: JSON.stringify(
       new Date().toISOString().slice(0, 16).replace('T', ' ')
     ),

@@ -67,7 +67,7 @@ export function extractTrainingData(
     reportType: 'training-export',
     schemaVersion: 2,
     exportedAt: new Date().toISOString(),
-    appVersion: __BUILD_TIME__,
+    appVersion: __GIT_HASH__,
     puzzleType,
     subres,
     thumbnailSize: 64,
