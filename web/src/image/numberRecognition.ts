@@ -13,6 +13,7 @@
 import type { OpenCVModule, OpenCVMat, OpenCVMatVector } from './opencv.js';
 import { extractHoleFeatures } from './holeFeatures.js';
 import { extractAspectFeatures } from './aspectFeatures.js';
+import { cageSumRange } from '../engine/types.js';
 type Cv = OpenCVModule;
 
 // ---------------------------------------------------------------------------
@@ -334,6 +335,31 @@ export class HogRecogniser extends NumRecogniser {
 
 }
 
+
+/**
+ * Which digit(s) can structurally appear at `digitIndex` of a `digitCount`-digit
+ * cage total, given the cage's size. Enumerates every valid total in
+ * cageSumRange(cageSize) with exactly digitCount digits and collects the digit
+ * at that position. Falls back to unrestricted (0-9) if no valid total has
+ * exactly digitCount digits -- a symptom of upstream detection being wrong,
+ * which must degrade to "no restriction", never to an impossible-to-satisfy
+ * empty set.
+ */
+export function allowedDigitsForPosition(
+  cageSize: number, digitIndex: number, digitCount: number,
+): ReadonlySet<number> {
+  const [lo, hi] = cageSumRange(cageSize);
+  const allowed = new Set<number>();
+  for (let total = lo; total <= hi; total++) {
+    const s = String(total);
+    if (s.length !== digitCount) continue;
+    allowed.add(Number(s[digitIndex]));
+  }
+  if (allowed.size === 0) {
+    for (let d = 0; d <= 9; d++) allowed.add(d);
+  }
+  return allowed;
+}
 
 export interface TemplateMatch {
   templatePixels: Float64Array;   // (nTemplates * nFeatures,) row-major

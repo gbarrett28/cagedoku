@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { activeRecogniser, HogRecogniser, PcaRecogniser, loadNumRecogniser, pcaProject, classMeanProject, centerByCentroid } from './numberRecognition.js';
+import { activeRecogniser, HogRecogniser, PcaRecogniser, loadNumRecogniser, pcaProject, classMeanProject, centerByCentroid, allowedDigitsForPosition } from './numberRecognition.js';
 import type { NumRecogniser, PcaProjection, ClassMeanReduction } from './numberRecognition.js';
 
 // ---------------------------------------------------------------------------
@@ -201,6 +201,38 @@ describe('Recognition.runnerUp', () => {
 // their retired extraction workflow is available in CI. corpus_train.json is the
 // committed, corpus.db-sourced ground truth this suite holds to 100% minus
 // KNOWN_FAILURE_SAMPLE_HASHES above.
+
+describe('allowedDigitsForPosition', () => {
+  it('single-digit total: cage size 2 (range [3,17]) restricts to 3-9', () => {
+    const allowed = allowedDigitsForPosition(2, 0, 1);
+    expect([...allowed].sort()).toEqual([3, 4, 5, 6, 7, 8, 9]);
+  });
+
+  it('two-digit total, tens position: cage size 2 (range [3,17]) restricts to {1}', () => {
+    // Only 10-17 are 2-digit totals in [3,17]; tens digit is always 1.
+    const allowed = allowedDigitsForPosition(2, 0, 2);
+    expect([...allowed]).toEqual([1]);
+  });
+
+  it('two-digit total, units position: cage size 2 restricts to 0-7', () => {
+    // 10..17 -> units digits 0,1,2,3,4,5,6,7
+    const allowed = allowedDigitsForPosition(2, 1, 2);
+    expect([...allowed].sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it('cage size 9 must total exactly 45: tens={4}, units={5}', () => {
+    expect([...allowedDigitsForPosition(9, 0, 2)]).toEqual([4]);
+    expect([...allowedDigitsForPosition(9, 1, 2)]).toEqual([5]);
+  });
+
+  it('falls back to unrestricted (0-9) when digitCount matches no valid total', () => {
+    // Cage size 1's range is [1,9] -- no 2-digit total is possible, so a
+    // (wrongly) detected digitCount=2 must not produce an impossible-to-satisfy
+    // empty restriction.
+    const allowed = allowedDigitsForPosition(1, 0, 2);
+    expect([...allowed].sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+});
 
 describe('loadNumRecogniser class dispatch', () => {
   it.each(['pca_rbf', 'linear'])('rejects unsupported classifier_type "%s" explicitly', classifierType => {
