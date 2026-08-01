@@ -11,7 +11,12 @@
  *   npx vite-node --script scripts/evaluate-corpus.ts [options]
  *
  * Options:
- *   --workers N       Playwright worker count (default 4; each ~400MB RAM)
+ *   --workers N       Playwright worker count (default 6; each ~400MB RAM --
+ *                      raised from 4 2026-08-01; local dev machine has
+ *                      16GB/16 cores but often only ~5-6GB free alongside
+ *                      other tooling, so this isn't pushed higher without
+ *                      also addressing the memory-pressure kills noted in
+ *                      project memory)
  *   --limit N         Stop after N total evaluations (development shortcut)
  *   --base-url URL    App URL (default http://localhost:4173)
  *   --git-hash SHA    Git commit to tag results against (default: current HEAD)
@@ -42,7 +47,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const DEFAULT_WORKERS = 4;
+const DEFAULT_WORKERS = 6;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MODEL_PATH = path.resolve(__dirname, '../public/num_recogniser.bin');
 
