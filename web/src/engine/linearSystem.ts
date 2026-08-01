@@ -290,6 +290,14 @@ export class LinearSystem {
             constraints.push([[keyToCell(rck)], detVal, true]);
           }
         }
+      } else if (this._maybeAddLiveDeltaPair(rowDict, newRhs, seen)) {
+        // A row freshly reduced to exactly two terms with coefficients +1/-1 is a
+        // delta pair (value[p] - value[q] = delta) that only became derivable once
+        // `cell` was substituted -- mirrors the constructor's nonzero.length === 2
+        // dispatch, but for pairs that emerge live rather than at setup. Recorded
+        // directly onto deltaPairs/_pairsByCell inside the helper; nothing to push
+        // onto `constraints` (unlike virtual cages, delta pairs need no engine-side
+        // unit bookkeeping -- DeltaConstraint reads them straight off the board).
       } else if ([...rowDict.values()].every(c => c.eq(Frac.ONE))) {
         if (newRhs.isInteger()) {
           const total = newRhs.toInt();
@@ -317,6 +325,31 @@ export class LinearSystem {
       if (!this._pairsByCell.has(k)) this._pairsByCell.set(k, []);
       this._pairsByCell.get(k)!.push(pair);
     }
+  }
+
+
+  /**
+   * If `rowDict` (with right-hand side `rhs`) is a freshly-reduced two-term row with
+   * coefficients +1/-1, records it as a new delta pair and returns true. Returns false
+   * (no-op) for any other shape, including a uniform two-term (+1/+1) row -- that one
+   * falls through to the general virtual-cage branch in substituteLiveRows.
+   */
+  private _maybeAddLiveDeltaPair(rowDict: SparseRow, rhs: Frac, seen: Set<string>): boolean {
+    if (rowDict.size !== 2 || !rhs.isInteger()) return false;
+    const entries = [...rowDict.entries()];
+    const [pk, pc] = entries[0]!;
+    const [qk, qc] = entries[1]!;
+    let p: string, q: string, delta: number;
+    if (pc.eq(Frac.ONE) && qc.eq(new Frac(-1))) { p = pk; q = qk; delta = rhs.toInt(); }
+    else if (pc.eq(new Frac(-1)) && qc.eq(Frac.ONE)) { p = qk; q = pk; delta = -rhs.toInt(); }
+    else return false;
+
+    const dkey = `delta:${[p, q].sort().join('|')}`;
+    if (!seen.has(dkey)) {
+      seen.add(dkey);
+      this._addDeltaPair(keyToCell(p), keyToCell(q), delta);
+    }
+    return true;
   }
 
   private _addSumPair(a: Cell, b: Cell, total: number): void {
