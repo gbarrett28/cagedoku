@@ -500,6 +500,24 @@ virtual cages, a new delta pair needs no unit-level engine bookkeeping — there
 `pendingDeltaPairs` queue; `DeltaConstraint` already reads `pairsForCell()` fresh on
 every trigger, so it sees new pairs immediately.
 
+**Some delta pairs are missing even before any cell is solved — `_deriveTailEliminations`
+covers the gap the single-pass RREF leaves behind.** RREF guarantees the resulting rows
+are linearly independent across their pivot columns; it does not guarantee every pairwise
+combination of the resulting rows has been explored. Two live rows can share an identical
+coefficient pattern on some subset of cells (e.g. two different cage/box combinations that
+both happen to reduce to `... - X - Y - Z = const`) purely by coincidence of which cage
+totals the puzzle has, without RREF ever combining them into a single basis row. Once at
+construction, after the initial RREF pass populates `_liveRows`, `_deriveTailEliminations`
+scans all live-row pairs, tries both `rowA - rowB` and `rowA + rowB`, and — whenever a
+combination cancels down to a clean two-term `+1`/`-1` row — records it via
+`_maybeAddLiveDeltaPair`, the same helper `substituteLiveRows` uses. This is unrelated to
+cells becoming known over time (it runs once, at construction, before any substitution);
+it exists because the initial reduction genuinely left a discoverable pair undiscovered.
+Confirmed against `killer_sudoku_293.jpg` (observer corpus): two cage/box combinations
+sharing an identical three-cell tail combine to reveal a delta pair between two cells in
+otherwise-unrelated cages, which the rule engine could not previously reach without
+falling back to backtracking.
+
 ---
 
 ## Rule Mutations and Rule Steps

@@ -473,6 +473,57 @@ git commit -m "docs: document live delta-pair derivation in substituteLiveRows"
 
 ---
 
+---
+
+## Part 3 — Pairwise live-row elimination (discovered while verifying Part 2 against the real motivating puzzle)
+
+**Context:** Verifying Part 2's fix against `killer_sudoku_293.jpg` (the actual puzzle
+that needs backtracking) showed the single-row substitution fix alone doesn't resolve
+it — after the puzzle's 3 solvable cells, `deltaPairs` was still empty and the puzzle
+still backtracked. Manual analysis (a "sum of cages mostly inside two boxes, minus the
+two boxes" argument) found a real delta pair, `R7C4 - R6C7 = 8`, that turned out to
+correspond to subtracting two of the constructor's own `_liveRows` entries — both
+happened to reduce to a row sharing an identical three-cell tail
+(`R8C7`/`R9C7`/`R9C8`), which RREF's single pass never combined into one basis row.
+
+### Task 7: Implement and verify pairwise live-row elimination
+
+**Files:**
+- Modify: `web/src/engine/linearSystem.ts` — added `_deriveTailEliminations()`
+  (called once in the constructor, after the pre-existing `_pairsByCell` rebuild loop
+  and before `_deriveSumPairs()`), scanning all live-row pairs for `rowA - rowB` /
+  `rowA + rowB` combinations that cancel down to a clean two-term `+1`/`-1` row, and
+  recording any found via the existing `_maybeAddLiveDeltaPair` helper.
+- Modify: `web/src/engine/linearSystem.test.ts` — added
+  `describe('LinearSystem._deriveTailEliminations')` using the real `killer_sudoku_293.jpg`
+  spec, asserting `pairsForCell([6,3])`/`pairsForCell([5,6])` contain the derived pair
+  **at construction**, before any cell substitution.
+
+- [x] Implement `_deriveTailEliminations`, wire into the constructor.
+- [x] Add the regression test using the real puzzle #293 spec.
+- [x] Run `linearSystem.test.ts`, `solverEngine.test.ts`, `deltaConstraint.test.ts`,
+      `derivedVirtualCage.test.ts`, `boardState.test.ts` — all pass (82 tests).
+- [x] Bronze gate, commit.
+- [x] Build + preview, re-run `evaluate-corpus.ts` filtered to
+      `killer_sudoku_293.jpg`'s content hash — confirmed bucket flips from
+      `backtracked` to `clean`.
+- [x] Full corpus evaluation (`--workers 6 --compare-report eval-baseline.json`) to
+      check for regressions before merging — confirmed against all 2968 puzzles: the
+      only bucket change anywhere in the corpus is `killer_sudoku_293.jpg` flipping
+      from `backtracked` to `clean`. Zero regressions.
+
+### Task 8: Document `_deriveTailEliminations`
+
+**Files:**
+- Modify: `docs/architecture.md` — added a paragraph after the existing "Delta pairs
+  also re-derive live" paragraph, explaining the construction-time pairwise-elimination
+  gap and citing the puzzle #293 confirmation.
+
+- [x] Write the doc paragraph.
+- [x] Commit.
+
+---
+
 ## Final: Silver gate and merge
 
 - [ ] **Step 1: Run the silver gate from the repo root**
