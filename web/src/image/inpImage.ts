@@ -21,6 +21,7 @@ type Cv = OpenCVModule;
 import { defaultImagePipelineConfig, subres as cfgSubres, resolution as cfgResolution } from './config.js';
 import type { ImagePipelineConfig } from './config.js';
 import { locateGrid } from './gridLocation.js';
+import { isPdfFile } from '../imageInput.js';
 import {
   collectCageTotalContours, scanClassicDigits, cageConfFromSize,
   detectRotation, detectPuzzleType,
@@ -576,7 +577,7 @@ export function connectivityScore(
  * Decode an image File to an ImageData using an OffscreenCanvas.
  */
 async function decodeImageFile(file: File): Promise<ImageData> {
-  if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+  if (isPdfFile(file)) {
     return decodePdfFile(file);
   }
   let bitmap: ImageBitmap;

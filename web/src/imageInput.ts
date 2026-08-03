@@ -9,16 +9,43 @@ export interface FileSystemHandleWithPermission extends FileSystemFileHandle {
   requestPermission(desc: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
 }
 
-/** Extracts the first image File from a ClipboardEvent, or null if none is present. */
+// ---------------------------------------------------------------------------
+// Supported file types
+//
+// Single source of truth for "does this app accept this file as a puzzle
+// image": every entry point (file picker, paste, drag-drop) must agree, or
+// one silently rejects files another accepts. Keep index.html's
+// <input accept="..."> in sync with this list by hand — HTML attributes
+// can't reference a TS constant.
+// ---------------------------------------------------------------------------
+
+/** True for a MIME type this app accepts as puzzle input (image/* or PDF). */
+export function isSupportedMimeType(mimeType: string): boolean {
+  return mimeType.startsWith('image/') || mimeType === 'application/pdf';
+}
+
+/** True for a File that should be routed through the PDF-decode path rather than the raw-image path. */
+export function isPdfFile(file: File): boolean {
+  return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+}
+
+/** True for a File this app accepts as puzzle input — falls back to the
+ * filename extension for PDFs, since some sources (e.g. drag-drop from
+ * certain file managers) don't reliably set file.type for PDFs. */
+export function isSupportedPuzzleFile(file: File): boolean {
+  return isSupportedMimeType(file.type) || isPdfFile(file);
+}
+
+/** Extracts the first supported (image or PDF) File from a ClipboardEvent, or null if none is present. */
 export function imageFileFromClipboard(e: ClipboardEvent): File | null {
-  const item = Array.from(e.clipboardData?.items ?? []).find(i => i.type.startsWith('image/'));
+  const item = Array.from(e.clipboardData?.items ?? []).find(i => isSupportedMimeType(i.type));
   return item?.getAsFile() ?? null;
 }
 
-/** Extracts the first image File from a DragEvent, or null if the payload is not an image. */
+/** Extracts the first supported (image or PDF) File from a DragEvent, or null if the payload isn't supported. */
 export function imageFileFromDrop(e: DragEvent): File | null {
   const file = e.dataTransfer?.files[0];
-  return (file?.type.startsWith('image/') ? file : null) ?? null;
+  return (file && isSupportedPuzzleFile(file) ? file : null) ?? null;
 }
 
 

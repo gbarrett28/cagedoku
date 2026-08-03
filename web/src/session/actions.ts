@@ -14,6 +14,7 @@ import { defaultRules } from '../engine/rules/index.js';
 import { cageSumRange } from '../engine/types.js';
 import type { Cell } from '../engine/types.js';
 import { parsePuzzleImage, ImageDecodeError, GridNotFoundError } from '../image/inpImage.js';
+import { isPdfFile } from '../imageInput.js';
 import { AssertionViolation, validateSudokuSolution, isCageSumCorrect } from './assertions.js';
 import { formatActionLog } from './actionLog.js';
 
@@ -261,7 +262,7 @@ async function fileToDataUrl(file: File): Promise<string> {
 /** For PDFs, <img> cannot render a PDF data URL, so we render page 1 to a JPEG
  *  using an HTMLCanvasElement (which has toDataURL). Returns null on failure. */
 async function fileToDisplayUrl(file: File): Promise<string | null> {
-  if (!(file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'))) {
+  if (!isPdfFile(file)) {
     return fileToDataUrl(file);
   }
   try {

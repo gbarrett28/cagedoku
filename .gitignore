@@ -1,6 +1,7 @@
 /guardian/
 /observer/
 /classic_guardian/
+/odd_training/
 corpus.db
 corpus.db-shm
 corpus.db-wal

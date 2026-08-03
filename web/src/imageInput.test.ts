@@ -4,6 +4,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   imageFileFromClipboard, imageFileFromDrop, resolveLastHandle,
   consumeShareInbox, fileFromLaunchParams, detectUploadEnvironment,
+  isSupportedMimeType, isPdfFile, isSupportedPuzzleFile,
 } from './imageInput.js';
 import type { FileSystemHandleWithPermission } from './imageInput.js';
 
@@ -40,6 +41,48 @@ afterEach(() => { vi.unstubAllGlobals(); });
 
 // ---------------------------------------------------------------------------
 
+describe('isSupportedMimeType', () => {
+  it('accepts image/* MIME types', () => {
+    expect(isSupportedMimeType('image/png')).toBe(true);
+    expect(isSupportedMimeType('image/jpeg')).toBe(true);
+    expect(isSupportedMimeType('image/webp')).toBe(true);
+  });
+
+  it('accepts application/pdf', () => {
+    expect(isSupportedMimeType('application/pdf')).toBe(true);
+  });
+
+  it('rejects unrelated MIME types', () => {
+    expect(isSupportedMimeType('text/plain')).toBe(false);
+    expect(isSupportedMimeType('application/json')).toBe(false);
+  });
+});
+
+describe('isPdfFile', () => {
+  it('is true for application/pdf regardless of filename', () => {
+    expect(isPdfFile(new File(['x'], 'scan', { type: 'application/pdf' }))).toBe(true);
+  });
+
+  it('falls back to a .pdf filename extension when type is unset', () => {
+    expect(isPdfFile(new File(['x'], 'puzzle.pdf', { type: '' }))).toBe(true);
+    expect(isPdfFile(new File(['x'], 'PUZZLE.PDF', { type: '' }))).toBe(true);
+  });
+
+  it('is false for a non-PDF image', () => {
+    expect(isPdfFile(new File(['x'], 'puzzle.jpg', { type: 'image/jpeg' }))).toBe(false);
+  });
+});
+
+describe('isSupportedPuzzleFile', () => {
+  it('accepts images and PDFs, rejects everything else', () => {
+    expect(isSupportedPuzzleFile(new File(['x'], 'a.jpg', { type: 'image/jpeg' }))).toBe(true);
+    expect(isSupportedPuzzleFile(new File(['x'], 'a.pdf', { type: 'application/pdf' }))).toBe(true);
+    expect(isSupportedPuzzleFile(new File(['x'], 'a.txt', { type: 'text/plain' }))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
 describe('imageFileFromClipboard', () => {
   it('returns the image File when an image/* item is present', () => {
     const e = makeClipboardEvent('image/png', 'screenshot.png');
@@ -61,6 +104,12 @@ describe('imageFileFromClipboard', () => {
     const file = imageFileFromClipboard(makeClipboardEvent('image/webp', 'snap.webp'));
     expect(file).not.toBeNull();
     expect(file!.type).toBe('image/webp');
+  });
+
+  it('accepts a pasted PDF', () => {
+    const file = imageFileFromClipboard(makeClipboardEvent('application/pdf', 'scan.pdf'));
+    expect(file).not.toBeNull();
+    expect(file!.type).toBe('application/pdf');
   });
 });
 
@@ -87,6 +136,21 @@ describe('imageFileFromDrop', () => {
     const file = imageFileFromDrop(makeDragEvent('image/png', 'grid.png'));
     expect(file).not.toBeNull();
     expect(file!.type).toBe('image/png');
+  });
+
+  it('accepts a dropped PDF', () => {
+    const file = imageFileFromDrop(makeDragEvent('application/pdf', 'scan.pdf'));
+    expect(file).not.toBeNull();
+    expect(file!.type).toBe('application/pdf');
+  });
+
+  it('accepts a dropped PDF whose type is unset, via filename fallback', () => {
+    // makeDragEvent treats an empty mimeType as "no file", so build this one directly.
+    const pdfWithNoType = new File(['x'], 'scan.pdf', { type: '' });
+    const e = { dataTransfer: { files: [pdfWithNoType] }, preventDefault: vi.fn() } as unknown as DragEvent;
+    const file = imageFileFromDrop(e);
+    expect(file).not.toBeNull();
+    expect(file!.name).toBe('scan.pdf');
   });
 });
 

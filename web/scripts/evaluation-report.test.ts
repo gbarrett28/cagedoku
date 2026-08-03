@@ -62,14 +62,16 @@ describe('ingestPuzzleDirectory', () => {
     fs.writeFileSync(path.join(dir, 'b.jpg'), Buffer.from([1, 2, 3]));
     fs.writeFileSync(path.join(dir, 'a.jpg'), Buffer.from([1, 2, 3]));
     fs.writeFileSync(path.join(dir, 'c.png'), Buffer.from([4, 5, 6]));
+    fs.writeFileSync(path.join(dir, 'd.pdf'), Buffer.from([7, 8, 9]));
+    fs.writeFileSync(path.join(dir, 'E.PDF'), Buffer.from([10, 11, 12]));
     fs.writeFileSync(path.join(dir, 'ignored.txt'), 'not an image');
     const db = openDb(path.join(dir, 'corpus.db'));
 
-    expect(ingestPuzzleDirectory(db, dir)).toEqual({ scanned: 3, added: 2 });
-    expect(ingestPuzzleDirectory(db, dir)).toEqual({ scanned: 3, added: 0 });
+    expect(ingestPuzzleDirectory(db, dir)).toEqual({ scanned: 5, added: 4 });
+    expect(ingestPuzzleDirectory(db, dir)).toEqual({ scanned: 5, added: 0 });
     const paths = (db.prepare('SELECT path FROM puzzles ORDER BY path').all() as { path: string }[])
       .map(row => path.basename(row.path));
-    expect(paths).toEqual(['a.jpg', 'c.png']);
+    expect(paths).toEqual(['E.PDF', 'a.jpg', 'c.png', 'd.pdf']);
     db.close();
   });
 });

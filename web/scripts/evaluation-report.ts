@@ -65,7 +65,7 @@ function collectPuzzleFiles(root: string): string[] {
     const entryPath = path.join(root, entry.name);
     if (entry.isDirectory()) {
       files.push(...collectPuzzleFiles(entryPath));
-    } else if (/\.(?:jpe?g|png)$/i.test(entry.name)) {
+    } else if (/\.(?:jpe?g|png|pdf)$/i.test(entry.name)) {
       files.push(entryPath);
     }
   }
