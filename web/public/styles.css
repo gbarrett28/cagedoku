@@ -921,16 +921,89 @@ body:has(#playing-actions:not([hidden])) #side-panel {
        see line ~165); without the wrap, the heading's auto flex-basis and the
        fixed-width #side-panel shared a row with #canvas-wrapper and squeezed its
        flex-grow basis of 0 down to ~0px, collapsing the grid canvas while the
-       heading stayed visible above it (bug 164). */
+       heading stayed visible above it (bug 164).
+     - flex/max-width restore the plain review-screen sizing (same clamp as the
+       #canvas-col, #warped-col rule above) instead of the playing-mode `flex: 1 1 0%;
+       max-width: none` inherited from the non-landscape body:has(#playing-actions)
+       rule. #warped-col and #original-col stay visible in this combined state (unlike
+       true playing mode, where JS hides them and #canvas-col is alone on its row), so
+       #canvas-col must compete with them for row width. A flex-basis of 0 lost that
+       contest down to whatever pixels were left over once the other two columns
+       claimed their own max-width — the browser sizes an "auto"/"0" flex-basis from
+       current content, not from how large the (also flex-basis:0) canvas inside it
+       could grow given room. An explicit basis matching the shared 458px cap gives
+       #canvas-col equal footing in the fight for row width. */
   body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #canvas-col {
     position: static;
     height: auto;
     container-type: inline-size;
     flex-wrap: wrap;
+    flex: 1 1 458px;
+    max-width: clamp(200px, min(calc(50vw - 56px), calc(100vh - 220px)), 458px);
   }
 
   body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #detected-layout-heading {
     flex: 1 0 100%;
+  }
+}
+
+/* ── Portrait: same combined-state fix as landscape, for the vertical stack ──
+   Classic/BigApple OCR review in portrait (any width down to 620px, where the
+   dedicated mobile rule below takes over) has the same #playing-actions +
+   #review-actions combined state as landscape, but #images-row stacks its three
+   columns vertically here instead of side by side. The playing-mode
+   `#canvas-col { flex:1; container-type:size }` chain (base rule above) assumes
+   #canvas-col is alone in #images-row, with the whole column height to grow
+   into — true playing mode hides #warped-col/#original-col via JS. In this
+   combined state they stay visible and already claim their own (clamped)
+   height, so #canvas-col's flex:1 growth loses that fight for the vertical
+   free space, then squeezes further to fit heading + square canvas + digit pad
+   stacked inside whatever's left — collapsing the canvas exactly as the
+   landscape row did (see that block's comment above) but on the cross axis.
+   Escaping #images-row's forced 100dvh/overflow:hidden chain for natural
+   scrollable block flow (the same approach the mobile rule below uses) lets
+   #canvas-col take the height its content actually needs. */
+@media (orientation: portrait) {
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) {
+    height: auto;
+    display: block;
+    overflow-x: hidden;
+  }
+
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) main {
+    flex: none;
+    overflow: visible;
+    margin: 0.75rem auto;
+  }
+
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #review-panel {
+    flex: none;
+    overflow: visible;
+  }
+
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #images-row {
+    flex: none;
+  }
+
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #canvas-col {
+    position: static;
+    flex: none;
+    max-width: clamp(200px, calc(50vh - 125px), 458px);
+    display: flex;
+    flex-direction: column;
+    container-type: inline-size;
+  }
+
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #canvas-wrapper {
+    flex: none;
+    width: 100%;
+    max-height: none;
+    aspect-ratio: 1;
+  }
+
+  body:has(#playing-actions:not([hidden])):has(#review-actions:not([hidden])) #side-panel {
+    max-height: none;
+    overflow-y: visible;
   }
 }
 
