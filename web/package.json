@@ -29,7 +29,7 @@
     "vitest": "^1.6.0"
   },
   "dependencies": {
-    "pdfjs-dist": "^5.7.284",
+    "pdfjs-dist": "5.4.624",
     "qrcode": "^1.5.4"
   }
 }

@@ -595,6 +595,14 @@ async function decodeImageFile(file: File): Promise<ImageData> {
   return ctx.getImageData(0, 0, canvas.width, canvas.height);
 }
 
+// pdfjs-dist is pinned to 5.4.624 in package.json (not a caret range) --
+// 5.5.x+ (through at least 6.2.108) call the not-yet-broadly-supported
+// Map.prototype.getOrInsertComputed inside PDFObjects.resolve()/get(),
+// which throws "this[#objs/#e].getOrInsertComputed is not a function" for
+// any PDF with an indirectly-referenced image/font object, i.e. almost any
+// real-world PDF (mozilla/pdf.js#20680). Do not bump past 5.4.x without
+// re-checking that regression is fixed upstream (web/e2e/app.spec.ts's
+// "getOrInsertComputed crash" test will catch it if it isn't).
 async function decodePdfFile(file: File): Promise<ImageData> {
   const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist');
   GlobalWorkerOptions.workerSrc = new URL(

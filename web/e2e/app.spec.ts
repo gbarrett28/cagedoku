@@ -71,6 +71,12 @@ const PUZZLE_IMAGE = path.resolve(
   '../../guardian/killer_sudoku_0.jpg',
 );
 
+// Minimal single-page PDF with an embedded raster image (XObject) --
+// exercises pdfjs-dist's PDFObjects.resolve()/get() path the same way a
+// real scanned-newspaper PDF does. See the pin comment on decodePdfFile
+// in image/inpImage.ts.
+const PDF_FIXTURE = path.resolve(__dirname, 'fixtures/minimal-text.pdf');
+
 // PUZZLE_IMAGE has clean OCR and a fully-solvable grid, so handleProcess()
 // (src/main.ts) may take the auto-confirm path straight to playing mode,
 // skipping the review screen and #confirm-btn entirely. Click it only when
@@ -236,6 +242,46 @@ pipelineTest('upload outcome hook reports bucket "clean" for a known-clean puzzl
   expect(outcome.reason).toBe('auto_confirmed');
   expect(outcome.puzzleType).toBe('killer');
   expect(outcome.detectedBigApple).toBe(false);
+});
+
+// ---------------------------------------------------------------------------
+// Test: PDF upload decodes without crashing (slow)
+//
+// Regression test for a pdfjs-dist bug (mozilla/pdf.js#20680): versions
+// >=5.5.x (through at least 6.2.108) call the not-yet-broadly-supported
+// Map.prototype.getOrInsertComputed inside PDFObjects.resolve()/get(),
+// which throws "this[#objs/#e].getOrInsertComputed is not a function"
+// when rendering a PDF with an image XObject -- i.e. almost every
+// real-world scanned PDF (a text-only PDF does not trigger it, since it
+// never exercises that resolution path). This crash previously took down
+// every PDF upload; see the pin comment on decodePdfFile in
+// image/inpImage.ts. PDF_FIXTURE has no puzzle grid, so the assertion is
+// just that the crash string never appears in the outcome, whatever
+// domain-level failure the pipeline reports instead.
+// ---------------------------------------------------------------------------
+
+pipelineTest('upload PDF → decodes without the pdfjs getOrInsertComputed crash', async ({ pipelinePage }) => {
+  pipelineTest.skip(!PIPELINE, 'Needs PLAYWRIGHT_PIPELINE_TESTS=1');
+  pipelineTest.setTimeout(90_000);
+
+  await pipelinePage.evaluate(() => {
+    const win = window as unknown as Record<string, unknown>;
+    win['__lastUploadOutcome'] = null;
+    win['__reportOutcome'] = (o: unknown) => { win['__lastUploadOutcome'] = o; };
+  });
+
+  await pipelinePage.locator('#file-input').setInputFiles(PDF_FIXTURE);
+  await pipelinePage.waitForFunction(
+    () => (window as unknown as Record<string, unknown>)['__lastUploadOutcome'] !== null,
+    { timeout: 40_000 },
+  );
+
+  const outcome = await pipelinePage.evaluate(
+    () => (window as unknown as Record<string, unknown>)['__lastUploadOutcome'],
+  ) as { bucket: string; reason: string | null; specError: string | null };
+
+  expect(outcome.specError ?? '').not.toContain('getOrInsertComputed');
+  expect(outcome.reason ?? '').not.toContain('getOrInsertComputed');
 });
 
 // ---------------------------------------------------------------------------

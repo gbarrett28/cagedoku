@@ -266,6 +266,8 @@ async function fileToDisplayUrl(file: File): Promise<string | null> {
     return fileToDataUrl(file);
   }
   try {
+    // pdfjs-dist version is pinned in package.json -- see the comment on
+    // decodePdfFile in image/inpImage.ts for why.
     const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist');
     GlobalWorkerOptions.workerSrc = new URL(
       'pdfjs-dist/build/pdf.worker.mjs',
