@@ -127,6 +127,12 @@ export interface OpenCVModule {
     maxVal: number, adaptiveMethod: number, thresholdType: number,
     blockSize: number, C: number,
   ): void;
+
+  /** Canny edge detection. */
+  Canny(
+    src: OpenCVMat, dst: OpenCVMat,
+    threshold1: number, threshold2: number, apertureSize?: number, L2gradient?: boolean,
+  ): void;
   /** Set dst[i] = 255 if lowerb[i] <= src[i] <= upperb[i], else 0. */
   inRange(src: OpenCVMat, lowerb: OpenCVMat | OpenCVScalar, upperb: OpenCVMat | OpenCVScalar, dst: OpenCVMat): void;
   /** Apply perspective warp. */

@@ -111,15 +111,15 @@ export async function parsePuzzleImage(
   const [blkMat, gryMat] = prepareGrayMat(cv, imageData, resolution);
 
   let rectArr: Float32Array;
-  let blkForDigits: OpenCVMat;
   try {
     const [blk, rect] = locateGrid(cv, gryMat, config.gridLocation.isblackOffset);
     rectArr = rect;
-    // Kept (not deleted): Python's InpImage warps and reuses this same
-    // grid-location blk (a global cv2.inRange threshold) as warped_blk for
-    // digit extraction, rather than computing a fresh adaptiveThreshold on
-    // the warped grayscale -- see the warpedBlkMat construction below.
-    blkForDigits = blk;
+    // blk (a global cv2.inRange threshold) is only used internally by
+    // locateGrid to find the puzzle's outer quadrilateral -- digit
+    // extraction now binarises the warped grayscale itself via Canny +
+    // sweep-fill (see buildSweepInkMask / warpedBlkMat below), so blk has
+    // no further use here.
+    blk.delete();
   } catch {
     gryMat.delete();
     blkMat.delete();
@@ -138,15 +138,14 @@ export async function parsePuzzleImage(
   let mMat = cv.getPerspectiveTransform(srcPts, dstPts);
   srcPts.delete(); dstPts.delete();
 
-  // Warp the grid-location blk (global threshold) for cage-digit contour
-  // extraction, matching Python's InpImage exactly: it warps and reuses this
-  // same blk as warped_blk for read_classic_digits/_build_cage_totals, rather
-  // than computing a fresh adaptive threshold on the warped grayscale.
-  let warpedBlkMat = new cv.Mat();
-  cv.warpPerspective(blkForDigits, warpedBlkMat, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
-
   let warpedGryMat = new cv.Mat();
   cv.warpPerspective(gryMat, warpedGryMat, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
+
+  // Binarise the warped grayscale for cage-digit / classic-digit contour
+  // extraction via Canny + sweep-fill (see buildSweepInkMask), replacing
+  // the previous approach of warping a single global threshold computed
+  // once during grid location.
+  let warpedBlkMat = buildSweepInkMask(cv, warpedGryMat, config.numberRecognition.cannySigma);
 
   // Colour warp for rendering — must be upsampled to the same resolution as
   // gryMat so that mMat (computed in upsampled coordinates) samples correctly.
@@ -178,14 +177,13 @@ export async function parsePuzzleImage(
     mMat = cv.getPerspectiveTransform(srcPts2, dstPts2);
     srcPts2.delete(); dstPts2.delete();
 
-    // Re-warp all three Mats (reuse gryMat — see comment above for rationale).
-    warpedBlkMat.delete();
-    warpedBlkMat = new cv.Mat();
-    cv.warpPerspective(blkForDigits, warpedBlkMat, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
-
+    // Re-warp all Mats (reuse gryMat — see comment above for rationale).
     warpedGryMat.delete();
     warpedGryMat = new cv.Mat();
     cv.warpPerspective(gryMat, warpedGryMat, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
+
+    warpedBlkMat.delete();
+    warpedBlkMat = buildSweepInkMask(cv, warpedGryMat, config.numberRecognition.cannySigma);
 
     let srcMat2 = cv.matFromImageData(imageData);
     while (srcMat2.rows < resolution || srcMat2.cols < resolution) {
@@ -203,7 +201,7 @@ export async function parsePuzzleImage(
     cv.warpPerspective(srcMat2, warpedImgMat, mMat, new cv.Size(dstSize, dstSize), cv.INTER_LINEAR);
     srcMat2.delete();
   }
-  gryMat.delete(); blkMat.delete(); mMat.delete(); blkForDigits.delete();
+  gryMat.delete(); blkMat.delete(); mMat.delete();
 
   // Convert warped colour image to ImageData for the result.
   const warpedImgData = matToImageData(cv, warpedImgMat, dstSize);
@@ -428,6 +426,245 @@ export interface CageTotalsResult {
   cellSourceCrops: Map<string, RawDigitCrop[]>;
   /** Recognition for each cage-total digit crop, keyed "row,col", array order matching cellThumbs. */
   cellRecognitions: Map<string, Recognition[]>;
+}
+
+/**
+ * Auto-Canny threshold rule (Rosebrock): derive the low/high hysteresis
+ * thresholds from the image's own median intensity rather than a fixed
+ * absolute cutoff, so contrast/lighting differences across the corpus don't
+ * require a hand-tuned per-puzzle value.
+ */
+function autoCannyThresholds(gry: OpenCVMat, sigma: number): [number, number] {
+  const pixels = gry.data as Uint8Array;
+  const counts = new Uint32Array(256);
+  for (const v of pixels) counts[v] = counts[v]! + 1;
+  const half = pixels.length / 2;
+  let cum = 0;
+  let median = 255;
+  for (let v = 0; v < 256; v++) {
+    cum += counts[v]!;
+    if (cum >= half) { median = v; break; }
+  }
+  const low = Math.max(0, Math.round((1 - sigma) * median));
+  const high = Math.min(255, Math.round((1 + sigma) * median));
+  return [low, high];
+}
+
+/**
+ * 1D k-means (Lloyd's algorithm), deterministic percentile-based init. The
+ * segment-average distributions this feeds it are cleanly tri-modal (dark
+ * ink / mid grey / light background on real corpus images), so a fixed
+ * init converges reliably without needing k-means++'s random restarts.
+ */
+function kmeans1D(values: Float64Array, k: number, maxIterations = 50): { centers: number[]; labels: Int32Array } {
+  const n = values.length;
+  const sorted = Float64Array.from(values).sort();
+  const centers: number[] = [];
+  for (let i = 0; i < k; i++) {
+    centers.push(sorted[Math.min(Math.floor(((i + 0.5) / k) * n), n - 1)]!);
+  }
+  const labels = new Int32Array(n);
+  for (let iter = 0; iter < maxIterations; iter++) {
+    let changed = false;
+    for (let i = 0; i < n; i++) {
+      let best = 0;
+      let bestDist = Infinity;
+      for (let c = 0; c < k; c++) {
+        const d = Math.abs(values[i]! - centers[c]!);
+        if (d < bestDist) { bestDist = d; best = c; }
+      }
+      if (labels[i] !== best) { labels[i] = best; changed = true; }
+    }
+    const sums = new Array<number>(k).fill(0);
+    const counts = new Array<number>(k).fill(0);
+    for (let i = 0; i < n; i++) {
+      const li = labels[i]!;
+      sums[li] = sums[li]! + values[i]!;
+      counts[li] = counts[li]! + 1;
+    }
+    for (let c = 0; c < k; c++) {
+      if (counts[c]! > 0) centers[c] = sums[c]! / counts[c]!;
+    }
+    if (!changed) break;
+  }
+  return { centers, labels };
+}
+
+interface SweepSegment {
+  axis: 0 | 1; // 0 = fixed row, varying col; 1 = fixed col, varying row
+  line: number;
+  lo: number;
+  hi: number; // exclusive
+  avg: number;
+}
+
+/**
+ * Binarises a warped grayscale image into a solid ink mask (ink=255,
+ * non-ink=0) via Canny edge detection + a "sweep and cluster" fill. This
+ * replaces warping a single global threshold (cv2.inRange, computed once
+ * during grid location on the original pre-warp photo and reused for digit
+ * extraction) as the source of warpedBlk: a single global cutoff can
+ * swallow a digit into an adjacent gridline's connected component (e.g. a
+ * "22" total whose base stroke touches the solid vertical gridline came out
+ * as a single misread "8"). Canny's local gradient magnitude keeps a
+ * digit's outline as a distinct edge even where its ink is pixel-connected
+ * to a border line under simple thresholding -- but Canny edges are 1px
+ * wires, and findContours on them traces the wire's own thin ribbon
+ * boundary, not the glyph's solid interior (no amount of fillPoly fixes
+ * that, since the contour itself isn't a solid-region boundary). This
+ * reconstructs a solid mask directly from pixel shade instead of relying on
+ * contour fill.
+ *
+ * Algorithm: sweep every row and every column of the whole image. On each
+ * scanline, Canny edge pixels split it into segments and are excluded from
+ * both the segment span and its average (edges are never ink -- they only
+ * serve as segment dividers). Every segment's average shade, from both
+ * sweeps across the whole image, is clustered into 3 groups (dark ink / mid
+ * grey / light background) via 1D k-means, ranked darkest to lightest.
+ *
+ * Where the row-sweep and column-sweep segment covering a pixel agree on
+ * rank, that shared rank decides it: darkest-or-middle is ink, lightest is
+ * not. Where they disagree, a segment average can be diluted by an
+ * incompletely-closed Canny edge (e.g. a gap in the outline around a
+ * stroke's tip lets that segment run into neighboring background,
+ * pulling its average toward "grey"/"white" even though the individual
+ * pixel is genuinely dark) -- so disagreement is resolved using the
+ * conflicting pixel's own raw shade against the same k-means centers
+ * (nearest-center classification) rather than either segment average:
+ * nearest-to-darkest is ink, nearest-to-grey-or-white is not.
+ */
+function buildSweepInkMask(cv: Cv, warpedGry: OpenCVMat, cannySigma: number): OpenCVMat {
+  const size = warpedGry.rows;
+  const gryData = warpedGry.data as Uint8Array;
+
+  const [cannyLow, cannyHigh] = autoCannyThresholds(warpedGry, cannySigma);
+  const edges = new cv.Mat();
+  // apertureSize=5 and 7 (larger Sobel kernels) introduced visible noise in
+  // a visual sweep across a range of aperture/L2gradient/sigma combos on a
+  // real corpus crop (guardian/killer_sudoku_0.jpg r8c5); apertureSize=3
+  // with L2gradient=true (accurate sqrt(dx^2+dy^2) magnitude instead of the
+  // default |dx|+|dy| approximation) was the clear winner and is not
+  // sensitive to cannySigma in the range tested (0.20-0.70).
+  cv.Canny(warpedGry, edges, cannyLow, cannyHigh, 3, true);
+  const edgeData = edges.data as Uint8Array;
+
+  const segments: SweepSegment[] = [];
+
+  for (let r = 0; r < size; r++) {
+    const base = r * size;
+    let lo = 0;
+    for (let x = 0; x <= size; x++) {
+      if (x === size || edgeData[base + x]! > 0) {
+        if (x > lo) {
+          let sum = 0;
+          for (let p = lo; p < x; p++) sum += gryData[base + p]!;
+          segments.push({ axis: 0, line: r, lo, hi: x, avg: sum / (x - lo) });
+        }
+        lo = x + 1;
+      }
+    }
+  }
+  for (let c = 0; c < size; c++) {
+    let lo = 0;
+    for (let y = 0; y <= size; y++) {
+      if (y === size || edgeData[y * size + c]! > 0) {
+        if (y > lo) {
+          let sum = 0;
+          for (let p = lo; p < y; p++) sum += gryData[p * size + c]!;
+          segments.push({ axis: 1, line: c, lo, hi: y, avg: sum / (y - lo) });
+        }
+        lo = y + 1;
+      }
+    }
+  }
+
+  const avgs = Float64Array.from(segments, s => s.avg);
+  const { centers, labels } = kmeans1D(avgs, 3);
+  const order = centers
+    .map((center, cluster) => ({ center, cluster }))
+    .sort((a, b) => a.center - b.center)
+    .map(({ cluster }) => cluster);
+  const rankOfCluster = new Array<number>(3);
+  order.forEach((cluster, rank) => { rankOfCluster[cluster] = rank; });
+
+  // Per-axis, per-pixel raw cluster rank: 0 = darkest ("black"), 1 = middle
+  // ("grey"), 2 = lightest ("white"), -1 = edge pixel (excluded from every
+  // segment on both axes, so never covered by this scatter).
+  const rowRank = new Int8Array(size * size).fill(-1);
+  const colRank = new Int8Array(size * size).fill(-1);
+
+  for (let s = 0; s < segments.length; s++) {
+    const seg = segments[s]!;
+    const rank = rankOfCluster[labels[s]!]!;
+    if (seg.axis === 0) {
+      const base = seg.line * size;
+      for (let p = seg.lo; p < seg.hi; p++) rowRank[base + p] = rank;
+    } else {
+      for (let p = seg.lo; p < seg.hi; p++) colRank[p * size + seg.line] = rank;
+    }
+  }
+
+  const mask = new cv.Mat(size, size, cv.CV_8UC1, new cv.Scalar(0, 0, 0, 0));
+  const maskData = mask.data as Uint8Array;
+  for (let i = 0; i < size * size; i++) {
+    const r = rowRank[i]!;
+    const c = colRank[i]!;
+    if (r < 0 || c < 0) continue; // edge pixel -- stays non-ink
+    if (r === c) {
+      // Agreement: trust the shared segment-average classification.
+      if (r <= 1) maskData[i] = 255;
+      continue;
+    }
+    // Conflict: the two segment AVERAGES disagree, but a segment average
+    // can be diluted by neighboring ink/background when Canny's edge trace
+    // doesn't fully close around a stroke (e.g. a "1"'s bottom tip with a
+    // gap in its edge outline lets the segment run past the stroke into
+    // background, pulling that segment's average toward "grey"/"white"
+    // even though the pixel's own local neighborhood is genuinely dark).
+    // Rather than defaulting to non-ink, reclassify a small 9x9 window
+    // centered on this pixel (clamped at the image border) against the
+    // same k-means centers: nearest-to-darkest wins ink, nearest-to-grey-
+    // or-white wins non-ink. A 9x9 local average is noise-robust (unlike
+    // the single raw pixel) while still being tight enough not to blend
+    // across a genuine stroke/background boundary the way a whole segment
+    // average can when its edge trace leaks.
+    const cy = (i / size) | 0;
+    const cx = i % size;
+    let localSum = 0;
+    let localCount = 0;
+    for (let dy = -4; dy <= 4; dy++) {
+      const ny = cy + dy;
+      if (ny < 0 || ny >= size) continue;
+      const base = ny * size;
+      for (let dx = -4; dx <= 4; dx++) {
+        const nx = cx + dx;
+        if (nx < 0 || nx >= size) continue;
+        localSum += gryData[base + nx]!;
+        localCount++;
+      }
+    }
+    const localAvg = localSum / localCount;
+    let best = 0;
+    let bestDist = Infinity;
+    for (let cl = 0; cl < centers.length; cl++) {
+      const d = Math.abs(localAvg - centers[cl]!);
+      if (d < bestDist) { bestDist = d; best = cl; }
+    }
+    if (rankOfCluster[best] === 0) maskData[i] = 255;
+  }
+
+  // Edges are never ink -- redundant given the above (an edge pixel is
+  // always excluded from every segment on both axes, so it's always -1/-1
+  // and already fails the r>=0/c>=0 check), but stated explicitly since
+  // it's a hard invariant, not an emergent property callers should rely on
+  // staying true if the rule above changes.
+  for (let i = 0; i < size * size; i++) {
+    if (edgeData[i]! > 0) maskData[i] = 0;
+  }
+
+  edges.delete();
+
+  return mask;
 }
 
 export function buildCageTotals(

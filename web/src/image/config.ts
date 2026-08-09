@@ -55,6 +55,14 @@ export interface NumberRecognitionConfig {
    * contour-based detection produces a cage-total sum outside [360, 450].
    */
   readonly contourFallbackAdaptiveC: number;
+  /**
+   * Sigma for the auto-Canny threshold rule used to binarise the warped
+   * grayscale image (Rosebrock's "auto Canny"): low = (1-sigma)*median,
+   * high = (1+sigma)*median of the image's own intensity distribution.
+   * Standard default is 0.33 -- adapts to each puzzle's own contrast/
+   * lighting rather than a fixed absolute cutoff.
+   */
+  readonly cannySigma: number;
 }
 
 export function defaultNumberRecognitionConfig(): NumberRecognitionConfig {
@@ -64,6 +72,7 @@ export function defaultNumberRecognitionConfig(): NumberRecognitionConfig {
     svmGamma: 'scale',
     templateThreshold: 0.85,
     contourFallbackAdaptiveC: 20,
+    cannySigma: 0.33,
   };
 }
 
