@@ -4,8 +4,12 @@ import json
 import sqlite3
 from pathlib import Path
 
+import numpy as np
 import pytest
+from numpy.typing import NDArray
+from PIL import Image
 
+from killer_sudoku.training import ts_bridge
 from scripts import _export_corpus_training_data as export
 
 
@@ -101,6 +105,69 @@ def _add_digit(
             json.dumps(gray),
         ),
     )
+
+
+def test_warp_rows_uses_greyscale_pixels_and_gray_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    row = export.DigitRow(
+        puzzle_hash="p1",
+        cell_type="given_digit",
+        row=1,
+        col=2,
+        digit_index=0,
+        provisional_label=7,
+        width=2,
+        height=2,
+        gray_pixels=np.asarray([[10, 20], [30, 40]], dtype=np.uint8),
+    )
+
+    def fake_warp(
+        crops: list[ts_bridge.RawDigitCrop],
+        strategy: str,
+        size: int,
+        input_mode: str,
+    ) -> NDArray[np.uint8]:
+        assert crops[0].pixels.tolist() == [[10, 20], [30, 40]]
+        assert strategy == "letterbox-centered"
+        assert size == 64
+        assert input_mode == "gray"
+        return np.zeros((1, 64, 64), dtype=np.uint8)
+
+    monkeypatch.setattr(ts_bridge, "warp_crops", fake_warp)
+
+    assert export.warp_rows([row]).shape == (1, 64, 64)
+
+
+def test_write_cluster_means_creates_labelled_ten_by_four_sheet(tmp_path: Path) -> None:
+    means = {
+        (digit, cluster): np.full((64, 64), digit * 20 + cluster, dtype=np.uint8)
+        for digit in range(10)
+        for cluster in range(4)
+    }
+    out = tmp_path / "means.png"
+
+    export.write_cluster_means(means, out)
+
+    with Image.open(out) as sheet:
+        assert sheet.size == (24 + 4 * 64, 24 + 10 * 64)
+
+
+
+def test_corrections_apply_only_to_the_evaluation_that_was_reviewed() -> None:
+    corrections = {("p1", "given_digit", 1, 2, 0): 7}
+    excluded = {("p2", "given_digit", 2, 3, 0)}
+
+    assert export.corrections_for_evaluation(
+        "older-run",
+        export.SOURCE_EVALUATION_ID,
+        corrections,
+        excluded,
+    ) == ({}, set())
+    assert export.corrections_for_evaluation(
+        export.SOURCE_EVALUATION_ID,
+        export.SOURCE_EVALUATION_ID,
+        corrections,
+        excluded,
+    ) == (corrections, excluded)
 
 
 def test_audit_requires_exact_source_identity(tmp_path: Path) -> None:

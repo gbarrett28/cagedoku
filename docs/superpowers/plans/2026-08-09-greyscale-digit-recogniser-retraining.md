@@ -139,11 +139,11 @@ Commit: `refactor: pare greyscale recognition input to one mode`
 - Changes the existing exporter to warp `gray_pixels` with `input_mode='gray'`.
 - Reuses `cluster_ids_for`, `stratified_sample`, `N_CLUSTERS = 4`, and the 400-samples-per-digit default.
 
-- [ ] **Step 1:** Add failing tests proving the exporter uses greyscale pixels, requests `gray` preprocessing, retains four clusters, applies the existing corrections, and emits the unchanged schema-v2 format.
-- [ ] **Step 2:** Make the minimal exporter changes.
-- [ ] **Step 3:** Add a small contact sheet containing the existing 40 cluster means (ten digits × four clusters); do not build a new review application or correction schema.
-- [ ] **Step 4:** Run the exporter against `full-corpus-b708d8b`, inspect the contact sheet with the user, and regenerate only if corrections change.
-- [ ] **Step 5:** Run focused tests and the bronze gate.
+- [x] **Step 1:** Add failing tests proving the exporter uses greyscale pixels, requests `gray` preprocessing, retains four clusters, applies the existing corrections, and emits the unchanged schema-v2 format.
+- [x] **Step 2:** Make the minimal exporter changes.
+- [x] **Step 3:** Add a small contact sheet containing the existing 40 cluster means (ten digits × four clusters); do not build a new review application or correction schema.
+- [x] **Step 4:** Run the exporter against `full-corpus-b708d8b`, inspect the contact sheet with the user, and regenerate only if corrections change.
+- [x] **Step 5:** Run focused tests and the bronze gate.
 
 Commit: `feat: export greyscale corpus training crops`
 

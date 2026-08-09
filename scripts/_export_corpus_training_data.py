@@ -25,6 +25,7 @@ import argparse
 import json
 import sqlite3
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -32,6 +33,7 @@ from typing import Any, Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
+from PIL import Image, ImageDraw
 from sklearn.decomposition import PCA
 from sklearn.mixture import GaussianMixture
 
@@ -250,37 +252,30 @@ def load_corrections(path: Path) -> tuple[str, dict[tuple[str, str, int, int, in
     return git_hash, corrections, excluded
 
 
-def fetch_digit_rows(
-    conn: sqlite3.Connection, git_hash: str, digit: int,
-) -> list[sqlite3.Row]:
-    cur = conn.execute(
-        """
-        SELECT cr.puzzle_hash, cr.cell_type, cr.row, cr.col, cr.digit_index,
-               cr.source_pixels, cr.source_width, cr.source_height
-        FROM cell_reads cr
-        JOIN evaluations e
-          ON e.puzzle_hash = cr.puzzle_hash AND e.git_hash = cr.git_hash
-        WHERE cr.git_hash = ? AND cr.predicted_label = ?
-          AND e.status = 'done' AND e.bucket = 'clean' AND e.spec_error IS NULL
-          AND cr.cell_type IN ('given_digit', 'cage_total_digit')
-          AND cr.source_pixels IS NOT NULL
-        """,
-        (git_hash, digit),
+def corrections_for_evaluation(
+    reviewed_evaluation: str,
+    source_evaluation: str,
+    corrections: dict[tuple[str, str, int, int, int], int],
+    excluded: set[tuple[str, str, int, int, int]],
+) -> tuple[
+    dict[tuple[str, str, int, int, int], int],
+    set[tuple[str, str, int, int, int]],
+]:
+    """Use coordinate corrections only with the exact evaluation reviewed."""
+    if reviewed_evaluation != source_evaluation:
+        return {}, set()
+    return corrections, excluded
+
+
+def warp_rows(rows: list[DigitRow]) -> NDArray[np.uint8]:
+    """Prepare greyscale evidence through the production centred TS path."""
+    crops = [ts_bridge.RawDigitCrop(pixels=row.gray_pixels) for row in rows]
+    return ts_bridge.warp_crops(
+        crops,
+        strategy="letterbox-centered",
+        size=THUMBNAIL_SIZE,
+        input_mode="gray",
     )
-    return cur.fetchall()
-
-
-def warp_rows(rows: list[sqlite3.Row]) -> NDArray[np.uint8]:
-    """Warp raw source_pixels through the centered strategy via the TS bridge."""
-    crops = [
-        ts_bridge.RawDigitCrop(
-            pixels=np.array(json.loads(r["source_pixels"]), dtype=np.uint8).reshape(
-                r["source_height"], r["source_width"],
-            )
-        )
-        for r in rows
-    ]
-    return ts_bridge.warp_crops(crops, strategy="letterbox-centered", size=THUMBNAIL_SIZE)
 
 
 def cluster_ids_for(warped: NDArray[np.uint8]) -> NDArray[np.int64]:
@@ -290,6 +285,32 @@ def cluster_ids_for(warped: NDArray[np.uint8]) -> NDArray[np.int64]:
     gmm = GaussianMixture(n_components=N_CLUSTERS, random_state=0, n_init=5)
     result: NDArray[np.int64] = gmm.fit_predict(reduced)
     return result
+
+
+def write_cluster_means(
+    means: Mapping[tuple[int, int], NDArray[np.uint8]],
+    path: Path,
+) -> None:
+    """Write the ten-digit by four-cluster visual label audit sheet."""
+    label_margin = 24
+    sheet = Image.new(
+        "L",
+        (label_margin + N_CLUSTERS * THUMBNAIL_SIZE, label_margin + 10 * THUMBNAIL_SIZE),
+    )
+    draw = ImageDraw.Draw(sheet)
+    for digit in range(10):
+        draw.text((4, label_margin + digit * THUMBNAIL_SIZE + 24), str(digit), fill=255)
+        for cluster in range(N_CLUSTERS):
+            if digit == 0:
+                draw.text((label_margin + cluster * THUMBNAIL_SIZE + 28, 4), str(cluster), fill=255)
+            mean = means[(digit, cluster)]
+            thumb = Image.fromarray(mean.astype(np.uint8), mode="L")
+            sheet.paste(
+                thumb,
+                (label_margin + cluster * THUMBNAIL_SIZE, label_margin + digit * THUMBNAIL_SIZE),
+            )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sheet.save(path)
 
 
 def stratified_sample(
@@ -328,33 +349,71 @@ def main() -> None:
     )
     parser.add_argument("--out", type=Path, default=Path("web/corpus_train.json"))
     parser.add_argument("--samples-per-digit", type=int, default=400)
+    parser.add_argument(
+        "--cluster-means-out",
+        type=Path,
+        default=Path("killer_sudoku/training/review_output/greyscale_cluster_means.png"),
+    )
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
-    git_hash, corrections, excluded = load_corrections(args.corrections_file)
-    print(f"Loaded {len(corrections)} corrections, {len(excluded)} exclusions for git_hash={git_hash}")
+    correction_source, corrections, excluded = load_corrections(args.corrections_file)
+    evaluation_id = SOURCE_EVALUATION_ID
+    print(
+        f"Loaded {len(corrections)} corrections, {len(excluded)} exclusions "
+        f"reviewed at git_hash={correction_source}"
+    )
+    corrections, excluded = corrections_for_evaluation(
+        correction_source,
+        evaluation_id,
+        corrections,
+        excluded,
+    )
+    if correction_source != evaluation_id:
+        print(
+            f"Ignoring corrections from {correction_source}; "
+            f"source evaluation is {evaluation_id}"
+        )
 
     conn = sqlite3.connect(f"file:{args.db_path}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
-    audit = audit_corpus(conn, git_hash)
-    eligible_rows = fetch_eligible_rows(conn, git_hash)
+    audit = audit_corpus(conn, evaluation_id)
+    eligible_rows = fetch_eligible_rows(conn, evaluation_id)
     print(
         f"Audited {audit.terminal_evaluations}/{audit.registered_puzzles} evaluations; "
         f"{len(eligible_rows)} clean digit rows are eligible"
     )
 
-    strata_by_digit: dict[int, dict[tuple[int, int], list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
+    strata_by_digit: dict[int, dict[tuple[int, int], list[dict[str, Any]]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    rows_by_digit: dict[int, list[DigitRow]] = defaultdict(list)
+    for row in eligible_rows:
+        rows_by_digit[row.provisional_label].append(row)
+    cluster_means: dict[tuple[int, int], NDArray[np.uint8]] = {}
 
-    for raw_digit in range(0, 10):
-        rows = fetch_digit_rows(conn, git_hash, raw_digit)
+    for raw_digit in range(10):
+        rows = rows_by_digit[raw_digit]
         if not rows:
-            continue
+            raise ValueError(f"No eligible rows for digit {raw_digit}")
         warped = warp_rows(rows)
         cluster_ids = cluster_ids_for(warped)
+        for cluster in range(N_CLUSTERS):
+            members = warped[cluster_ids == cluster]
+            if not len(members):
+                raise ValueError(f"Digit {raw_digit} cluster {cluster} is empty")
+            cluster_means[(raw_digit, cluster)] = members.mean(axis=0)
+
         n_corrected = 0
         n_excluded = 0
         for row, img, cid in zip(rows, warped, cluster_ids, strict=True):
-            key = (row["puzzle_hash"], row["cell_type"], row["row"], row["col"], row["digit_index"])
+            key = (
+                row.puzzle_hash,
+                row.cell_type,
+                row.row,
+                row.col,
+                row.digit_index,
+            )
             if key in excluded:
                 n_excluded += 1
                 continue
@@ -364,7 +423,13 @@ def main() -> None:
             strata_by_digit[corrected_label][(raw_digit, int(cid))].append({
                 "recognition_pixels": img.flatten().tolist(),
             })
-        print(f"raw_digit {raw_digit}: {len(rows)} rows, {n_corrected} corrected, {n_excluded} excluded")
+        print(
+            f"raw_digit {raw_digit}: {len(rows)} rows, "
+            f"{n_corrected} corrected, {n_excluded} excluded"
+        )
+
+    write_cluster_means(cluster_means, args.cluster_means_out)
+    print(f"Wrote cluster means to {args.cluster_means_out}")
 
     rng = np.random.default_rng(args.seed)
     samples: list[dict[str, Any]] = []
@@ -385,7 +450,7 @@ def main() -> None:
         "schemaVersion": 2,
         "reportType": "training-export",
         "exportedAt": datetime.now(UTC).isoformat(),
-        "appVersion": f"corpus-db-export:{git_hash}",
+        "appVersion": f"corpus-db-export:{evaluation_id}",
         "puzzleType": "mixed",
         "subres": THUMBNAIL_SIZE,
         "thumbnailSize": THUMBNAIL_SIZE,
