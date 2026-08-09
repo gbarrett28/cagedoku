@@ -139,7 +139,11 @@ def audit_corpus(conn: sqlite3.Connection, evaluation_id: str) -> CorpusAudit:
             (evaluation_id,),
         ).fetchone()[0]
     )
-    fetch_eligible_rows(conn, evaluation_id)
+    audited_rows = _fetch_digit_evidence(conn, evaluation_id, clean_only=False)
+    if len(audited_rows) != digit_rows:
+        raise ValueError(
+            f"Audited {len(audited_rows)} digit rows but counted {digit_rows} for {evaluation_id}"
+        )
     return CorpusAudit(registered, terminal, distinct, digit_rows)
 
 
@@ -161,22 +165,30 @@ def _decode_pixel_array(value: object, *, field: str, expected: int) -> NDArray[
     return np.asarray(decoded, dtype=np.uint8)
 
 
-def fetch_eligible_rows(conn: sqlite3.Connection, evaluation_id: str) -> list[DigitRow]:
-    """Load provisional labels only from clean, error-free puzzles in one run."""
+def _fetch_digit_evidence(
+    conn: sqlite3.Connection,
+    evaluation_id: str,
+    *,
+    clean_only: bool,
+) -> list[DigitRow]:
     if evaluation_id != SOURCE_EVALUATION_ID:
         raise ValueError(
             f"Training source must be {SOURCE_EVALUATION_ID!r}, got {evaluation_id!r}"
         )
+    eligibility = (
+        "AND e.status = 'done' AND e.bucket = 'clean' AND e.spec_error IS NULL"
+        if clean_only
+        else ""
+    )
     rows = conn.execute(
-        """
+        f"""
         SELECT cr.puzzle_hash, cr.cell_type, cr.row, cr.col, cr.digit_index,
                cr.predicted_label, cr.source_x, cr.source_y,
                cr.source_width, cr.source_height, cr.source_pixels, cr.gray_pixels
         FROM cell_reads cr
         JOIN evaluations e
           ON e.puzzle_hash = cr.puzzle_hash AND e.git_hash = cr.git_hash
-        WHERE cr.git_hash = ? AND e.status = 'done' AND e.bucket = 'clean'
-          AND e.spec_error IS NULL
+        WHERE cr.git_hash = ? {eligibility}
         ORDER BY cr.puzzle_hash, cr.cell_type, cr.row, cr.col, cr.digit_index
         """,
         (evaluation_id,),
@@ -217,6 +229,11 @@ def fetch_eligible_rows(conn: sqlite3.Connection, evaluation_id: str) -> list[Di
             )
         )
     return result
+
+
+def fetch_eligible_rows(conn: sqlite3.Connection, evaluation_id: str) -> list[DigitRow]:
+    """Load provisional labels only from clean, error-free puzzles in one run."""
+    return _fetch_digit_evidence(conn, evaluation_id, clean_only=True)
 
 
 def load_corrections(path: Path) -> tuple[str, dict[tuple[str, str, int, int, int], int], set[tuple[str, str, int, int, int]]]:

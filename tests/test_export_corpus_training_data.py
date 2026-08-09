@@ -185,6 +185,15 @@ def test_audit_rejects_malformed_eligible_greyscale_evidence(tmp_path: Path) -> 
         export.audit_corpus(conn, export.SOURCE_EVALUATION_ID)
 
 
+def test_audit_rejects_malformed_nonclean_greyscale_evidence(tmp_path: Path) -> None:
+    conn = _make_db(tmp_path)
+    _add_puzzle(conn, "p1", bucket="backtracked")
+    _add_digit(conn, "p1", pixels=[10, 20, 30])
+
+    with pytest.raises(ValueError, match="greyscale pixel length"):
+        export.audit_corpus(conn, export.SOURCE_EVALUATION_ID)
+
+
 def test_fetch_eligible_rows_uses_only_clean_error_free_puzzles(tmp_path: Path) -> None:
     conn = _make_db(tmp_path)
     _add_puzzle(conn, "clean")
