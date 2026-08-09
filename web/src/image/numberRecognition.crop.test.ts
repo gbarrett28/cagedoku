@@ -202,14 +202,10 @@ describe('greyscale recognition preprocessing', () => {
     ]),
   };
 
-  it.each([
-    'gray-inverted-contrast',
-    'gray-adaptive',
-    'gray-normalized',
-  ] as const)('prepares deterministic %s crops', inputMode => {
-    const first = prepareRecognitionCrop(makeCv(), crop, 'letterbox-centered', inputMode, 8);
-    const second = prepareRecognitionCrop(makeCv(), crop, 'letterbox-centered', inputMode, 8);
-    expect(first).toHaveLength(64);
+  it('prepares a deterministic greyscale crop at production size', () => {
+    const first = prepareRecognitionCrop(makeCv(), crop, 'letterbox-centered', 'gray', 64);
+    const second = prepareRecognitionCrop(makeCv(), crop, 'letterbox-centered', 'gray', 64);
+    expect(first).toHaveLength(4096);
     expect(first).toEqual(second);
     expect(first.some(value => value > 0)).toBe(true);
   });

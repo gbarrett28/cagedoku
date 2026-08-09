@@ -33,11 +33,7 @@ export interface RawDigitCrop {
 }
 
 export type WarpStrategy = 'stretch' | 'letterbox' | 'letterbox-centered';
-export type RecognitionInputMode =
-  | 'binary'
-  | 'gray-inverted-contrast'
-  | 'gray-adaptive'
-  | 'gray-normalized';
+export type RecognitionInputMode = 'binary' | 'gray';
 
 /** Node in the OpenCV contour hierarchy tree. */
 export type ContourInfo = [br: BRect, children: ContourInfo[]];
@@ -327,9 +323,10 @@ export function rbfPredictWithConfidence(
 // ---------------------------------------------------------------------------
 
 export abstract class NumRecogniser {
-  readonly inputMode: RecognitionInputMode = 'binary';
-
-  constructor(readonly confidenceThreshold: number) {}
+  constructor(
+    readonly confidenceThreshold: number,
+    readonly inputMode: RecognitionInputMode = 'binary',
+  ) {}
   abstract readonly warpStrategy: WarpStrategy;
   abstract recognise(imgs: Uint8Array[], allowedLabels?: (ReadonlySet<number> | undefined)[]): Recognition[];
 
@@ -347,8 +344,9 @@ export class HogRecogniser extends NumRecogniser {
     private readonly pca?: PcaProjection,
     private readonly useAspectFeature: boolean = false,
     private readonly classMean?: ClassMeanReduction,
+    inputMode: RecognitionInputMode = 'binary',
   ) {
-    super(confidenceThreshold);
+    super(confidenceThreshold, inputMode);
   }
 
   recognise(imgs: Uint8Array[]): Recognition[] {
@@ -429,8 +427,9 @@ export class PcaRecogniser extends NumRecogniser {
     private readonly templates: TemplateMatch,
     private readonly templateThreshold: number,
     private readonly templateMargin: number,
+    inputMode: RecognitionInputMode = 'binary',
   ) {
-    super(confidenceThreshold);
+    super(confidenceThreshold, inputMode);
   }
 
   recognise(imgs: Uint8Array[], allowedLabels?: (ReadonlySet<number> | undefined)[]): Recognition[] {
@@ -625,6 +624,7 @@ export function loadNumRecogniser(
     classifier_type?: string;
     recogniser_type?: string;
     warp_strategy?: string;
+    recognition_input_mode?: string;
     arrays: Record<string, { dtype: string; shape: number[]; offset: number; byteLength: number }>;
   },
 ): NumRecogniser {
@@ -635,6 +635,11 @@ export function loadNumRecogniser(
   const warpStrategy = manifestJson.warp_strategy;
   if (warpStrategy !== 'stretch' && warpStrategy !== 'letterbox' && warpStrategy !== 'letterbox-centered') {
     throw new Error(`Unsupported warp strategy: ${String(warpStrategy)}`);
+  }
+
+  const inputMode = manifestJson.recognition_input_mode ?? 'binary';
+  if (inputMode !== 'binary' && inputMode !== 'gray') {
+    throw new Error(`Unsupported recognition input mode: ${String(inputMode)}`);
   }
 
   const arrays = manifestJson.arrays;
@@ -720,7 +725,7 @@ export function loadNumRecogniser(
     // analysis.
     const templateThreshold = 0.74;
     const templateMargin = 0.04;
-    return new PcaRecogniser(classifier, confidenceThreshold, warpStrategy, classMean, templates, templateThreshold, templateMargin);
+    return new PcaRecogniser(classifier, confidenceThreshold, warpStrategy, classMean, templates, templateThreshold, templateMargin, inputMode);
   }
 
   const hog: HOGParams = {
@@ -762,7 +767,7 @@ export function loadNumRecogniser(
   const useAspectFeature = arrays['use_aspect_feature'] !== undefined && scalarI32('use_aspect_feature') === 1;
 
   return new HogRecogniser(
-    hog, classifier, confidenceThreshold, warpStrategy, pca, useAspectFeature, classMean,
+    hog, classifier, confidenceThreshold, warpStrategy, pca, useAspectFeature, classMean, inputMode,
   );
 }
 
@@ -981,26 +986,6 @@ function percentileInk(pixels: Uint8Array): Uint8Array {
   );
 }
 
-function localBackgroundInk(pixels: Uint8Array, width: number, height: number): Uint8Array {
-  const residual = new Uint8Array(pixels.length);
-  const radius = 2;
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      let total = 0, count = 0;
-      for (let yy = Math.max(0, y - radius); yy <= Math.min(height - 1, y + radius); yy++) {
-        for (let xx = Math.max(0, x - radius); xx <= Math.min(width - 1, x + radius); xx++) {
-          total += pixels[yy * width + xx]!;
-          count++;
-        }
-      }
-      residual[y * width + x] = Math.max(0, Math.round(total / count) - pixels[y * width + x]!);
-    }
-  }
-  const high = percentile(residual, 0.95);
-  if (high === 0) return residual;
-  return Uint8Array.from(residual, value => Math.min(255, Math.round(255 * value / high)));
-}
-
 export function prepareRecognitionCrop(
   cv: Cv,
   crop: RawDigitCrop,
@@ -1011,17 +996,15 @@ export function prepareRecognitionCrop(
   if (inputMode === 'binary') {
     return warpRawDigitCrop(cv, crop, strategy, targetSize);
   }
-  let pixels: Uint8Array;
-  if (inputMode === 'gray-inverted-contrast') {
-    pixels = Uint8Array.from(crop.pixels, value => 255 - value);
-  } else if (inputMode === 'gray-normalized') {
-    pixels = percentileInk(crop.pixels);
-  } else if (inputMode === 'gray-adaptive') {
-    pixels = localBackgroundInk(crop.pixels, crop.width, crop.height);
-  } else {
+  if (inputMode !== 'gray') {
     throw new Error(`Unsupported recognition input mode: ${String(inputMode)}`);
   }
-  return warpRawDigitCrop(cv, { ...crop, pixels }, strategy, targetSize);
+  return warpRawDigitCrop(
+    cv,
+    { ...crop, pixels: percentileInk(crop.pixels) },
+    strategy,
+    targetSize,
+  );
 }
 
 export function warpRawDigitCrop(

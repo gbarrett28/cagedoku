@@ -83,9 +83,8 @@ function parseWarpCropsPayload(value: unknown): WarpCropsPayload {
   if (payload.strategy !== 'stretch' && payload.strategy !== 'letterbox' && payload.strategy !== 'letterbox-centered') {
     throw new Error(`warp-crops strategy must be stretch, letterbox, or letterbox-centered, got ${String(payload.strategy)}`);
   }
-  const inputMode = payload.inputMode ?? 'binary';
-  if (inputMode !== 'binary' && inputMode !== 'gray-inverted-contrast'
-      && inputMode !== 'gray-adaptive' && inputMode !== 'gray-normalized') {
+  const inputMode = payload.inputMode === undefined ? 'binary' : payload.inputMode;
+  if (inputMode !== 'binary' && inputMode !== 'gray') {
     throw new Error(`warp-crops inputMode is invalid: ${String(inputMode)}`);
   }
   if (!Number.isInteger(payload.size) || (payload.size ?? 0) <= 0) {

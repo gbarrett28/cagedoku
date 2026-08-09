@@ -35,9 +35,7 @@ _BRIDGE_SCRIPT = _REPO_ROOT / "web" / "scripts" / "ts-bridge.ts"
 # still batching (never one bridge call per crop).
 _BATCH_SIZE = 5000
 
-RecognitionInputMode = Literal[
-    "binary", "gray-inverted-contrast", "gray-adaptive", "gray-normalized"
-]
+RecognitionInputMode = Literal["binary", "gray"]
 
 
 def _run_bridge(op: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -76,9 +74,7 @@ def warp_crops(
     """Warp raw crops in batches using the production TypeScript implementation."""
     if strategy not in ("stretch", "letterbox", "letterbox-centered"):
         raise ValueError(f"unsupported warp strategy: {strategy}")
-    if input_mode not in (
-        "binary", "gray-inverted-contrast", "gray-adaptive", "gray-normalized"
-    ):
+    if input_mode not in ("binary", "gray"):
         raise ValueError(f"unsupported recognition input mode: {input_mode}")
     if size <= 0:
         raise ValueError(f"warp size must be positive, got {size}")

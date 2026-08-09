@@ -339,6 +339,31 @@ describe('loadNumRecogniser class dispatch', () => {
     },
   );
 
+  it.each([
+    [undefined, 'binary'],
+    ['binary', 'binary'],
+    ['gray', 'gray'],
+  ] as const)('loads recognition_input_mode %s as %s', (manifestMode, expected) => {
+    const pub = join(process.cwd(), 'public');
+    const bin = readFileSync(join(pub, 'num_recogniser.bin'));
+    const manifest = JSON.parse(readFileSync(join(pub, 'num_recogniser.json'), 'utf-8'));
+    const loaded = loadNumRecogniser(
+      bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength),
+      { ...manifest, recognition_input_mode: manifestMode },
+    );
+    expect(loaded.inputMode).toBe(expected);
+  });
+
+  it('rejects an unsupported model recognition input mode', () => {
+    const pub = join(process.cwd(), 'public');
+    const bin = readFileSync(join(pub, 'num_recogniser.bin'));
+    const manifest = JSON.parse(readFileSync(join(pub, 'num_recogniser.json'), 'utf-8'));
+    expect(() => loadNumRecogniser(
+      bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength),
+      { ...manifest, recognition_input_mode: 'adaptive' },
+    )).toThrow('Unsupported recognition input mode: adaptive');
+  });
+
   it('rejects a missing or unsupported model warp strategy', () => {
     expect(() => loadNumRecogniser(new ArrayBuffer(0), {
       classifier_type: 'rbf',

@@ -1,3 +1,6 @@
+import os
+import subprocess
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -48,6 +51,24 @@ def test_extract_features_chunks_large_inputs_across_multiple_bridge_calls(monke
     assert aspect.tolist() == [0.0, 100.0, 0.0, 100.0, 0.0]
 
 
+def test_run_bridge_wraps_npx_with_cmd_on_windows(monkeypatch: Any) -> None:
+    seen: list[str] = []
+
+    def fake_run(args: list[str], **_kwargs: Any) -> SimpleNamespace:
+        seen.extend(args)
+        return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    ts_bridge._run_bridge("warp-crops", {})
+
+    assert seen[:6] == [
+        r"C:\Windows\System32\cmd.exe", "/d", "/s", "/c", "npx", "tsx",
+    ]
+
+
 def test_warp_crops_chunks_large_inputs_and_preserves_order(monkeypatch: Any) -> None:
     monkeypatch.setattr(ts_bridge, "_BATCH_SIZE", 2)
     calls: list[int] = []
@@ -85,13 +106,13 @@ def test_warp_crops_accepts_letterbox_centered_strategy(monkeypatch: Any) -> Non
 
 def test_warp_crops_forwards_greyscale_input_mode(monkeypatch: Any) -> None:
     def fake_run_bridge(_op: str, payload: dict[str, Any]) -> dict[str, Any]:
-        assert payload["inputMode"] == "gray-normalized"
+        assert payload["inputMode"] == "gray"
         return {"crops": [[7] * 4]}
 
     monkeypatch.setattr(ts_bridge, "_run_bridge", fake_run_bridge)
     crops = [RawDigitCrop(np.full((2, 3), 7, dtype=np.uint8))]
 
-    warped = warp_crops(crops, "letterbox-centered", size=2, input_mode="gray-normalized")
+    warped = warp_crops(crops, "letterbox-centered", size=2, input_mode="gray")
 
     assert warped.shape == (1, 2, 2)
 

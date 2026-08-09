@@ -71,29 +71,34 @@ describe('ts-bridge --op warp-crops', () => {
     },
   );
 
-  it.each(['gray-inverted-contrast', 'gray-adaptive', 'gray-normalized'] as const)(
-    'matches direct production %s preprocessing byte-for-byte',
-    inputMode => {
-      const width = 3, height = 3, size = 8;
-      const pixels = [240, 230, 240, 230, 20, 230, 240, 230, 240];
-      const payload = JSON.stringify({
-        crops: [{ width, height, pixels }],
-        strategy: 'letterbox-centered', inputMode, size,
-      });
-      const parsed = JSON.parse(runBridge(['--op', 'warp-crops'], payload)) as { crops: number[][] };
-      const direct = prepareRecognitionCrop(cv, {
-        x: 0, y: 0, width, height, pixels: Uint8Array.from(pixels),
-      }, 'letterbox-centered', inputMode, size);
-      expect(parsed.crops).toEqual([Array.from(direct)]);
-    },
-  );
-
-  it('rejects unsupported input modes', () => {
+  it('matches direct production greyscale preprocessing byte-for-byte', () => {
+    const width = 3, height = 3, size = 8;
+    const pixels = [240, 230, 240, 230, 20, 230, 240, 230, 240];
     const payload = JSON.stringify({
-      crops: [{ width: 1, height: 1, pixels: [0] }],
-      strategy: 'letterbox-centered', inputMode: 'unknown', size: 8,
+      crops: [{ width, height, pixels }],
+      strategy: 'letterbox-centered', inputMode: 'gray', size,
     });
-    expect(() => runBridge(['--op', 'warp-crops'], payload)).toThrow('inputMode is invalid');
+    const parsed = JSON.parse(runBridge(['--op', 'warp-crops'], payload)) as { crops: number[][] };
+    const direct = prepareRecognitionCrop(cv, {
+      x: 0, y: 0, width, height, pixels: Uint8Array.from(pixels),
+    }, 'letterbox-centered', 'gray', size);
+    expect(parsed.crops).toEqual([Array.from(direct)]);
+  });
+
+  it('rejects explicit null and unsupported input modes', () => {
+    const base = {
+      crops: [{ width: 1, height: 1, pixels: [0] }],
+      strategy: 'letterbox-centered',
+      size: 8,
+    };
+    expect(() => runBridge(
+      ['--op', 'warp-crops'],
+      JSON.stringify({ ...base, inputMode: 'unknown' }),
+    )).toThrow('inputMode is invalid');
+    expect(() => runBridge(
+      ['--op', 'warp-crops'],
+      JSON.stringify({ ...base, inputMode: null }),
+    )).toThrow('inputMode is invalid');
   });
 });
 

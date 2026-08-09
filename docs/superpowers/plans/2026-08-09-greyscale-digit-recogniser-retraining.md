@@ -4,7 +4,7 @@
 
 **Goal:** Build, review, train, validate, and integrate a digit recogniser whose input is the greyscale crop from the warped grid while leaving binary-image segmentation unchanged.
 
-**Architecture:** The completed `cell_reads` population supplies labels, bounding boxes, and greyscale pixels. TypeScript owns every production image transformation and exposes greyscale preparation through the existing private `warp-crops` bridge; Python performs completeness auditing, clustering, human-review orchestration, dataset splitting, augmentation policy, and sklearn fitting. The browser switch is made only after cluster review and puzzle-level offline validation pass.
+**Architecture:** The completed `cell_reads` population supplies labels, bounding boxes, and greyscale pixels. TypeScript owns the single production greyscale preparation operation and exposes it through the existing private `warp-crops` bridge. The existing corpus exporter continues to apply corrections, form four clusters per digit, sample across them, and emit schema-v2 `corpus_train.json`; the existing PCA trainer continues to deduplicate, centre, fit, and export the model. Binary segmentation remains unchanged.
 
 **Tech Stack:** TypeScript, OpenCV.js, Vitest, Node/tsx bridge, Python 3, sqlite3, NumPy, Pillow, scikit-learn, Ruff, mypy, Playwright.
 
@@ -16,7 +16,6 @@
 - Include both `given_digit` and `cage_total_digit` rows, retaining `digit_index` for multi-digit totals.
 - Keep all image-to-image and image-to-feature production logic in TypeScript; Python may call only the existing private bridge operations.
 - The first experiment uses real corpus crops only: no synthetic fonts, no translation jitter, and no binary erosion/dilation augmentation.
-- Split train, validation, and test sets by `puzzle_hash`, never by individual crop.
 - Produce exactly four review clusters per digit and require visual review before freezing labels.
 - Preserve binary-image segmentation and bounding-box selection while changing only the recogniser input pixels.
 - Use row-major grid coordinates and row-first `(row, col)` parameters.
@@ -103,7 +102,7 @@ Commit: `feat: audit greyscale corpus training source`
 
 ---
 
-### Task 2: TypeScript-owned greyscale recognition preprocessing
+### Task 2: One TypeScript-owned greyscale recognition input
 
 **Files:**
 - Modify: `web/src/image/numberRecognition.ts`
@@ -114,237 +113,58 @@ Commit: `feat: audit greyscale corpus training source`
 - Modify: `tests/test_ts_bridge.py`
 
 **Interfaces:**
-- Produces: `RecognitionInputMode = 'binary' | 'gray-inverted-contrast' | 'gray-adaptive' | 'gray-normalized'` and `prepareRecognitionCrop(cv, crop, strategy, inputMode, targetSize) -> Uint8Array`.
+- Produces: `RecognitionInputMode = 'binary' | 'gray'` and `prepareRecognitionCrop(cv, crop, strategy, inputMode, targetSize) -> Uint8Array`.
 - Extends: bridge `warp-crops` request with optional `inputMode`; no new bridge operation is permitted.
 - Python wrapper: `warp_crops(crops, strategy, size, input_mode="binary") -> NDArray[np.uint8]`.
 
-- [x] **Step 1: Add failing TypeScript tests for the three greyscale candidates**
+- [x] **Step 7: Simplify to one greyscale mode and address review findings with TDD**
 
-```typescript
-it.each([
-  'gray-inverted-contrast',
-  'gray-adaptive',
-  'gray-normalized',
-] as const)('prepares deterministic %s crops at 64x64', inputMode => {
-  const first = prepareRecognitionCrop(cv, GRAY_CROP, 'letterbox-centered', inputMode, 64);
-  const second = prepareRecognitionCrop(cv, GRAY_CROP, 'letterbox-centered', inputMode, 64);
-  expect(first).toHaveLength(4096);
-  expect(first).toEqual(second);
-});
-```
+Replace the three experimental modes with one contrast-normalised/inverted `gray` mode. Add failing tests proving 64×64 output, foreground-based centring on an off-white background, manifest loading (`binary` default for legacy manifests, valid `gray`, invalid values rejected), bridge rejection of explicit `null`, and Windows bridge command construction. Then implement only enough to pass them, including `try/finally` cleanup in the shared warp helper.
 
-Also assert that `inputMode: 'binary'` is byte-for-byte identical to the current `warpRawDigitCrop` result.
+Run the focused TypeScript and Python bridge tests, then the bronze gate.
 
-- [x] **Step 2: Run the focused TypeScript tests and verify failure**
-
-Run: `cd web && npm test -- --run src/image/numberRecognition.crop.test.ts scripts/ts-bridge.test.ts`
-
-Expected: FAIL because `RecognitionInputMode` and `prepareRecognitionCrop` do not exist.
-
-- [x] **Step 3: Implement the minimal TypeScript preprocessing functions**
-
-Add small, separately testable helpers for contrast inversion/normalisation and reuse `letterboxWarp` plus `centerByCentroid`. Keep OpenCV allocations inside `try/finally` blocks. `NumRecogniser.warpForRecognition` must call `prepareRecognitionCrop` using a readonly `inputMode` property, defaulting to `binary` for old manifests.
-
-- [x] **Step 4: Extend the existing bridge request and Python wrapper**
-
-```typescript
-interface WarpCropsRequest {
-  op: 'warp-crops';
-  strategy: WarpStrategy;
-  inputMode?: RecognitionInputMode;
-  size: number;
-  crops: SerializedRawDigitCrop[];
-}
-```
-
-Validate the enum at the bridge boundary and default omitted values to `binary`. Update the Python dataclass/request construction without implementing image transforms in Python.
-
-- [x] **Step 5: Run bridge parity and diagnostics**
-
-Run: `cd web && npm test -- --run src/image/numberRecognition.crop.test.ts scripts/ts-bridge.test.ts`
-
-Run: `.venv/Scripts/python -m pytest tests/test_ts_bridge.py -v`
-
-Expected: PASS, including legacy binary parity.
-
-- [x] **Step 6: Commit**
-
-Commit: `feat: add greyscale recognition preprocessing`
+Commit: `refactor: pare greyscale recognition input to one mode`
 
 ---
 
-### Task 3: Four-cluster label-review artifact and durable corrections
+### Task 3: Reuse the corpus exporter for greyscale crops and cluster review
 
 **Files:**
 - Modify: `scripts/_export_corpus_training_data.py`
 - Modify: `tests/test_export_corpus_training_data.py`
-- Modify: `killer_sudoku/training/apply_review_corrections.py`
-- Modify: `tests/test_apply_review_corrections.py`
-- Create when generated: `killer_sudoku/training/greyscale_digit_corrections.json`
+- Reuse: `killer_sudoku/training/digit_corrections.json`
 
 **Interfaces:**
-- Produces: `SampleKey`, `ClusterSummary`, `cluster_digit_rows(rows, input_mode, seed) -> dict[int, list[ClusterSummary]]`, `render_cluster_review(...) -> str`, and schema-versioned correction JSON.
-- Correction key: `(puzzle_hash, evaluation_id, cell_type, row, col, digit_index)`.
-- Consumes: `DigitRow` from Task 1 and `ts_bridge.warp_crops(..., input_mode=...)` from Task 2.
+- Keeps the current schema-v2 `web/corpus_train.json` contract and existing correction format.
+- Changes the existing exporter to warp `gray_pixels` with `input_mode='gray'`.
+- Reuses `cluster_ids_for`, `stratified_sample`, `N_CLUSTERS = 4`, and the 400-samples-per-digit default.
 
-- [ ] **Step 1: Write failing tests for stable keys and four clusters**
+- [ ] **Step 1:** Add failing tests proving the exporter uses greyscale pixels, requests `gray` preprocessing, retains four clusters, applies the existing corrections, and emits the unchanged schema-v2 format.
+- [ ] **Step 2:** Make the minimal exporter changes.
+- [ ] **Step 3:** Add a small contact sheet containing the existing 40 cluster means (ten digits × four clusters); do not build a new review application or correction schema.
+- [ ] **Step 4:** Run the exporter against `full-corpus-b708d8b`, inspect the contact sheet with the user, and regenerate only if corrections change.
+- [ ] **Step 5:** Run focused tests and the bronze gate.
 
-```python
-def test_cluster_review_has_four_clusters_for_every_digit() -> None:
-    summaries = export.cluster_digit_rows(BALANCED_ROWS, "gray-normalized", seed=0)
-    assert set(summaries) == set(range(10))
-    assert all(len(clusters) == 4 for clusters in summaries.values())
-
-
-def test_sample_key_includes_evaluation_and_digit_index() -> None:
-    assert export.sample_key(ROW) == (
-        ROW.puzzle_hash, "full-corpus-b708d8b", ROW.cell_type,
-        ROW.row, ROW.col, ROW.digit_index,
-    )
-```
-
-- [ ] **Step 2: Run the tests and verify failure**
-
-Run: `.venv/Scripts/python -m pytest tests/test_export_corpus_training_data.py tests/test_apply_review_corrections.py -v`
-
-Expected: FAIL on the missing cluster-review interfaces.
-
-- [ ] **Step 3: Implement deterministic clustering and review rendering**
-
-For each provisional digit, transform greyscale crops using the selected TypeScript input mode, extract production features through the bridge, reduce with seeded PCA, and fit `GaussianMixture(n_components=4, random_state=0, n_init=5)`. Render each cluster mean, nearest representatives, farthest outliers, given/cage composition, corpus composition, and full sample identifiers into a self-contained HTML review sheet plus `candidates.json`.
-
-- [ ] **Step 4: Extend correction application with provenance validation**
-
-Reject corrections whose evaluation identity is not `full-corpus-b708d8b`, whose prior label differs from the candidate, or whose sample key is absent. Store either `{ "label": 0..9, "reason": "mislabel" }` or `{ "exclude": true, "reason": nonempty-string }`; never update SQLite.
-
-- [ ] **Step 5: Test deterministic output and invalid correction cases**
-
-Run: `.venv/Scripts/python -m pytest tests/test_export_corpus_training_data.py tests/test_apply_review_corrections.py -v`
-
-Expected: PASS and identical assignments/artifact ordering for repeated seed-zero runs.
-
-- [ ] **Step 6: Commit the tooling, not generated review output**
-
-Commit: `feat: generate greyscale digit cluster review`
+Commit: `feat: export greyscale corpus training crops`
 
 ---
 
-### Task 4: Freeze a provenance-rich, puzzle-split training dataset
+### Task 4: Retrain with the existing centred PCA trainer
 
 **Files:**
-- Modify: `scripts/_export_corpus_training_data.py`
-- Modify: `tests/test_export_corpus_training_data.py`
-- Modify: `web/train_recogniser.py`
-- Modify: `tests/test_train_recogniser.py`
+- Reuse: `web/train_recogniser.py`
+- Generated: candidate model outside `web/public/`
 
-**Interfaces:**
-- Produces canonical schema version 3 with per-sample `puzzleHash`, `sampleKey`, `digit`, `recognitionPixels`, `inputMode`, and `split`.
-- Produces manifest fields `sourceEvaluation`, `sourceCommit`, `audit`, `selectionSeed`, `splitSeed`, `correctionsSha256`, `inputMode`, and per-digit/per-cell-type/per-split counts.
-- Consumes only reviewed Task 3 corrections and exclusions.
+- [ ] **Step 1:** Verify with focused tests that PCA training disables translation jitter; retain the existing behaviour rather than adding a new policy layer.
+- [ ] **Step 2:** Train from `web/corpus_train.json` with `--recogniser pca --warp-strategy letterbox-centered --no-synthetic --dither 0`, using the existing deduplication and fitting path.
+- [ ] **Step 3:** Record the exact command, sample counts, correction hash, source evaluation, and model metrics alongside the candidate. Add only the minimal manifest `recognition_input_mode: 'gray'` field required by the browser contract.
+- [ ] **Step 4:** Run focused trainer/model-validation tests and the bronze gate.
 
-- [ ] **Step 1: Write failing tests for deduplication and puzzle-level splitting**
-
-```python
-def test_split_never_places_one_puzzle_in_multiple_partitions() -> None:
-    frozen = export.freeze_dataset(REVIEWED_ROWS, split_seed=0)
-    by_puzzle: dict[str, set[str]] = defaultdict(set)
-    for sample in frozen.samples:
-        by_puzzle[sample.puzzle_hash].add(sample.split)
-    assert all(len(splits) == 1 for splits in by_puzzle.values())
-
-
-def test_freeze_deduplicates_identical_pixels_within_label() -> None:
-    frozen = export.freeze_dataset([ROW_A, replace(ROW_A, puzzle_hash="other")], split_seed=0)
-    assert len(frozen.samples) == 1
-```
-
-- [ ] **Step 2: Run the exporter and trainer loader tests and verify failure**
-
-Run: `.venv/Scripts/python -m pytest tests/test_export_corpus_training_data.py tests/test_train_recogniser.py -v`
-
-Expected: FAIL because schema version 3 provenance and splits are unsupported.
-
-- [ ] **Step 3: Implement deterministic correction, exclusion, deduplication, and split order**
-
-Apply corrections first, exclude reviewed garbage second, deduplicate by `(final_label, sha256(recognition_pixels))`, then assign puzzles deterministically to train/validation/test with stratification diagnostics. Fail if any digit is absent from a split or if one puzzle crosses splits.
-
-- [ ] **Step 4: Teach the trainer to load schema version 3 without discarding provenance**
-
-Extend `TrainingSample` with `puzzle_hash`, `input_mode`, and `split`. Reject mixed input modes, mixed source evaluations, missing provenance, and any source evaluation other than `full-corpus-b708d8b` for this experiment.
-
-- [ ] **Step 5: Run focused tests and commit**
-
-Run: `.venv/Scripts/python -m pytest tests/test_export_corpus_training_data.py tests/test_train_recogniser.py -v`
-
-Expected: PASS.
-
-Commit: `feat: freeze puzzle-split greyscale training data`
+Commit: `feat: train centred greyscale digit recogniser`
 
 ---
 
-### Task 5: Train and compare real-crop-only candidates without jitter
-
-**Files:**
-- Modify: `web/train_recogniser.py`
-- Modify: `tests/test_train_recogniser.py`
-- Modify: `web/scripts/validate-model.ts`
-- Modify: `web/scripts/validate-model.test.ts`
-- Generated, review before staging: model candidate directory outside `web/public/`
-
-**Interfaces:**
-- Produces: trainer flags `--respect-splits` and manifest fields `recognition_input_mode`, `augmentation.translate=false`, `augmentation.synthetic=false`, and split metrics.
-- Consumes: schema-version-3 frozen dataset from Task 4.
-
-- [ ] **Step 1: Write failing trainer-policy tests**
-
-```python
-def test_greyscale_experiment_disables_translation_and_synthetic_data() -> None:
-    policy = trainer.training_policy(input_mode="gray-normalized", dither=0, no_synthetic=True)
-    assert policy.translate is False
-    assert policy.synthetic is False
-    assert policy.binary_morphology is False
-```
-
-Add a test that training rejects `dither > 0` for the initial greyscale experiment unless a later explicit augmentation mode is introduced.
-
-- [ ] **Step 2: Run focused tests and verify failure**
-
-Run: `.venv/Scripts/python -m pytest tests/test_train_recogniser.py -v`
-
-Expected: FAIL because the explicit greyscale policy and split-aware metrics are absent.
-
-- [ ] **Step 3: Implement split-aware fitting and reporting**
-
-Fit on `split == "train"` only. Select preprocessing/model parameters using validation puzzles only. Report final untouched test accuracy, confusion matrix, per-digit accuracy, given-versus-cage accuracy, confidence calibration, and puzzle-level error counts. Do not merge validation/test crops into the fit.
-
-- [ ] **Step 4: Add manifest validation for the input contract**
-
-Extend `validate-model.ts` to reject absent/unknown `recognition_input_mode`, greyscale models claiming binary augmentation, and model/data input-mode mismatches.
-
-- [ ] **Step 5: Run the three preprocessing candidates**
-
-For each of `gray-inverted-contrast`, `gray-adaptive`, and `gray-normalized`, generate a frozen dataset after cluster review and run:
-
-```bash
-.venv/Scripts/python web/train_recogniser.py \
-  --browser-file artifacts/greyscale-recogniser/gray-normalized/dataset.json \
-  --no-overrides-file --no-synthetic --dither 0 --respect-splits \
-  --out artifacts/greyscale-recogniser/gray-normalized/model
-```
-
-Choose a candidate using validation results; report the untouched test result exactly once after selection. Do not copy any candidate into `web/public/` yet.
-
-- [ ] **Step 6: Run focused checks and commit tooling**
-
-Run: `.venv/Scripts/python -m pytest tests/test_train_recogniser.py -v`
-
-Run: `cd web && npm test -- --run scripts/validate-model.test.ts`
-
-Commit: `feat: train split-aware greyscale recogniser candidates`
-
----
-
-### Task 6: Switch production recognition to same-box greyscale crops
+### Task 5: Switch production recognition to same-box greyscale crops
 
 **Files:**
 - Modify: `web/src/image/numberRecognition.ts`
@@ -402,7 +222,7 @@ Commit: `feat: recognise digits from warped greyscale crops`
 
 ---
 
-### Task 7: Full-corpus comparison and deployment decision
+### Task 6: Full-corpus comparison and deployment decision
 
 **Files:**
 - Create: `docs/superpowers/reports/2026-08-09-greyscale-digit-recogniser-results.md`
@@ -445,7 +265,6 @@ Commit: `docs: report greyscale recogniser evaluation`
 
 ## Review Checkpoints
 
-1. Review Task 3 cluster means, representatives, and outliers before applying corrections.
-2. Review post-correction clusters before freezing Task 4 data.
-3. Review Task 5 validation comparison before revealing the selected candidate's test result.
-4. Review the Task 7 full-corpus comparison before deploying or merging.
+1. Review Task 3's 40 cluster means before exporting the final training set.
+2. Review Task 4's retraining counts and metrics before installing the candidate model.
+3. Review Task 6's full-corpus comparison before deploying or merging.
