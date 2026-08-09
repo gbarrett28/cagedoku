@@ -78,6 +78,8 @@ interface UploadOutcomeJson {
   readonly liveMats?: number;
   readonly heapBytes?: number;
   readonly allocBytes?: number;
+  /** Detected grid quad in original-image pixel space: [x_TL,y_TL,x_TR,y_TR,x_BR,y_BR,x_BL,y_BL]. */
+  readonly gridCorners?: readonly number[] | null;
   readonly retrainingSuggestions?: ReadonlyArray<{
     readonly row: number;
     readonly col: number;
@@ -97,6 +99,7 @@ interface UploadOutcomeJson {
     readonly sourceWidth: number;
     readonly sourceHeight: number;
     readonly sourcePixels: number[];
+    readonly grayPixels: number[];
     readonly recognitionPixels: number[];
     readonly warpStrategy: 'stretch' | 'letterbox' | 'letterbox-centered';
     readonly hogFeatures?: number[];
@@ -113,6 +116,7 @@ interface UploadOutcomeJson {
     readonly sourceWidth: number;
     readonly sourceHeight: number;
     readonly sourcePixels: number[];
+    readonly grayPixels: number[];
     readonly recognitionPixels: number[];
     readonly warpStrategy: 'stretch' | 'letterbox' | 'letterbox-centered';
     readonly hogFeatures?: number[];
@@ -293,6 +297,7 @@ async function runWorker(
       fallbackUsed:       fallbackUsed       ?? null,
       parseElapsedMs:     parseElapsedMs     ?? null,
       solveElapsedMs:     solveElapsedMs     ?? null,
+      gridCorners:        outcome?.gridCorners ?? null,
     };
     completeEvaluation(db, claim.id, status, bucket, reason, detectedType, Date.now() - startMs, specHash, extras);
 
@@ -325,6 +330,7 @@ async function runWorker(
         sourceWidth: r.sourceWidth,
         sourceHeight: r.sourceHeight,
         sourcePixels: r.sourcePixels,
+        grayPixels: r.grayPixels,
         recognitionPixels: r.recognitionPixels,
         warpStrategy: r.warpStrategy,
         hogFeatures: r.hogFeatures ?? [],
@@ -348,6 +354,7 @@ async function runWorker(
         sourceWidth: r.sourceWidth,
         sourceHeight: r.sourceHeight,
         sourcePixels: r.sourcePixels,
+        grayPixels: r.grayPixels,
         recognitionPixels: r.recognitionPixels,
         warpStrategy: r.warpStrategy,
         hogFeatures: r.hogFeatures ?? [],

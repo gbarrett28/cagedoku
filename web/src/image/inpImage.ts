@@ -29,6 +29,7 @@ import {
 import type { GrayImage } from './borderClustering.js';
 import {
   splitNum, contourHier, getNumContours, readClassicDigits, activeRecogniser, allowedDigitsForPosition,
+  extractRawDigitCrop,
 } from './numberRecognition.js';
 import type { RawDigitCrop, Recognition } from './numberRecognition.js';
 import { validateCageLayout, buildLenientCageLayout, computeCageSizes } from './validation.js';
@@ -73,6 +74,10 @@ export interface ParseResult {
   cellThumbs: ReadonlyMap<string, Uint8Array[]>;
   /** Untouched bounding-box pixels from the warped grid, aligned with cellThumbs. */
   cellSourceCrops: ReadonlyMap<string, readonly RawDigitCrop[]>;
+  /** Same bounding boxes as cellSourceCrops, but pulled from the warped grayscale (pre-binarisation). */
+  cellSourceCropsGray: ReadonlyMap<string, readonly RawDigitCrop[]>;
+  /** Detected grid quad in original-image pixel space: [x_TL,y_TL,x_TR,y_TR,x_BR,y_BR,x_BL,y_BL]. Null if grid location never ran (should not happen once parsePuzzleImage returns normally). */
+  gridCorners: number[] | null;
   /** Recognition (incl. runner-up) for each classic given-digit cell, keyed "row,col". */
   classicRecognitions?: ReadonlyMap<string, import('./numberRecognition.js').Recognition> | undefined;
   /** Recognition for each cage-total digit crop, keyed "row,col", array order matching cellThumbs. Killer only. */
@@ -97,6 +102,25 @@ export interface ParseResult {
  *   detection and use these corners directly. Useful when the user has manually
  *   adjusted the grid corners via the corner picker.
  */
+/**
+ * Re-extracts the same bounding-box crops as `crops`, but pulled from
+ * `warpedGry` (pre-binarisation) instead of whatever Mat they originally
+ * came from. Captures a grayscale companion for each digit crop alongside
+ * the binarized one, for corpus.db analysis of how binarisation style
+ * affects recognition -- must be called before `warpedGry` is deleted.
+ */
+function extractGrayCompanionCrops(
+  cv: Cv,
+  warpedGry: OpenCVMat,
+  crops: ReadonlyMap<string, readonly RawDigitCrop[]>,
+): Map<string, RawDigitCrop[]> {
+  const result = new Map<string, RawDigitCrop[]>();
+  for (const [key, arr] of crops) {
+    result.set(key, arr.map(c => extractRawDigitCrop(cv, warpedGry, [c.x, c.y, c.width, c.height])));
+  }
+  return result;
+}
+
 export async function parsePuzzleImage(
   cv: Cv,
   file: File,
@@ -223,6 +247,7 @@ export async function parsePuzzleImage(
       recognitions: classicRecognitions,
     } = readClassicDigits(cv, warpedBlkMat, subres, classicConf);
 
+    const classicSourceCropsGray = extractGrayCompanionCrops(cv, warpedGryMat, classicSourceCrops);
     warpedGryMat.delete(); warpedBlkMat.delete();
 
     // Classic borders: rows separated by full walls, columns open.
@@ -248,6 +273,8 @@ export async function parsePuzzleImage(
       warpedImageData: warpedImgData,
       cellThumbs: classicThumbs,
       cellSourceCrops: classicSourceCrops,
+      cellSourceCropsGray: classicSourceCropsGray,
+      gridCorners: Array.from(rectArr),
       classicRecognitions,
     };
   }
@@ -354,6 +381,7 @@ export async function parsePuzzleImage(
   const { digits: givenDigits, recognitions: classicRecognitions } =
     readClassicDigits(cv, warpedBlkMat, subres, classicConf);
 
+  const cellSourceCropsGray = extractGrayCompanionCrops(cv, warpedGryMat, cellSourceCrops);
   warpedGryMat.delete();
   warpedBlkMat.delete();
 
@@ -367,6 +395,8 @@ export async function parsePuzzleImage(
       warpedImageData: warpedImgData,
       cellThumbs: new Map(),
       cellSourceCrops: new Map(),
+      cellSourceCropsGray: new Map(),
+      gridCorners: Array.from(rectArr),
       classicRecognitions,
       cageTotalRecognitions: new Map(),
     };
@@ -405,6 +435,8 @@ export async function parsePuzzleImage(
     warpedImageData: warpedImgData,
     cellThumbs,
     cellSourceCrops,
+    cellSourceCropsGray,
+    gridCorners: Array.from(rectArr),
     classicRecognitions,
     cageTotalRecognitions: cellRecognitions,
   };

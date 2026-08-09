@@ -154,6 +154,20 @@ describe('claimEvaluation / completeEvaluation', () => {
     db.close();
   });
 
+  it('stores grid_corners in the evaluations row via extras', () => {
+    const db = tmpDb();
+    insertPuzzle(db, 'aabbcc', '/p.jpg', 'test', 'killer');
+    const claim = claimEvaluation(db, 'gitabc', 1);
+    completeEvaluation(db, claim!.id, 'done', 'clean', null, 'killer', 1234, null, {
+      gridCorners: [1, 2, 3, 4, 5, 6, 7, 8],
+    });
+    const row = db.prepare(
+      'SELECT grid_corners FROM evaluations WHERE id=?',
+    ).get(claim!.id) as { grid_corners: string };
+    expect(JSON.parse(row.grid_corners)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    db.close();
+  });
+
   it('drops the dead centroid and contour-tree-experiment columns on open', () => {
     const db = tmpDb();
     const cols = (db.prepare('PRAGMA table_info(evaluations)').all() as { name: string }[]).map(r => r.name);
@@ -287,6 +301,7 @@ describe('cell_reads (generalized from given_digit_reads)', () => {
       clashesWith: [], hogFeatures: [0.1], holeFeatures: [0.2],
       sourceX: 17, sourceY: 23, sourceWidth: 3, sourceHeight: 2,
       sourcePixels: [12, 13, 14, 22, 23, 24],
+      grayPixels: [112, 113, 114, 122, 123, 124],
       recognitionPixels: Array.from({ length: 4096 }, (_, index) => index % 256),
       warpStrategy: 'letterbox',
     } satisfies CellReadRow;
@@ -294,12 +309,13 @@ describe('cell_reads (generalized from given_digit_reads)', () => {
     const saved = db.prepare('SELECT * FROM cell_reads WHERE puzzle_hash = ?').get('p1') as {
       cell_type: string; digit_index: number; hog_features: string; hole_features: string;
       source_x: number; source_y: number; source_width: number; source_height: number;
-      source_pixels: string; recognition_pixels: string; warp_strategy: string;
+      source_pixels: string; gray_pixels: string; recognition_pixels: string; warp_strategy: string;
     };
     expect(saved.cell_type).toBe('cage_total_digit');
     expect(saved.digit_index).toBe(1);
     expect([saved.source_x, saved.source_y, saved.source_width, saved.source_height]).toEqual([17, 23, 3, 2]);
     expect(JSON.parse(saved.source_pixels)).toEqual([12, 13, 14, 22, 23, 24]);
+    expect(JSON.parse(saved.gray_pixels)).toEqual([112, 113, 114, 122, 123, 124]);
     const recognitionPixels = JSON.parse(saved.recognition_pixels) as number[];
     expect(recognitionPixels).toHaveLength(4096);
     expect(recognitionPixels.slice(0, 4)).toEqual([0, 1, 2, 3]);
@@ -317,7 +333,7 @@ describe('cell_reads (generalized from given_digit_reads)', () => {
       row: 3, col: 4, digitIndex: 0, predictedLabel: 7, confident: false,
       clashesWith: [{ row: 3, col: 8 }], hogFeatures: [], holeFeatures: [],
       sourceX: 4, sourceY: 5, sourceWidth: 1, sourceHeight: 1,
-      sourcePixels: [255], recognitionPixels: new Array<number>(4096).fill(0),
+      sourcePixels: [255], grayPixels: [128], recognitionPixels: new Array<number>(4096).fill(0),
       warpStrategy: 'letterbox',
     });
     const saved = db.prepare('SELECT * FROM cell_reads WHERE puzzle_hash = ?').get('p2') as {
@@ -339,12 +355,13 @@ describe('insertCellRead evidence validation', () => {
       row: 0, col: 0, digitIndex: 0, predictedLabel: 4, confident: true,
       clashesWith: [], hogFeatures: [], holeFeatures: [],
       sourceX: 1, sourceY: 2, sourceWidth: 2, sourceHeight: 2,
-      sourcePixels: [1, 2, 3, 4], recognitionPixels: new Array<number>(4096).fill(0),
+      sourcePixels: [1, 2, 3, 4], grayPixels: [10, 20, 30, 40], recognitionPixels: new Array<number>(4096).fill(0),
       warpStrategy: 'stretch',
     } satisfies CellReadRow;
 
     expect(() => insertCellRead(db, { ...valid, sourceWidth: 0 })).toThrow(/dimensions must be positive/);
     expect(() => insertCellRead(db, { ...valid, sourcePixels: [1, 2, 3] })).toThrow(/source pixel length/);
+    expect(() => insertCellRead(db, { ...valid, grayPixels: [1, 2, 3] })).toThrow(/gray pixel length/);
     expect(() => insertCellRead(db, { ...valid, recognitionPixels: [1] })).toThrow(/recognition pixel length/);
     expect(() => insertCellRead(db, {
       ...valid,
@@ -359,6 +376,22 @@ describe('evaluations border/cage-total structure columns', () => {
     const db = tmpDb();
     const cols = (db.prepare('PRAGMA table_info(evaluations)').all() as { name: string }[]).map(c => c.name);
     expect(cols).toEqual(expect.arrayContaining(['border_x', 'border_y', 'cage_totals']));
+    db.close();
+  });
+
+  it('adds grid_corners column', () => {
+    const db = tmpDb();
+    const cols = (db.prepare('PRAGMA table_info(evaluations)').all() as { name: string }[]).map(c => c.name);
+    expect(cols).toContain('grid_corners');
+    db.close();
+  });
+});
+
+describe('cell_reads gray_pixels column', () => {
+  it('adds gray_pixels column', () => {
+    const db = tmpDb();
+    const cols = (db.prepare('PRAGMA table_info(cell_reads)').all() as { name: string }[]).map(c => c.name);
+    expect(cols).toContain('gray_pixels');
     db.close();
   });
 });

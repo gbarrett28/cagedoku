@@ -136,6 +136,10 @@ export interface UploadResult {
   warning: string | null;
   cellThumbs: ReadonlyMap<string, Uint8Array[]>;
   cellSourceCrops: ReadonlyMap<string, readonly import('../image/numberRecognition.js').RawDigitCrop[]>;
+  /** Same bounding boxes as cellSourceCrops, but pulled from the warped grayscale (pre-binarisation). */
+  cellSourceCropsGray: ReadonlyMap<string, readonly import('../image/numberRecognition.js').RawDigitCrop[]>;
+  /** Detected grid quad in original-image pixel space: [x_TL,y_TL,x_TR,y_TR,x_BR,y_BR,x_BL,y_BL]. */
+  gridCorners: readonly number[] | null;
   detectedBigApple: boolean;
   fallbackUsed: boolean;
   specError: string | null;
@@ -162,6 +166,8 @@ export function loadSpecDirect(spec: PuzzleSpec): UploadResult {
     warning: null,
     cellThumbs: new Map(),
     cellSourceCrops: new Map(),
+    cellSourceCropsGray: new Map(),
+    gridCorners: null,
     detectedBigApple: false,
     fallbackUsed: false,
     specError: null,
@@ -185,6 +191,8 @@ export function loadClassicDirect(givenDigits: readonly (readonly number[])[]): 
     warning: 'Review the detected digits and press Confirm & Solve',
     cellThumbs: new Map(),
     cellSourceCrops: new Map(),
+    cellSourceCropsGray: new Map(),
+    gridCorners: null,
     detectedBigApple: false,
     fallbackUsed: false,
     specError: null,
@@ -216,6 +224,8 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
       warpedImageData: null,
       cellThumbs: new Map(),
       cellSourceCrops: new Map(),
+      cellSourceCropsGray: new Map(),
+      gridCorners: null,
     };
   }
 
@@ -227,6 +237,8 @@ export async function uploadPuzzle(file: File): Promise<UploadResult> {
     warning,
     cellThumbs: result.cellThumbs,
     cellSourceCrops: result.cellSourceCrops,
+    cellSourceCropsGray: result.cellSourceCropsGray,
+    gridCorners: result.gridCorners,
     detectedBigApple,
     fallbackUsed: result.fallbackUsed,
     specError: result.specError,

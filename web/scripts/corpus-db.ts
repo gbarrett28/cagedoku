@@ -88,7 +88,7 @@ export function openDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
       source_y              INTEGER,
       source_width          INTEGER,
       source_height         INTEGER,
-      source_pixels         TEXT, -- JSON array, exact bounding-box pixels from warped grid
+      source_pixels         TEXT, -- JSON array, exact bounding-box pixels from warped grid (binarised)
       recognition_pixels    TEXT NOT NULL, -- JSON array, flattened deployed 64x64 input
       warp_strategy         TEXT, -- 'stretch' | 'letterbox' | 'letterbox-centered'; NULL only for historical rows
       hog_features          TEXT NOT NULL, -- JSON array, 1764 floats
@@ -127,6 +127,7 @@ export function openDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
     ['fallback_used',        'INTEGER'],
     ['parse_elapsed_ms',     'INTEGER'],
     ['solve_elapsed_ms',     'INTEGER'],
+    ['grid_corners',         'TEXT'],
   ];
   for (const [col, type] of newCols) {
     if (!evalCols.includes(col)) {
@@ -150,6 +151,7 @@ export function openDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
     ['source_height', 'INTEGER'],
     ['source_pixels', 'TEXT'],
     ['warp_strategy', 'TEXT'],
+    ['gray_pixels', 'TEXT'],
   ] as const;
   for (const [col, type] of sourceCols) {
     if (!cellReadCols.includes(col)) {
@@ -207,6 +209,8 @@ export interface CellReadRow {
   sourceWidth: number;
   sourceHeight: number;
   sourcePixels: number[];
+  /** Same bounding box as sourcePixels, but from the warped grayscale (pre-binarisation). */
+  grayPixels: number[];
   recognitionPixels: number[];
   warpStrategy: WarpStrategy;
   hogFeatures: number[];
@@ -234,6 +238,11 @@ export function insertCellRead(db: Database.Database, r: CellReadRow): void {
       `cell_reads source pixel length ${r.sourcePixels.length} does not match ${r.sourceWidth}x${r.sourceHeight}`,
     );
   }
+  if (r.grayPixels.length !== r.sourceWidth * r.sourceHeight) {
+    throw new Error(
+      `cell_reads gray pixel length ${r.grayPixels.length} does not match ${r.sourceWidth}x${r.sourceHeight}`,
+    );
+  }
   if (r.recognitionPixels.length !== 64 * 64) {
     throw new Error(`cell_reads recognition pixel length must be 4096, got ${r.recognitionPixels.length}`);
   }
@@ -245,13 +254,13 @@ export function insertCellRead(db: Database.Database, r: CellReadRow): void {
     INSERT INTO cell_reads
       (puzzle_hash, git_hash, cell_type, row, col, digit_index, predicted_label,
        confident, clashes_with, source_x, source_y, source_width, source_height,
-       source_pixels, recognition_pixels, warp_strategy, hog_features, hole_features)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       source_pixels, gray_pixels, recognition_pixels, warp_strategy, hog_features, hole_features)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     r.puzzleHash, r.gitHash, r.cellType, r.row, r.col, r.digitIndex,
     r.predictedLabel, r.confident ? 1 : 0, JSON.stringify(r.clashesWith),
     r.sourceX, r.sourceY, r.sourceWidth, r.sourceHeight,
-    JSON.stringify(r.sourcePixels), JSON.stringify(r.recognitionPixels), r.warpStrategy,
+    JSON.stringify(r.sourcePixels), JSON.stringify(r.grayPixels), JSON.stringify(r.recognitionPixels), r.warpStrategy,
     JSON.stringify(r.hogFeatures), JSON.stringify(r.holeFeatures),
   );
 }
@@ -366,6 +375,8 @@ export interface CtEvalExtras {
   // Timing (browser-measured)
   readonly parseElapsedMs?: number | null;
   readonly solveElapsedMs?: number | null;
+  /** Detected grid quad in original-image pixel space: [x_TL,y_TL,x_TR,y_TR,x_BR,y_BR,x_BL,y_BL]. */
+  readonly gridCorners?: readonly number[] | null;
 }
 
 export function completeEvaluation(
@@ -386,7 +397,7 @@ export function completeEvaluation(
         elapsed_ms = ?, spec_hash = ?,
         live_mats = ?, heap_bytes = ?, alloc_bytes = ?,
         detected_big_apple = ?, spec_error = ?, fallback_used = ?,
-        parse_elapsed_ms = ?, solve_elapsed_ms = ?,
+        parse_elapsed_ms = ?, solve_elapsed_ms = ?, grid_corners = ?,
         finished_at = datetime('now')
     WHERE id = ?
   `).run(
@@ -396,6 +407,7 @@ export function completeEvaluation(
     e.specError ?? null,
     e.fallbackUsed == null ? null : (e.fallbackUsed ? 1 : 0),
     e.parseElapsedMs ?? null, e.solveElapsedMs ?? null,
+    e.gridCorners == null ? null : JSON.stringify(e.gridCorners),
     id,
   );
 }

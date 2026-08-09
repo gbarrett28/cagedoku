@@ -1093,6 +1093,8 @@ describe('buildCandidatesFromParseResult', () => {
       warpedImageData: null,
       cellThumbs: new Map(),
       cellSourceCrops: new Map(),
+      cellSourceCropsGray: new Map(),
+      gridCorners: null,
     };
   }
 

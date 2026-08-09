@@ -99,6 +99,8 @@ type ReportOutcomeFn = (o: {
   liveMats?: number | undefined;
   heapBytes?: number | undefined;
   allocBytes?: number | undefined;
+  /** Detected grid quad in original-image pixel space: [x_TL,y_TL,x_TR,y_TR,x_BR,y_BR,x_BL,y_BL]. */
+  gridCorners?: readonly number[] | null | undefined;
   /** Proposed digit corrections for manual review — never auto-applied. */
   retrainingSuggestions?: ReadonlyArray<{
     row: number; col: number; predictedLabel: number; suggestedLabel: number;
@@ -109,14 +111,14 @@ type ReportOutcomeFn = (o: {
     row: number; col: number; predictedLabel: number; confident: boolean;
     clashesWith: { row: number; col: number }[];
     sourceX: number; sourceY: number; sourceWidth: number; sourceHeight: number;
-    sourcePixels: number[]; recognitionPixels: number[]; warpStrategy: WarpStrategy;
+    sourcePixels: number[]; grayPixels: number[]; recognitionPixels: number[]; warpStrategy: WarpStrategy;
     hogFeatures: number[]; holeFeatures: number[];
   }> | undefined;
   /** Ground-truth crop+label for every cage-total digit cell of a killer puzzle upload. */
   cageTotalReads?: ReadonlyArray<{
     row: number; col: number; digitIndex: number; predictedLabel: number; confident: boolean;
     sourceX: number; sourceY: number; sourceWidth: number; sourceHeight: number;
-    sourcePixels: number[]; recognitionPixels: number[]; warpStrategy: WarpStrategy;
+    sourcePixels: number[]; grayPixels: number[]; recognitionPixels: number[]; warpStrategy: WarpStrategy;
     hogFeatures: number[]; holeFeatures: number[];
   }> | undefined;
 }) => void;
@@ -135,12 +137,13 @@ function computeCropFeatures(crops: Uint8Array[]): { hog: number[]; hole: number
 }
 
 
-function rawCropPayload(crop: RawDigitCrop): {
+function rawCropPayload(crop: RawDigitCrop, grayCrop: RawDigitCrop): {
   sourceX: number;
   sourceY: number;
   sourceWidth: number;
   sourceHeight: number;
   sourcePixels: number[];
+  grayPixels: number[];
 } {
   return {
     sourceX: crop.x,
@@ -148,6 +151,7 @@ function rawCropPayload(crop: RawDigitCrop): {
     sourceWidth: crop.width,
     sourceHeight: crop.height,
     sourcePixels: Array.from(crop.pixels),
+    grayPixels: Array.from(grayCrop.pixels),
   };
 }
 
@@ -1399,21 +1403,26 @@ async function handleProcess(file?: File): Promise<void> {
       const buildCageTotalReadsPayload = (): ReadonlyArray<{
         row: number; col: number; digitIndex: number; predictedLabel: number; confident: boolean;
         sourceX: number; sourceY: number; sourceWidth: number; sourceHeight: number;
-        sourcePixels: number[]; recognitionPixels: number[]; warpStrategy: WarpStrategy;
+        sourcePixels: number[]; grayPixels: number[]; recognitionPixels: number[]; warpStrategy: WarpStrategy;
         hogFeatures: number[]; holeFeatures: number[];
       }> =>
         uploadResult.cageTotalRecognitions !== undefined
           ? buildCageTotalReads(uploadResult.cellThumbs, uploadResult.cageTotalRecognitions)
             .map(r => {
-              const source = uploadResult.cellSourceCrops.get(`${r.row},${r.col}`)?.[r.digitIndex];
+              const key = `${r.row},${r.col}`;
+              const source = uploadResult.cellSourceCrops.get(key)?.[r.digitIndex];
               if (source === undefined) {
                 throw new Error(`Missing raw crop for cage-total digit ${r.row},${r.col},${r.digitIndex}`);
+              }
+              const graySource = uploadResult.cellSourceCropsGray.get(key)?.[r.digitIndex];
+              if (graySource === undefined) {
+                throw new Error(`Missing gray crop for cage-total digit ${r.row},${r.col},${r.digitIndex}`);
               }
               const { hog, hole } = computeCropFeatures([r.crop])[0]!;
               const { crop, ...read } = r;
               return {
                 ...read,
-                ...rawCropPayload(source),
+                ...rawCropPayload(source, graySource),
                 recognitionPixels: Array.from(crop),
                 warpStrategy: activeRecogniser().warpStrategy,
                 hogFeatures: hog,
@@ -1445,6 +1454,7 @@ async function handleProcess(file?: File): Promise<void> {
             puzzleType: 'killer',
             detectedBigApple,
             specHash,
+            gridCorners: uploadResult.gridCorners,
             ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
             ...metricsPayload(),
             cageTotalReads: buildCageTotalReadsPayload(),
@@ -1480,7 +1490,7 @@ async function handleProcess(file?: File): Promise<void> {
         logAction('review_shown', 'layout errors');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'layout errors', puzzleType: PuzzleState.kind(state),
-          detectedBigApple, specHash,
+          detectedBigApple, specHash, gridCorners: uploadResult.gridCorners,
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
           cageTotalReads: buildCageTotalReadsPayload(),
@@ -1492,7 +1502,7 @@ async function handleProcess(file?: File): Promise<void> {
         logAction('review_shown', 'sum warning');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'sum warning', puzzleType: PuzzleState.kind(state),
-          detectedBigApple, specHash,
+          detectedBigApple, specHash, gridCorners: uploadResult.gridCorners,
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
           cageTotalReads: buildCageTotalReadsPayload(),
@@ -1505,7 +1515,7 @@ async function handleProcess(file?: File): Promise<void> {
         logAction('review_shown', 'pipeline warning');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'ocr warning', puzzleType: PuzzleState.kind(state),
-          detectedBigApple, specHash,
+          detectedBigApple, specHash, gridCorners: uploadResult.gridCorners,
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
           cageTotalReads: buildCageTotalReadsPayload(),
@@ -1515,7 +1525,7 @@ async function handleProcess(file?: File): Promise<void> {
         logAction('review_shown', 'solver incomplete');
         (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
           bucket: 'notSolved', reason: 'solver incomplete', puzzleType: PuzzleState.kind(state),
-          detectedBigApple, specHash,
+          detectedBigApple, specHash, gridCorners: uploadResult.gridCorners,
           ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
           ...metricsPayload(),
           cageTotalReads: buildCageTotalReadsPayload(),
@@ -1545,15 +1555,20 @@ async function handleProcess(file?: File): Promise<void> {
       const givenDigitReads = uploadResult.classicRecognitions !== undefined
         ? buildGivenDigitReads(state.givenDigits, uploadResult.cellThumbs, uploadResult.classicRecognitions)
           .map(r => {
-            const source = uploadResult.cellSourceCrops.get(`${r.row},${r.col}`)?.[0];
+            const key = `${r.row},${r.col}`;
+            const source = uploadResult.cellSourceCrops.get(key)?.[0];
             if (source === undefined) {
               throw new Error(`Missing raw crop for given digit ${r.row},${r.col}`);
+            }
+            const graySource = uploadResult.cellSourceCropsGray.get(key)?.[0];
+            if (graySource === undefined) {
+              throw new Error(`Missing gray crop for given digit ${r.row},${r.col}`);
             }
             const { hog, hole } = computeCropFeatures([r.crop])[0]!;
             const { crop, ...read } = r;
             return {
               ...read,
-              ...rawCropPayload(source),
+              ...rawCropPayload(source, graySource),
               recognitionPixels: Array.from(crop),
               warpStrategy: activeRecogniser().warpStrategy,
               hogFeatures: hog,
@@ -1563,6 +1578,7 @@ async function handleProcess(file?: File): Promise<void> {
         : [];
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket, reason, puzzleType: PuzzleState.kind(state), detectedBigApple, specHash,
+        gridCorners: uploadResult.gridCorners,
         ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
         ...metricsPayload(),
         retrainingSuggestions,
@@ -1573,7 +1589,7 @@ async function handleProcess(file?: File): Promise<void> {
       logAction('review_shown', 'ocr warning');
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket: 'notSolved', reason: 'ocr warning', puzzleType: PuzzleState.kind(state),
-        detectedBigApple, specHash,
+        detectedBigApple, specHash, gridCorners: uploadResult.gridCorners,
         ...timingPayload(parseDoneMs - parseStartMs, Date.now() - parseDoneMs, uploadResult.fallbackUsed, uploadResult.specError),
         ...metricsPayload(),
       });
@@ -1590,7 +1606,7 @@ async function handleProcess(file?: File): Promise<void> {
       setStatus(e.message, true);
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket: 'notSolved', reason: `GridNotFoundError: ${e.message}`,
-        puzzleType: null, detectedBigApple: false, specHash: null,
+        puzzleType: null, detectedBigApple: false, specHash: null, gridCorners: null,
         ...timingPayload(Date.now() - parseStartMs, 0, false, null),
         ...metricsPayload(),
       });
@@ -1599,7 +1615,7 @@ async function handleProcess(file?: File): Promise<void> {
       reportBug(e, 'handleProcess');
       (window as unknown as { __reportOutcome?: ReportOutcomeFn }).__reportOutcome?.({
         bucket: 'notSolved', reason: `error: ${String(e)}`,
-        puzzleType: null, detectedBigApple: false, specHash: null,
+        puzzleType: null, detectedBigApple: false, specHash: null, gridCorners: null,
         ...timingPayload(Date.now() - parseStartMs, 0, false, null),
         ...metricsPayload(),
       });
