@@ -25,9 +25,10 @@ import argparse
 import json
 import sqlite3
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -39,6 +40,156 @@ from killer_sudoku.training import ts_bridge
 THUMBNAIL_SIZE = 64
 N_CLUSTERS = 4
 PCA_COMPONENTS = 20
+SOURCE_EVALUATION_ID = "full-corpus-b708d8b"
+SUPPORTED_CELL_TYPES = frozenset({"given_digit", "cage_total_digit"})
+
+CellType = Literal["given_digit", "cage_total_digit"]
+
+
+@dataclass(frozen=True)
+class CorpusAudit:
+    registered_puzzles: int
+    terminal_evaluations: int
+    distinct_puzzles: int
+    digit_rows: int
+
+
+@dataclass(frozen=True)
+class DigitRow:
+    puzzle_hash: str
+    cell_type: CellType
+    row: int
+    col: int
+    digit_index: int
+    provisional_label: int
+    width: int
+    height: int
+    gray_pixels: NDArray[np.uint8]
+
+
+def audit_corpus(conn: sqlite3.Connection, evaluation_id: str) -> CorpusAudit:
+    """Validate that the immutable source evaluation covers the registered corpus."""
+    if evaluation_id != SOURCE_EVALUATION_ID:
+        raise ValueError(
+            f"Training source must be {SOURCE_EVALUATION_ID!r}, got {evaluation_id!r}"
+        )
+
+    registered = int(conn.execute("SELECT COUNT(*) FROM puzzles").fetchone()[0])
+    counts = conn.execute(
+        """
+        SELECT COUNT(*) AS evaluations,
+               COUNT(DISTINCT puzzle_hash) AS distinct_puzzles,
+               SUM(CASE WHEN status != 'done' OR finished_at IS NULL THEN 1 ELSE 0 END) AS unfinished,
+               SUM(CASE WHEN grid_corners IS NULL THEN 1 ELSE 0 END) AS missing_corners
+        FROM evaluations
+        WHERE git_hash = ?
+        """,
+        (evaluation_id,),
+    ).fetchone()
+    terminal = int(counts["evaluations"])
+    distinct = int(counts["distinct_puzzles"])
+    unfinished = int(counts["unfinished"] or 0)
+    missing_corners = int(counts["missing_corners"] or 0)
+    duplicate_groups = int(
+        conn.execute(
+            """
+            SELECT COUNT(*) FROM (
+                SELECT puzzle_hash FROM evaluations
+                WHERE git_hash = ? GROUP BY puzzle_hash HAVING COUNT(*) > 1
+            )
+            """,
+            (evaluation_id,),
+        ).fetchone()[0]
+    )
+
+    if unfinished:
+        raise ValueError(f"Source evaluation has {unfinished} unfinished evaluation(s)")
+    if duplicate_groups:
+        raise ValueError(f"Source evaluation has {duplicate_groups} duplicate puzzle evaluation(s)")
+    if terminal != registered or distinct != registered:
+        raise ValueError(
+            "Source evaluation coverage mismatch: "
+            f"{terminal} evaluations for {distinct} distinct puzzles; {registered} registered"
+        )
+    if missing_corners:
+        raise ValueError(f"Source evaluation has {missing_corners} missing grid corner record(s)")
+
+    digit_rows = int(
+        conn.execute(
+            "SELECT COUNT(*) FROM cell_reads WHERE git_hash = ?",
+            (evaluation_id,),
+        ).fetchone()[0]
+    )
+    return CorpusAudit(registered, terminal, distinct, digit_rows)
+
+
+def _decode_pixel_array(value: object, *, field: str, expected: int) -> NDArray[np.uint8]:
+    if value is None:
+        raise ValueError(f"missing {field}")
+    decoded = json.loads(str(value))
+    if not isinstance(decoded, list) or len(decoded) != expected:
+        actual = len(decoded) if isinstance(decoded, list) else "non-array"
+        raise ValueError(f"{field} length {actual} does not match {expected}")
+    if any(not isinstance(pixel, int) or isinstance(pixel, bool) or not 0 <= pixel <= 255 for pixel in decoded):
+        raise ValueError(f"{field} contains a value outside uint8")
+    return np.asarray(decoded, dtype=np.uint8)
+
+
+def fetch_eligible_rows(conn: sqlite3.Connection, evaluation_id: str) -> list[DigitRow]:
+    """Load provisional labels only from clean, error-free puzzles in one run."""
+    if evaluation_id != SOURCE_EVALUATION_ID:
+        raise ValueError(
+            f"Training source must be {SOURCE_EVALUATION_ID!r}, got {evaluation_id!r}"
+        )
+    rows = conn.execute(
+        """
+        SELECT cr.puzzle_hash, cr.cell_type, cr.row, cr.col, cr.digit_index,
+               cr.predicted_label, cr.source_x, cr.source_y,
+               cr.source_width, cr.source_height, cr.source_pixels, cr.gray_pixels
+        FROM cell_reads cr
+        JOIN evaluations e
+          ON e.puzzle_hash = cr.puzzle_hash AND e.git_hash = cr.git_hash
+        WHERE cr.git_hash = ? AND e.status = 'done' AND e.bucket = 'clean'
+          AND e.spec_error IS NULL
+        ORDER BY cr.puzzle_hash, cr.cell_type, cr.row, cr.col, cr.digit_index
+        """,
+        (evaluation_id,),
+    ).fetchall()
+
+    result: list[DigitRow] = []
+    for db_row in rows:
+        cell_type = str(db_row["cell_type"])
+        if cell_type not in SUPPORTED_CELL_TYPES:
+            raise ValueError(f"unsupported cell type: {cell_type}")
+        label = int(db_row["predicted_label"])
+        if not 0 <= label <= 9:
+            raise ValueError(f"invalid label: {label}")
+        coordinates = (db_row["source_x"], db_row["source_y"])
+        if any(value is None or int(value) < 0 for value in coordinates):
+            raise ValueError("missing or invalid source coordinates")
+        width = int(db_row["source_width"] or 0)
+        height = int(db_row["source_height"] or 0)
+        if width <= 0 or height <= 0:
+            raise ValueError(f"invalid source dimensions: {width}x{height}")
+        expected = width * height
+        _decode_pixel_array(db_row["source_pixels"], field="source pixel", expected=expected)
+        gray = _decode_pixel_array(
+            db_row["gray_pixels"], field="greyscale pixel", expected=expected
+        ).reshape(height, width)
+        result.append(
+            DigitRow(
+                puzzle_hash=str(db_row["puzzle_hash"]),
+                cell_type=cast("CellType", cell_type),
+                row=int(db_row["row"]),
+                col=int(db_row["col"]),
+                digit_index=int(db_row["digit_index"]),
+                provisional_label=label,
+                width=width,
+                height=height,
+                gray_pixels=gray,
+            )
+        )
+    return result
 
 
 def load_corrections(path: Path) -> tuple[str, dict[tuple[str, str, int, int, int], int], set[tuple[str, str, int, int, int]]]:
@@ -60,12 +211,15 @@ def fetch_digit_rows(
 ) -> list[sqlite3.Row]:
     cur = conn.execute(
         """
-        SELECT puzzle_hash, cell_type, row, col, digit_index,
-               source_pixels, source_width, source_height
-        FROM cell_reads
-        WHERE git_hash = ? AND predicted_label = ?
-          AND cell_type IN ('given_digit', 'cage_total_digit')
-          AND source_pixels IS NOT NULL
+        SELECT cr.puzzle_hash, cr.cell_type, cr.row, cr.col, cr.digit_index,
+               cr.source_pixels, cr.source_width, cr.source_height
+        FROM cell_reads cr
+        JOIN evaluations e
+          ON e.puzzle_hash = cr.puzzle_hash AND e.git_hash = cr.git_hash
+        WHERE cr.git_hash = ? AND cr.predicted_label = ?
+          AND e.status = 'done' AND e.bucket = 'clean' AND e.spec_error IS NULL
+          AND cr.cell_type IN ('given_digit', 'cage_total_digit')
+          AND cr.source_pixels IS NOT NULL
         """,
         (git_hash, digit),
     )
@@ -138,6 +292,12 @@ def main() -> None:
 
     conn = sqlite3.connect(f"file:{args.db_path}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
+    audit = audit_corpus(conn, git_hash)
+    eligible_rows = fetch_eligible_rows(conn, git_hash)
+    print(
+        f"Audited {audit.terminal_evaluations}/{audit.registered_puzzles} evaluations; "
+        f"{len(eligible_rows)} clean digit rows are eligible"
+    )
 
     strata_by_digit: dict[int, dict[tuple[int, int], list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
 

@@ -34,7 +34,7 @@
 - Produces: `CorpusAudit`, `DigitRow`, `audit_corpus(conn, evaluation_id) -> CorpusAudit`, and `fetch_eligible_rows(conn, evaluation_id) -> list[DigitRow]`.
 - Consumes: SQLite tables `puzzles`, `evaluations`, and `cell_reads` as documented in `docs/corpus-db.md`.
 
-- [ ] **Step 1: Write failing audit tests against a temporary SQLite database**
+- [x] **Step 1: Write failing audit tests against a temporary SQLite database**
 
 ```python
 def test_audit_requires_one_completed_evaluation_per_registered_puzzle(tmp_path: Path) -> None:
@@ -49,13 +49,13 @@ def test_audit_rejects_a_different_evaluation_identity(tmp_path: Path) -> None:
         export.audit_corpus(conn, "older-run")
 ```
 
-- [ ] **Step 2: Run the focused tests and verify the missing interfaces fail**
+- [x] **Step 2: Run the focused tests and verify the missing interfaces fail**
 
 Run: `.venv/Scripts/python -m pytest tests/test_export_corpus_training_data.py -v`
 
 Expected: FAIL because `CorpusAudit` and `audit_corpus` do not exist.
 
-- [ ] **Step 3: Add typed audit and row records plus strict validation**
+- [x] **Step 3: Add typed audit and row records plus strict validation**
 
 ```python
 SOURCE_EVALUATION_ID = "full-corpus-b708d8b"
@@ -83,7 +83,7 @@ class DigitRow:
 
 Implement `audit_corpus` so it rejects a non-matching identity, missing puzzles, duplicate puzzle rows, non-terminal rows, missing corners, and missing/malformed greyscale evidence before producing output. Implement `fetch_eligible_rows` with an explicit `WHERE e.git_hash = ? AND e.status = 'done' AND e.bucket = 'clean' AND e.spec_error IS NULL` join and validate every byte count and label.
 
-- [ ] **Step 4: Test the eligible-row filters and malformed evidence cases**
+- [x] **Step 4: Test the eligible-row filters and malformed evidence cases**
 
 Add tests proving backtracked/not-solved rows, rows from another hash, unsupported cell types, invalid labels, and malformed greyscale lengths are rejected or excluded exactly as specified.
 
@@ -91,11 +91,11 @@ Run: `.venv/Scripts/python -m pytest tests/test_export_corpus_training_data.py -
 
 Expected: PASS.
 
-- [ ] **Step 5: Update the corpus documentation**
+- [x] **Step 5: Update the corpus documentation**
 
 Document `evaluations.grid_corners` and `cell_reads.gray_pixels`, including the corner order and the guarantee that `gray_pixels` uses the same bounding box and dimensions as `source_pixels`.
 
-- [ ] **Step 6: Run Python checks and commit**
+- [x] **Step 6: Run Python checks and commit**
 
 Run: `.venv/Scripts/python -m ruff check . && .venv/Scripts/python -m mypy . --ignore-missing-imports && .venv/Scripts/python -m pytest tests/test_export_corpus_training_data.py -v`
 

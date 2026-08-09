@@ -89,6 +89,12 @@ Set by `installCvMonitors()` in `store.ts`. NULL before that initialises.
 |--------|------|---------|
 | `fallback_used` | INTEGER | `1` if border-calibration fell back to the rough adaptive-threshold path; `0` for the normal path; NULL for classic puzzles |
 
+#### Grid geometry
+
+| Column | Type | Meaning |
+|--------|------|---------|
+| `grid_corners` | TEXT | JSON `[xTL,yTL,xTR,yTR,xBR,yBR,xBL,yBL]` in original-image coordinates; NULL only when the grid was not located or for historical rows |
+
 ### `cell_reads`
 
 One row per digit read produced by the deployed TypeScript pipeline, for both
@@ -105,7 +111,8 @@ switching between `stretch` and `letterbox` changes only the derived warp, never
 | `predicted_label`, `confident`, `clashes_with` | mixed | Deployed recognition result and validation evidence |
 | `source_x`, `source_y` | INTEGER | Bounding-box origin in the warped grid |
 | `source_width`, `source_height` | INTEGER | Variable-sized raw crop dimensions |
-| `source_pixels` | TEXT | Row-major JSON uint8 array of length `source_width * source_height`; no recognition warp has been applied |
+| `source_pixels` | TEXT | Row-major JSON uint8 array of length `source_width * source_height`; binarised pixels from the selected bounding box before recognition warping |
+| `gray_pixels` | TEXT | Row-major JSON uint8 array of length `source_width * source_height`; greyscale pixels from exactly the same bounding box and dimensions as `source_pixels` |
 | `recognition_pixels` | TEXT | Row-major JSON uint8 array of length 4096; the exact deployed 64×64 recogniser input |
 | `warp_strategy` | TEXT | `stretch` or `letterbox`, describing how `recognition_pixels` was derived |
 | `hog_features`, `hole_features` | TEXT | JSON feature arrays produced from `recognition_pixels` |
