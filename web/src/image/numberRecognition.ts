@@ -1184,6 +1184,7 @@ export function splitNum(
   cv: Cv,
   br: BRect,
   warpedBlk: OpenCVMat,
+  warpedGry: OpenCVMat,
   subres: number,
 ): [Uint8Array[], RawDigitCrop[], number, number] {
   const [x, y, w, h] = br;
@@ -1214,7 +1215,10 @@ export function splitNum(
   const sourceCrops = rects.map(([yt, yb, xl, xr]) =>
     extractRawDigitCrop(cv, warpedBlk, [xl, yt, xr - xl, yb - yt]),
   );
-  const thumbs = sourceCrops.map(crop => rec.warpForRecognition(cv, crop, halfRes));
+  const recognitionCrops = rects.map(([yt, yb, xl, xr]) =>
+    extractRawDigitCrop(cv, warpedGry, [xl, yt, xr - xl, yb - yt]),
+  );
+  const thumbs = recognitionCrops.map(crop => rec.warpForRecognition(cv, crop, halfRes));
 
   return [thumbs, sourceCrops, x, y];
 }
@@ -1242,6 +1246,7 @@ const GIVEN_DIGIT_ALLOWED_LABELS: ReadonlySet<number> = new Set([1, 2, 3, 4, 5, 
 export function readClassicDigits(
   cv: Cv,
   warpedBlk: OpenCVMat,
+  warpedGry: OpenCVMat,
   subres: number,
   classicConf: number[][],
 ): {
@@ -1296,7 +1301,8 @@ export function readClassicDigits(
       const ax = x0 + br.x;
       const ay = y0 + br.y;
       const sourceCrop = extractRawDigitCrop(cv, warpedBlk, [ax, ay, br.width, br.height]);
-      const thumb = rec.warpForRecognition(cv, sourceCrop, half);
+      const recognitionCrop = extractRawDigitCrop(cv, warpedGry, [ax, ay, br.width, br.height]);
+      const thumb = rec.warpForRecognition(cv, recognitionCrop, half);
       const [rec0] = rec.recognise([thumb], [GIVEN_DIGIT_ALLOWED_LABELS]);
       const d = rec0!.label;
       if (d > 0) {

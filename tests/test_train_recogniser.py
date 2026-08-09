@@ -298,11 +298,13 @@ def test_hog_recogniser_save_keys() -> None:
             out,
             confidence_threshold=CONFIDENCE_THRESHOLD,
             warp_strategy="stretch",
+            recognition_input_mode="gray",
         )
         manifest: dict[str, Any] = json.loads((out / "num_recogniser.json").read_text())
 
     assert manifest["classifier_type"] == "rbf"
     assert manifest["warp_strategy"] == "stretch"
+    assert manifest["recognition_input_mode"] == "gray"
     assert set(manifest["arrays"].keys()) == _EXPECTED_HOG_KEYS
     # No PCA/template keys when pca_components=0 explicitly disables the reduction step.
     assert not any(k.startswith("pca") or k.startswith("template") for k in manifest["arrays"])

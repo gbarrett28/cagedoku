@@ -308,19 +308,9 @@ consistent with a cage total rather than a centred solution digit (a parity chec
 acquisition shares one width/height gate without forcing callers that already scoped a
 candidate glyph to inherit the whole-board parity check.
 
-Each digit thumbnail is a 64×64 binary uint8 image produced by `letterboxWarp` —
-the digit's natural aspect ratio is preserved and it is centred with black letterbox
-bars on the narrower axis, rather than stretched to fill the square (the previous
-`squarePadSrc` approach centred the rect in a square *before* warping, which is
-equivalent for single digits but interacted badly with multi-digit splits; see Classic
-digit reading below for the shared rationale). `splitNum` decides whether a raw contour represents one or two digits from the
-column-wise topmost-ink-row profile and the last valid inter-glyph peak. It validates
-both halves with `contourIsNumber`; no secondary model or fallback branch participates.
-Each selected rectangle is independently `letterboxWarp`-ed, and no pre-split merged
-thumbnail is produced or threaded through training export.
+Each digit thumbnail is a 64×64 uint8 image produced by the model-selected recognition input mode and warp. Binary segmentation still supplies every contour, split point, and final bounding rectangle. A legacy manifest (or `recognition_input_mode: "binary"`) recognises the binary pixels from that rectangle. A greyscale model declares `recognition_input_mode: "gray"`; the identical rectangle is then copied from the warped greyscale grid, contrast-normalised and inverted, and passed through the same named `stretch`, `letterbox`, or `letterbox-centered` warp. `splitNum` decides whether a raw contour represents one or two digits from the binary column-wise topmost-ink-row profile and the last valid inter-glyph peak. It validates both halves with `contourIsNumber`; no classifier or greyscale operation participates in segmentation.
 
-Before either recognition warp, `extractRawDigitCrop` copies the exact bounding-box
-pixels from the warped binary grid into a `RawDigitCrop`. `warpRawDigitCrop` then applies
+Before either recognition warp, `extractRawDigitCrop` copies the exact bounding-box pixels into a `RawDigitCrop`. The binary crop remains the strategy-neutral segmentation evidence in `ParseResult.cellSourceCrops`; when greyscale input is selected, a companion crop from the same coordinates is used only to produce the recognition thumbnail. `warpRawDigitCrop` then applies
 the recogniser's named `stretch`, `letterbox`, or `letterbox-centered` strategy using the shared production
 perspective-warp geometry. `ParseResult.cellSourceCrops` retains those strategy-neutral
 pixels in the same per-cell order as `cellThumbs` and the recognition results. The

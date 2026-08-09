@@ -245,7 +245,7 @@ export async function parsePuzzleImage(
       thumbs: classicThumbs,
       sourceCrops: classicSourceCrops,
       recognitions: classicRecognitions,
-    } = readClassicDigits(cv, warpedBlkMat, subres, classicConf);
+    } = readClassicDigits(cv, warpedBlkMat, warpedGryMat, subres, classicConf);
 
     const classicSourceCropsGray = extractGrayCompanionCrops(cv, warpedGryMat, classicSourceCrops);
     warpedGryMat.delete(); warpedBlkMat.delete();
@@ -302,7 +302,7 @@ export async function parsePuzzleImage(
     const brdrs = buildBrdrs(initialBorderX, initialBorderY);
     const cageSizes = computeCageSizes(initialBorderX, initialBorderY);
     lastCageTotalsResult = buildCageTotals(
-      cv, warpedBlkMat, subres, brdrs, cageSizes,
+      cv, warpedBlkMat, warpedGryMat, subres, brdrs, cageSizes,
     );
     ({ cageTotals, cellThumbs, cellSourceCrops, cellRecognitions } = lastCageTotalsResult);
   } catch (e) {
@@ -347,7 +347,7 @@ export async function parsePuzzleImage(
       const brdrs2 = buildBrdrs(bestBorderX, bestBorderY);
       const cageSizes2 = computeCageSizes(bestBorderX, bestBorderY);
       lastCageTotalsResult = buildCageTotals(
-        cv, warpedBlkMat, subres, brdrs2, cageSizes2,
+        cv, warpedBlkMat, warpedGryMat, subres, brdrs2, cageSizes2,
       );
       ({ cageTotals, cellThumbs, cellSourceCrops, cellRecognitions } = lastCageTotalsResult);
 
@@ -362,7 +362,7 @@ export async function parsePuzzleImage(
         );
         try {
           lastCageTotalsResult = buildCageTotals(
-            cv, adaptiveBlk, subres, brdrs2, cageSizes2,
+            cv, adaptiveBlk, warpedGryMat, subres, brdrs2, cageSizes2,
           );
           ({ cageTotals, cellThumbs, cellSourceCrops, cellRecognitions } = lastCageTotalsResult);
           fallbackUsed = true;
@@ -379,7 +379,7 @@ export async function parsePuzzleImage(
   // puzzles (cheap no-op), but captures given digits if OCR misdetected the type so that
   // the user can switch to Classic via the type dropdown and still get a correct solution.
   const { digits: givenDigits, recognitions: classicRecognitions } =
-    readClassicDigits(cv, warpedBlkMat, subres, classicConf);
+    readClassicDigits(cv, warpedBlkMat, warpedGryMat, subres, classicConf);
 
   const cellSourceCropsGray = extractGrayCompanionCrops(cv, warpedGryMat, cellSourceCrops);
   warpedGryMat.delete();
@@ -465,6 +465,7 @@ export interface CageTotalsResult {
 export function buildCageTotals(
   cv: Cv,
   warpedBlk: OpenCVMat,
+  warpedGry: OpenCVMat,
   subres: number,
   brdrs: Brdrs,
   cageSizes: number[][],
@@ -500,7 +501,7 @@ export function buildCageTotals(
       let numThumbArr: Uint8Array[];
       let sourceCropArr: RawDigitCrop[];
       try {
-        [numThumbArr, sourceCropArr] = splitNum(cv, br, warpedBlk, subres);
+        [numThumbArr, sourceCropArr] = splitNum(cv, br, warpedBlk, warpedGry, subres);
       } catch (err) {
         console.warn('splitNum failed for contour', br, err);
         continue;

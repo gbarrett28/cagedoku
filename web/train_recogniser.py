@@ -85,6 +85,7 @@ DEFAULT_OVERRIDES_PATH = Path("killer_sudoku/training/manual_label_overrides.jso
 
 
 type WarpStrategy = Literal["stretch", "letterbox", "letterbox-centered"]
+type RecognitionInputMode = Literal["binary", "gray"]
 
 
 @dataclass(frozen=True)
@@ -328,6 +329,7 @@ class HogRecogniser:
         self, model: dict[str, Any], out_dir: Path,
         warp_strategy: WarpStrategy,
         confidence_threshold: float = CONFIDENCE_THRESHOLD,
+        recognition_input_mode: RecognitionInputMode = "binary",
     ) -> None:
         svc: SVC = model["clf"]
         try:
@@ -382,6 +384,7 @@ class HogRecogniser:
                 {
                     "classifier_type": "rbf",
                     "warp_strategy": warp_strategy,
+                    "recognition_input_mode": recognition_input_mode,
                     "arrays": manifest_arrays,
                 },
                 indent=2,
@@ -431,6 +434,7 @@ class PcaRecogniser:
         self, model: dict[str, Any], out_dir: Path,
         warp_strategy: WarpStrategy,
         confidence_threshold: float = CONFIDENCE_THRESHOLD,
+        recognition_input_mode: RecognitionInputMode = "binary",
     ) -> None:
         svc: SVC = model["clf"]
         try:
@@ -476,6 +480,7 @@ class PcaRecogniser:
                     "classifier_type": "rbf",
                     "recogniser_type": "pca",
                     "warp_strategy": warp_strategy,
+                    "recognition_input_mode": recognition_input_mode,
                     "arrays": manifest_arrays,
                 },
                 indent=2,
@@ -963,6 +968,7 @@ def write_training_manifest(
     sources: dict[str, Any],
     digit_distribution: dict[int, int],
     warp_strategy: WarpStrategy,
+    recognition_input_mode: RecognitionInputMode,
     dither: int,
     pca_components: int,
     class_mean_residual_components: int,
@@ -980,6 +986,7 @@ def write_training_manifest(
         "trained_at": datetime.now(UTC).isoformat(),
         "git_commit": _git_commit(),
         "warp_strategy": warp_strategy,
+        "recognition_input_mode": recognition_input_mode,
         "dither": dither,
         "pca_components": pca_components,
         "class_mean_residual_components": class_mean_residual_components,
@@ -1046,6 +1053,10 @@ def main() -> None:
         default=deployed_warp_strategy(),
         help="Production TypeScript crop warp used for raw training inputs "
              "(default: strategy in the deployed model manifest)",
+    )
+    parser.add_argument(
+        "--recognition-input-mode", choices=("binary", "gray"), default="binary",
+        help="Recognition crop input encoded in the model (default: binary)",
     )
     parser.add_argument(
         "--confidence-threshold", type=float, default=CONFIDENCE_THRESHOLD, metavar="T",
@@ -1228,6 +1239,7 @@ def main() -> None:
         model, out_dir,
         confidence_threshold=args.confidence_threshold,
         warp_strategy=strategy,
+        recognition_input_mode=args.recognition_input_mode,
     )
     write_training_manifest(
         out_dir,
@@ -1247,6 +1259,7 @@ def main() -> None:
         },
         digit_distribution=dist,
         warp_strategy=strategy,
+        recognition_input_mode=args.recognition_input_mode,
         dither=args.dither,
         pca_components=args.pca_components,
         class_mean_residual_components=args.class_mean_residual_components,

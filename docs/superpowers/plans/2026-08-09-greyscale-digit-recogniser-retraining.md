@@ -155,9 +155,9 @@ Commit: `feat: export greyscale corpus training crops`
 - Reuse: `web/train_recogniser.py`
 - Generated: candidate model outside `web/public/`
 
-- [ ] **Step 1:** Verify with focused tests that PCA training disables translation jitter; retain the existing behaviour rather than adding a new policy layer.
-- [ ] **Step 2:** Train from `web/corpus_train.json` with `--recogniser pca --warp-strategy letterbox-centered --no-synthetic --dither 0`, using the existing deduplication and fitting path.
-- [ ] **Step 3:** Record the exact command, sample counts, correction hash, source evaluation, and model metrics alongside the candidate. Add only the minimal manifest `recognition_input_mode: 'gray'` field required by the browser contract.
+- [x] **Step 1:** Verify with focused tests that PCA training disables translation jitter; retain the existing behaviour rather than adding a new policy layer.
+- [x] **Step 2:** Train from `web/corpus_train.json` with `--recogniser pca --warp-strategy letterbox-centered --no-synthetic --dither 0`, using the existing deduplication and fitting path.
+- [x] **Step 3:** Record the exact command, sample counts, correction hash, source evaluation, and model metrics alongside the candidate. Add only the minimal manifest `recognition_input_mode: 'gray'` field required by the browser contract.
 - [ ] **Step 4:** Run focused trainer/model-validation tests and the bronze gate.
 
 Commit: `feat: train centred greyscale digit recogniser`
@@ -198,7 +198,7 @@ Run: `cd web && npm test -- --run src/image/numberRecognition.crop.test.ts src/i
 
 Expected: FAIL because recognition still consumes the binary crop.
 
-- [ ] **Step 3: Thread warped greyscale images through both recognition paths**
+- [x] **Step 3: Thread warped greyscale images through both recognition paths**
 
 Use the binary contour/profile logic unchanged. Once each final bounding rectangle is known, extract `RawDigitCrop` from `warpedGray` for recognition and retain the binary crop only as segmentation evidence. Delete every temporary OpenCV matrix in the owning scope.
 
