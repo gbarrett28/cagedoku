@@ -33,6 +33,11 @@ export interface RawDigitCrop {
 }
 
 export type WarpStrategy = 'stretch' | 'letterbox' | 'letterbox-centered';
+export type RecognitionInputMode =
+  | 'binary'
+  | 'gray-inverted-contrast'
+  | 'gray-adaptive'
+  | 'gray-normalized';
 
 /** Node in the OpenCV contour hierarchy tree. */
 export type ContourInfo = [br: BRect, children: ContourInfo[]];
@@ -322,12 +327,14 @@ export function rbfPredictWithConfidence(
 // ---------------------------------------------------------------------------
 
 export abstract class NumRecogniser {
+  readonly inputMode: RecognitionInputMode = 'binary';
+
   constructor(readonly confidenceThreshold: number) {}
   abstract readonly warpStrategy: WarpStrategy;
   abstract recognise(imgs: Uint8Array[], allowedLabels?: (ReadonlySet<number> | undefined)[]): Recognition[];
 
   warpForRecognition(cv: Cv, crop: RawDigitCrop, targetSize: number): Uint8Array {
-    return warpRawDigitCrop(cv, crop, this.warpStrategy, targetSize);
+    return prepareRecognitionCrop(cv, crop, this.warpStrategy, this.inputMode, targetSize);
   }
 }
 
@@ -960,6 +967,63 @@ export function extractRawDigitCrop(
 }
 
 /** Apply one named production warp to a strategy-neutral raw digit crop. */
+function percentile(values: Uint8Array, fraction: number): number {
+  const sorted = Array.from(values).sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.floor(fraction * (sorted.length - 1)))]!;
+}
+
+function percentileInk(pixels: Uint8Array): Uint8Array {
+  const low = percentile(pixels, 0.05);
+  const high = percentile(pixels, 0.95);
+  if (high <= low) return new Uint8Array(pixels.length);
+  return Uint8Array.from(pixels, value =>
+    Math.round(255 * Math.max(0, Math.min(1, (high - value) / (high - low)))),
+  );
+}
+
+function localBackgroundInk(pixels: Uint8Array, width: number, height: number): Uint8Array {
+  const residual = new Uint8Array(pixels.length);
+  const radius = 2;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let total = 0, count = 0;
+      for (let yy = Math.max(0, y - radius); yy <= Math.min(height - 1, y + radius); yy++) {
+        for (let xx = Math.max(0, x - radius); xx <= Math.min(width - 1, x + radius); xx++) {
+          total += pixels[yy * width + xx]!;
+          count++;
+        }
+      }
+      residual[y * width + x] = Math.max(0, Math.round(total / count) - pixels[y * width + x]!);
+    }
+  }
+  const high = percentile(residual, 0.95);
+  if (high === 0) return residual;
+  return Uint8Array.from(residual, value => Math.min(255, Math.round(255 * value / high)));
+}
+
+export function prepareRecognitionCrop(
+  cv: Cv,
+  crop: RawDigitCrop,
+  strategy: WarpStrategy,
+  inputMode: RecognitionInputMode,
+  targetSize: number = 64,
+): Uint8Array {
+  if (inputMode === 'binary') {
+    return warpRawDigitCrop(cv, crop, strategy, targetSize);
+  }
+  let pixels: Uint8Array;
+  if (inputMode === 'gray-inverted-contrast') {
+    pixels = Uint8Array.from(crop.pixels, value => 255 - value);
+  } else if (inputMode === 'gray-normalized') {
+    pixels = percentileInk(crop.pixels);
+  } else if (inputMode === 'gray-adaptive') {
+    pixels = localBackgroundInk(crop.pixels, crop.width, crop.height);
+  } else {
+    throw new Error(`Unsupported recognition input mode: ${String(inputMode)}`);
+  }
+  return warpRawDigitCrop(cv, { ...crop, pixels }, strategy, targetSize);
+}
+
 export function warpRawDigitCrop(
   cv: Cv,
   crop: RawDigitCrop,

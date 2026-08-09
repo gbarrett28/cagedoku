@@ -7,6 +7,7 @@ Failure (bad exit code, unparseable output) always raises; there is
 deliberately no fallback path.
 """
 import json
+import os
 import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -34,9 +35,18 @@ _BRIDGE_SCRIPT = _REPO_ROOT / "web" / "scripts" / "ts-bridge.ts"
 # still batching (never one bridge call per crop).
 _BATCH_SIZE = 5000
 
+RecognitionInputMode = Literal[
+    "binary", "gray-inverted-contrast", "gray-adaptive", "gray-normalized"
+]
+
 
 def _run_bridge(op: str, payload: dict[str, Any]) -> dict[str, Any]:
-    args = ["npx", "tsx", str(_BRIDGE_SCRIPT), "--op", op]
+    bridge_args = ["npx", "tsx", str(_BRIDGE_SCRIPT), "--op", op]
+    args = (
+        [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/s", "/c", *bridge_args]
+        if os.name == "nt"
+        else bridge_args
+    )
     result = subprocess.run(
         args,
         input=json.dumps(payload),
@@ -61,10 +71,15 @@ def warp_crops(
     crops: Sequence[RawDigitCrop],
     strategy: Literal["stretch", "letterbox", "letterbox-centered"],
     size: int = 64,
+    input_mode: RecognitionInputMode = "binary",
 ) -> npt.NDArray[np.uint8]:
     """Warp raw crops in batches using the production TypeScript implementation."""
     if strategy not in ("stretch", "letterbox", "letterbox-centered"):
         raise ValueError(f"unsupported warp strategy: {strategy}")
+    if input_mode not in (
+        "binary", "gray-inverted-contrast", "gray-adaptive", "gray-normalized"
+    ):
+        raise ValueError(f"unsupported recognition input mode: {input_mode}")
     if size <= 0:
         raise ValueError(f"warp size must be positive, got {size}")
 
@@ -89,7 +104,12 @@ def warp_crops(
 
         out = _run_bridge(
             "warp-crops",
-            {"crops": encoded, "strategy": strategy, "size": size},
+            {
+                "crops": encoded,
+                "strategy": strategy,
+                "inputMode": input_mode,
+                "size": size,
+            },
         )
         rows = out.get("crops")
         if not isinstance(rows, list) or len(rows) != len(batch):

@@ -83,6 +83,19 @@ def test_warp_crops_accepts_letterbox_centered_strategy(monkeypatch: Any) -> Non
     assert warped.shape == (1, 2, 2)
 
 
+def test_warp_crops_forwards_greyscale_input_mode(monkeypatch: Any) -> None:
+    def fake_run_bridge(_op: str, payload: dict[str, Any]) -> dict[str, Any]:
+        assert payload["inputMode"] == "gray-normalized"
+        return {"crops": [[7] * 4]}
+
+    monkeypatch.setattr(ts_bridge, "_run_bridge", fake_run_bridge)
+    crops = [RawDigitCrop(np.full((2, 3), 7, dtype=np.uint8))]
+
+    warped = warp_crops(crops, "letterbox-centered", size=2, input_mode="gray-normalized")
+
+    assert warped.shape == (1, 2, 2)
+
+
 def test_warp_crops_rejects_unsupported_strategy() -> None:
     crops = [RawDigitCrop(np.full((2, 3), 7, dtype=np.uint8))]
 

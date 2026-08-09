@@ -118,7 +118,7 @@ Commit: `feat: audit greyscale corpus training source`
 - Extends: bridge `warp-crops` request with optional `inputMode`; no new bridge operation is permitted.
 - Python wrapper: `warp_crops(crops, strategy, size, input_mode="binary") -> NDArray[np.uint8]`.
 
-- [ ] **Step 1: Add failing TypeScript tests for the three greyscale candidates**
+- [x] **Step 1: Add failing TypeScript tests for the three greyscale candidates**
 
 ```typescript
 it.each([
@@ -135,17 +135,17 @@ it.each([
 
 Also assert that `inputMode: 'binary'` is byte-for-byte identical to the current `warpRawDigitCrop` result.
 
-- [ ] **Step 2: Run the focused TypeScript tests and verify failure**
+- [x] **Step 2: Run the focused TypeScript tests and verify failure**
 
 Run: `cd web && npm test -- --run src/image/numberRecognition.crop.test.ts scripts/ts-bridge.test.ts`
 
 Expected: FAIL because `RecognitionInputMode` and `prepareRecognitionCrop` do not exist.
 
-- [ ] **Step 3: Implement the minimal TypeScript preprocessing functions**
+- [x] **Step 3: Implement the minimal TypeScript preprocessing functions**
 
 Add small, separately testable helpers for contrast inversion/normalisation and reuse `letterboxWarp` plus `centerByCentroid`. Keep OpenCV allocations inside `try/finally` blocks. `NumRecogniser.warpForRecognition` must call `prepareRecognitionCrop` using a readonly `inputMode` property, defaulting to `binary` for old manifests.
 
-- [ ] **Step 4: Extend the existing bridge request and Python wrapper**
+- [x] **Step 4: Extend the existing bridge request and Python wrapper**
 
 ```typescript
 interface WarpCropsRequest {
@@ -159,7 +159,7 @@ interface WarpCropsRequest {
 
 Validate the enum at the bridge boundary and default omitted values to `binary`. Update the Python dataclass/request construction without implementing image transforms in Python.
 
-- [ ] **Step 5: Run bridge parity and diagnostics**
+- [x] **Step 5: Run bridge parity and diagnostics**
 
 Run: `cd web && npm test -- --run src/image/numberRecognition.crop.test.ts scripts/ts-bridge.test.ts`
 
@@ -167,7 +167,7 @@ Run: `.venv/Scripts/python -m pytest tests/test_ts_bridge.py -v`
 
 Expected: PASS, including legacy binary parity.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Commit: `feat: add greyscale recognition preprocessing`
 
