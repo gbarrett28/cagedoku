@@ -106,10 +106,29 @@ def audit_corpus(conn: sqlite3.Connection, evaluation_id: str) -> CorpusAudit:
         raise ValueError(f"Source evaluation has {unfinished} unfinished evaluation(s)")
     if duplicate_groups:
         raise ValueError(f"Source evaluation has {duplicate_groups} duplicate puzzle evaluation(s)")
-    if terminal != registered or distinct != registered:
+    membership = conn.execute(
+        """
+        SELECT
+          (SELECT COUNT(*) FROM (
+             SELECT content_hash FROM puzzles
+             EXCEPT
+             SELECT puzzle_hash FROM evaluations WHERE git_hash = ?
+           )) AS missing_puzzles,
+          (SELECT COUNT(*) FROM (
+             SELECT puzzle_hash FROM evaluations WHERE git_hash = ?
+             EXCEPT
+             SELECT content_hash FROM puzzles
+           )) AS unexpected_puzzles
+        """,
+        (evaluation_id, evaluation_id),
+    ).fetchone()
+    missing_puzzles = int(membership["missing_puzzles"])
+    unexpected_puzzles = int(membership["unexpected_puzzles"])
+    if terminal != registered or distinct != registered or missing_puzzles or unexpected_puzzles:
         raise ValueError(
             "Source evaluation coverage mismatch: "
-            f"{terminal} evaluations for {distinct} distinct puzzles; {registered} registered"
+            f"{terminal} evaluations for {distinct} distinct puzzles; {registered} registered; "
+            f"{missing_puzzles} missing and {unexpected_puzzles} unexpected"
         )
     if missing_corners:
         raise ValueError(f"Source evaluation has {missing_corners} missing grid corner record(s)")
@@ -120,7 +139,14 @@ def audit_corpus(conn: sqlite3.Connection, evaluation_id: str) -> CorpusAudit:
             (evaluation_id,),
         ).fetchone()[0]
     )
+    fetch_eligible_rows(conn, evaluation_id)
     return CorpusAudit(registered, terminal, distinct, digit_rows)
+
+
+def _require_int(value: object, *, field: str) -> int:
+    if type(value) is not int:
+        raise ValueError(f"{field} must be an integer, got {value!r}")
+    return value
 
 
 def _decode_pixel_array(value: object, *, field: str, expected: int) -> NDArray[np.uint8]:
@@ -161,14 +187,15 @@ def fetch_eligible_rows(conn: sqlite3.Connection, evaluation_id: str) -> list[Di
         cell_type = str(db_row["cell_type"])
         if cell_type not in SUPPORTED_CELL_TYPES:
             raise ValueError(f"unsupported cell type: {cell_type}")
-        label = int(db_row["predicted_label"])
+        label = _require_int(db_row["predicted_label"], field="predicted_label")
         if not 0 <= label <= 9:
             raise ValueError(f"invalid label: {label}")
-        coordinates = (db_row["source_x"], db_row["source_y"])
-        if any(value is None or int(value) < 0 for value in coordinates):
+        source_x = _require_int(db_row["source_x"], field="source_x")
+        source_y = _require_int(db_row["source_y"], field="source_y")
+        if source_x < 0 or source_y < 0:
             raise ValueError("missing or invalid source coordinates")
-        width = int(db_row["source_width"] or 0)
-        height = int(db_row["source_height"] or 0)
+        width = _require_int(db_row["source_width"], field="source_width")
+        height = _require_int(db_row["source_height"], field="source_height")
         if width <= 0 or height <= 0:
             raise ValueError(f"invalid source dimensions: {width}x{height}")
         expected = width * height
@@ -180,9 +207,9 @@ def fetch_eligible_rows(conn: sqlite3.Connection, evaluation_id: str) -> list[Di
             DigitRow(
                 puzzle_hash=str(db_row["puzzle_hash"]),
                 cell_type=cast("CellType", cell_type),
-                row=int(db_row["row"]),
-                col=int(db_row["col"]),
-                digit_index=int(db_row["digit_index"]),
+                row=_require_int(db_row["row"], field="row"),
+                col=_require_int(db_row["col"], field="col"),
+                digit_index=_require_int(db_row["digit_index"], field="digit_index"),
                 provisional_label=label,
                 width=width,
                 height=height,

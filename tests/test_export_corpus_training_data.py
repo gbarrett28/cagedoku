@@ -150,11 +150,38 @@ def test_audit_rejects_duplicate_or_missing_puzzle_evaluations(tmp_path: Path) -
         export.audit_corpus(conn, export.SOURCE_EVALUATION_ID)
 
 
+def test_audit_rejects_equal_count_but_different_puzzle_membership(tmp_path: Path) -> None:
+    conn = _make_db(tmp_path)
+    _add_puzzle(conn, "p1")
+    _add_puzzle(conn, "p2")
+    conn.execute(
+        "DELETE FROM evaluations WHERE puzzle_hash = 'p2'"
+    )
+    conn.execute(
+        "INSERT INTO evaluations "
+        "(puzzle_hash, git_hash, status, bucket, spec_error, grid_corners, finished_at) "
+        "VALUES ('p3', ?, 'done', 'clean', NULL, '[0,0,9,0,9,9,0,9]', '2026-08-09')",
+        (export.SOURCE_EVALUATION_ID,),
+    )
+
+    with pytest.raises(ValueError, match="1 missing and 1 unexpected"):
+        export.audit_corpus(conn, export.SOURCE_EVALUATION_ID)
+
+
 def test_audit_rejects_missing_grid_corners(tmp_path: Path) -> None:
     conn = _make_db(tmp_path)
     _add_puzzle(conn, "p1", grid_corners=None)
 
     with pytest.raises(ValueError, match="missing grid corner"):
+        export.audit_corpus(conn, export.SOURCE_EVALUATION_ID)
+
+
+def test_audit_rejects_malformed_eligible_greyscale_evidence(tmp_path: Path) -> None:
+    conn = _make_db(tmp_path)
+    _add_puzzle(conn, "p1")
+    _add_digit(conn, "p1", pixels=[10, 20, 30])
+
+    with pytest.raises(ValueError, match="greyscale pixel length"):
         export.audit_corpus(conn, export.SOURCE_EVALUATION_ID)
 
 
@@ -164,8 +191,12 @@ def test_fetch_eligible_rows_uses_only_clean_error_free_puzzles(tmp_path: Path) 
     _add_digit(conn, "clean")
     _add_puzzle(conn, "backtracked", bucket="backtracked")
     _add_digit(conn, "backtracked", label=4)
+    _add_puzzle(conn, "not-solved", bucket="notSolved")
+    _add_digit(conn, "not-solved", label=6)
     _add_puzzle(conn, "repaired", spec_error="repaired total")
     _add_digit(conn, "repaired", label=5)
+    _add_puzzle(conn, "older", evaluation_id="older-run")
+    _add_digit(conn, "older", evaluation_id="older-run", label=2)
 
     rows = export.fetch_eligible_rows(conn, export.SOURCE_EVALUATION_ID)
 
@@ -175,6 +206,16 @@ def test_fetch_eligible_rows_uses_only_clean_error_free_puzzles(tmp_path: Path) 
     assert row.cell_type == "given_digit"
     assert row.provisional_label == 7
     assert row.gray_pixels.tolist() == [[10, 20], [30, 40]]
+
+
+def test_fetch_eligible_rows_rejects_fractional_sqlite_integer_fields(tmp_path: Path) -> None:
+    conn = _make_db(tmp_path)
+    _add_puzzle(conn, "p1")
+    _add_digit(conn, "p1")
+    conn.execute("UPDATE cell_reads SET predicted_label = 7.9")
+
+    with pytest.raises(ValueError, match="predicted_label must be an integer"):
+        export.fetch_eligible_rows(conn, export.SOURCE_EVALUATION_ID)
 
 
 @pytest.mark.parametrize(
