@@ -121,6 +121,13 @@ function extractGrayCompanionCrops(
   return result;
 }
 
+/** Returns true when the Killer-only cage contour scan is required. */
+export function shouldCollectCageTotalContours(
+  puzzleType: 'killer' | 'classic',
+): puzzleType is 'killer' {
+  return puzzleType === 'killer';
+}
+
 export async function parsePuzzleImage(
   cv: Cv,
   file: File,
@@ -234,12 +241,11 @@ export async function parsePuzzleImage(
   warpedImgMat.delete();
 
   // --- Stage 3: Puzzle type detection ---
-  const contourMetrics = collectCageTotalContours(cv, warpedGryMat, subres);
-  const classicConf = scanClassicDigits(cv, warpedGryMat, subres, config.cellScan.classicMinSizeFraction);
   const puzzleType = detectPuzzleType(warpedGryMat, subres, config.cellScan.tlFractionThreshold);
+  const classicConf = scanClassicDigits(cv, warpedGryMat, subres, config.cellScan.classicMinSizeFraction);
 
   // --- Classic path ---
-  if (puzzleType === 'classic') {
+  if (!shouldCollectCageTotalContours(puzzleType)) {
     const {
       digits: givenDigits,
       thumbs: classicThumbs,
@@ -278,6 +284,8 @@ export async function parsePuzzleImage(
       classicRecognitions,
     };
   }
+
+  const contourMetrics = collectCageTotalContours(cv, warpedGryMat, subres);
 
   // --- Killer path: Stage 4 anchored border clustering ---
   // Cell scan (Stage 3, pure bounding-box size check with no fill-ratio
