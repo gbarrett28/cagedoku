@@ -8,7 +8,17 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { connectivityScore } from './inpImage.js';
+import { connectivityScore, shouldCollectCageTotalContours } from './inpImage.js';
+
+describe('shouldCollectCageTotalContours', () => {
+  it('skips Killer-only contour collection for Classic puzzles', () => {
+    expect(shouldCollectCageTotalContours('classic')).toBe(false);
+  });
+
+  it('retains contour collection for Killer puzzles', () => {
+    expect(shouldCollectCageTotalContours('killer')).toBe(true);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // buildCageTotals orientation contract (T1)
