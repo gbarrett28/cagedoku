@@ -474,6 +474,20 @@ describe('PcaRecogniser', () => {
     expect(result!.runnerUp).toEqual(expect.objectContaining({ label: 6 }));
   });
 
+  it('falls back to RBF when the best template score is below 0.81 despite a wide margin', () => {
+    const crop = [0, 100, 0, 100];
+    const { buf, manifest } = buildManifest(
+      [[100, 0, 100, 0], [0, 100, 45, 55]],
+      [8, 6],
+    );
+    const loaded = loadNumRecogniser(buf, manifest as Parameters<typeof loadNumRecogniser>[1]);
+
+    const [result] = loaded.recognise([Uint8Array.from(crop)]);
+
+    expect(result).toEqual(expect.objectContaining({ label: 8, confident: true }));
+    expect(result!.runnerUp).toEqual(expect.objectContaining({ label: 6 }));
+  });
+
   it('bypasses a confident template match when the manifest selects RBF-only recognition', () => {
     const pub = join(process.cwd(), 'public');
     const bin = readFileSync(join(pub, 'num_recogniser.bin'));
