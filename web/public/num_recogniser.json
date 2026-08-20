@@ -1,32 +1,33 @@
 {
   "classifier_type": "rbf",
   "recogniser_type": "pca",
-  "warp_strategy": "letterbox-centered",
+  "warp_strategy": "letterbox",
+  "recognition_input_mode": "gray",
   "arrays": {
     "rbf_support_vectors": {
       "dtype": "float64",
       "shape": [
-        4218,
-        39
+        334,
+        89
       ],
       "offset": 0,
-      "byteLength": 1316016
+      "byteLength": 237808
     },
     "rbf_dual_coef": {
       "dtype": "float64",
       "shape": [
         9,
-        4218
+        334
       ],
-      "offset": 1316016,
-      "byteLength": 303696
+      "offset": 237808,
+      "byteLength": 24048
     },
     "rbf_intercept": {
       "dtype": "float64",
       "shape": [
         45
       ],
-      "offset": 1619712,
+      "offset": 261856,
       "byteLength": 360
     },
     "rbf_n_support": {
@@ -34,7 +35,7 @@
       "shape": [
         10
       ],
-      "offset": 1620072,
+      "offset": 262216,
       "byteLength": 40
     },
     "rbf_gamma": {
@@ -42,7 +43,7 @@
       "shape": [
         1
       ],
-      "offset": 1620112,
+      "offset": 262256,
       "byteLength": 8
     },
     "classes": {
@@ -50,7 +51,7 @@
       "shape": [
         10
       ],
-      "offset": 1620120,
+      "offset": 262264,
       "byteLength": 40
     },
     "confidence_threshold": {
@@ -58,7 +59,7 @@
       "shape": [
         1
       ],
-      "offset": 1620160,
+      "offset": 262304,
       "byteLength": 8
     },
     "cm_mean_of_means": {
@@ -66,7 +67,7 @@
       "shape": [
         4096
       ],
-      "offset": 1620168,
+      "offset": 262312,
       "byteLength": 32768
     },
     "cm_between_components": {
@@ -75,7 +76,7 @@
         39,
         4096
       ],
-      "offset": 1652936,
+      "offset": 295080,
       "byteLength": 1277952
     },
     "template_pixels": {
@@ -84,7 +85,7 @@
         40,
         4096
       ],
-      "offset": 2930888,
+      "offset": 1573032,
       "byteLength": 1310720
     },
     "template_labels": {
@@ -92,8 +93,25 @@
       "shape": [
         40
       ],
-      "offset": 4241608,
+      "offset": 2883752,
       "byteLength": 160
+    },
+    "cm_residual_mean": {
+      "dtype": "float64",
+      "shape": [
+        4096
+      ],
+      "offset": 2883912,
+      "byteLength": 32768
+    },
+    "cm_residual_components": {
+      "dtype": "float64",
+      "shape": [
+        50,
+        4096
+      ],
+      "offset": 2916680,
+      "byteLength": 1638400
     }
   }
 }

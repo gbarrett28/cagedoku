@@ -186,6 +186,10 @@ export function classMeanProject(
 export interface Recognition {
   label: number;
   confident: boolean;
+  /** Winning raw score: NCC for templates, OvO vote count for RBF. */
+  score?: number;
+  /** Winning score minus the best competing-label score. */
+  margin?: number;
   /** Second-most-likely label and its raw score, present whenever the
    *  classifier considered more than one candidate class. `score` is only
    *  meaningful as a within-prediction ranking — its scale differs between
@@ -245,7 +249,11 @@ export function ovoVote(
     result.push({
       label: classes[best]!,
       confident,
-      ...(best2 !== -1 ? { runnerUp: { label: classes[best2]!, score: votes[s * nClasses + best2]! } } : {}),
+      score: votes[s * nClasses + best]!,
+      ...(best2 !== -1 ? {
+        margin: votes[s * nClasses + best]! - votes[s * nClasses + best2]!,
+        runnerUp: { label: classes[best2]!, score: votes[s * nClasses + best2]! },
+      } : {}),
     });
   }
   return result;
@@ -474,7 +482,12 @@ export class PcaRecogniser extends NumRecogniser {
         if (scores[t]! > runnerUpScore) runnerUpScore = scores[t]!;
       }
       if (bestScore >= this.templateThreshold && bestScore - runnerUpScore >= this.templateMargin) {
-        results.push({ label: bestLabel, confident: true });
+        results.push({
+          label: bestLabel,
+          confident: true,
+          score: bestScore,
+          margin: bestScore - runnerUpScore,
+        });
       } else {
         results.push({ label: -1, confident: false }); // placeholder, replaced below
         rbfNeeded.push(i);
@@ -625,6 +638,7 @@ export function loadNumRecogniser(
     recogniser_type?: string;
     warp_strategy?: string;
     recognition_input_mode?: string;
+    template_policy?: 'gate' | 'rbf-only';
     arrays: Record<string, { dtype: string; shape: number[]; offset: number; byteLength: number }>;
   },
 ): NumRecogniser {
@@ -696,35 +710,15 @@ export function loadNumRecogniser(
       nTemplates,
       nFeatures: templateNFeatures,
     };
-    // Empirically tuned (2026-08-01). A flat score threshold can't
-    // distinguish "confidently right" from "confidently matches the wrong
-    // digit's template" -- an earlier flat-threshold-only candidate (0.83,
-    // no margin) passed its own sweep but a full corpus eval found 26 cells
-    // (19 puzzles) of real "6" crops scoring higher against digit 8's
-    // template than any digit-6 template. So acceptance also requires the
-    // winning template's score to beat the best score from any *other*
-    // digit's templates by templateMargin (a Lowe's-ratio-style ambiguity
-    // check). (threshold, margin) was swept jointly against four sources:
-    // corpus_train.json (4000 labeled samples, in-sample -- these generated
-    // the templates), the 26 known digit-6/8 regressions, 103 hard cases of
-    // a narrow-oval "0" font the RBF fallback used to mis-predict as
-    // 6/8/9/3, and -- for real statistical power -- ~92k crops pulled from
-    // every cell of every corpus puzzle that solved cleanly under a prior
-    // run (a misread cage-total or given digit almost never lets a killer
-    // sudoku solve to a unique, consistent grid, so a clean solve is strong
-    // evidence every digit in it was read correctly; this set is disjoint
-    // from the training data that built the templates, but structurally
-    // excludes the exact hard boundary cases since those broke their
-    // puzzle's solve -- it validates precision at scale, not recall).
-    // 0.74/0.04 has zero errors across all four sources (0/~84k weak-labeled
-    // accepts, 0/26 regressions, 0/4000 in-sample) while recovering 101/103
-    // (98%) of the digit-0 fix, and sits right at the edge of the
-    // zero-error frontier -- 0.72/0.04 already shows 108 weak-labeled
-    // errors, so this isn't a fluke of a narrow window. See
-    // docs/image-pipeline.md's template-threshold note for the full
-    // analysis.
-    const templateThreshold = 0.74;
-    const templateMargin = 0.04;
+    // Method-1 greyscale gate (2026-08-20): selected on 33,896 crops in a
+    // puzzle-disjoint development split, then applied unchanged to 37,788
+    // confirmation crops. The 0.81/0.05 gate accepted 36,792 confirmation
+    // crops with zero observed false accepts. Cross-digit margin was more
+    // discriminative than raw NCC score (confirmation ROC AUC 0.9939 vs
+    // 0.9506). See rbf-only-template-threshold-analysis-trusted-20260820.json.
+    const rbfOnly = manifestJson.template_policy === 'rbf-only';
+    const templateThreshold = rbfOnly ? Number.POSITIVE_INFINITY : 0.81;
+    const templateMargin = rbfOnly ? Number.POSITIVE_INFINITY : 0.05;
     return new PcaRecogniser(classifier, confidenceThreshold, warpStrategy, classMean, templates, templateThreshold, templateMargin, inputMode);
   }
 
@@ -977,7 +971,7 @@ function percentile(values: Uint8Array, fraction: number): number {
   return sorted[Math.min(sorted.length - 1, Math.floor(fraction * (sorted.length - 1)))]!;
 }
 
-function percentileInk(pixels: Uint8Array): Uint8Array {
+export function percentileInk(pixels: Uint8Array): Uint8Array {
   const low = percentile(pixels, 0.05);
   const high = percentile(pixels, 0.95);
   if (high <= low) return new Uint8Array(pixels.length);
@@ -1068,7 +1062,11 @@ function letterboxWarp(
  * the edge are dropped; pixels shifted in from off-canvas are filled with 0.
  * A no-ink image (all zero) is returned unchanged (no centroid to align to).
  */
-export function centerByCentroid(img: Uint8Array, size: number): Uint8Array {
+export function centerByCentroid(
+  img: Uint8Array,
+  size: number,
+  centerVertically: boolean = true,
+): Uint8Array {
   let sx = 0, sy = 0, mass = 0;
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
@@ -1081,7 +1079,7 @@ export function centerByCentroid(img: Uint8Array, size: number): Uint8Array {
   const cx = sx / mass, cy = sy / mass;
   const canvasCenter = (size - 1) / 2;
   const dx = Math.round(canvasCenter - cx);
-  const dy = Math.round(canvasCenter - cy);
+  const dy = centerVertically ? Math.round(canvasCenter - cy) : 0;
   if (dx === 0 && dy === 0) return img;
 
   const out = new Uint8Array(size * size);

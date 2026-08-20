@@ -83,6 +83,15 @@ def test_build_dataset_shape() -> None:
     assert set(y.tolist()) == set(range(1, 10))
 
 
+def test_build_dataset_without_dither_preserves_greyscale_pixels() -> None:
+    image = np.array([[0, 1, 63], [127, 191, 255]], dtype=np.uint8)
+    aug_imgs, labels, weights = build_dataset([(4, image)], n_dither=0)
+
+    np.testing.assert_array_equal(aug_imgs, image[np.newaxis, ...])
+    np.testing.assert_array_equal(labels, np.array([4], dtype=np.int64))
+    np.testing.assert_array_equal(weights, np.array([1.0], dtype=np.float64))
+
+
 def test_build_dataset_translate_false_keeps_dx_dy_zero() -> None:
     imgs: list[tuple[int, np.ndarray[Any, np.dtype[np.uint8]]]] = [(0, np.zeros((8, 8), dtype=np.uint8))]
     aug_imgs, _y, _weights = build_dataset(imgs, n_dither=5, sample_weights=None, translate=False)

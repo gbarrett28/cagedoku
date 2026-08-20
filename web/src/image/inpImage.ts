@@ -697,7 +697,7 @@ async function decodePdfFile(file: File): Promise<ImageData> {
  * @param resolution - Minimum pixel dimension (9 × subres).
  * @returns [mat1, mat2] — two independent bordered-grayscale Mats.
  */
-function prepareGrayMat(cv: Cv, imageData: ImageData, resolution: number): [OpenCVMat, OpenCVMat] {
+export function prepareGrayMat(cv: Cv, imageData: ImageData, resolution: number): [OpenCVMat, OpenCVMat] {
   let src = cv.matFromImageData(imageData);
   let gry = new cv.Mat();
   cv.cvtColor(src, gry, cv.COLOR_RGBA2GRAY);

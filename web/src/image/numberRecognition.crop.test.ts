@@ -189,6 +189,15 @@ describe('raw digit crop warping', () => {
 
     expect(warpRawDigitCrop(cv, crop, 'letterbox-centered', 8)).toEqual(expected);
   });
+
+  it('can center horizontally without moving ink vertically', () => {
+    const image = new Uint8Array(25);
+    image[0] = 255;
+    const expected = new Uint8Array(25);
+    expected[2] = 255;
+
+    expect(centerByCentroid(image, 5, false)).toEqual(expected);
+  });
 });
 
 

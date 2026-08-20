@@ -364,73 +364,20 @@ flowchart TD
 
 ### Cluster-mean PCA recogniser (`PcaRecogniser`)
 
-Deployed 2026-07-31, replacing `HogRecogniser` as the production default after HOG +
-aspect-ratio features repeatedly failed to separate 1-vs-7 in full retrains (see
-`docs/superpowers/specs/2026-07-31-cluster-mean-pca-recogniser-design.md`, retained in
-git history). `PcaRecogniser` is a two-stage recogniser:
+The production model uses the binary pipeline only to locate and split digit contours. Recognition copies the identical bounding rectangle from the warped greyscale grid, contrast-normalises and inverts it, then letterboxes it to 64×64. `PcaRecogniser` is a two-stage recogniser:
 
-1. **Template match (fast path).** Each crop is compared via normalized cross-correlation
-   (`normalizedCrossCorrelation`) against a small bank of per-cluster template images
-   (`template_pixels`/`template_labels` in the manifest). A confident match returns
-   immediately with no SVM involved. Acceptance requires two conditions, both tuned
-   empirically (2026-08-01):
-   - `bestScore >= templateThreshold` (0.74) -- the winning template's raw score.
-   - `bestScore - runnerUpScore >= templateMargin` (0.04), where `runnerUpScore` is
-     the best score among templates belonging to any *other* digit -- an
-     ambiguity check in the spirit of Lowe's ratio test. A flat threshold alone
-     can't distinguish "confidently right" from "confidently matches the wrong
-     digit": a first candidate (threshold 0.83, no margin) passed its own sweep
-     but a full corpus eval found 26 cells (19 puzzles) where a real "6" crop
-     scored higher against digit 8's template than any digit-6 template.
-   The original 0.9 placeholder was untuned and deferred to the RBF fallback far
-   more than necessary -- a narrow-oval "0" font (from the observer/guardian
-   corpora) reliably scores 0.83-0.87 against its own correct template, well
-   above what's needed once a margin check guards against wrong-digit ties, but
-   below 0.9, so it used to fall through to RBF, which then confidently
-   mispredicted 6/8/9/3.
-   `(threshold, margin)` was swept jointly against four sources: `corpus_train.json`
-   (4000 labeled samples, in-sample since these generated the templates), 103
-   independently pixel-verified hard cases of the narrow-oval "0" font, the 26
-   known digit-6/8 regressions, and -- for real statistical power -- ~92k crops
-   pulled from every digit cell of every corpus puzzle that solved cleanly under
-   a prior run (a misread cage-total or given digit almost never lets a killer
-   sudoku solve to a unique, consistent grid, so a clean solve is strong evidence
-   every digit in it was read correctly; this set is disjoint from the training
-   data but structurally excludes the exact hard boundary cases, since those
-   broke their puzzle's solve -- it validates precision at scale, not recall).
-   0.74/0.04 has zero errors across all four sources while recovering 101/103
-   (98%) of the digit-0 fix, sitting right at the edge of the zero-error
-   frontier (0.72/0.04 already shows errors in the 92k-sample set). A full
-   corpus eval (2968 puzzles) confirmed it end-to-end: clean rate rose from
-   97.98% to 99.87% (2905/2965 -> 2964/2968) with zero regressions and 56 fixes;
-   the 4 remaining failures are unrelated pre-existing defects (e.g. a known bad
-   border-detection case) or a single residual digit misread.
+1. **Template match (fast path).** Each crop is compared via normalized cross-correlation (`normalizedCrossCorrelation`) against 40 per-digit raw-pixel cluster means (`template_pixels`/`template_labels` in the manifest). A template result is accepted only when both `bestScore >= 0.81` and the cross-digit `bestScore - runnerUpScore >= 0.05`; otherwise recognition falls through to RBF.
+
+   The gate was selected on a puzzle-disjoint development set of 33,896 crops and frozen before checking 37,788 confirmation crops. Inputs were restricted to 2,239 puzzles that solved cleanly under both the binary master and greyscale candidate with identical puzzle specifications, yielding 71,684 label-aligned crops and 100% RBF recall. On confirmation, score ROC AUC was 0.9506 (puzzle-bootstrap 95% CI 0.9453–0.9553), while cross-digit margin ROC AUC was 0.9939 (95% CI 0.9909–0.9961). The selected gate accepted 36,792/37,788 confirmation crops (97.36% coverage), with 97.95% TPR and zero observed false accepts. The former 0.82/0.04 gate admitted two known 8→6 matches with margins around 0.041–0.042; 0.81/0.05 sends both to the correct RBF fallback. Per-digit gates achieved more coverage during selection but produced false accepts on confirmation, so production keeps one global gate.
 2. **RBF-SVM fallback.** Crops that don't match a template confidently are projected
    through a class-mean-PCA basis (`classMeanProject`, `ClassMeanReduction` — the same
    between-class-mean reduction `HogRecogniser`'s optional `--class-mean-residual-components`
    uses) and classified by an OvO RBF-SVM, identically to `HogRecogniser`'s classifier
    stage.
 
-**Training (`web/train_recogniser.py --recogniser pca`):** raw pixels are the only
-feature — `PcaRecogniser.extract_features` is a flatten, no HOG/hole computation.
-Templates and the PCA basis are both derived from a training-time-only **per-digit GMM
-clustering** (`cluster_pseudo_labels`, `CLUSTER_N_CLUSTERS = 4`) on HOG+hole+aspect
-features — used purely to discover visually distinct sub-populations within a digit
-(different newspaper fonts), never computed at inference. Each sample gets a pseudo-label
-`digit * 10 + cluster_id`; `compute_label_means` over those pseudo-labels gives one
-template per cluster (40 in the 2026-07-31 model: 10 digits × 4 clusters), and
-`fit_class_mean_pca`'s SVD of those pseudo-label means gives the between-cluster-mean PCA
-components (39 = 40 − 1 directions in that model; no residual PCA layer was added, so
-within-cluster variance beyond those directions is discarded, not retained via a second
-stage). The RBF-SVM is fit on all samples projected into that space, labelled by true
-digit (not pseudo-label).
+**Training (`web/train_recogniser.py --recogniser pca`):** raw greyscale pixels are the only recognition feature. Within each digit, training crops are flattened, reduced to at most 10 PCA components, and divided into four font/shape groups by a deterministic GMM. The 40 resulting raw-pixel means (10 digits × 4 clusters) are the template bank. The same pseudo-label means define 39 between-cluster directions; the deployed model adds 50 residual PCA directions, giving the RBF an 89-feature class-mean basis. The OvO RBF-SVM is fitted on every training sample in that basis using its true digit label.
 
-**Crop normalization (`letterbox-centered` warp, `centerByCentroid`):** letterbox to
-64×64 as before, then the ink's centre-of-mass is shifted to canvas centre via integer
-pixel translation (no interpolation/blur). Because centring is now deterministic rather
-than relying on augmentation to teach translation robustness, `dither_batch`/
-`build_dataset`'s translate-jitter augmentation is disabled for this recogniser
-(`translate=False` — erode/dilate/noise augmentation unaffected).
+**Crop normalization:** production preserves the binary segmenter's exact bounding box and applies intensity normalisation, inversion, and aspect-preserving `letterbox` only. It does not tighten to ink or shift the crop vertically. Translation jitter is disabled for PCA-recogniser training; erode/dilate/noise augmentation remains enabled.
 
 **Manifest:** `recogniser_type: "pca"`, plus `template_pixels`, `template_labels`,
 `cm_mean_of_means`, `cm_between_components` (and optional `cm_residual_mean`/
