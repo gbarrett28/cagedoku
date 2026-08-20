@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { activeRecogniser, HogRecogniser, PcaRecogniser, loadNumRecogniser, pcaProject, classMeanProject, centerByCentroid, allowedDigitsForPosition, rbfPredictWithConfidence } from './numberRecognition.js';
-import type { NumRecogniser, PcaProjection, ClassMeanReduction, RBFClassifier } from './numberRecognition.js';
+import type { NumRecogniser, PcaProjection, ClassMeanReduction, RBFClassifier, TemplateMatch } from './numberRecognition.js';
 
 // ---------------------------------------------------------------------------
 // Load model and training data once for the suite
@@ -184,7 +184,22 @@ describe('Recognition.runnerUp', () => {
     // assertion flaky against future threshold/margin tuning.
     const stratified = Array.from({ length: 10 }, (_, d) => samples.slice(d * 400, d * 400 + 3)).flat();
     const imgs = stratified.map(s => new Uint8Array(canonicalPixels(s)));
-    const results = rec.recognise(imgs);
+    const pca = rec as unknown as {
+      classifier: RBFClassifier;
+      classMean: ClassMeanReduction;
+      templates: TemplateMatch;
+    };
+    const rbfOnly = new PcaRecogniser(
+      pca.classifier,
+      0,
+      rec.warpStrategy,
+      pca.classMean,
+      pca.templates,
+      Number.POSITIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+      rec.inputMode,
+    );
+    const results = rbfOnly.recognise(imgs);
     let sawRunnerUp = false;
     for (const r of results) {
       if (r.runnerUp === undefined) continue;
@@ -339,6 +354,31 @@ describe('loadNumRecogniser class dispatch', () => {
     },
   );
 
+  it.each([
+    [undefined, 'binary'],
+    ['binary', 'binary'],
+    ['gray', 'gray'],
+  ] as const)('loads recognition_input_mode %s as %s', (manifestMode, expected) => {
+    const pub = join(process.cwd(), 'public');
+    const bin = readFileSync(join(pub, 'num_recogniser.bin'));
+    const manifest = JSON.parse(readFileSync(join(pub, 'num_recogniser.json'), 'utf-8'));
+    const loaded = loadNumRecogniser(
+      bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength),
+      { ...manifest, recognition_input_mode: manifestMode },
+    );
+    expect(loaded.inputMode).toBe(expected);
+  });
+
+  it('rejects an unsupported model recognition input mode', () => {
+    const pub = join(process.cwd(), 'public');
+    const bin = readFileSync(join(pub, 'num_recogniser.bin'));
+    const manifest = JSON.parse(readFileSync(join(pub, 'num_recogniser.json'), 'utf-8'));
+    expect(() => loadNumRecogniser(
+      bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength),
+      { ...manifest, recognition_input_mode: 'adaptive' },
+    )).toThrow('Unsupported recognition input mode: adaptive');
+  });
+
   it('rejects a missing or unsupported model warp strategy', () => {
     expect(() => loadNumRecogniser(new ArrayBuffer(0), {
       classifier_type: 'rbf',
@@ -376,10 +416,13 @@ describe('PcaRecogniser', () => {
     };
 
     const nFeatures = templatePixels[0]!.length;
-    push('rbf_support_vectors', Float64Array.from([0]), [1, 1]);
-    push('rbf_dual_coef', Float64Array.from([1]), [1, 1]);
-    push('rbf_intercept', Float64Array.from([0]), [1]);
-    push('rbf_n_support', Int32Array.from([1]), [1]);
+    // A valid two-class RBF fallback that deterministically selects the
+    // first class: two one-dimensional support vectors, zero dual weights,
+    // and a positive intercept for the sole OvO decision.
+    push('rbf_support_vectors', Float64Array.from([0, 0]), [2, 1]);
+    push('rbf_dual_coef', Float64Array.from([0, 0]), [1, 2]);
+    push('rbf_intercept', Float64Array.from([1]), [1]);
+    push('rbf_n_support', Int32Array.from([1, 1]), [2]);
     push('rbf_gamma', Float64Array.from([1]), [1]);
     push('classes', Int32Array.from(templateLabels), [templateLabels.length]);
     push('confidence_threshold', Float64Array.from([0.7]), [1]);
@@ -414,6 +457,51 @@ describe('PcaRecogniser', () => {
     const [result] = loaded.recognise([Uint8Array.from([0, 10, 0, 10])]);
 
     expect(result).toEqual(expect.objectContaining({ label: 1, confident: true }));
+  });
+
+  it('falls back to RBF when a high template score has less than 0.05 cross-digit margin', () => {
+    const crop = [0, 100, 0, 100];
+    const closeCompetitor = [0, 100, 31, 131];
+    const { buf, manifest } = buildManifest(
+      [closeCompetitor, crop],
+      [8, 6],
+    );
+    const loaded = loadNumRecogniser(buf, manifest as Parameters<typeof loadNumRecogniser>[1]);
+
+    const [result] = loaded.recognise([Uint8Array.from(crop)]);
+
+    expect(result).toEqual(expect.objectContaining({ label: 8, confident: true }));
+    expect(result!.runnerUp).toEqual(expect.objectContaining({ label: 6 }));
+  });
+
+  it('falls back to RBF when the best template score is below 0.81 despite a wide margin', () => {
+    const crop = [0, 100, 0, 100];
+    const { buf, manifest } = buildManifest(
+      [[100, 0, 100, 0], [0, 100, 45, 55]],
+      [8, 6],
+    );
+    const loaded = loadNumRecogniser(buf, manifest as Parameters<typeof loadNumRecogniser>[1]);
+
+    const [result] = loaded.recognise([Uint8Array.from(crop)]);
+
+    expect(result).toEqual(expect.objectContaining({ label: 8, confident: true }));
+    expect(result!.runnerUp).toEqual(expect.objectContaining({ label: 6 }));
+  });
+
+  it('bypasses a confident template match when the manifest selects RBF-only recognition', () => {
+    const pub = join(process.cwd(), 'public');
+    const bin = readFileSync(join(pub, 'num_recogniser.bin'));
+    const manifest = JSON.parse(readFileSync(join(pub, 'num_recogniser.json'), 'utf-8'));
+    const forced = loadNumRecogniser(
+      bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength),
+      { ...manifest, template_policy: 'rbf-only' },
+    );
+    const zeroSample = samples.find(sample => sample.digit === 0);
+    if (!zeroSample) throw new Error('expected at least one digit-0 sample');
+    const image = new Uint8Array(canonicalPixels(zeroSample));
+
+    expect(rec.recognise([image])[0]!.runnerUp).toBeUndefined();
+    expect(forced.recognise([image])[0]!.runnerUp).toBeDefined();
   });
 });
 

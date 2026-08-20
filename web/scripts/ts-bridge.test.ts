@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { warpRawDigitCrop } from '../src/image/numberRecognition.js';
+import { prepareRecognitionCrop, warpRawDigitCrop } from '../src/image/numberRecognition.js';
 import type { OpenCVModule } from '../src/image/opencv.js';
 import { loadNodeOpenCv } from './node-opencv.js';
 
@@ -70,6 +70,36 @@ describe('ts-bridge --op warp-crops', () => {
       expect(parsed.crops).toEqual([Array.from(direct)]);
     },
   );
+
+  it('matches direct production greyscale preprocessing byte-for-byte', () => {
+    const width = 3, height = 3, size = 8;
+    const pixels = [240, 230, 240, 230, 20, 230, 240, 230, 240];
+    const payload = JSON.stringify({
+      crops: [{ width, height, pixels }],
+      strategy: 'letterbox-centered', inputMode: 'gray', size,
+    });
+    const parsed = JSON.parse(runBridge(['--op', 'warp-crops'], payload)) as { crops: number[][] };
+    const direct = prepareRecognitionCrop(cv, {
+      x: 0, y: 0, width, height, pixels: Uint8Array.from(pixels),
+    }, 'letterbox-centered', 'gray', size);
+    expect(parsed.crops).toEqual([Array.from(direct)]);
+  });
+
+  it('rejects explicit null and unsupported input modes', () => {
+    const base = {
+      crops: [{ width: 1, height: 1, pixels: [0] }],
+      strategy: 'letterbox-centered',
+      size: 8,
+    };
+    expect(() => runBridge(
+      ['--op', 'warp-crops'],
+      JSON.stringify({ ...base, inputMode: 'unknown' }),
+    )).toThrow('inputMode is invalid');
+    expect(() => runBridge(
+      ['--op', 'warp-crops'],
+      JSON.stringify({ ...base, inputMode: null }),
+    )).toThrow('inputMode is invalid');
+  });
 });
 
 describe('retired ts-bridge operations', () => {

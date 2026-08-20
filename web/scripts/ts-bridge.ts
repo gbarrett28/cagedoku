@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import {
   DEFAULT_HOG_PARAMS,
   hogExtract,
-  warpRawDigitCrop,
+  prepareRecognitionCrop,
 } from '../src/image/numberRecognition.js';
-import type { RawDigitCrop, WarpStrategy } from '../src/image/numberRecognition.js';
+import type { RawDigitCrop, RecognitionInputMode, WarpStrategy } from '../src/image/numberRecognition.js';
 import { extractHoleFeatures } from '../src/image/holeFeatures.js';
 import { extractAspectFeatures } from '../src/image/aspectFeatures.js';
 import { loadNodeOpenCv } from './node-opencv.js';
@@ -26,6 +26,7 @@ interface RawCropPayload {
 interface WarpCropsPayload {
   readonly crops: RawCropPayload[];
   readonly strategy: WarpStrategy;
+  readonly inputMode: RecognitionInputMode;
   readonly size: number;
 }
 
@@ -82,6 +83,10 @@ function parseWarpCropsPayload(value: unknown): WarpCropsPayload {
   if (payload.strategy !== 'stretch' && payload.strategy !== 'letterbox' && payload.strategy !== 'letterbox-centered') {
     throw new Error(`warp-crops strategy must be stretch, letterbox, or letterbox-centered, got ${String(payload.strategy)}`);
   }
+  const inputMode = payload.inputMode === undefined ? 'binary' : payload.inputMode;
+  if (inputMode !== 'binary' && inputMode !== 'gray') {
+    throw new Error(`warp-crops inputMode is invalid: ${String(inputMode)}`);
+  }
   if (!Number.isInteger(payload.size) || (payload.size ?? 0) <= 0) {
     throw new Error(`warp-crops size must be a positive integer, got ${String(payload.size)}`);
   }
@@ -102,7 +107,7 @@ function parseWarpCropsPayload(value: unknown): WarpCropsPayload {
       throw new Error(`warp-crops crop ${index} pixels must be uint8 values`);
     }
   }
-  return payload as WarpCropsPayload;
+  return { ...payload, inputMode } as WarpCropsPayload;
 }
 
 async function runWarpCrops(value: unknown): Promise<string> {
@@ -115,7 +120,9 @@ async function runWarpCrops(value: unknown): Promise<string> {
     height: crop.height,
     pixels: Uint8Array.from(crop.pixels),
   }));
-  const warped = crops.map(crop => warpRawDigitCrop(cv, crop, payload.strategy, payload.size));
+  const warped = crops.map(crop => prepareRecognitionCrop(
+    cv, crop, payload.strategy, payload.inputMode, payload.size,
+  ));
   const expectedLength = payload.size * payload.size;
   for (const [index, crop] of warped.entries()) {
     if (crop.length !== expectedLength) {

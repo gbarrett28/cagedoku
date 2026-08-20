@@ -3,6 +3,7 @@ import {
   centerByCentroid,
   extractRawDigitCrop,
   getWarpFromRect,
+  prepareRecognitionCrop,
   warpRawDigitCrop,
 } from './numberRecognition.js';
 import type { OpenCVMat, OpenCVModule } from './opencv.js';
@@ -187,5 +188,39 @@ describe('raw digit crop warping', () => {
     const crop = extractRawDigitCrop(cv, warpedGrid, rect);
 
     expect(warpRawDigitCrop(cv, crop, 'letterbox-centered', 8)).toEqual(expected);
+  });
+
+  it('can center horizontally without moving ink vertically', () => {
+    const image = new Uint8Array(25);
+    image[0] = 255;
+    const expected = new Uint8Array(25);
+    expected[2] = 255;
+
+    expect(centerByCentroid(image, 5, false)).toEqual(expected);
+  });
+});
+
+
+describe('greyscale recognition preprocessing', () => {
+  const crop = {
+    x: 0, y: 0, width: 3, height: 3,
+    pixels: Uint8Array.from([
+      240, 230, 240,
+      230, 20, 230,
+      240, 230, 240,
+    ]),
+  };
+
+  it('prepares a deterministic greyscale crop at production size', () => {
+    const first = prepareRecognitionCrop(makeCv(), crop, 'letterbox-centered', 'gray', 64);
+    const second = prepareRecognitionCrop(makeCv(), crop, 'letterbox-centered', 'gray', 64);
+    expect(first).toHaveLength(4096);
+    expect(first).toEqual(second);
+    expect(first.some(value => value > 0)).toBe(true);
+  });
+
+  it('keeps binary preprocessing byte-for-byte compatible', () => {
+    expect(prepareRecognitionCrop(makeCv(), crop, 'letterbox', 'binary', 8))
+      .toEqual(warpRawDigitCrop(makeCv(), crop, 'letterbox', 8));
   });
 });

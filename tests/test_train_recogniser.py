@@ -83,6 +83,15 @@ def test_build_dataset_shape() -> None:
     assert set(y.tolist()) == set(range(1, 10))
 
 
+def test_build_dataset_without_dither_preserves_greyscale_pixels() -> None:
+    image = np.array([[0, 1, 63], [127, 191, 255]], dtype=np.uint8)
+    aug_imgs, labels, weights = build_dataset([(4, image)], n_dither=0)
+
+    np.testing.assert_array_equal(aug_imgs, image[np.newaxis, ...])
+    np.testing.assert_array_equal(labels, np.array([4], dtype=np.int64))
+    np.testing.assert_array_equal(weights, np.array([1.0], dtype=np.float64))
+
+
 def test_build_dataset_translate_false_keeps_dx_dy_zero() -> None:
     imgs: list[tuple[int, np.ndarray[Any, np.dtype[np.uint8]]]] = [(0, np.zeros((8, 8), dtype=np.uint8))]
     aug_imgs, _y, _weights = build_dataset(imgs, n_dither=5, sample_weights=None, translate=False)
@@ -298,11 +307,13 @@ def test_hog_recogniser_save_keys() -> None:
             out,
             confidence_threshold=CONFIDENCE_THRESHOLD,
             warp_strategy="stretch",
+            recognition_input_mode="gray",
         )
         manifest: dict[str, Any] = json.loads((out / "num_recogniser.json").read_text())
 
     assert manifest["classifier_type"] == "rbf"
     assert manifest["warp_strategy"] == "stretch"
+    assert manifest["recognition_input_mode"] == "gray"
     assert set(manifest["arrays"].keys()) == _EXPECTED_HOG_KEYS
     # No PCA/template keys when pca_components=0 explicitly disables the reduction step.
     assert not any(k.startswith("pca") or k.startswith("template") for k in manifest["arrays"])
