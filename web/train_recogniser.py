@@ -127,6 +127,20 @@ def deployed_warp_strategy(
     )
 
 
+def deployed_recognition_input_mode(
+    manifest_path: Path = Path(__file__).parent / "public" / "num_recogniser.json",
+) -> RecognitionInputMode:
+    """Read the current browser model's input mode instead of duplicating its default."""
+    mode = json.loads(manifest_path.read_text(encoding="utf-8")).get("recognition_input_mode")
+    if mode == "binary":
+        return "binary"
+    if mode == "gray":
+        return "gray"
+    raise ValueError(
+        f"{manifest_path}: unsupported deployed recognition input mode {mode!r}"
+    )
+
+
 def _load_stale_hashes() -> frozenset[str]:
     """Load the shared stale-sample-hash blocklist (see module docstring)."""
     if not _STALE_HASHES_PATH.exists():
@@ -1056,8 +1070,10 @@ def main() -> None:
              "(default: strategy in the deployed model manifest)",
     )
     parser.add_argument(
-        "--recognition-input-mode", choices=("binary", "gray"), default="binary",
-        help="Recognition crop input encoded in the model (default: binary)",
+        "--recognition-input-mode", choices=("binary", "gray"),
+        default=deployed_recognition_input_mode(),
+        help="Recognition crop input encoded in the model "
+             "(default: mode in the deployed model manifest)",
     )
     parser.add_argument(
         "--confidence-threshold", type=float, default=CONFIDENCE_THRESHOLD, metavar="T",
