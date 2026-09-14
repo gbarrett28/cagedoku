@@ -75,6 +75,7 @@ deductions. All processing runs client-side.
 | Retraining helper | `web/train_recogniser.py` | Merges/deduplicates inputs, calls TS warping/features, augments, and fits the HOG/hole RBF model |
 | TS↔Python bridge | `web/scripts/ts-bridge.ts`, `killer_sudoku/training/ts_bridge.py` | Private subprocess bridge exposing only `warp-crops` and `extract-features` — see `docs/superpowers/specs/2026-07-28-python-production-boundary-cleanup-design.md` |
 | Corpus cache | `web/scripts/corpus-db.ts` (`cell_reads`, `evaluations` tables) | Stores raw variable-sized warped-grid crops plus derived 64×64 recognition evidence, keyed by `(puzzle_hash, git_hash)` |
+| Cloudflare Worker | `worker/src/index.ts` | Ingests browser training/puzzle-spec/stall/feedback uploads into R2, notifies GitHub Issue #1; deployed by `.github/workflows/worker-deploy.yml` |
 
 ## Key Reference Documents
 

@@ -336,12 +336,17 @@ For purely synthetic training (no real data), omit the flag.
 
 #### Phase 2 — scheduled auto-retrain
 
-`.github/workflows/retrain.yml` runs every eight hours and on
-`workflow_dispatch`. It downloads pending R2 uploads, retrains, builds the
-production web app, and evaluates the candidate model through that app against the
-committed `web/eval-fixtures/` corpus. The content-hash-keyed result is compared
-with `web/eval-baseline.json`; a regression prevents the model commit and opens a
-failure Issue.
+`.github/workflows/retrain.yml` runs only on `workflow_dispatch`. Its `schedule`
+trigger was disabled 2026-07-30 after an unmonitored scheduled run shipped a
+broken model that regressed real-world solve rate from ~97% to well below that,
+undetected for weeks (see the workflow file's header comment). Manually
+triggered, it downloads pending R2 uploads, retrains, builds the production web
+app, and evaluates the candidate model through that app against the committed
+`web/eval-fixtures/` corpus. The content-hash-keyed result is compared with
+`web/eval-baseline.json`; a regression prevents the model commit and opens a
+failure Issue. On success, the run never pushes to `master` directly — it commits
+to a `retrain/<run-id>` branch and opens a PR for human review of the corpus-eval
+comparison before merge.
 
 #### Infrastructure
 
@@ -351,7 +356,7 @@ failure Issue.
 | R2 bucket | `cagedoku-training` (Cloudflare account `b6c5bf0f26c81c4901c4434c6a3ca23f`) |
 | GitHub notification thread | `gbarrett28/cagedoku` Issue #1 |
 | Worker secrets | `GITHUB_TOKEN` (issues:write PAT) |
-| GitHub Actions secrets | `TRAINING_WORKER_URL`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` |
+| GitHub Actions secrets | `TRAINING_WORKER_URL`, `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` |
 
 **Worker tests:** `worker/src/index.test.ts` exercises the real worker `fetch`
 handler against a `miniflare`-backed `R2Bucket` (in-memory, fresh per test —
@@ -1349,10 +1354,11 @@ is absent from production builds; the fetch returns 404 and the panel renders no
 
 ### R2 review workflow
 
-`.github/workflows/puzzle-spec-review.yml` (manual `workflow_dispatch`) downloads
-`puzzle-spec/` objects from the `cagedoku-training` R2 bucket, runs
-`web/scripts/check-puzzle-specs.ts` via vite-node to check each spec, commits any
-stall fixtures to `web/stall-fixtures/`, and deletes all processed R2 objects.
+`.github/workflows/puzzle-spec-review.yml` runs every 8 hours on a `schedule` and
+on manual `workflow_dispatch`. It downloads `puzzle-spec/` objects from the
+`cagedoku-training` R2 bucket, runs `web/scripts/check-puzzle-specs.ts` via
+vite-node to check each spec, commits any stall fixtures to
+`web/stall-fixtures/`, and deletes all processed R2 objects.
 `check-puzzle-specs.ts` deduplicates specs by content
 (`JSON.stringify([spec.regions, spec.cageTotals])`) so identical puzzles uploaded
 from different sessions produce only one fixture. Uses `R2_ACCESS_KEY_ID` and

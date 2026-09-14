@@ -25,9 +25,14 @@ feature extraction to Python training orchestration.
 | `scripts/_r2_list.py` / `_r2_download.py` / `_r2_delete.py` | List/pull/clear pending training-sample uploads from Cloudflare R2 | 2026-07-04 |
 | `killer_sudoku/training/ts_bridge.py` | Calls production TypeScript crop warping and feature extraction for the trainer (not a user entry point) | 2026-07-29 |
 
-Scheduled Python is now limited to `web/train_recogniser.py` plus the three private
-R2 helpers. Model regression evaluation is TypeScript: the workflow builds the
-production app and runs `web/scripts/evaluate-corpus.ts` over committed fixtures.
+GitHub Actions Python is now limited to `web/train_recogniser.py` plus the three
+private R2 helpers. Model regression evaluation is TypeScript: the workflow builds
+the production app and runs `web/scripts/evaluate-corpus.ts` over committed
+fixtures. Of these, only the R2 helpers still run on a `schedule` (via
+`puzzle-spec-review.yml` and `rule-regression.yml`); `retrain.yml` — the only
+caller of `train_recogniser.py` — is `workflow_dispatch`-only. See
+`docs/architecture.md`'s "Phase 2 — scheduled auto-retrain" for trigger history
+and why.
 
 ## Remaining manual scripts
 
