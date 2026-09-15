@@ -141,6 +141,29 @@ def deployed_recognition_input_mode(
     )
 
 
+def deployed_class_mean_residual_components(
+    manifest_path: Path = Path(__file__).parent / "public" / "num_recogniser.json",
+) -> int:
+    """Read the current browser model's residual-PCA dimension count instead of duplicating its default.
+
+    See docs/image-pipeline.md's 'Cluster-mean PCA recogniser' section -- the
+    deployed model's between-class-mean feature basis is only as wide as this
+    value makes it (89 features at N=50 vs. 39 at N=0), so silently defaulting
+    to -1 here would retrain a materially weaker classifier than the one
+    actually deployed.
+    """
+    arrays = json.loads(manifest_path.read_text(encoding="utf-8")).get("arrays", {})
+    residual = arrays.get("cm_residual_components")
+    if residual is None:
+        return -1
+    shape = residual.get("shape")
+    if not shape:
+        raise ValueError(
+            f"{manifest_path}: cm_residual_components entry is missing its shape"
+        )
+    return int(shape[0])
+
+
 def _load_stale_hashes() -> frozenset[str]:
     """Load the shared stale-sample-hash blocklist (see module docstring)."""
     if not _STALE_HASHES_PATH.exists():
@@ -1103,12 +1126,14 @@ def main() -> None:
              "0 disables PCA and fits on raw features).",
     )
     parser.add_argument(
-        "--class-mean-residual-components", type=int, default=-1, metavar="N",
+        "--class-mean-residual-components", type=int,
+        default=deployed_class_mean_residual_components(), metavar="N",
         help="Reduce features to the directions where digit-class means differ most "
              "(at most n_classes-1 dimensions, equivalent to the between-class scatter "
              "used in LDA, without inverting a within-class covariance matrix), plus N "
              "residual PCA components for general variance. Overrides --pca-components "
-             "when set. -1 (default) disables it; 0 keeps only the between-class directions.",
+             "when set. Default: count in the deployed model manifest (-1 if absent, "
+             "which disables it entirely); 0 keeps only the between-class directions.",
     )
     parser.add_argument(
         "--recogniser", choices=("hog", "pca"), default="pca",
