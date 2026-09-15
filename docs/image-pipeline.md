@@ -294,9 +294,10 @@ recogniser architecture.
 > `classifier_type: "rbf"`. Every manifest's required `warp_strategy` selects
 > production `stretch`, aspect-preserving `letterbox`, or centroid-centred
 > `letterbox-centered` (§ below) before recognition; missing/unsupported
-> strategies are rejected explicitly. As of 2026-07-31, `PcaRecogniser` with
-> `letterbox-centered` is the deployed default (see "Cluster-mean PCA
-> recogniser").
+> strategies are rejected explicitly. `PcaRecogniser` is the deployed default
+> (see "Cluster-mean PCA recogniser"); its warp strategy was `letterbox-centered`
+> from 2026-07-31 until the 2026-08-20 greyscale-input rewrite switched it to
+> plain `letterbox` (see that section for what changed and why).
 
 `buildCageTotals` (`inpImage.ts`) runs `cv.findContours` once over the whole warped
 board (`RETR_TREE`), walks the resulting hierarchy (`contourHier`), and keeps contours
