@@ -220,4 +220,10 @@ export const NEEDS_TRIAGE_FIXTURES: readonly string[] = [  "NakedSingle-trigger-
   "SolutionMapFilter-trigger-miss-2026-07-27T05-15-12-851Z",
   "SolutionMapFilter-trigger-miss-2026-07-27T05-15-51-624Z",
   "SolutionMapFilter-trigger-miss-2026-07-27T05-16-05-688Z",
+  "NakedSingle-r2-2026-09-22T04-12-24-826Z",
+  "HiddenSingle-r2-2026-09-22T04-12-14-200Z",
+  "CageIntersection-r2-2026-09-22T04-12-14-204Z",
+  "MustContain-r2-2026-09-22T04-12-14-209Z",
+  "MustContainOutie-r2-2026-09-22T04-12-14-213Z",
+  "CageConfinement-r2-2026-09-22T04-12-14-248Z",
 ];
