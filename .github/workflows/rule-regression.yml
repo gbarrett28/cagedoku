@@ -56,7 +56,7 @@ jobs:
         # script run manually) has never shown this failure.
         working-directory: web
         env:
-          TRAINING_WORKER_URL: ${{ secrets.TRAINING_WORKER_URL }}
+          TRAINING_WORKER_URL: ${{ vars.TRAINING_WORKER_URL }}
         run: npx vite-node scripts/sync-rule-fixtures.ts
 
       - name: Bronze gate

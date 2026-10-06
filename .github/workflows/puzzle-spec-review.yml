@@ -7,6 +7,10 @@ on:
 
 permissions:
   contents: write
+  issues: write
+
+env:
+  FAILURE_ISSUE_TITLE: Review puzzle-spec uploads is failing
 
 jobs:
   review:
@@ -89,3 +93,32 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           python3 scripts/_r2_delete.py cagedoku-training < /tmp/r2_keys.txt
+
+      # This workflow lists R2 on every run, so it doubles as the health check
+      # for the R2 credentials (see docs/secrets.md). One open issue at a time.
+      - name: Open failure issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          existing=$(gh issue list --state open --label bug \
+            --search "\"$FAILURE_ISSUE_TITLE\" in:title" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            echo "Failure issue #$existing is already open."
+          else
+            gh issue create --label bug --title "$FAILURE_ISSUE_TITLE" \
+              --body "A scheduled run failed: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. If the failing step is 'List puzzle-spec objects in R2' with AccessDenied, the R2 API token has most likely expired: rotate it as described in docs/secrets.md. This issue closes itself when a run succeeds."
+          fi
+
+      - name: Close failure issue
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          for n in $(gh issue list --state open --label bug \
+              --search "\"$FAILURE_ISSUE_TITLE\" in:title" --json number --jq '.[].number'); do
+            gh issue close "$n" --comment "Recovered: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID succeeded."
+          done

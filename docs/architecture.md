@@ -356,7 +356,11 @@ comparison before merge.
 | R2 bucket | `cagedoku-training` (Cloudflare account `b6c5bf0f26c81c4901c4434c6a3ca23f`) |
 | GitHub notification thread | `gbarrett28/cagedoku` Issue #1 |
 | Worker secrets | `GITHUB_TOKEN` (issues:write PAT) |
-| GitHub Actions secrets | `TRAINING_WORKER_URL`, `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` |
+| GitHub Actions secrets | `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` |
+| GitHub Actions variables | `TRAINING_WORKER_URL` (public) |
+
+Every credential, its storage, rotation procedure and expiry status is
+catalogued in **`docs/secrets.md`**.
 
 **Worker tests:** `worker/src/index.test.ts` exercises the real worker `fetch`
 handler against a `miniflare`-backed `R2Bucket` (in-memory, fresh per test —
